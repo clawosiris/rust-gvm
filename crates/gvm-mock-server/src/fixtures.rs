@@ -165,6 +165,216 @@ impl FixtureStore {
              </help_response>"
                 .to_string(),
         );
+
+        // get_alerts
+        self.fixtures.insert(
+            "get_alerts".to_string(),
+            "<get_alerts_response status=\"200\" status_text=\"OK\">\
+             <alert id=\"{{uuid}}\">\
+             <name>Email Alert</name>\
+             <condition>Severity at least</condition>\
+             <event>Task run status changed</event>\
+             <method>Email</method>\
+             <creation_time>{{now}}</creation_time>\
+             <modification_time>{{now}}</modification_time>\
+             </alert>\
+             <alert id=\"{{uuid}}\">\
+             <name>Syslog Alert</name>\
+             <condition>Always</condition>\
+             <event>Updated SecInfo arrived</event>\
+             <method>SysLog</method>\
+             <creation_time>{{now}}</creation_time>\
+             <modification_time>{{now}}</modification_time>\
+             </alert>\
+             <alert_count>2<filtered>2</filtered></alert_count>\
+             </get_alerts_response>"
+                .to_string(),
+        );
+
+        // create_alert
+        self.fixtures.insert(
+            "create_alert".to_string(),
+            "<create_alert_response status=\"201\" \
+             status_text=\"OK, resource created\" \
+             id=\"{{uuid}}\"/>"
+                .to_string(),
+        );
+
+        // get_credentials
+        self.fixtures.insert(
+            "get_credentials".to_string(),
+            "<get_credentials_response status=\"200\" status_text=\"OK\">\
+             <credential id=\"{{uuid}}\">\
+             <name>SSH Key</name>\
+             <type>usk</type>\
+             <login>scanner</login>\
+             <creation_time>{{now}}</creation_time>\
+             <modification_time>{{now}}</modification_time>\
+             </credential>\
+             <credential_count>1<filtered>1</filtered></credential_count>\
+             </get_credentials_response>"
+                .to_string(),
+        );
+
+        // create_credential
+        self.fixtures.insert(
+            "create_credential".to_string(),
+            "<create_credential_response status=\"201\" \
+             status_text=\"OK, resource created\" \
+             id=\"{{uuid}}\"/>"
+                .to_string(),
+        );
+
+        // get_filters
+        self.fixtures.insert(
+            "get_filters".to_string(),
+            "<get_filters_response status=\"200\" status_text=\"OK\">\
+             <filter id=\"{{uuid}}\">\
+             <name>High Severity</name>\
+             <type>result</type>\
+             <term>severity>7</term>\
+             <creation_time>{{now}}</creation_time>\
+             <modification_time>{{now}}</modification_time>\
+             </filter>\
+             <filter_count>1<filtered>1</filtered></filter_count>\
+             </get_filters_response>"
+                .to_string(),
+        );
+
+        // get_notes
+        self.fixtures.insert(
+            "get_notes".to_string(),
+            "<get_notes_response status=\"200\" status_text=\"OK\">\
+             <note id=\"{{uuid}}\">\
+             <text>False positive on internal scanner</text>\
+             <nvt oid=\"1.3.6.1.4.1.25623.1.0.100315\"><name>Test NVT</name></nvt>\
+             <creation_time>{{now}}</creation_time>\
+             <modification_time>{{now}}</modification_time>\
+             </note>\
+             <note_count>1<filtered>1</filtered></note_count>\
+             </get_notes_response>"
+                .to_string(),
+        );
+
+        // get_overrides
+        self.fixtures.insert(
+            "get_overrides".to_string(),
+            "<get_overrides_response status=\"200\" status_text=\"OK\">\
+             <override id=\"{{uuid}}\">\
+             <text>Downgrade to log</text>\
+             <nvt oid=\"1.3.6.1.4.1.25623.1.0.100315\"><name>Test NVT</name></nvt>\
+             <new_severity>0.0</new_severity>\
+             <creation_time>{{now}}</creation_time>\
+             <modification_time>{{now}}</modification_time>\
+             </override>\
+             <override_count>1<filtered>1</filtered></override_count>\
+             </get_overrides_response>"
+                .to_string(),
+        );
+
+        // get_schedules
+        self.fixtures.insert(
+            "get_schedules".to_string(),
+            "<get_schedules_response status=\"200\" status_text=\"OK\">\
+             <schedule id=\"{{uuid}}\">\
+             <name>Weekly Scan</name>\
+             <icalendar>BEGIN:VCALENDAR\nEND:VCALENDAR</icalendar>\
+             <creation_time>{{now}}</creation_time>\
+             <modification_time>{{now}}</modification_time>\
+             </schedule>\
+             <schedule_count>1<filtered>1</filtered></schedule_count>\
+             </get_schedules_response>"
+                .to_string(),
+        );
+
+        // get_reports
+        self.fixtures.insert(
+            "get_reports".to_string(),
+            "<get_reports_response status=\"200\" status_text=\"OK\">\
+             <report id=\"{{uuid}}\">\
+             <task id=\"{{uuid}}\"><name>Scan Task</name></task>\
+             <result_count>42<filtered>42</filtered></result_count>\
+             <creation_time>{{now}}</creation_time>\
+             <modification_time>{{now}}</modification_time>\
+             </report>\
+             <report_count>1<filtered>1</filtered></report_count>\
+             </get_reports_response>"
+                .to_string(),
+        );
+
+        // get_port_lists
+        self.fixtures.insert(
+            "get_port_lists".to_string(),
+            "<get_port_lists_response status=\"200\" status_text=\"OK\">\
+             <port_list id=\"{{uuid}}\">\
+             <name>All IANA TCP</name>\
+             <port_count>65535</port_count>\
+             <creation_time>{{now}}</creation_time>\
+             <modification_time>{{now}}</modification_time>\
+             </port_list>\
+             <port_list_count>1<filtered>1</filtered></port_list_count>\
+             </get_port_lists_response>"
+                .to_string(),
+        );
+
+        // get_roles
+        self.fixtures.insert(
+            "get_roles".to_string(),
+            "<get_roles_response status=\"200\" status_text=\"OK\">\
+             <role id=\"{{uuid}}\">\
+             <name>Admin</name>\
+             <creation_time>{{now}}</creation_time>\
+             <modification_time>{{now}}</modification_time>\
+             </role>\
+             <role_count>1<filtered>1</filtered></role_count>\
+             </get_roles_response>"
+                .to_string(),
+        );
+
+        // get_users
+        self.fixtures.insert(
+            "get_users".to_string(),
+            "<get_users_response status=\"200\" status_text=\"OK\">\
+             <user id=\"{{uuid}}\">\
+             <name>admin</name>\
+             <role id=\"{{uuid}}\"><name>Admin</name></role>\
+             <creation_time>{{now}}</creation_time>\
+             <modification_time>{{now}}</modification_time>\
+             </user>\
+             <user_count>1<filtered>1</filtered></user_count>\
+             </get_users_response>"
+                .to_string(),
+        );
+
+        // get_tickets
+        self.fixtures.insert(
+            "get_tickets".to_string(),
+            "<get_tickets_response status=\"200\" status_text=\"OK\">\
+             <ticket id=\"{{uuid}}\">\
+             <name>Fix CVE-2024-1234</name>\
+             <status>Open</status>\
+             <creation_time>{{now}}</creation_time>\
+             <modification_time>{{now}}</modification_time>\
+             </ticket>\
+             <ticket_count>1<filtered>1</filtered></ticket_count>\
+             </get_tickets_response>"
+                .to_string(),
+        );
+
+        // get_tags
+        self.fixtures.insert(
+            "get_tags".to_string(),
+            "<get_tags_response status=\"200\" status_text=\"OK\">\
+             <tag id=\"{{uuid}}\">\
+             <name>environment:production</name>\
+             <value>true</value>\
+             <creation_time>{{now}}</creation_time>\
+             <modification_time>{{now}}</modification_time>\
+             </tag>\
+             <tag_count>1<filtered>1</filtered></tag_count>\
+             </get_tags_response>"
+                .to_string(),
+        );
     }
 }
 
