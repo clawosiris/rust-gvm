@@ -587,7 +587,68 @@ Dev dependencies: `tokio-test`, `pretty_assertions`, `rstest`
 
 ---
 
-## 8. Design Decisions
+## 8. Supervisor Rules
+
+### RULE: Project Journal (MANDATORY)
+
+The supervisor agent **must** maintain a project journal at `journal/` in the repository root. This is a strict, non-negotiable requirement for every development session.
+
+#### Purpose
+
+1. **Document human creative input** — Every human instruction, design direction, correction, or decision must be captured verbatim or in faithful paraphrase. The human is the architect; the journal preserves their authorship.
+2. **Document agent actions** — What each agent did, what it produced, what failed, what was retried.
+3. **Enable blog generation** — The journal serves as raw material for writing blog posts about the human-AI collaborative development process.
+
+#### Format
+
+Each session produces a dated entry in `journal/YYYY-MM-DD.md`:
+
+```markdown
+# Project Journal — YYYY-MM-DD
+
+## Session Summary
+One-paragraph overview of what was accomplished.
+
+## Human Directives
+Chronological log of human instructions and decisions.
+- **HH:MM** — [verbatim or faithful paraphrase of instruction]
+- **HH:MM** — [decision/correction/redirect]
+
+## Agent Actions
+Chronological log of what agents did in response.
+- **HH:MM** — [Agent: Supervisor/Coder/Reviewer] Action taken, outcome
+- **HH:MM** — [Agent: Coder] Files created/modified, tests run, results
+
+## Design Decisions
+Decisions made during this session with rationale.
+- **Decision:** [what]
+  **Context:** [why it came up]
+  **Rationale:** [why this choice]
+  **Human input:** [what the human said that shaped this]
+
+## Challenges & Retries
+What went wrong, what was tried, what ultimately worked.
+
+## Artifacts Produced
+- Files created/modified (with brief description)
+- PRs opened
+- Tests added
+
+## Open Threads
+What's unfinished, blocked, or needs human input next session.
+```
+
+#### Rules
+
+1. **Write-through, not batch.** Update the journal as work happens, not at the end. If the session crashes, the journal should still reflect what occurred up to that point.
+2. **Human words are primary source.** When a human gives an instruction, capture it with enough fidelity that a reader can understand the human's intent and creative contribution. Do not reduce human input to mere "approved" or "requested."
+3. **No sanitizing failure.** If an agent produced bad code, went down a wrong path, or needed correction — log it. This is valuable for blog content and process improvement.
+4. **Commit the journal.** Journal entries must be committed to the repo alongside code changes. They are first-class project artifacts, not ephemeral notes.
+5. **Blog-ready voice.** Write journal entries in a clear, narrative-friendly style. Assume a technical reader who wants to understand how human-AI collaboration actually works in practice.
+
+---
+
+## 9. Design Decisions
 
 ### D1: Sans-I/O Protocol Core
 **Decision:** Port python-gvm's state machine pattern directly.
@@ -615,7 +676,7 @@ Dev dependencies: `tokio-test`, `pretty_assertions`, `rstest`
 
 ---
 
-## 9. Open Questions
+## 10. Open Questions
 
 1. **Typed response structs vs raw XML?** — Phase 1 returns `Response` with raw XML access. Typed structs are Phase 2+ scope. Consider `serde` with custom XML deserializer vs manual extraction.
 
