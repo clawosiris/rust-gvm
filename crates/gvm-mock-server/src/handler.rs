@@ -317,10 +317,13 @@ impl SessionHandler {
             return error_response(&cmd.name, 404, "Resource not found");
         }
 
-        // List all
+        // List (with optional filter)
         let trash = cmd.attr("trash") == Some("1");
+        let filter = cmd.attr("filter");
         let resources = if trash {
             store.list_trashed(resource_type)
+        } else if let Some(filter_str) = filter {
+            store.list_filtered(resource_type, filter_str)
         } else {
             store.list(resource_type)
         };

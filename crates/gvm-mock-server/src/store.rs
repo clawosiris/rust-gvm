@@ -273,6 +273,40 @@ impl ResourceStore {
         Some(new_id)
     }
 
+    /// List resources of a type, filtered by a simple `name=value` filter string.
+    pub fn list_filtered(&self, resource_type: &str, filter: &str) -> Vec<Resource> {
+        // Parse simple "name=value" filters (GMP filter syntax subset)
+        let inner = self.inner.read().expect("store lock poisoned");
+        let mut results: Vec<Resource> = inner
+            .resources
+            .values()
+            .filter(|r| r.resource_type == resource_type && !r.trashed)
+            .cloned()
+            .collect();
+
+        // Apply filter predicates
+        for part in filter.split_whitespace() {
+            if let Some((key, value)) = part.split_once('=') {
+                match key {
+                    "name" => {
+                        results.retain(|r| r.name == value);
+                    }
+                    "type" => {
+                        results.retain(|r| r.resource_type == value);
+                    }
+                    _ => {
+                        // Check attrs
+                        let key = key.to_string();
+                        let value = value.to_string();
+                        results.retain(|r| r.attr(&key) == Some(value.as_str()));
+                    }
+                }
+            }
+        }
+
+        results
+    }
+
     /// Count resources of a type (non-trashed).
     pub fn count(&self, resource_type: &str) -> usize {
         let inner = self.inner.read().expect("store lock poisoned");
@@ -422,6 +456,41 @@ mod tests {
     fn test_delete_nonexistent() {
         let store = ResourceStore::new();
         assert!(!store.delete(&Uuid::new_v4(), false));
+    }
+
+    #[test]
+    fn test_list_filtered_by_name() {
+        let store = ResourceStore::new();
+        store.create(Resource::new("task", "Alpha"));
+        store.create(Resource::new("task", "Beta"));
+        store.create(Resource::new("task", "Alpha"));
+
+        let filtered = store.list_filtered("task", "name=Alpha");
+        assert_eq!(filtered.len(), 2);
+        assert!(filtered.iter().all(|r| r.name == "Alpha"));
+    }
+
+    #[test]
+    fn test_list_filtered_no_match() {
+        let store = ResourceStore::new();
+        store.create(Resource::new("task", "Alpha"));
+        let filtered = store.list_filtered("task", "name=Nonexistent");
+        assert_eq!(filtered.len(), 0);
+    }
+
+    #[test]
+    fn test_list_filtered_by_attr() {
+        let store = ResourceStore::new();
+        let mut r = Resource::new("task", "T1");
+        r.set_attr("status", "Running");
+        store.create(r);
+        let mut r2 = Resource::new("task", "T2");
+        r2.set_attr("status", "New");
+        store.create(r2);
+
+        let filtered = store.list_filtered("task", "status=Running");
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "T1");
     }
 
     #[test]

@@ -1,23 +1,40 @@
+/// Controls how strictly the engine enforces the scripted command sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScenarioMode {
+    /// Reject mismatched commands and report the expected command.
     Strict,
+    /// Allow mismatched commands to fall back without advancing the script.
     Lenient,
 }
 
+/// One scripted command/response pair in a scenario.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScenarioStep {
+    /// The exact command that must match this step.
     pub expect_command: String,
+    /// Optional XML to return when the command matches this step.
     pub respond_xml: Option<String>,
 }
 
+/// Result of evaluating a command against the current scenario state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScenarioOutcome {
+    /// Returns the scripted XML response for a matched step.
     Scripted(String),
+    /// Indicates the caller should use the non-scripted fallback behavior.
     Fallback,
-    StrictMismatch { expected: String, got: String },
+    /// Reports a strict-mode command mismatch without consuming the step.
+    StrictMismatch {
+        /// The command that was expected for the current step.
+        expected: String,
+        /// The command that was actually received.
+        got: String,
+    },
+    /// Indicates that no scripted steps remain to evaluate.
     Exhausted,
 }
 
+/// Tracks progress through a scripted sequence of mock server interactions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScenarioEngine {
     mode: ScenarioMode,
@@ -26,6 +43,7 @@ pub struct ScenarioEngine {
 }
 
 impl ScenarioEngine {
+    /// Creates a new engine for the given mode and scripted steps.
     pub fn new(mode: ScenarioMode, steps: Vec<ScenarioStep>) -> Self {
         Self {
             mode,
@@ -34,10 +52,12 @@ impl ScenarioEngine {
         }
     }
 
+    /// Returns `true` when there are no remaining scripted steps to consume.
     pub fn is_exhausted(&self) -> bool {
         self.steps.is_empty() || self.cursor >= self.steps.len()
     }
 
+    /// Evaluates a command against the current step and advances on a match.
     pub fn next_for_command(&mut self, command: &str) -> ScenarioOutcome {
         if self.steps.is_empty() || self.cursor >= self.steps.len() {
             return ScenarioOutcome::Exhausted;
