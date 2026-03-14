@@ -107,7 +107,7 @@ fn parse_children(reader: &mut Reader<&[u8]>, parent_name: &str) -> Vec<ParsedEl
     loop {
         match reader.read_event() {
             Ok(Event::Start(ref e)) => {
-                let child_name = std::str::from_utf8(e.name().as_ref())
+                let qn = e.name(); let child_name = std::str::from_utf8(qn.as_ref())
                     .unwrap_or("")
                     .to_string();
                 let attrs = extract_attributes(e);
@@ -132,7 +132,7 @@ fn parse_children(reader: &mut Reader<&[u8]>, parent_name: &str) -> Vec<ParsedEl
                 });
             }
             Ok(Event::Empty(ref e)) => {
-                let child_name = std::str::from_utf8(e.name().as_ref())
+                let qn = e.name(); let child_name = std::str::from_utf8(qn.as_ref())
                     .unwrap_or("")
                     .to_string();
                 let attrs = extract_attributes(e);
@@ -149,7 +149,7 @@ fn parse_children(reader: &mut Reader<&[u8]>, parent_name: &str) -> Vec<ParsedEl
                 }
             }
             Ok(Event::End(ref e)) => {
-                let end_name = std::str::from_utf8(e.name().as_ref()).unwrap_or("");
+                let qn = e.name(); let end_name = std::str::from_utf8(qn.as_ref()).unwrap_or("");
                 if end_name == parent_name {
                     // If there's accumulated text and no children were added,
                     // this is a text-only element — but that's handled by the caller.
@@ -184,7 +184,7 @@ pub fn parse_element_text(xml: &[u8], element_name: &str) -> Option<String> {
     loop {
         match reader.read_event() {
             Ok(Event::Start(ref e)) => {
-                let name = std::str::from_utf8(e.name().as_ref()).ok()?;
+                let qn = e.name(); let name = std::str::from_utf8(qn.as_ref()).ok()?;
                 if name == element_name {
                     inside = true;
                     result.clear();
@@ -196,7 +196,7 @@ pub fn parse_element_text(xml: &[u8], element_name: &str) -> Option<String> {
                 }
             }
             Ok(Event::End(ref e)) if inside => {
-                let name = std::str::from_utf8(e.name().as_ref()).ok()?;
+                let qn = e.name(); let name = std::str::from_utf8(qn.as_ref()).ok()?;
                 if name == element_name {
                     return Some(result);
                 }

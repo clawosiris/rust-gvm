@@ -96,8 +96,14 @@ impl MockGmpServerBuilder {
                 MockGmpServer::start_unix(path, self.mode, self.version, fixtures).await
             }
             Transport::UnixSocketAuto => {
+                use std::sync::atomic::{AtomicU64, Ordering};
+                static COUNTER: AtomicU64 = AtomicU64::new(0);
+                let id = COUNTER.fetch_add(1, Ordering::Relaxed);
                 let dir = std::env::temp_dir();
-                let path = dir.join(format!("gvmd-test-{}.sock", std::process::id()));
+                let path = dir.join(format!(
+                    "gvmd-test-{}-{id}.sock",
+                    std::process::id()
+                ));
                 MockGmpServer::start_unix(path, self.mode, self.version, fixtures).await
             }
             Transport::Tcp(addr) => {

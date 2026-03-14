@@ -15,11 +15,17 @@ use crate::ServerMode;
 
 /// Shared state across all sessions.
 pub struct ListenerState {
+    /// Server operating mode.
     pub mode: ServerMode,
+    /// GMP version to advertise.
     pub version: GmpVersion,
+    /// Command history shared with all sessions.
     pub history: CommandHistory,
+    /// Counter for assigning session IDs.
     pub session_counter: AtomicU64,
+    /// Fixture store (if using Fixture mode).
     pub fixtures: Option<FixtureStore>,
+    /// Shutdown signal.
     pub shutdown: Arc<Notify>,
 }
 

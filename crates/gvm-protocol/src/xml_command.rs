@@ -10,14 +10,14 @@ use crate::request::Request;
 ///
 /// # Example
 /// ```
-/// use gvm_protocol::XmlCommand;
+/// use gvm_protocol::{XmlCommand, Request};
 ///
 /// let cmd = XmlCommand::new("get_tasks")
 ///     .attribute("usage_type", "scan")
 ///     .attribute("details", "1");
 /// assert_eq!(
 ///     String::from_utf8(cmd.to_bytes()).unwrap(),
-///     r#"<get_tasks usage_type="scan" details="1"/>"#
+///     r#"<get_tasks details="1" usage_type="scan"/>"#
 /// );
 /// ```
 #[derive(Debug, Clone)]

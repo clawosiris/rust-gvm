@@ -150,7 +150,8 @@ impl Response {
         loop {
             match reader.read_event() {
                 Ok(Event::Start(ref e)) => {
-                    let name = std::str::from_utf8(e.name().as_ref()).ok()?;
+                    let qname = e.name();
+                    let name = std::str::from_utf8(qname.as_ref()).ok()?;
                     if name == element_name {
                         inside_target = true;
                         buf.clear();
@@ -161,7 +162,8 @@ impl Response {
                     buf.push_str(&unescaped);
                 }
                 Ok(Event::End(ref e)) if inside_target => {
-                    let name = std::str::from_utf8(e.name().as_ref()).ok()?;
+                    let qname = e.name();
+                    let name = std::str::from_utf8(qname.as_ref()).ok()?;
                     if name == element_name {
                         return Some(buf);
                     }

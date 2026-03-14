@@ -112,7 +112,4 @@ todo = "warn"
 unimplemented = "warn"
 unwrap_used = "warn"
 
-# Allow in tests
-[workspace.lints.clippy.unwrap_used]
-level = "warn"
-priority = 0
+
