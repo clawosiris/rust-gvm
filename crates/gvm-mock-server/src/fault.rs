@@ -78,6 +78,11 @@ impl FaultEngine {
         }
     }
 
+    /// Create a new fault engine with the same faults but fresh counters.
+    pub fn fork(&self) -> FaultEngine {
+        FaultEngine::new(self.faults.iter().map(|entry| entry.fault.clone()).collect())
+    }
+
     /// Check all faults that should fire for this command.
     pub fn check_all(&self, command_name: &str, total_commands: usize) -> Vec<FaultAction> {
         let mut out = Vec::new();
@@ -253,5 +258,16 @@ mod tests {
             }
             _ => panic!("expected ErrorResponse"),
         }
+    }
+
+    #[test]
+    fn test_fork_resets_counters() {
+        let engine = FaultEngine::new(vec![Fault::once(FaultKind::ServerError500)]);
+        assert!(engine.check("get_tasks", 0).is_some());
+        assert!(engine.check("get_tasks", 1).is_none());
+
+        let forked = engine.fork();
+        assert!(forked.check("get_tasks", 0).is_some());
+        assert!(forked.check("get_tasks", 1).is_none());
     }
 }

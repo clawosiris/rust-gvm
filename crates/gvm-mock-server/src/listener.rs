@@ -115,7 +115,7 @@ where
         state.fixtures.clone(),
         state.store.clone(),
         state.scenario_config.clone(),
-        state.fault_engine.clone(),
+        state.fault_engine.fork(),
     );
 
     let mut buf = vec![0u8; 16 * 1024];
