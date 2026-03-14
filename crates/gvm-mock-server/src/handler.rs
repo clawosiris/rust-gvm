@@ -1,6 +1,7 @@
 //! GMP session handler — processes commands and generates responses.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use uuid::Uuid;
@@ -10,6 +11,7 @@ use crate::fault::{FaultAction, FaultEngine};
 use crate::fixtures::FixtureStore;
 use crate::history::CommandHistory;
 use crate::response_gen::{echo_response, error_response};
+use crate::scenario::{ScenarioEngine, ScenarioMode, ScenarioOutcome, ScenarioStep};
 use crate::store::{Resource, ResourceStore, TaskStatus};
 use crate::version::GmpVersion;
 use crate::ServerMode;
@@ -22,6 +24,7 @@ pub struct SessionHandler {
     session_id: u64,
     fixtures: Option<FixtureStore>,
     store: Option<ResourceStore>,
+    scenario_engine: Option<Mutex<ScenarioEngine>>,
     fault_engine: FaultEngine,
     command_count: AtomicUsize,
 }
@@ -43,6 +46,7 @@ impl SessionHandler {
         session_id: u64,
         fixtures: Option<FixtureStore>,
         store: Option<ResourceStore>,
+        scenario_config: Option<(ScenarioMode, Vec<ScenarioStep>)>,
         fault_engine: FaultEngine,
     ) -> Self {
         Self {
@@ -52,6 +56,8 @@ impl SessionHandler {
             session_id,
             fixtures,
             store,
+            scenario_engine: scenario_config
+                .map(|(mode, steps)| Mutex::new(ScenarioEngine::new(mode, steps))),
             fault_engine,
             command_count: AtomicUsize::new(0),
         }
@@ -106,6 +112,29 @@ impl SessionHandler {
             ServerMode::Echo => echo_response(&cmd.name, self.version.as_str()),
             ServerMode::Fixture => self.handle_fixture(&cmd.name),
             ServerMode::Stateful => self.handle_stateful(cmd, xml),
+            ServerMode::Scenario => self.handle_scenario(cmd),
+        }
+    }
+
+    fn handle_scenario(&self, cmd: &ParsedCommand) -> Vec<u8> {
+        let Some(engine) = &self.scenario_engine else {
+            return error_response(&cmd.name, 500, "No scenario engine");
+        };
+
+        let outcome = match engine.lock() {
+            Ok(mut guard) => guard.next_for_command(&cmd.name),
+            Err(_) => return error_response(&cmd.name, 500, "Scenario engine lock poisoned"),
+        };
+
+        match outcome {
+            ScenarioOutcome::Scripted(xml) => xml.into_bytes(),
+            ScenarioOutcome::Fallback => echo_response(&cmd.name, self.version.as_str()),
+            ScenarioOutcome::StrictMismatch { expected, got } => error_response(
+                &cmd.name,
+                400,
+                &format!("Unexpected command: got {got}, expected {expected}"),
+            ),
+            ScenarioOutcome::Exhausted => error_response(&cmd.name, 400, "Scenario exhausted"),
         }
     }
 

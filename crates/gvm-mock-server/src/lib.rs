@@ -5,6 +5,7 @@
 //! - **Echo**: Returns well-formed generic responses for any command
 //! - **Fixture**: Returns pre-built XML responses from a fixture library
 //! - **Stateful**: Maintains an in-memory resource store with CRUD operations
+//! - **Scenario**: Plays back a scripted command sequence with strict or lenient matching
 //!
 //! # Example
 //! ```no_run
@@ -55,4 +56,6 @@ pub enum ServerMode {
     Fixture,
     /// Maintains an in-memory resource store with CRUD operations.
     Stateful,
+    /// Plays back scripted responses from a scenario sequence.
+    Scenario,
 }
