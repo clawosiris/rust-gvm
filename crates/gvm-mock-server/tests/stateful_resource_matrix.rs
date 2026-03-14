@@ -1,0 +1,340 @@
+//! Broad stateful CRUD coverage for non-task resources.
+
+use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
+use gvm_protocol::Response;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::UnixStream;
+
+async fn send_recv(stream: &mut UnixStream, xml: &[u8]) -> Response {
+    stream.write_all(xml).await.expect("write failed");
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    let mut buf = vec![0u8; 64 * 1024];
+    let n = stream.read(&mut buf).await.expect("read failed");
+    buf.truncate(n);
+    Response::new(buf)
+}
+
+async fn auth_admin(stream: &mut UnixStream) {
+    let resp = send_recv(
+        stream,
+        b"<authenticate><credentials><username>admin</username><password>admin</password></credentials></authenticate>",
+    )
+    .await;
+    assert_eq!(resp.status_code(), Some(200), "admin auth should succeed");
+}
+
+async fn create_and_get_id(
+    stream: &mut UnixStream,
+    create_xml: &[u8],
+    create_cmd_name: &str,
+) -> String {
+    let resp = send_recv(stream, create_xml).await;
+    assert_eq!(
+        resp.status_code(),
+        Some(201),
+        "{create_cmd_name} should return 201"
+    );
+
+    let text = resp.as_str().expect("create response should be valid utf8");
+    let marker = "id=\"";
+    let start = text.find(marker).expect("response should contain id attribute") + marker.len();
+    let rest = &text[start..];
+    let end = rest.find('"').expect("id attribute should be terminated");
+    rest[..end].to_string()
+}
+
+async fn stateful_server() -> MockGmpServer {
+    MockGmpServer::builder()
+        .mode(ServerMode::Stateful)
+        .version(GmpVersion::V22_5)
+        .credentials("admin", "admin")
+        .unix_socket_auto()
+        .build()
+        .await
+        .expect("server start failed")
+}
+
+async fn connect(server: &MockGmpServer) -> UnixStream {
+    let path = server.socket_path().expect("should have socket path");
+    UnixStream::connect(path).await.expect("connect failed")
+}
+
+#[tokio::test]
+async fn matrix_targets_create_get_delete() {
+    let server = stateful_server().await;
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let target_id = create_and_get_id(
+        &mut stream,
+        b"<create_target><name>Matrix Target</name><hosts>127.0.0.1</hosts></create_target>",
+        "create_target",
+    )
+    .await;
+
+    let get_resp = send_recv(
+        &mut stream,
+        format!("<get_targets target_id=\"{target_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(get_resp.status_code(), Some(200));
+    let get_text = get_resp.as_str().expect("valid utf8");
+    assert!(get_text.contains(&target_id));
+    assert!(get_text.contains("Matrix Target"));
+
+    let delete_resp = send_recv(
+        &mut stream,
+        format!("<delete_target target_id=\"{target_id}\" ultimate=\"1\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(delete_resp.status_code(), Some(200));
+
+    let missing_resp = send_recv(
+        &mut stream,
+        format!("<get_targets target_id=\"{target_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(missing_resp.status_code(), Some(404));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn matrix_configs_create_get_list() {
+    let server = stateful_server().await;
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let config_id = create_and_get_id(
+        &mut stream,
+        b"<create_config><name>Matrix Config</name><comment>cfg</comment></create_config>",
+        "create_config",
+    )
+    .await;
+
+    let get_resp = send_recv(
+        &mut stream,
+        format!("<get_configs config_id=\"{config_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(get_resp.status_code(), Some(200));
+    let get_text = get_resp.as_str().expect("valid utf8");
+    assert!(get_text.contains(&config_id));
+    assert!(get_text.contains("Matrix Config"));
+
+    let list_resp = send_recv(&mut stream, b"<get_configs/>").await;
+    assert_eq!(list_resp.status_code(), Some(200));
+    let list_text = list_resp.as_str().expect("valid utf8");
+    assert!(list_text.contains(&config_id));
+    assert!(list_text.contains("Matrix Config"));
+    assert!(list_text.contains("<config_count>1") || list_text.contains("<filtered>1</filtered>"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn matrix_scanners_create_delete_ultimate() {
+    let server = stateful_server().await;
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let scanner_id = create_and_get_id(
+        &mut stream,
+        b"<create_scanner><name>Matrix Scanner</name></create_scanner>",
+        "create_scanner",
+    )
+    .await;
+
+    let delete_resp = send_recv(
+        &mut stream,
+        format!("<delete_scanner scanner_id=\"{scanner_id}\" ultimate=\"1\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(delete_resp.status_code(), Some(200));
+
+    let get_resp = send_recv(
+        &mut stream,
+        format!("<get_scanners scanner_id=\"{scanner_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(get_resp.status_code(), Some(404));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn matrix_alerts_create_list_nonempty() {
+    let server = stateful_server().await;
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let alert_id = create_and_get_id(
+        &mut stream,
+        b"<create_alert><name>Matrix Alert</name></create_alert>",
+        "create_alert",
+    )
+    .await;
+
+    let list_resp = send_recv(&mut stream, b"<get_alerts/>").await;
+    assert_eq!(list_resp.status_code(), Some(200));
+    let list_text = list_resp.as_str().expect("valid utf8");
+    assert!(list_text.contains(&alert_id));
+    assert!(list_text.contains("Matrix Alert"));
+    assert!(list_text.contains("<alert_count>1") || list_text.contains("<filtered>1</filtered>"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn matrix_credentials_create_get_by_id() {
+    let server = stateful_server().await;
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let credential_id = create_and_get_id(
+        &mut stream,
+        b"<create_credential><name>Matrix Credential</name><comment>cred</comment></create_credential>",
+        "create_credential",
+    )
+    .await;
+
+    let get_resp = send_recv(
+        &mut stream,
+        format!("<get_credentials credential_id=\"{credential_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(get_resp.status_code(), Some(200));
+    let get_text = get_resp.as_str().expect("valid utf8");
+    assert!(get_text.contains(&credential_id));
+    assert!(get_text.contains("Matrix Credential"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn matrix_filters_create_modify_name() {
+    let server = stateful_server().await;
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let filter_id = create_and_get_id(
+        &mut stream,
+        b"<create_filter><name>Matrix Filter Old</name></create_filter>",
+        "create_filter",
+    )
+    .await;
+
+    let modify_resp = send_recv(
+        &mut stream,
+        format!(
+            "<modify_filter filter_id=\"{filter_id}\"><name>Matrix Filter New</name></modify_filter>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(modify_resp.status_code(), Some(200));
+
+    let get_resp = send_recv(
+        &mut stream,
+        format!("<get_filters filter_id=\"{filter_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(get_resp.status_code(), Some(200));
+    let get_text = get_resp.as_str().expect("valid utf8");
+    assert!(get_text.contains(&filter_id));
+    assert!(get_text.contains("Matrix Filter New"));
+
+    let list_resp = send_recv(&mut stream, b"<get_filters/>").await;
+    assert_eq!(list_resp.status_code(), Some(200));
+    let list_text = list_resp.as_str().expect("valid utf8");
+    assert!(list_text.contains("Matrix Filter New"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn matrix_schedules_create_delete_to_trash_and_restore() {
+    let server = stateful_server().await;
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let schedule_id = create_and_get_id(
+        &mut stream,
+        b"<create_schedule><name>Matrix Schedule</name></create_schedule>",
+        "create_schedule",
+    )
+    .await;
+
+    let delete_resp = send_recv(
+        &mut stream,
+        format!("<delete_schedule schedule_id=\"{schedule_id}\" ultimate=\"0\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(delete_resp.status_code(), Some(200));
+
+    let trashed_resp = send_recv(&mut stream, b"<get_schedules trash=\"1\"/>").await;
+    assert_eq!(trashed_resp.status_code(), Some(200));
+    let trashed_text = trashed_resp.as_str().expect("valid utf8");
+    assert!(trashed_text.contains(&schedule_id));
+
+    let restore_resp = send_recv(
+        &mut stream,
+        format!("<restore id=\"{schedule_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(restore_resp.status_code(), Some(200));
+
+    let get_resp = send_recv(
+        &mut stream,
+        format!("<get_schedules schedule_id=\"{schedule_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(get_resp.status_code(), Some(200));
+    let get_text = get_resp.as_str().expect("valid utf8");
+    assert!(get_text.contains(&schedule_id));
+    assert!(get_text.contains("Matrix Schedule"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn matrix_tags_create_and_empty_trashcan() {
+    let server = stateful_server().await;
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let tag_id = create_and_get_id(
+        &mut stream,
+        b"<create_tag><name>Matrix Tag</name></create_tag>",
+        "create_tag",
+    )
+    .await;
+
+    let delete_resp = send_recv(
+        &mut stream,
+        format!("<delete_tag tag_id=\"{tag_id}\" ultimate=\"0\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(delete_resp.status_code(), Some(200));
+
+    let trashed_before = send_recv(&mut stream, b"<get_tags trash=\"1\"/>").await;
+    assert_eq!(trashed_before.status_code(), Some(200));
+    let trashed_before_text = trashed_before.as_str().expect("valid utf8");
+    assert!(trashed_before_text.contains(&tag_id));
+
+    let empty_resp = send_recv(&mut stream, b"<empty_trashcan/>").await;
+    assert_eq!(empty_resp.status_code(), Some(200));
+
+    let trashed_after = send_recv(&mut stream, b"<get_tags trash=\"1\"/>").await;
+    assert_eq!(trashed_after.status_code(), Some(200));
+    let trashed_after_text = trashed_after.as_str().expect("valid utf8");
+    assert!(
+        trashed_after_text.contains("<tag_count>0")
+            || trashed_after_text.contains("<filtered>0</filtered>")
+            || !trashed_after_text.contains(&tag_id)
+    );
+
+    println!("STATEFUL_MATRIX_DONE");
+
+    server.shutdown().await;
+}
