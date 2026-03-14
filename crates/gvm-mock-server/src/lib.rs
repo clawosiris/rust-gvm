@@ -1,4 +1,51 @@
 //! Programmable mock GMP server for testing.
 //!
 //! Provides a configurable mock implementation of the GMP server protocol
-//! in three modes: Echo (minimal), Fixture (realistic XML), and Stateful (CRUD).
+//! in three modes:
+//! - **Echo**: Returns well-formed generic responses for any command
+//! - **Fixture**: Returns pre-built XML responses from a fixture library
+//! - **Stateful**: Maintains an in-memory resource store with CRUD operations
+//!
+//! # Example
+//! ```no_run
+//! use gvm_mock_server::{MockGmpServer, ServerMode, GmpVersion};
+//!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! let server = MockGmpServer::builder()
+//!     .mode(ServerMode::Echo)
+//!     .version(GmpVersion::V22_5)
+//!     .unix_socket_auto()
+//!     .build()
+//!     .await?;
+//!
+//! let socket_path = server.socket_path().unwrap();
+//! // ... connect clients and test ...
+//! server.shutdown().await;
+//! # Ok(())
+//! # }
+//! ```
+
+pub mod builder;
+pub mod command_parser;
+pub mod fixtures;
+pub mod handler;
+pub mod history;
+pub mod listener;
+pub mod response_gen;
+pub mod server;
+pub mod version;
+
+pub use builder::MockGmpServerBuilder;
+pub use history::CommandRecord;
+pub use server::MockGmpServer;
+pub use version::GmpVersion;
+
+/// Server operating mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServerMode {
+    /// Returns well-formed generic responses for any recognized command.
+    Echo,
+    /// Returns pre-built XML responses from a fixture library.
+    Fixture,
+    // Stateful mode will be added later.
+}
