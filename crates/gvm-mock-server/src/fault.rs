@@ -78,16 +78,21 @@ impl FaultEngine {
         }
     }
 
-    /// Check if any fault should fire for this command.
-    /// Returns the first matching fault action, or None.
-    pub fn check(&self, command_name: &str, total_commands: usize) -> Option<FaultAction> {
+    /// Check all faults that should fire for this command.
+    pub fn check_all(&self, command_name: &str, total_commands: usize) -> Vec<FaultAction> {
+        let mut out = Vec::new();
         for entry in self.faults.iter() {
             if self.should_trigger(entry, command_name, total_commands) {
                 entry.fired.fetch_add(1, Ordering::Relaxed);
-                return Some(self.to_action(&entry.fault.kind));
+                out.push(self.to_action(&entry.fault.kind));
             }
         }
-        None
+        out
+    }
+
+    /// Compatibility helper: returns the first matching fault action, if any.
+    pub fn check(&self, command_name: &str, total_commands: usize) -> Option<FaultAction> {
+        self.check_all(command_name, total_commands).into_iter().next()
     }
 
     fn should_trigger(&self, entry: &FaultEntry, command_name: &str, total_commands: usize) -> bool {

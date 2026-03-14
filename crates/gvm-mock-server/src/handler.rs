@@ -1,6 +1,7 @@
 //! GMP session handler — processes commands and generates responses.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use uuid::Uuid;
 
@@ -23,6 +24,14 @@ pub struct SessionHandler {
     store: Option<ResourceStore>,
     fault_engine: FaultEngine,
     command_count: AtomicUsize,
+}
+
+/// Command handling result for transport layer.
+pub enum HandleResult {
+    /// Send a response (optionally after delay).
+    Respond { bytes: Vec<u8>, delay: Option<Duration> },
+    /// Close the connection immediately.
+    Disconnect,
 }
 
 impl SessionHandler {
@@ -48,12 +57,13 @@ impl SessionHandler {
         }
     }
 
-    /// Process a complete GMP XML command and return a response.
-    ///
-    /// Returns `None` if the fault engine signals a disconnect.
-    pub fn handle_command(&self, xml: &[u8]) -> Option<Vec<u8>> {
+    /// Process a complete GMP XML command and return response/disconnect behavior.
+    pub fn handle_command(&self, xml: &[u8]) -> HandleResult {
         let Some(cmd) = parse_command(xml) else {
-            return Some(error_response("unknown", 400, "Could not parse command"));
+            return HandleResult::Respond {
+                bytes: error_response("unknown", 400, "Could not parse command"),
+                delay: None,
+            };
         };
 
         let count = self.command_count.fetch_add(1, Ordering::Relaxed);
@@ -62,32 +72,33 @@ impl SessionHandler {
         self.history
             .record(cmd.name.clone(), xml.to_vec(), self.session_id);
 
-        // Check fault engine
+        let mut delay: Option<Duration> = None;
+        let mut override_response: Option<Vec<u8>> = None;
+
+        // Check fault engine (compose all matching faults)
         if self.fault_engine.has_faults() {
-            if let Some(action) = self.fault_engine.check(&cmd.name, count) {
-                return match action {
-                    FaultAction::ErrorResponse { status, message } => {
-                        Some(error_response(&cmd.name, status, &message))
-                    }
+            for action in self.fault_engine.check_all(&cmd.name, count) {
+                match action {
+                    FaultAction::Disconnect => return HandleResult::Disconnect,
                     FaultAction::MalformedResponse => {
-                        Some(b"THIS IS NOT XML <<<<".to_vec())
+                        override_response = Some(b"THIS IS NOT XML <<<<".to_vec());
                     }
                     FaultAction::TruncatedResponse => {
-                        // Return partial XML
-                        Some(format!("<{}_response status=\"200\"", cmd.name).into_bytes())
+                        override_response =
+                            Some(format!("<{}_response status=\"200\"", cmd.name).into_bytes());
                     }
-                    FaultAction::Disconnect => None, // Signal to close connection
-                    FaultAction::Delay(_duration) => {
-                        // Note: actual delay must be handled at the async level
-                        // For now, just return the normal response
-                        // TODO: wire delay into async handler
-                        Some(self.normal_response(&cmd, xml))
+                    FaultAction::ErrorResponse { status, message } => {
+                        override_response = Some(error_response(&cmd.name, status, &message));
                     }
-                };
+                    FaultAction::Delay(d) => {
+                        delay = Some(delay.map_or(d, |cur| cur.max(d)));
+                    }
+                }
             }
         }
 
-        Some(self.normal_response(&cmd, xml))
+        let bytes = override_response.unwrap_or_else(|| self.normal_response(&cmd, xml));
+        HandleResult::Respond { bytes, delay }
     }
 
     fn normal_response(&self, cmd: &ParsedCommand, xml: &[u8]) -> Vec<u8> {

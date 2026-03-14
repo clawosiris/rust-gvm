@@ -9,7 +9,7 @@ use tokio::sync::Notify;
 
 use crate::fault::FaultEngine;
 use crate::fixtures::FixtureStore;
-use crate::handler::SessionHandler;
+use crate::handler::{HandleResult, SessionHandler};
 use crate::history::CommandHistory;
 use crate::store::ResourceStore;
 use crate::version::GmpVersion;
@@ -132,8 +132,11 @@ where
         // Try to find complete XML commands in the buffer.
         loop {
             match try_extract_command(&mut xml_buf, &handler) {
-                CommandResult::Response(response_data) => {
-                    if let Err(e) = stream.write_all(&response_data).await {
+                CommandResult::Response { bytes, delay } => {
+                    if let Some(d) = delay {
+                        tokio::time::sleep(d).await;
+                    }
+                    if let Err(e) = stream.write_all(&bytes).await {
                         tracing::debug!("Write error on session {session_id}: {e}");
                         return;
                     }
@@ -150,8 +153,11 @@ where
 
 /// Result of trying to extract a command.
 pub(crate) enum CommandResult {
-    /// A response to send back.
-    Response(Vec<u8>),
+    /// A response to send back (optionally after delay).
+    Response {
+        bytes: Vec<u8>,
+        delay: Option<std::time::Duration>,
+    },
     /// Need more data.
     NeedMore,
     /// Disconnect (fault injection).
@@ -177,8 +183,8 @@ fn try_extract_command(buf: &mut Vec<u8>, handler: &SessionHandler) -> CommandRe
         let consumed = buf.clone();
         buf.clear();
         return match handler.handle_command(&consumed) {
-            Some(resp) => CommandResult::Response(resp),
-            None => CommandResult::Disconnect,
+            HandleResult::Respond { bytes, delay } => CommandResult::Response { bytes, delay },
+            HandleResult::Disconnect => CommandResult::Disconnect,
         };
     }
 
@@ -186,8 +192,8 @@ fn try_extract_command(buf: &mut Vec<u8>, handler: &SessionHandler) -> CommandRe
         let command_xml = buf.clone();
         buf.clear();
         match handler.handle_command(&command_xml) {
-            Some(resp) => CommandResult::Response(resp),
-            None => CommandResult::Disconnect,
+            HandleResult::Respond { bytes, delay } => CommandResult::Response { bytes, delay },
+            HandleResult::Disconnect => CommandResult::Disconnect,
         }
     } else {
         CommandResult::NeedMore
