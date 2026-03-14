@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # Run full test suite before release
+      - run: cargo test --workspace --all-features
+
+      # Build release binary (mock server)
+      - run: cargo build --release -p gvm-mock-server
+
+      # Create GitHub release
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: target/release/gvm-mock-server
+          generate_release_notes: true
