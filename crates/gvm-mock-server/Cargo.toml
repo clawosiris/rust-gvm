@@ -1,0 +1,44 @@
+[package]
+name = "gvm-mock-server"
+description = "Programmable mock GMP server for testing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[[bin]]
+name = "gvm-mock-server"
+path = "src/main.rs"
+
+[features]
+default = []
+tls = ["dep:tokio-rustls", "dep:rustls", "dep:rustls-pemfile"]
+
+[dependencies]
+gvm-protocol.workspace = true
+tokio.workspace = true
+quick-xml.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true
+
+# Feature-gated
+tokio-rustls = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+rustls-pemfile = { workspace = true, optional = true }
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+rstest.workspace = true
+tempfile.workspace = true
+tokio-test.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,33 @@
+# Rust build artifacts
+/target/
+**/target/
+
+# Cargo lock for libraries (include for binaries)
+# Since this workspace has both libs and a binary (mock-server),
+# we include Cargo.lock
+# Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+*.profraw
+*.profdata
+lcov.info
+coverage/
+tarpaulin-report.html
+
+# Debug
+*.pdb
+
+# Environment
+.env
+.env.local

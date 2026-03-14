@@ -1,0 +1,24 @@
+[package]
+name = "gvm-gmp"
+description = "GMP command builders and response types for Greenbone Management Protocol"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+gvm-protocol.workspace = true
+quick-xml.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+rstest.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true

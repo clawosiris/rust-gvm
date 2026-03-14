@@ -1,0 +1,23 @@
+[package]
+name = "gvm-protocol"
+description = "Sans-I/O protocol core for the Greenbone Management Protocol (GMP)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+quick-xml.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+rstest.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,118 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/gvm-connection",
+    "crates/gvm-protocol",
+    "crates/gvm-gmp",
+    "crates/gvm-client",
+    "crates/gvm-mock-server",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75.0"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/clawosiris/rust-gvm"
+keywords = ["greenbone", "gvm", "gmp", "vulnerability", "security"]
+categories = ["network-programming", "api-bindings"]
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# XML
+quick-xml = { version = "0.37", features = ["serialize"] }
+
+# Error handling
+thiserror = "2"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+
+# UUID
+uuid = { version = "1", features = ["v4"] }
+
+# TLS (feature-gated)
+tokio-rustls = "0.26"
+rustls = "0.23"
+rustls-pemfile = "2"
+
+# SSH (feature-gated)
+russh = "0.48"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Testing
+pretty_assertions = "1"
+rstest = "0.24"
+proptest = "1"
+tempfile = "3"
+tokio-test = "0.4"
+
+# Workspace crates (internal)
+gvm-connection = { path = "crates/gvm-connection" }
+gvm-protocol = { path = "crates/gvm-protocol" }
+gvm-gmp = { path = "crates/gvm-gmp" }
+gvm-client = { path = "crates/gvm-client" }
+gvm-mock-server = { path = "crates/gvm-mock-server" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+unused_imports = "warn"
+unused_variables = "warn"
+dead_code = "warn"
+
+[workspace.lints.clippy]
+# Correctness
+correctness = { level = "deny", priority = -1 }
+
+# Suspicious
+suspicious = { level = "warn", priority = -1 }
+
+# Style
+style = { level = "warn", priority = -1 }
+needless_pass_by_value = "warn"
+needless_borrow = "warn"
+redundant_closure_for_method_calls = "warn"
+cloned_instead_of_copied = "warn"
+flat_map_option = "warn"
+
+# Complexity
+complexity = { level = "warn", priority = -1 }
+too_many_lines = "warn"
+
+# Pedantic (selective)
+doc_markdown = "warn"
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+must_use_candidate = "warn"
+semicolon_if_nothing_returned = "warn"
+unused_self = "warn"
+used_underscore_binding = "warn"
+match_wildcard_for_single_variants = "warn"
+inconsistent_struct_constructor = "warn"
+
+# Performance
+perf = { level = "warn", priority = -1 }
+
+# Restrictions (selective)
+dbg_macro = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+todo = "warn"
+unimplemented = "warn"
+unwrap_used = "warn"
+
+# Allow in tests
+[workspace.lints.clippy.unwrap_used]
+level = "warn"
+priority = 0
