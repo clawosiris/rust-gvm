@@ -33,11 +33,13 @@ pub mod history;
 pub mod listener;
 pub mod response_gen;
 pub mod server;
+pub mod store;
 pub mod version;
 
 pub use builder::MockGmpServerBuilder;
 pub use history::CommandRecord;
 pub use server::MockGmpServer;
+pub use store::{Resource, ResourceStore};
 pub use version::GmpVersion;
 
 /// Server operating mode.
@@ -47,5 +49,6 @@ pub enum ServerMode {
     Echo,
     /// Returns pre-built XML responses from a fixture library.
     Fixture,
-    // Stateful mode will be added later.
+    /// Maintains an in-memory resource store with CRUD operations.
+    Stateful,
 }

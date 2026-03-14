@@ -10,6 +10,7 @@ use tokio::sync::Notify;
 use crate::fixtures::FixtureStore;
 use crate::handler::SessionHandler;
 use crate::history::CommandHistory;
+use crate::store::ResourceStore;
 use crate::version::GmpVersion;
 use crate::ServerMode;
 
@@ -25,6 +26,8 @@ pub struct ListenerState {
     pub session_counter: AtomicU64,
     /// Fixture store (if using Fixture mode).
     pub fixtures: Option<FixtureStore>,
+    /// Resource store (if using Stateful mode).
+    pub store: Option<ResourceStore>,
     /// Shutdown signal.
     pub shutdown: Arc<Notify>,
 }
@@ -104,6 +107,7 @@ where
         state.history.clone(),
         session_id,
         state.fixtures.clone(),
+        state.store.clone(),
     );
 
     let mut buf = vec![0u8; 16 * 1024];
