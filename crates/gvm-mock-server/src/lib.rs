@@ -27,6 +27,7 @@
 
 pub mod builder;
 pub mod command_parser;
+pub mod fault;
 pub mod fixtures;
 pub mod handler;
 pub mod history;
@@ -37,6 +38,7 @@ pub mod store;
 pub mod version;
 
 pub use builder::MockGmpServerBuilder;
+pub use fault::{Fault, FaultEngine, FaultKind};
 pub use history::CommandRecord;
 pub use server::MockGmpServer;
 pub use store::{Resource, ResourceStore};

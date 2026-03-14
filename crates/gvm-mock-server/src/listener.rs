@@ -7,6 +7,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, UnixListener};
 use tokio::sync::Notify;
 
+use crate::fault::FaultEngine;
 use crate::fixtures::FixtureStore;
 use crate::handler::SessionHandler;
 use crate::history::CommandHistory;
@@ -28,6 +29,8 @@ pub struct ListenerState {
     pub fixtures: Option<FixtureStore>,
     /// Resource store (if using Stateful mode).
     pub store: Option<ResourceStore>,
+    /// Fault injection engine.
+    pub fault_engine: FaultEngine,
     /// Shutdown signal.
     pub shutdown: Arc<Notify>,
 }
@@ -108,6 +111,7 @@ where
         session_id,
         state.fixtures.clone(),
         state.store.clone(),
+        state.fault_engine.clone(),
     );
 
     let mut buf = vec![0u8; 16 * 1024];
@@ -126,45 +130,66 @@ where
         xml_buf.extend_from_slice(&buf[..n]);
 
         // Try to find complete XML commands in the buffer.
-        // GMP uses a simple protocol: one XML document per command,
-        // terminated by the closing tag of the root element.
-        while let Some(response_data) = try_extract_command(&mut xml_buf, &handler) {
-            if let Err(e) = stream.write_all(&response_data).await {
-                tracing::debug!("Write error on session {session_id}: {e}");
-                return;
+        loop {
+            match try_extract_command(&mut xml_buf, &handler) {
+                CommandResult::Response(response_data) => {
+                    if let Err(e) = stream.write_all(&response_data).await {
+                        tracing::debug!("Write error on session {session_id}: {e}");
+                        return;
+                    }
+                }
+                CommandResult::NeedMore => break,
+                CommandResult::Disconnect => {
+                    tracing::debug!("Fault: disconnecting session {session_id}");
+                    return;
+                }
             }
         }
     }
 }
 
+/// Result of trying to extract a command.
+pub(crate) enum CommandResult {
+    /// A response to send back.
+    Response(Vec<u8>),
+    /// Need more data.
+    NeedMore,
+    /// Disconnect (fault injection).
+    Disconnect,
+}
+
 /// Try to extract a complete XML command from the buffer.
-/// Returns the response bytes if a complete command was found and processed.
-fn try_extract_command(buf: &mut Vec<u8>, handler: &SessionHandler) -> Option<Vec<u8>> {
+fn try_extract_command(buf: &mut Vec<u8>, handler: &SessionHandler) -> CommandResult {
     // Simple approach: look for a complete XML element.
     // We use a quick heuristic — find the root element close.
     // For self-closing elements: />
     // For elements with children: find matching close tag.
 
-    let text = std::str::from_utf8(buf).ok()?;
-    let trimmed = text.trim_start();
-    if trimmed.is_empty() {
-        return None;
+    let Ok(text) = std::str::from_utf8(buf) else {
+        return CommandResult::NeedMore;
+    };
+    if text.trim_start().is_empty() {
+        return CommandResult::NeedMore;
     }
 
-    // Use the XmlReader from gvm-protocol for proper detection
     let mut reader = gvm_protocol::XmlReader::new();
     if reader.feed(buf).is_err() {
-        // Bad XML — consume and return error
         let consumed = buf.clone();
         buf.clear();
-        return Some(handler.handle_command(&consumed));
+        return match handler.handle_command(&consumed) {
+            Some(resp) => CommandResult::Response(resp),
+            None => CommandResult::Disconnect,
+        };
     }
 
     if reader.is_complete() {
         let command_xml = buf.clone();
         buf.clear();
-        Some(handler.handle_command(&command_xml))
+        match handler.handle_command(&command_xml) {
+            Some(resp) => CommandResult::Response(resp),
+            None => CommandResult::Disconnect,
+        }
     } else {
-        None // Need more data
+        CommandResult::NeedMore
     }
 }

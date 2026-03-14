@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use crate::fault::{Fault, FaultEngine};
 use crate::fixtures::FixtureStore;
 use crate::server::MockGmpServer;
 use crate::store::ResourceStore;
@@ -16,6 +17,7 @@ pub struct MockGmpServerBuilder {
     fixture_overrides: Vec<(String, String)>,
     credentials: Option<(String, String)>,
     seed_fn: Option<Box<dyn FnOnce(&ResourceStore) + Send>>,
+    faults: Vec<Fault>,
 }
 
 enum Transport {
@@ -35,6 +37,7 @@ impl MockGmpServerBuilder {
             fixture_overrides: Vec::new(),
             credentials: None,
             seed_fn: None,
+            faults: Vec::new(),
         }
     }
 
@@ -87,6 +90,13 @@ impl MockGmpServerBuilder {
         self
     }
 
+    /// Inject a fault for error testing.
+    #[must_use]
+    pub fn inject_fault(mut self, fault: Fault) -> Self {
+        self.faults.push(fault);
+        self
+    }
+
     /// Override a fixture response for a specific command.
     #[must_use]
     pub fn override_response(mut self, command: &str, xml: &str) -> Self {
@@ -110,6 +120,12 @@ impl MockGmpServerBuilder {
             None
         };
 
+        let fault_engine = if self.faults.is_empty() {
+            FaultEngine::none()
+        } else {
+            FaultEngine::new(self.faults)
+        };
+
         let store = if self.mode == ServerMode::Stateful {
             let s = match self.credentials {
                 Some((ref u, ref p)) => ResourceStore::with_credentials(u, p),
@@ -125,7 +141,7 @@ impl MockGmpServerBuilder {
 
         match self.transport {
             Transport::UnixSocket(path) => {
-                MockGmpServer::start_unix(path, self.mode, self.version, fixtures, store).await
+                MockGmpServer::start_unix(path, self.mode, self.version, fixtures, store, fault_engine).await
             }
             Transport::UnixSocketAuto => {
                 use std::sync::atomic::{AtomicU64, Ordering};
@@ -136,10 +152,10 @@ impl MockGmpServerBuilder {
                     "gvmd-test-{}-{id}.sock",
                     std::process::id()
                 ));
-                MockGmpServer::start_unix(path, self.mode, self.version, fixtures, store).await
+                MockGmpServer::start_unix(path, self.mode, self.version, fixtures, store, fault_engine).await
             }
             Transport::Tcp(addr) => {
-                MockGmpServer::start_tcp(&addr, self.mode, self.version, fixtures, store).await
+                MockGmpServer::start_tcp(&addr, self.mode, self.version, fixtures, store, fault_engine).await
             }
             Transport::None => Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,

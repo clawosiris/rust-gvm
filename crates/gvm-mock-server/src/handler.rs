@@ -1,8 +1,11 @@
 //! GMP session handler — processes commands and generates responses.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use uuid::Uuid;
 
 use crate::command_parser::{parse_command, parse_element_text, ParsedCommand};
+use crate::fault::{FaultAction, FaultEngine};
 use crate::fixtures::FixtureStore;
 use crate::history::CommandHistory;
 use crate::response_gen::{echo_response, error_response};
@@ -18,6 +21,8 @@ pub struct SessionHandler {
     session_id: u64,
     fixtures: Option<FixtureStore>,
     store: Option<ResourceStore>,
+    fault_engine: FaultEngine,
+    command_count: AtomicUsize,
 }
 
 impl SessionHandler {
@@ -29,6 +34,7 @@ impl SessionHandler {
         session_id: u64,
         fixtures: Option<FixtureStore>,
         store: Option<ResourceStore>,
+        fault_engine: FaultEngine,
     ) -> Self {
         Self {
             mode,
@@ -37,23 +43,58 @@ impl SessionHandler {
             session_id,
             fixtures,
             store,
+            fault_engine,
+            command_count: AtomicUsize::new(0),
         }
     }
 
     /// Process a complete GMP XML command and return a response.
-    pub fn handle_command(&self, xml: &[u8]) -> Vec<u8> {
+    ///
+    /// Returns `None` if the fault engine signals a disconnect.
+    pub fn handle_command(&self, xml: &[u8]) -> Option<Vec<u8>> {
         let Some(cmd) = parse_command(xml) else {
-            return error_response("unknown", 400, "Could not parse command");
+            return Some(error_response("unknown", 400, "Could not parse command"));
         };
+
+        let count = self.command_count.fetch_add(1, Ordering::Relaxed);
 
         // Record in history
         self.history
             .record(cmd.name.clone(), xml.to_vec(), self.session_id);
 
+        // Check fault engine
+        if self.fault_engine.has_faults() {
+            if let Some(action) = self.fault_engine.check(&cmd.name, count) {
+                return match action {
+                    FaultAction::ErrorResponse { status, message } => {
+                        Some(error_response(&cmd.name, status, &message))
+                    }
+                    FaultAction::MalformedResponse => {
+                        Some(b"THIS IS NOT XML <<<<".to_vec())
+                    }
+                    FaultAction::TruncatedResponse => {
+                        // Return partial XML
+                        Some(format!("<{}_response status=\"200\"", cmd.name).into_bytes())
+                    }
+                    FaultAction::Disconnect => None, // Signal to close connection
+                    FaultAction::Delay(_duration) => {
+                        // Note: actual delay must be handled at the async level
+                        // For now, just return the normal response
+                        // TODO: wire delay into async handler
+                        Some(self.normal_response(&cmd, xml))
+                    }
+                };
+            }
+        }
+
+        Some(self.normal_response(&cmd, xml))
+    }
+
+    fn normal_response(&self, cmd: &ParsedCommand, xml: &[u8]) -> Vec<u8> {
         match self.mode {
             ServerMode::Echo => echo_response(&cmd.name, self.version.as_str()),
             ServerMode::Fixture => self.handle_fixture(&cmd.name),
-            ServerMode::Stateful => self.handle_stateful(&cmd, xml),
+            ServerMode::Stateful => self.handle_stateful(cmd, xml),
         }
     }
 

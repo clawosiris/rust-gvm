@@ -8,6 +8,7 @@ use tokio::net::{TcpListener, UnixListener};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
+use crate::fault::FaultEngine;
 use crate::fixtures::FixtureStore;
 use crate::history::{CommandHistory, CommandRecord};
 use crate::listener::{run_tcp_listener, run_unix_listener, ListenerState};
@@ -42,6 +43,7 @@ impl MockGmpServer {
         version: GmpVersion,
         fixtures: Option<FixtureStore>,
         store: Option<ResourceStore>,
+        fault_engine: FaultEngine,
     ) -> Result<Self, std::io::Error> {
         // Remove existing socket if present
         if socket_path.exists() {
@@ -59,6 +61,7 @@ impl MockGmpServer {
             session_counter: AtomicU64::new(0),
             fixtures,
             store,
+            fault_engine: fault_engine.clone(),
             shutdown: Arc::clone(&shutdown),
         });
 
@@ -82,6 +85,7 @@ impl MockGmpServer {
         version: GmpVersion,
         fixtures: Option<FixtureStore>,
         store: Option<ResourceStore>,
+        fault_engine: FaultEngine,
     ) -> Result<Self, std::io::Error> {
         let listener = TcpListener::bind(addr).await?;
         let local_addr = listener.local_addr()?;
@@ -95,6 +99,7 @@ impl MockGmpServer {
             session_counter: AtomicU64::new(0),
             fixtures,
             store,
+            fault_engine: fault_engine.clone(),
             shutdown: Arc::clone(&shutdown),
         });
 
