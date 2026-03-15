@@ -15,7 +15,7 @@ rust-gvm provides everything needed to talk to [Greenbone Vulnerability Manager 
 |-------|---------|--------|
 | [`gvm-protocol`](crates/gvm-protocol/) | Sans-I/O XML framing, command builder, response parser | ✅ Implemented |
 | [`gvm-mock-server`](crates/gvm-mock-server/) | Programmable mock GMP server (4 modes, fault injection) | ✅ Implemented |
-| [`gvm-connection`](crates/gvm-connection/) | Transport layer (Unix socket, TLS, SSH) | 📋 Spec'd |
+| [`gvm-connection`](crates/gvm-connection/) | Transport layer (Unix socket, TLS, SSH) | 🔧 Unix socket done |
 | [`gvm-gmp`](crates/gvm-gmp/) | Typed GMP command builders per version (22.4–22.8+) | 📋 Spec'd |
 | [`gvm-client`](crates/gvm-client/) | High-level async client with version negotiation | 📋 Spec'd |
 
@@ -112,6 +112,32 @@ The mock server is the most developed component. It's designed to be a drop-in t
 
 The mock server is validated against [python-gvm](https://github.com/greenbone/python-gvm) in CI, exercising the full protocol flow: version negotiation, authentication, target/task CRUD, notes lifecycle, and cleanup.
 
+## Connection Crate
+
+`gvm-connection` provides async transport implementations behind the `GvmConnection` trait:
+
+```rust
+use gvm_connection::{GvmConnection, UnixSocketConfig, UnixSocketConnection};
+
+let config = UnixSocketConfig::new("/run/gvmd/gvmd.sock");
+let mut conn = UnixSocketConnection::new(config);
+
+conn.connect().await?;
+conn.send(b"<get_version/>").await?;
+let response_bytes = conn.read().await?;  // Uses XmlReader for frame detection
+conn.disconnect().await?;
+```
+
+### Transports
+
+| Transport | Status | Feature Flag |
+|-----------|--------|-------------|
+| Unix socket | ✅ Implemented | `unix` (default) |
+| TLS over TCP | 📋 Planned | `tls` |
+| SSH tunnel | 📋 Planned | `ssh` |
+
+The Unix socket transport supports the full python-gvm reconnect pattern (connect → get_version → disconnect → reconnect → authenticate → commands) and is integration-tested against `gvm-mock-server`.
+
 ## Protocol Crate
 
 `gvm-protocol` provides the transport-agnostic building blocks:
@@ -130,7 +156,7 @@ See [docs/STATUS.md](docs/STATUS.md) for detailed implementation status of each 
 # Build everything
 cargo build --workspace
 
-# Run all tests (221 tests)
+# Run all tests (255+ tests)
 cargo test --workspace
 
 # Run python-gvm integration tests

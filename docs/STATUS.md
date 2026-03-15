@@ -6,13 +6,13 @@ Last updated: 2026-03-15
 
 | Crate | Status | Lines | Tests | Description |
 |-------|--------|-------|-------|-------------|
-| `gvm-protocol` | ✅ Implemented | ~860 | 23 | XML command builder, response parser, streaming reader |
+| `gvm-protocol` | ✅ Implemented | ~860 | 37 | XML command builder, response parser, streaming reader |
 | `gvm-mock-server` | ✅ Implemented | ~3,600 | 198 | Programmable mock GMP server |
-| `gvm-connection` | 📋 Spec'd | ~6 | 0 | Transport layer (placeholder) |
+| `gvm-connection` | 🔧 Unix socket done | ~230 | 11 | Async transport layer (Unix socket implemented) |
 | `gvm-gmp` | 📋 Spec'd | ~5 | 0 | Typed GMP command builders (placeholder) |
 | `gvm-client` | 📋 Spec'd | ~5 | 0 | High-level async client (placeholder) |
 
-**Total: ~4,500 lines of Rust, 221 tests (61 unit + 160 integration)**
+**Total: ~4,730 lines of Rust, 255+ tests, 92.2% line coverage**
 
 ---
 
@@ -184,16 +184,55 @@ Last updated: 2026-03-15
 
 ---
 
-## gvm-connection (Not Yet Implemented)
+## gvm-connection
 
-Spec'd in [openspec.md](../spec/openspec.md). Planned transports:
+### GvmConnection Trait
 
-| Transport | Priority | Notes |
-|-----------|----------|-------|
-| Unix socket | High | Most common for local gvmd |
-| TLS (TCP) | High | Remote connections |
-| SSH tunnel | Medium | Via russh |
-| Sync wrappers | Low | For non-async consumers |
+| Method | Status | Notes |
+|--------|--------|-------|
+| `connect()` | ✅ | Async, with timeout |
+| `disconnect()` | ✅ | Graceful shutdown |
+| `send(&[u8])` | ✅ | Write bytes to transport |
+| `read() -> Vec<u8>` | ✅ | Uses `XmlReader` for frame detection |
+| `is_connected()` | ✅ | Synchronous check |
+
+### Transports
+
+| Transport | Status | Feature Flag | Notes |
+|-----------|--------|-------------|-------|
+| Unix socket | ✅ | `unix` (default) | `UnixSocketConnection` with configurable path, timeout, buffer size |
+| TLS (TCP) | 📋 Planned | `tls` | Via `tokio-rustls` |
+| SSH tunnel | 📋 Planned | `ssh` | Via `russh` |
+
+### UnixSocketConfig
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| `path` | `/run/gvmd/gvmd.sock` | Configurable |
+| `timeout` | 60s | Connect + read timeout |
+| `read_buffer_size` | 64 KB | Per-read allocation |
+
+### Error Types
+
+| Variant | Description |
+|---------|-------------|
+| `NotConnected` | Operation requires active connection |
+| `AlreadyConnected` | Double-connect attempt |
+| `ConnectFailed` | Transport-level connection error |
+| `SendFailed` | Write error |
+| `ReadFailed` | Read error or unexpected EOF |
+| `Timeout` | Operation exceeded configured timeout |
+| `SocketNotFound` | Unix socket path does not exist |
+
+### Integration Tests (against gvm-mock-server)
+
+| Test | Status |
+|------|--------|
+| Connect + get_version | ✅ |
+| Auth + create_target | ✅ |
+| Reconnect flow (python-gvm pattern) | ✅ |
+| Not-connected error paths | ✅ |
+| Double-connect error | ✅ |
 
 ## gvm-gmp (Not Yet Implemented)
 
@@ -209,13 +248,28 @@ Spec'd in [openspec.md](../spec/openspec.md). High-level client combining all la
 
 ## Test Coverage
 
+**Line coverage: 92.2%** (via `cargo-llvm-cov`)
+
 | Test Category | Count | Notes |
 |---------------|-------|-------|
-| Unit tests (protocol) | 23 | XML builder, response parser, reader |
-| Unit tests (mock server) | 61 | Store, parser, fixtures, faults, scenarios, util |
-| Integration tests (mock server) | 137 | All modes, CRUD, lifecycle, faults, MCP compat |
+| Unit tests (protocol) | 37 | XML builder, response parser, reader, request trait |
+| Unit tests (mock server) | 73 | Store, parser, fixtures, faults, scenarios, history, version, util |
+| Integration tests (mock server) | 137 | All modes, CRUD, lifecycle, faults, MCP compat (feature-gated) |
+| Integration tests (connection) | 5 | Unix socket transport against mock server (feature-gated) |
+| Unit tests (connection) | 6 | Config, error display, construction |
 | Python integration tests | 15 steps | python-gvm full lifecycle against mock server |
-| **Total** | **221+ tests** | |
+| **Total** | **255+ tests** | |
+
+### Per-File Coverage
+
+| File | Coverage |
+|------|----------|
+| `history.rs` | 100% |
+| `version.rs` | 100% |
+| `request.rs` | 100% |
+| `xml_command.rs` | 99.6% |
+| `handler.rs` | 88.3% |
+| `builder.rs` | 80.8% |
 
 ## CI Pipelines
 
