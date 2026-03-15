@@ -13,6 +13,7 @@ use crate::history::CommandHistory;
 use crate::response_gen::{echo_response, error_response};
 use crate::scenario::{ScenarioEngine, ScenarioMode, ScenarioOutcome, ScenarioStep};
 use crate::store::{Resource, ResourceStore, TaskStatus};
+use crate::util::xml_escape;
 use crate::version::GmpVersion;
 use crate::ServerMode;
 
@@ -190,7 +191,7 @@ impl SessionHandler {
             // Trashcan
             "empty_trashcan" => {
                 store.empty_trashcan();
-                format!("<empty_trashcan_response status=\"200\" status_text=\"OK\"/>").into_bytes()
+                b"<empty_trashcan_response status=\"200\" status_text=\"OK\"/>".to_vec()
             }
             "restore" => self.handle_restore(cmd, store),
             // Help
@@ -341,16 +342,11 @@ impl SessionHandler {
     }
 
     fn handle_get(&self, cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
-        let resource_type = cmd
-            .name
-            .strip_prefix("get_")
-            .unwrap_or("unknown")
-            .trim_end_matches('s');
+        let resource_type =
+            singularize_resource_type(cmd.name.strip_prefix("get_").unwrap_or("unknown"));
 
         // Special: get_version handled above
         // Special: get_feeds, get_info, etc. → echo for now
-        let _plural = cmd.name.strip_prefix("get_").unwrap_or("unknown");
-
         // Check for single resource by ID
         let id_attr = format!("{resource_type}_id");
         if let Some(id_str) = cmd.attr(&id_attr) {
@@ -507,18 +503,14 @@ impl SessionHandler {
             return error_response(&cmd.name, 400, "Invalid UUID");
         };
 
-        // Check current status
-        let current_status = store
+        let (current_status, task_name) = store
             .get(&uuid)
-            .and_then(|r| r.attr("status").map(String::from));
+            .map(|r| (r.attr("status").map(String::from), r.name))
+            .unwrap_or((None, "Task Report".to_string()));
 
         match current_status.as_deref() {
             Some("New") | Some("Stopped") | Some("Done") => {
                 let report_id = Uuid::new_v4();
-                let task_name = store
-                    .get(&uuid)
-                    .map(|resource| resource.name)
-                    .unwrap_or_else(|| "Task Report".to_string());
                 let mut report =
                     Resource::with_id("report", &format!("Report for {task_name}"), report_id);
                 report.set_attr("task_id", &uuid.to_string());
@@ -559,7 +551,7 @@ impl SessionHandler {
                 store.modify(&uuid, |r| {
                     r.set_attr("status", TaskStatus::Stopped.as_str());
                 });
-                format!("<stop_task_response status=\"200\" status_text=\"OK\"/>").into_bytes()
+                b"<stop_task_response status=\"200\" status_text=\"OK\"/>".to_vec()
             }
             Some("Stopped") => error_response(&cmd.name, 409, "Task is already stopped"),
             None => error_response(&cmd.name, 404, "Task not found"),
@@ -575,17 +567,14 @@ impl SessionHandler {
             return error_response(&cmd.name, 400, "Invalid UUID");
         };
 
-        let current_status = store
+        let (current_status, task_name) = store
             .get(&uuid)
-            .and_then(|r| r.attr("status").map(String::from));
+            .map(|r| (r.attr("status").map(String::from), r.name))
+            .unwrap_or((None, "Task Report".to_string()));
 
         match current_status.as_deref() {
             Some("Stopped") => {
                 let report_id = Uuid::new_v4();
-                let task_name = store
-                    .get(&uuid)
-                    .map(|resource| resource.name)
-                    .unwrap_or_else(|| "Task Report".to_string());
                 let mut report =
                     Resource::with_id("report", &format!("Report for {task_name}"), report_id);
                 report.set_attr("task_id", &uuid.to_string());
@@ -691,10 +680,12 @@ fn render_report_result_xml(result: &Resource) -> String {
     xml
 }
 
-fn xml_escape(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
+fn singularize_resource_type(plural: &str) -> &str {
+    match plural {
+        "nvts" => "nvt",
+        "assets" => "asset",
+        "results" => "result",
+        s if s.ends_with('s') => &s[..s.len() - 1],
+        s => s,
+    }
 }

@@ -90,7 +90,7 @@ pub fn parse_command(xml: &[u8]) -> Option<ParsedCommand> {
     };
 
     // Parse children
-    let children = parse_children(&mut reader, &name);
+    let (children, _root_text) = parse_children(&mut reader, &name);
 
     Some(ParsedCommand {
         name,
@@ -100,41 +100,30 @@ pub fn parse_command(xml: &[u8]) -> Option<ParsedCommand> {
     })
 }
 
-fn parse_children(reader: &mut Reader<&[u8]>, parent_name: &str) -> Vec<ParsedElement> {
+fn parse_children(
+    reader: &mut Reader<&[u8]>,
+    parent_name: &str,
+) -> (Vec<ParsedElement>, Option<String>) {
     let mut children = Vec::new();
     let mut current_text = String::new();
 
     loop {
         match reader.read_event() {
             Ok(Event::Start(ref e)) => {
-                let qn = e.name(); let child_name = std::str::from_utf8(qn.as_ref())
-                    .unwrap_or("")
-                    .to_string();
+                let qn = e.name();
+                let child_name = std::str::from_utf8(qn.as_ref()).unwrap_or("").to_string();
                 let attrs = extract_attributes(e);
-                let grandchildren = parse_children(reader, &child_name);
-
-                // Collect text that was accumulated
-                let text = if current_text.is_empty() {
-                    None
-                } else {
-                    let t = current_text.clone();
-                    current_text.clear();
-                    Some(t)
-                };
-
-                // If we had grandchildren that collected text, use that
-                // otherwise check if we have a direct text child
+                let (grandchildren, child_text) = parse_children(reader, &child_name);
                 children.push(ParsedElement {
                     name: child_name,
                     attributes: attrs,
-                    text,
+                    text: child_text,
                     children: grandchildren,
                 });
             }
             Ok(Event::Empty(ref e)) => {
-                let qn = e.name(); let child_name = std::str::from_utf8(qn.as_ref())
-                    .unwrap_or("")
-                    .to_string();
+                let qn = e.name();
+                let child_name = std::str::from_utf8(qn.as_ref()).unwrap_or("").to_string();
                 let attrs = extract_attributes(e);
                 children.push(ParsedElement {
                     name: child_name,
@@ -149,11 +138,9 @@ fn parse_children(reader: &mut Reader<&[u8]>, parent_name: &str) -> Vec<ParsedEl
                 }
             }
             Ok(Event::End(ref e)) => {
-                let qn = e.name(); let end_name = std::str::from_utf8(qn.as_ref()).unwrap_or("");
+                let qn = e.name();
+                let end_name = std::str::from_utf8(qn.as_ref()).unwrap_or("");
                 if end_name == parent_name {
-                    // If there's accumulated text and no children were added,
-                    // this is a text-only element — but that's handled by the caller.
-                    // The text for a child element gets associated via the Start handler.
                     break;
                 }
             }
@@ -163,11 +150,8 @@ fn parse_children(reader: &mut Reader<&[u8]>, parent_name: &str) -> Vec<ParsedEl
         }
     }
 
-    // If we have accumulated text but it belongs to this element (not a child),
-    // we need to handle it. But for children parsing, text between child elements
-    // is generally whitespace and can be ignored.
-
-    children
+    let text = (!current_text.is_empty()).then_some(current_text);
+    (children, text)
 }
 
 /// Helper: re-parse children to associate text with the correct element.
@@ -184,7 +168,8 @@ pub fn parse_element_text(xml: &[u8], element_name: &str) -> Option<String> {
     loop {
         match reader.read_event() {
             Ok(Event::Start(ref e)) => {
-                let qn = e.name(); let name = std::str::from_utf8(qn.as_ref()).ok()?;
+                let qn = e.name();
+                let name = std::str::from_utf8(qn.as_ref()).ok()?;
                 if name == element_name {
                     inside = true;
                     result.clear();
@@ -196,7 +181,8 @@ pub fn parse_element_text(xml: &[u8], element_name: &str) -> Option<String> {
                 }
             }
             Ok(Event::End(ref e)) if inside => {
-                let qn = e.name(); let name = std::str::from_utf8(qn.as_ref()).ok()?;
+                let qn = e.name();
+                let name = std::str::from_utf8(qn.as_ref()).ok()?;
                 if name == element_name {
                     return Some(result);
                 }
@@ -213,9 +199,9 @@ fn extract_attributes(e: &quick_xml::events::BytesStart<'_>) -> HashMap<String, 
     for attr in e.attributes().flatten() {
         if let (Ok(key), Ok(val)) = (
             std::str::from_utf8(attr.key.as_ref()),
-            std::str::from_utf8(&attr.value),
+            attr.unescape_value().map(|v| v.into_owned()),
         ) {
-            map.insert(key.to_string(), val.to_string());
+            map.insert(key.to_string(), val);
         }
     }
     map
@@ -258,6 +244,15 @@ mod tests {
         let cmd = parse_command(xml).expect("should parse");
         assert_eq!(cmd.name, "create_task");
         assert_eq!(cmd.child_attr("target", "id"), Some("t1"));
+    }
+
+    #[test]
+    fn test_child_text() {
+        let xml = b"<create_task><name>My Task</name><comment>A comment</comment></create_task>";
+        let cmd = parse_command(xml).expect("should parse");
+        assert_eq!(cmd.child_text("name"), Some("My Task"));
+        assert_eq!(cmd.child_text("comment"), Some("A comment"));
+        assert_eq!(cmd.child_text("missing"), None);
     }
 
     // XML-006

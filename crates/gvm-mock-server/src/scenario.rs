@@ -1,3 +1,5 @@
+//! Scenario playback engine for scripted mock-server interactions.
+
 /// Controls how strictly the engine enforces the scripted command sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScenarioMode {
@@ -84,9 +86,7 @@ impl ScenarioEngine {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        ScenarioEngine, ScenarioMode, ScenarioOutcome, ScenarioStep,
-    };
+    use super::{ScenarioEngine, ScenarioMode, ScenarioOutcome, ScenarioStep};
 
     fn step(expect_command: &str, respond_xml: Option<&str>) -> ScenarioStep {
         ScenarioStep {
@@ -128,10 +128,8 @@ mod tests {
 
     #[test]
     fn mismatch_lenient_keeps_cursor() {
-        let mut engine = ScenarioEngine::new(
-            ScenarioMode::Lenient,
-            vec![step("expected", Some("<ok/>"))],
-        );
+        let mut engine =
+            ScenarioEngine::new(ScenarioMode::Lenient, vec![step("expected", Some("<ok/>"))]);
 
         assert_eq!(engine.next_for_command("wrong"), ScenarioOutcome::Fallback);
         assert!(!engine.is_exhausted());
@@ -155,15 +153,16 @@ mod tests {
         let mut engine = ScenarioEngine::new(ScenarioMode::Strict, Vec::new());
 
         assert!(engine.is_exhausted());
-        assert_eq!(engine.next_for_command("anything"), ScenarioOutcome::Exhausted);
+        assert_eq!(
+            engine.next_for_command("anything"),
+            ScenarioOutcome::Exhausted
+        );
     }
 
     #[test]
     fn scripted_response_returned() {
-        let mut engine = ScenarioEngine::new(
-            ScenarioMode::Strict,
-            vec![step("cmd", Some("<response/>"))],
-        );
+        let mut engine =
+            ScenarioEngine::new(ScenarioMode::Strict, vec![step("cmd", Some("<response/>"))]);
 
         assert_eq!(
             engine.next_for_command("cmd"),
@@ -182,7 +181,10 @@ mod tests {
     fn lenient_then_later_correct_step_works() {
         let mut engine = ScenarioEngine::new(
             ScenarioMode::Lenient,
-            vec![step("first", Some("<first/>")), step("second", Some("<second/>"))],
+            vec![
+                step("first", Some("<first/>")),
+                step("second", Some("<second/>")),
+            ],
         );
 
         assert_eq!(engine.next_for_command("wrong"), ScenarioOutcome::Fallback);
@@ -198,10 +200,8 @@ mod tests {
 
     #[test]
     fn strict_mismatch_does_not_advance_cursor() {
-        let mut engine = ScenarioEngine::new(
-            ScenarioMode::Strict,
-            vec![step("first", Some("<first/>"))],
-        );
+        let mut engine =
+            ScenarioEngine::new(ScenarioMode::Strict, vec![step("first", Some("<first/>"))]);
 
         assert_eq!(
             engine.next_for_command("wrong"),

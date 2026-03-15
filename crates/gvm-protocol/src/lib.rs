@@ -4,6 +4,13 @@
 //! It provides [`XmlCommand`] for building GMP XML commands and [`Response`] for
 //! parsing GMP XML responses.
 
+#![allow(
+    clippy::doc_markdown,
+    clippy::missing_panics_doc,
+    clippy::must_use_candidate,
+    clippy::unwrap_used
+)]
+
 pub mod error;
 pub mod request;
 pub mod response;

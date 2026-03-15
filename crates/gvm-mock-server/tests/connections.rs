@@ -1,5 +1,12 @@
 //! Integration tests for TCP transport and connection behavior.
 
+#![allow(
+    clippy::print_stdout,
+    clippy::redundant_closure_for_method_calls,
+    clippy::unwrap_used,
+    missing_docs
+)]
+
 use std::collections::HashSet;
 
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
@@ -102,13 +109,21 @@ async fn tcp_multiple_clients() {
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
     let history = server.command_history();
-    assert_eq!(history.len(), 2, "both clients should have issued a command");
+    assert_eq!(
+        history.len(),
+        2,
+        "both clients should have issued a command"
+    );
 
     let session_ids = history
         .iter()
         .map(|record| record.session_id())
         .collect::<HashSet<_>>();
-    assert_eq!(session_ids.len(), 2, "each client should have its own session");
+    assert_eq!(
+        session_ids.len(),
+        2,
+        "each client should have its own session"
+    );
 
     server.shutdown().await;
 }
@@ -124,12 +139,16 @@ async fn unix_reconnect() {
         .expect("server start failed");
     let path = server.socket_path().expect("should have socket path");
 
-    let mut stream1 = UnixStream::connect(path).await.expect("first connect failed");
+    let mut stream1 = UnixStream::connect(path)
+        .await
+        .expect("first connect failed");
     let resp1 = send_recv_unix(&mut stream1, b"<get_version/>").await;
     assert_eq!(resp1.status_code(), Some(200));
     drop(stream1);
 
-    let mut stream2 = UnixStream::connect(path).await.expect("second connect failed");
+    let mut stream2 = UnixStream::connect(path)
+        .await
+        .expect("second connect failed");
     let resp2 = send_recv_unix(&mut stream2, b"<get_version/>").await;
     assert_eq!(resp2.status_code(), Some(200));
 

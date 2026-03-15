@@ -26,6 +26,18 @@
 //! # }
 //! ```
 
+#![allow(
+    clippy::doc_markdown,
+    clippy::missing_panics_doc,
+    clippy::must_use_candidate,
+    clippy::redundant_closure_for_method_calls,
+    clippy::too_many_lines,
+    clippy::type_complexity,
+    clippy::unwrap_used,
+    clippy::unused_self,
+    clippy::useless_format
+)]
+
 pub mod builder;
 pub mod command_parser;
 pub mod fault;
@@ -37,6 +49,7 @@ pub mod response_gen;
 pub mod scenario;
 pub mod server;
 pub mod store;
+pub(crate) mod util;
 pub mod version;
 
 pub use builder::MockGmpServerBuilder;

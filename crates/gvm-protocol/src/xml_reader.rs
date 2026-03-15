@@ -18,7 +18,8 @@ pub struct XmlReader {
 }
 
 impl XmlReader {
-    /// Create a new XmlReader.
+    /// Create a new `XmlReader`.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             buffer: Vec::new(),
@@ -36,16 +37,19 @@ impl XmlReader {
     }
 
     /// Check if a complete XML root element has been received.
+    #[must_use]
     pub fn is_complete(&self) -> bool {
         self.complete
     }
 
     /// Return the accumulated data.
+    #[must_use]
     pub fn data(&self) -> &[u8] {
         &self.buffer
     }
 
     /// Consume the reader and return the accumulated data.
+    #[must_use]
     pub fn into_data(self) -> Vec<u8> {
         self.buffer
     }
@@ -141,9 +145,7 @@ mod tests {
     #[test]
     fn test_nested_same_name() {
         let mut reader = XmlReader::new();
-        reader
-            .feed(b"<a><a>inner</a></a>")
-            .expect("feed ok");
+        reader.feed(b"<a><a>inner</a></a>").expect("feed ok");
         assert!(reader.is_complete());
     }
 
@@ -172,9 +174,7 @@ mod tests {
     #[test]
     fn test_empty_root_element() {
         let mut reader = XmlReader::new();
-        reader
-            .feed(b"<response></response>")
-            .expect("feed ok");
+        reader.feed(b"<response></response>").expect("feed ok");
         assert!(reader.is_complete());
     }
 

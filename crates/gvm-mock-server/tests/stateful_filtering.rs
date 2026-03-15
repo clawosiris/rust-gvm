@@ -1,5 +1,12 @@
 //! Integration tests for basic filtering in stateful mode (FILT-001..005).
 
+#![allow(
+    clippy::print_stdout,
+    clippy::redundant_closure_for_method_calls,
+    clippy::unwrap_used,
+    missing_docs
+)]
+
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
 use gvm_protocol::Response;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -59,15 +66,14 @@ async fn filter_by_name_equality() {
     .await;
 
     // Filter by name=AlphaTask
-    let resp = send_recv(
-        &mut stream,
-        br#"<get_tasks filter="name=AlphaTask"/>"#,
-    )
-    .await;
+    let resp = send_recv(&mut stream, br#"<get_tasks filter="name=AlphaTask"/>"#).await;
     assert_eq!(resp.status_code(), Some(200));
     let text = resp.as_str().expect("utf8");
     assert!(text.contains("AlphaTask"), "Should contain matching task");
-    assert!(!text.contains("BetaTask"), "Should not contain non-matching task");
+    assert!(
+        !text.contains("BetaTask"),
+        "Should not contain non-matching task"
+    );
 
     server.shutdown().await;
 }
@@ -85,11 +91,7 @@ async fn filter_no_match_returns_empty() {
     )
     .await;
 
-    let resp = send_recv(
-        &mut stream,
-        br#"<get_tasks filter="name=Nonexistent"/>"#,
-    )
-    .await;
+    let resp = send_recv(&mut stream, br#"<get_tasks filter="name=Nonexistent"/>"#).await;
     assert_eq!(resp.status_code(), Some(200));
     let text = resp.as_str().expect("utf8");
     assert!(

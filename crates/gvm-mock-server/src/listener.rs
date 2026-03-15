@@ -19,23 +19,23 @@ use crate::ServerMode;
 /// Shared state across all sessions.
 pub struct ListenerState {
     /// Server operating mode.
-    pub mode: ServerMode,
+    pub(crate) mode: ServerMode,
     /// GMP version to advertise.
-    pub version: GmpVersion,
+    pub(crate) version: GmpVersion,
     /// Command history shared with all sessions.
-    pub history: CommandHistory,
+    pub(crate) history: CommandHistory,
     /// Counter for assigning session IDs.
-    pub session_counter: AtomicU64,
+    pub(crate) session_counter: AtomicU64,
     /// Fixture store (if using Fixture mode).
-    pub fixtures: Option<FixtureStore>,
+    pub(crate) fixtures: Option<FixtureStore>,
     /// Resource store (if using Stateful mode).
-    pub store: Option<ResourceStore>,
+    pub(crate) store: Option<ResourceStore>,
     /// Scenario configuration (if using Scenario mode).
-    pub scenario_config: Option<(ScenarioMode, Vec<ScenarioStep>)>,
+    pub(crate) scenario_config: Option<(ScenarioMode, Vec<ScenarioStep>)>,
     /// Fault injection engine.
-    pub fault_engine: FaultEngine,
+    pub(crate) fault_engine: FaultEngine,
     /// Shutdown signal.
-    pub shutdown: Arc<Notify>,
+    pub(crate) shutdown: Arc<Notify>,
 }
 
 impl ListenerState {
@@ -45,10 +45,7 @@ impl ListenerState {
 }
 
 /// Run a Unix socket listener.
-pub async fn run_unix_listener(
-    listener: UnixListener,
-    state: Arc<ListenerState>,
-) {
+pub async fn run_unix_listener(listener: UnixListener, state: Arc<ListenerState>) {
     loop {
         tokio::select! {
             accept = listener.accept() => {
@@ -73,10 +70,7 @@ pub async fn run_unix_listener(
 }
 
 /// Run a TCP listener.
-pub async fn run_tcp_listener(
-    listener: TcpListener,
-    state: Arc<ListenerState>,
-) {
+pub async fn run_tcp_listener(listener: TcpListener, state: Arc<ListenerState>) {
     loop {
         tokio::select! {
             accept = listener.accept() => {
@@ -183,14 +177,8 @@ fn try_extract_command(buf: &mut Vec<u8>, handler: &SessionHandler) -> CommandRe
     }
 
     let mut reader = gvm_protocol::XmlReader::new();
-    if reader.feed(buf).is_err() {
-        let consumed = buf.clone();
-        buf.clear();
-        return match handler.handle_command(&consumed) {
-            HandleResult::Respond { bytes, delay } => CommandResult::Response { bytes, delay },
-            HandleResult::Disconnect => CommandResult::Disconnect,
-        };
-    }
+    // TODO: detect malformed XML explicitly instead of waiting for a complete element.
+    let _ = reader.feed(buf);
 
     if reader.is_complete() {
         let command_xml = buf.clone();

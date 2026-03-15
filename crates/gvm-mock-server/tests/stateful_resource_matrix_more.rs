@@ -1,5 +1,12 @@
 //! Additional broad stateful CRUD coverage for more resource types.
 
+#![allow(
+    clippy::print_stdout,
+    clippy::redundant_closure_for_method_calls,
+    clippy::unwrap_used,
+    missing_docs
+)]
+
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
 use gvm_protocol::Response;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -37,7 +44,10 @@ async fn create_and_get_id(
 
     let text = resp.as_str().expect("create response should be valid utf8");
     let marker = "id=\"";
-    let start = text.find(marker).expect("response should contain id attribute") + marker.len();
+    let start = text
+        .find(marker)
+        .expect("response should contain id attribute")
+        + marker.len();
     let rest = &text[start..];
     let end = rest.find('"').expect("id attribute should be terminated");
     rest[..end].to_string()

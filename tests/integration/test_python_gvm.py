@@ -22,8 +22,6 @@ SCANNER_ID = "08b69003-5fc2-4037-a479-93b440211c73"
 
 
 def build_binary() -> None:
-    if BINARY.exists():
-        return
     subprocess.run(
         ["cargo", "build", "-p", "gvm-mock-server"],
         cwd=REPO_ROOT,
@@ -224,13 +222,11 @@ def main() -> int:
         finally:
             if server.poll() is None:
                 server.send_signal(signal.SIGINT)
-                try:
-                    server.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    server.kill()
-                    server.wait(timeout=5)
-
-            stdout, stderr = server.communicate()
+            try:
+                stdout, stderr = server.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                stdout, stderr = server.communicate(timeout=5)
             if server.returncode not in (0, -signal.SIGINT):
                 sys.stderr.write(stdout)
                 sys.stderr.write(stderr)

@@ -1,6 +1,11 @@
-use gvm_mock_server::{
-    GmpVersion, MockGmpServer, ScenarioMode, ScenarioStep,
-};
+#![allow(
+    clippy::print_stdout,
+    clippy::redundant_closure_for_method_calls,
+    clippy::unwrap_used,
+    missing_docs
+)]
+
+use gvm_mock_server::{GmpVersion, MockGmpServer, ScenarioMode, ScenarioStep};
 use gvm_protocol::Response;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
@@ -28,8 +33,14 @@ async fn scen_001_exact_sequence_strict() {
         .scenario(
             ScenarioMode::Strict,
             vec![
-                step("get_version", Some(r#"<get_version_response status="200"><hello/></get_version_response>"#)),
-                step("get_tasks", Some(r#"<get_tasks_response status="200"><world/></get_tasks_response>"#)),
+                step(
+                    "get_version",
+                    Some(r#"<get_version_response status="200"><hello/></get_version_response>"#),
+                ),
+                step(
+                    "get_tasks",
+                    Some(r#"<get_tasks_response status="200"><world/></get_tasks_response>"#),
+                ),
             ],
         )
         .unix_socket_auto()

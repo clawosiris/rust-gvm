@@ -1,5 +1,7 @@
 //! gvm-mock-server standalone binary.
 
+#![allow(clippy::print_stderr, clippy::print_stdout)]
+
 use clap::Parser;
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
 

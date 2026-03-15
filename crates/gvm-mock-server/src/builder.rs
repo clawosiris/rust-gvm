@@ -148,6 +148,11 @@ impl MockGmpServerBuilder {
             FaultEngine::new(faults)
         };
 
+        assert!(
+            seed_fn.is_none() || mode == ServerMode::Stateful,
+            "seed() is only supported in Stateful mode"
+        );
+
         let store = if mode == ServerMode::Stateful {
             let s = match credentials {
                 Some((ref u, ref p)) => ResourceStore::with_credentials(u, p),
@@ -179,10 +184,7 @@ impl MockGmpServerBuilder {
                 static COUNTER: AtomicU64 = AtomicU64::new(0);
                 let id = COUNTER.fetch_add(1, Ordering::Relaxed);
                 let dir = std::env::temp_dir();
-                let path = dir.join(format!(
-                    "gvmd-test-{}-{id}.sock",
-                    std::process::id()
-                ));
+                let path = dir.join(format!("gvmd-test-{}-{id}.sock", std::process::id()));
                 MockGmpServer::start_unix(
                     path,
                     mode,

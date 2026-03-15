@@ -1,5 +1,12 @@
 //! Integration tests for template variable substitution in Fixture mode.
 
+#![allow(
+    clippy::print_stdout,
+    clippy::redundant_closure_for_method_calls,
+    clippy::unwrap_used,
+    missing_docs
+)]
+
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
 use gvm_protocol::Response;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -72,7 +79,9 @@ async fn template_uuid_unique_per_call() {
     let resp2 = send_recv(&mut stream, br#"<get_tasks usage_type="scan"/>"#).await;
 
     let text1 = resp1.as_str().expect("first response should be valid utf8");
-    let text2 = resp2.as_str().expect("second response should be valid utf8");
+    let text2 = resp2
+        .as_str()
+        .expect("second response should be valid utf8");
     let id1 = extract_first_attr(text1, "id");
     let id2 = extract_first_attr(text2, "id");
 

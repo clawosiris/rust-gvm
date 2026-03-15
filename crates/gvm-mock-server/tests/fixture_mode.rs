@@ -1,5 +1,12 @@
 //! Integration tests for Fixture mode.
 
+#![allow(
+    clippy::print_stdout,
+    clippy::redundant_closure_for_method_calls,
+    clippy::unwrap_used,
+    missing_docs
+)]
+
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
 use gvm_protocol::Response;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -82,7 +89,10 @@ async fn fixture_authenticate() {
     // Check that the response contains role and timezone
     let text = resp.as_str().expect("should be valid utf8");
     assert!(text.contains("<role>"), "Should contain role element");
-    assert!(text.contains("<timezone>"), "Should contain timezone element");
+    assert!(
+        text.contains("<timezone>"),
+        "Should contain timezone element"
+    );
 
     server.shutdown().await;
 }
@@ -102,7 +112,10 @@ async fn fixture_get_tasks_multiple() {
     let text = resp.as_str().expect("should be valid utf8");
     // Should contain task elements
     assert!(text.contains("<task "), "Should contain task elements");
-    assert!(text.contains("Discovery Scan"), "Should contain fixture task name");
+    assert!(
+        text.contains("Discovery Scan"),
+        "Should contain fixture task name"
+    );
     assert!(text.contains("task_count"), "Should contain task_count");
 
     server.shutdown().await;

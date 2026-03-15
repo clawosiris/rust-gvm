@@ -1,4 +1,11 @@
 //! Tests for expanded fixture coverage.
+#![allow(
+    clippy::print_stdout,
+    clippy::redundant_closure_for_method_calls,
+    clippy::unwrap_used,
+    missing_docs
+)]
+
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
 use gvm_protocol::Response;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -18,7 +25,9 @@ async fn server() -> (MockGmpServer, UnixStream) {
         .mode(ServerMode::Fixture)
         .version(GmpVersion::V22_5)
         .unix_socket_auto()
-        .build().await.expect("start");
+        .build()
+        .await
+        .expect("start");
     let path = s.socket_path().unwrap().to_owned();
     let stream = UnixStream::connect(&path).await.expect("connect");
     (s, stream)
@@ -35,7 +44,11 @@ async fn fixture_delete_task() {
 #[tokio::test]
 async fn fixture_modify_task() {
     let (server, mut s) = server().await;
-    let r = send_recv(&mut s, br#"<modify_task task_id="x"><name>n</name></modify_task>"#).await;
+    let r = send_recv(
+        &mut s,
+        br#"<modify_task task_id="x"><name>n</name></modify_task>"#,
+    )
+    .await;
     assert_eq!(r.status_code(), Some(200));
     server.shutdown().await;
 }

@@ -38,6 +38,7 @@ pub struct XmlElement {
 
 impl XmlCommand {
     /// Create a new XML command with the given element name.
+    #[must_use]
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
@@ -97,6 +98,10 @@ impl XmlCommand {
     }
 
     /// Add a child element and return a mutable reference to it for further building.
+    ///
+    /// # Panics
+    /// Panics if the just-pushed child cannot be retrieved, which would indicate
+    /// internal vector corruption.
     pub fn add_element(&mut self, name: &str) -> &mut XmlElement {
         self.children.push(XmlElement {
             name: name.to_string(),
@@ -124,11 +129,13 @@ impl XmlCommand {
     }
 
     /// Get the command name.
+    #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
     /// Check if the command has any children.
+    #[must_use]
     pub fn has_children(&self) -> bool {
         !self.children.is_empty()
     }
@@ -148,6 +155,10 @@ impl XmlElement {
     }
 
     /// Add a child element and return a mutable reference to it.
+    ///
+    /// # Panics
+    /// Panics if the just-pushed child cannot be retrieved, which would indicate
+    /// internal vector corruption.
     pub fn add_child(&mut self, name: &str) -> &mut XmlElement {
         self.children.push(XmlElement {
             name: name.to_string(),

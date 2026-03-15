@@ -1,5 +1,12 @@
 //! Integration tests for Echo mode.
 
+#![allow(
+    clippy::print_stdout,
+    clippy::redundant_closure_for_method_calls,
+    clippy::unwrap_used,
+    missing_docs
+)]
+
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
 use gvm_protocol::Response;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -63,7 +70,10 @@ async fn echo_create_task_returns_201_with_id() {
 
     assert_eq!(resp.status_code(), Some(201));
     assert!(resp.is_success());
-    assert!(resp.id().is_some(), "create response should have id attribute");
+    assert!(
+        resp.id().is_some(),
+        "create response should have id attribute"
+    );
 
     server.shutdown().await;
 }

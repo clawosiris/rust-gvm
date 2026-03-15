@@ -2,6 +2,8 @@
 
 use uuid::Uuid;
 
+use crate::util::xml_escape_attr;
+
 /// Known GMP commands that the mock server recognizes.
 pub static KNOWN_COMMANDS: &[&str] = &[
     "authenticate",
@@ -122,7 +124,7 @@ pub static KNOWN_COMMANDS: &[&str] = &[
 
 /// Check if a command name is known.
 pub fn is_known_command(name: &str) -> bool {
-    KNOWN_COMMANDS.contains(&name)
+    KNOWN_COMMANDS.binary_search(&name).is_ok()
 }
 
 /// Generate an echo-mode response for a command.
@@ -181,10 +183,9 @@ pub fn echo_response(command_name: &str, version: &str) -> Vec<u8> {
 
 /// Generate an error response.
 pub fn error_response(command_name: &str, status: u16, status_text: &str) -> Vec<u8> {
-    format!(
-        "<{command_name}_response status=\"{status}\" status_text=\"{status_text}\"/>"
-    )
-    .into_bytes()
+    let escaped_text = xml_escape_attr(status_text);
+    format!("<{command_name}_response status=\"{status}\" status_text=\"{escaped_text}\"/>")
+        .into_bytes()
 }
 
 /// Generate a `get_version` response for a specific version.

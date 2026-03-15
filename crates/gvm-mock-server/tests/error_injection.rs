@@ -1,5 +1,12 @@
 //! Integration tests for error injection / fault engine.
 
+#![allow(
+    clippy::print_stdout,
+    clippy::redundant_closure_for_method_calls,
+    clippy::unwrap_used,
+    missing_docs
+)]
+
 use gvm_mock_server::{Fault, FaultKind, GmpVersion, MockGmpServer, ServerMode};
 use gvm_protocol::Response;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -208,7 +215,11 @@ async fn fault_custom_error_status() {
     let path = server.socket_path().unwrap();
     let mut stream = UnixStream::connect(path).await.expect("connect");
 
-    let resp = send_recv(&mut stream, b"<create_alert><name>test</name></create_alert>").await;
+    let resp = send_recv(
+        &mut stream,
+        b"<create_alert><name>test</name></create_alert>",
+    )
+    .await;
     assert_eq!(resp.status_code(), Some(409));
 
     let text = resp.as_str().expect("utf8");

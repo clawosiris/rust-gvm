@@ -5,6 +5,8 @@ use std::sync::{Arc, RwLock};
 
 use uuid::Uuid;
 
+use crate::util::{now_iso, xml_escape};
+
 /// Task status in the lifecycle state machine.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TaskStatus {
@@ -177,11 +179,7 @@ impl ResourceStore {
     /// Get a resource by UUID.
     pub fn get(&self, id: &Uuid) -> Option<Resource> {
         let inner = self.inner.read().expect("store lock poisoned");
-        inner
-            .resources
-            .get(id)
-            .filter(|r| !r.trashed)
-            .cloned()
+        inner.resources.get(id).filter(|r| !r.trashed).cloned()
     }
 
     /// Get all resources of a given type (non-trashed).
@@ -319,6 +317,8 @@ impl ResourceStore {
 
     /// Seed a resource for testing.
     pub fn seed(&self, resource: Resource) {
+        let mut resource = resource;
+        resource.modification_time = now_iso();
         let mut inner = self.inner.write().expect("store lock poisoned");
         inner.resources.insert(resource.id, resource);
     }
@@ -328,25 +328,6 @@ impl Default for ResourceStore {
     fn default() -> Self {
         Self::new()
     }
-}
-
-fn now_iso() -> String {
-    use std::time::SystemTime;
-    let d = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default();
-    // Simple ISO-ish: good enough for mock server
-    let secs = d.as_secs();
-    let days = secs / 86400;
-    let years = 1970 + days / 365;
-    format!("{years}-01-01T00:00:00Z")
-}
-
-fn xml_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
 }
 
 #[cfg(test)]
@@ -500,5 +481,41 @@ mod tests {
         store.create(Resource::new("task", "T2"));
         assert_eq!(store.count("task"), 2);
         assert_eq!(store.count("target"), 0);
+    }
+
+    #[test]
+    fn test_modify_trashed_returns_false() {
+        let store = ResourceStore::new();
+        let id = store.create(Resource::new("task", "Trashed"));
+        store.delete(&id, false);
+        assert!(!store.modify(&id, |r| r.name = "New".to_string()));
+    }
+
+    #[test]
+    fn test_clone_nonexistent() {
+        let store = ResourceStore::new();
+        assert!(store.clone_resource(&Uuid::new_v4()).is_none());
+    }
+
+    #[test]
+    fn test_count_excludes_trashed() {
+        let store = ResourceStore::new();
+        store.create(Resource::new("task", "T1"));
+        let id2 = store.create(Resource::new("task", "T2"));
+        store.delete(&id2, false);
+        assert_eq!(store.count("task"), 1);
+    }
+
+    #[test]
+    fn test_list_filtered_multi_term() {
+        let store = ResourceStore::new();
+        let mut r = Resource::new("task", "Alpha");
+        r.set_attr("status", "Running");
+        store.create(r);
+        let mut r2 = Resource::new("task", "Alpha");
+        r2.set_attr("status", "New");
+        store.create(r2);
+        let filtered = store.list_filtered("task", "name=Alpha status=Running");
+        assert_eq!(filtered.len(), 1);
     }
 }

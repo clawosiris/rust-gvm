@@ -13,11 +13,13 @@ pub struct Response {
 
 impl Response {
     /// Create a new Response from raw bytes.
+    #[must_use]
     pub fn new(data: Vec<u8>) -> Self {
         Self { data }
     }
 
     /// Return the raw response data as bytes.
+    #[must_use]
     pub fn data(&self) -> &[u8] {
         &self.data
     }
@@ -34,6 +36,7 @@ impl Response {
     /// Extract the status code from the response root element.
     ///
     /// Returns `None` if the response doesn't contain a valid status code.
+    #[must_use]
     pub fn status_code(&self) -> Option<u16> {
         let text = std::str::from_utf8(&self.data).ok()?;
         let mut reader = Reader::from_str(text);
@@ -55,7 +58,8 @@ impl Response {
         }
     }
 
-    /// Extract the status_text from the response root element.
+    /// Extract the `status_text` from the response root element.
+    #[must_use]
     pub fn status_text(&self) -> Option<String> {
         let text = std::str::from_utf8(&self.data).ok()?;
         let mut reader = Reader::from_str(text);
@@ -64,9 +68,7 @@ impl Response {
                 Ok(Event::Start(ref e) | Event::Empty(ref e)) => {
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"status_text" {
-                            return std::str::from_utf8(&attr.value)
-                                .ok()
-                                .map(String::from);
+                            return std::str::from_utf8(&attr.value).ok().map(String::from);
                         }
                     }
                     return None;
@@ -79,6 +81,7 @@ impl Response {
     }
 
     /// Returns `true` if the response has a success status code (2xx).
+    #[must_use]
     pub fn is_success(&self) -> bool {
         self.status_code()
             .map(|s| (200..300).contains(&s))
@@ -127,9 +130,7 @@ impl Response {
                 Ok(Event::Start(ref e) | Event::Empty(ref e)) => {
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"id" {
-                            return std::str::from_utf8(&attr.value)
-                                .ok()
-                                .map(String::from);
+                            return std::str::from_utf8(&attr.value).ok().map(String::from);
                         }
                     }
                     return None;
@@ -142,6 +143,7 @@ impl Response {
     }
 
     /// Extract the text content of a named child element.
+    #[must_use]
     pub fn child_text(&self, element_name: &str) -> Option<String> {
         let text = std::str::from_utf8(&self.data).ok()?;
         let mut reader = Reader::from_str(text);
@@ -231,8 +233,7 @@ mod tests {
 
     #[test]
     fn test_raise_for_status_error() {
-        let resp =
-            Response::from(r#"<get_tasks_response status="404" status_text="Not Found"/>"#);
+        let resp = Response::from(r#"<get_tasks_response status="404" status_text="Not Found"/>"#);
         let err = resp.raise_for_status().unwrap_err();
         match err {
             ProtocolError::ServerError { status, message } => {
@@ -262,8 +263,7 @@ mod tests {
 
     #[test]
     fn test_status_text() {
-        let resp =
-            Response::from(r#"<get_tasks_response status="200" status_text="OK"/>"#);
+        let resp = Response::from(r#"<get_tasks_response status="200" status_text="OK"/>"#);
         assert_eq!(resp.status_text(), Some("OK".to_string()));
     }
 

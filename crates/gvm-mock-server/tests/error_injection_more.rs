@@ -1,5 +1,12 @@
 //! Additional integration tests for error injection / fault engine.
 
+#![allow(
+    clippy::print_stdout,
+    clippy::redundant_closure_for_method_calls,
+    clippy::unwrap_used,
+    missing_docs
+)]
+
 use std::time::{Duration, Instant};
 
 use gvm_mock_server::{Fault, FaultKind, GmpVersion, MockGmpServer, ServerMode};

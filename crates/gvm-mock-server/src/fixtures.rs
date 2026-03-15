@@ -2,12 +2,13 @@
 
 use std::collections::HashMap;
 
+use crate::util::now_iso;
 use crate::version::GmpVersion;
 
 /// Built-in fixture store.
 #[derive(Debug, Clone)]
 pub struct FixtureStore {
-    /// Fixtures keyed by (command_name, version).
+    /// Fixtures keyed by command name (e.g., "get_tasks").
     fixtures: HashMap<String, String>,
     version: GmpVersion,
 }
@@ -43,7 +44,7 @@ impl FixtureStore {
     }
 
     fn substitute_variables(&self, template: &str) -> String {
-        let now = chrono_now_iso();
+        let now = now_iso();
         template
             .replace("{{uuid}}", &uuid::Uuid::new_v4().to_string())
             .replace("{{now}}", &now)
@@ -376,45 +377,6 @@ impl FixtureStore {
                 .to_string(),
         );
     }
-}
-
-/// Get current time in ISO 8601 format (without chrono dependency).
-fn chrono_now_iso() -> String {
-    use std::time::SystemTime;
-    let duration = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = duration.as_secs();
-    // Compute date/time from Unix timestamp
-    let days = secs / 86400;
-    let time_secs = secs % 86400;
-    let hours = time_secs / 3600;
-    let minutes = (time_secs % 3600) / 60;
-    let seconds = time_secs % 60;
-
-    // Compute year/month/day from days since epoch (simplified)
-    let mut y = 1970i64;
-    let mut remaining = days as i64;
-    loop {
-        let days_in_year = if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { 366 } else { 365 };
-        if remaining < days_in_year {
-            break;
-        }
-        remaining -= days_in_year;
-        y += 1;
-    }
-    let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
-    let month_days = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    let mut m = 0usize;
-    for &md in &month_days {
-        if remaining < md {
-            break;
-        }
-        remaining -= md;
-        m += 1;
-    }
-    let d = remaining + 1;
-    format!("{y:04}-{:02}-{d:02}T{hours:02}:{minutes:02}:{seconds:02}Z", m + 1)
 }
 
 #[cfg(test)]
