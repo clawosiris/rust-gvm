@@ -1,11 +1,8 @@
 # cargo-deny configuration
-# See: https://embarkstudios.github.io/cargo-deny/
+# Schema: https://embarkstudios.github.io/cargo-deny/
 
 [advisories]
-vulnerability = "deny"
-unmaintained = "warn"
-yanked = "warn"
-notice = "warn"
+ignore = []
 
 [licenses]
 unlicensed = "deny"
