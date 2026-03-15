@@ -15,6 +15,7 @@ path = "src/main.rs"
 
 [features]
 default = []
+unix-socket-tests = []
 tls = ["dep:tokio-rustls", "dep:rustls", "dep:rustls-pemfile"]
 
 [dependencies]

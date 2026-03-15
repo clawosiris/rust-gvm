@@ -12,11 +12,13 @@ categories.workspace = true
 [features]
 default = ["unix"]
 unix = []
+unix-socket-tests = []
 tls = ["dep:tokio-rustls", "dep:rustls", "dep:rustls-pemfile"]
 ssh = ["dep:russh"]
 
 [dependencies]
 tokio.workspace = true
+async-trait.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 gvm-protocol.workspace = true

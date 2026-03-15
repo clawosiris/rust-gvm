@@ -1,5 +1,6 @@
 //! Additional integration tests for error injection / fault engine.
 
+#![cfg(feature = "unix-socket-tests")]
 #![allow(
     clippy::print_stdout,
     clippy::redundant_closure_for_method_calls,

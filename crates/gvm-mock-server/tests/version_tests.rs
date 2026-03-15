@@ -1,5 +1,6 @@
 //! Integration tests for version-specific behavior across server modes.
 
+#![cfg(feature = "unix-socket-tests")]
 #![allow(
     clippy::print_stdout,
     clippy::redundant_closure_for_method_calls,

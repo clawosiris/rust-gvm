@@ -1,4 +1,10 @@
-#![allow(clippy::print_stdout, clippy::redundant_closure_for_method_calls, clippy::unwrap_used, missing_docs)]
+#![cfg(feature = "unix-socket-tests")]
+#![allow(
+    clippy::print_stdout,
+    clippy::redundant_closure_for_method_calls,
+    clippy::unwrap_used,
+    missing_docs
+)]
 
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
 
@@ -20,7 +26,10 @@ async fn builder_fixture_mode_with_override() {
     let server = MockGmpServer::builder()
         .mode(ServerMode::Fixture)
         .version(GmpVersion::V22_4)
-        .override_response("get_tasks", "<get_tasks_response status=\"200\" status_text=\"OK\"/>")
+        .override_response(
+            "get_tasks",
+            "<get_tasks_response status=\"200\" status_text=\"OK\"/>",
+        )
         .unix_socket_auto()
         .build()
         .await
