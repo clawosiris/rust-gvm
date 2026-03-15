@@ -8,11 +8,11 @@ Last updated: 2026-03-15
 |-------|--------|-------|-------|-------------|
 | `gvm-protocol` | ✅ Implemented | ~860 | 37 | XML command builder, response parser, streaming reader |
 | `gvm-mock-server` | ✅ Implemented | ~3,600 | 198 | Programmable mock GMP server |
-| `gvm-connection` | 🔧 Unix socket done | ~230 | 11 | Async transport layer (Unix socket implemented) |
+| `gvm-connection` | ✅ Unix + SSH done | ~640 | 20 | Async transport layer (Unix socket + SSH implemented) |
 | `gvm-gmp` | ✅ Implemented | ~4,430 | 480 | Typed GMP command builders (29 modules, 23 enums, full rustdoc) |
 | `gvm-client` | ✅ Implemented | ~390 | 7 | High-level async client with version negotiation |
 
-**Total: ~9,550 lines of Rust, 620+ tests**
+**Total: ~10,000 lines of Rust, 630+ tests**
 
 ---
 
@@ -201,14 +201,26 @@ Last updated: 2026-03-15
 | Transport | Status | Feature Flag | Notes |
 |-----------|--------|-------------|-------|
 | Unix socket | ✅ | `unix` (default) | `UnixSocketConnection` with configurable path, timeout, buffer size |
+| SSH tunnel | ✅ | `ssh` | `SshConnection` via `russh` — `direct-streamlocal` to remote gvmd socket |
 | TLS (TCP) | 📋 Planned | `tls` | Via `tokio-rustls` |
-| SSH tunnel | 📋 Planned | `ssh` | Via `russh` |
 
 ### UnixSocketConfig
 
 | Field | Default | Notes |
 |-------|---------|-------|
 | `path` | `/run/gvmd/gvmd.sock` | Configurable |
+| `timeout` | 60s | Connect + read timeout |
+| `read_buffer_size` | 64 KB | Per-read allocation |
+
+### SshConfig
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| `hostname` | `localhost` | SSH server address |
+| `port` | 22 | SSH port |
+| `username` | `root` | SSH user |
+| `auth` | `Agent` | `Password`, `PrivateKey { key_path, passphrase }`, or `Agent` |
+| `remote_socket` | `/run/gvmd/gvmd.sock` | Path to gvmd socket on remote host |
 | `timeout` | 60s | Connect + read timeout |
 | `read_buffer_size` | 64 KB | Per-read allocation |
 
@@ -258,7 +270,48 @@ AlertEvent, AlertCondition, AlertMethod, AliveTest, AggregateStatistic, Credenti
 
 ## gvm-client
 
-High-level async `GmpClient<C>` and `GmpVersioned<C>` that combines `gvm-connection`, `gvm-protocol`, and `gvm-gmp`. Connects, negotiates GMP version (22.4–22.7), and provides typed `send`/`call` methods.
+High-level async `GmpClient<C>` and `GmpVersioned<C>` that combines `gvm-connection`, `gvm-protocol`, and `gvm-gmp`. Connects, negotiates GMP version (22.4–22.7+), and provides typed `send`/`call` methods.
+
+### GmpClient API
+
+| Method | Description |
+|--------|-------------|
+| `GmpClient::connect(connection)` | Connect, get_version, negotiate — returns ready client |
+| `client.version()` | Returns negotiated `GmpVersion` |
+| `client.send(request)` | Send request, return raw `Response` |
+| `client.call(request)` | Send request, raise `GvmError::Server` on non-2xx |
+| `client.disconnect()` | Graceful transport shutdown |
+| `client.connection()` / `connection_mut()` | Borrow underlying transport |
+| `client.into_inner()` | Consume client, return transport |
+
+### GmpVersioned API
+
+| Method | Description |
+|--------|-------------|
+| `GmpVersioned::connect(connection)` | Connect and wrap as version-specific variant |
+| `send` / `call` / `disconnect` / `version` | Delegated to inner `GmpClient` |
+
+### Version Negotiation
+
+| Server Version | Client Variant |
+|---------------|----------------|
+| 22.4 | `GmpVersioned::V224` |
+| 22.5 | `GmpVersioned::V225` |
+| 22.6 | `GmpVersioned::V226` |
+| 22.7 | `GmpVersioned::V227` |
+| 22.8+ | `GmpVersioned::Next` |
+| < 22.4 | `GvmError::UnsupportedVersion` |
+
+### GvmError
+
+| Variant | Description |
+|---------|-------------|
+| `Connection(ConnectionError)` | Transport failure (preserves source chain) |
+| `Server { status, message }` | Non-2xx GMP response |
+| `XmlParse(String)` | Malformed version/response XML |
+| `UnsupportedVersion(major, minor)` | Server GMP version too old |
+| `Timeout(Duration)` | Operation timeout |
+| `InvalidState(String)` | Client state error |
 
 ### Features
 
@@ -270,6 +323,8 @@ High-level async `GmpClient<C>` and `GmpVersioned<C>` that combines `gvm-connect
 | Version parsing from XML | ✅ |
 | Full CRUD lifecycle tests | ✅ |
 | Disconnect + error path tests | ✅ |
+| Works with Unix socket transport | ✅ |
+| Works with SSH transport | ✅ |
 
 ---
 
@@ -282,8 +337,8 @@ High-level async `GmpClient<C>` and `GmpVersioned<C>` that combines `gvm-connect
 | Unit tests (protocol) | 37 | XML builder, response parser, reader, request trait |
 | Unit tests (mock server) | 73 | Store, parser, fixtures, faults, scenarios, history, version, util |
 | Integration tests (mock server) | 137 | All modes, CRUD, lifecycle, faults, MCP compat (feature-gated) |
-| Integration tests (connection) | 5 | Unix socket transport against mock server (feature-gated) |
-| Unit tests (connection) | 6 | Config, error display, construction |
+| Integration tests (connection) | 10 | Unix socket + SSH transport tests (feature-gated) |
+| Unit tests (connection) | 9 | Config, error display, construction (Unix + SSH) |
 | Unit tests (gvm-gmp inline) | 80 | Command builder XML verification |
 | External tests (gvm-gmp) | 53 | Per-module command XML tests |
 | Enum exhaustive tests | 347 | Every variant as_gmp_str + FromStr + invalid |

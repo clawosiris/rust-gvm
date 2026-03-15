@@ -15,7 +15,7 @@ rust-gvm provides everything needed to talk to [Greenbone Vulnerability Manager 
 |-------|---------|--------|
 | [`gvm-protocol`](crates/gvm-protocol/) | Sans-I/O XML framing, command builder, response parser | ✅ Implemented |
 | [`gvm-mock-server`](crates/gvm-mock-server/) | Programmable mock GMP server (4 modes, fault injection) | ✅ Implemented |
-| [`gvm-connection`](crates/gvm-connection/) | Transport layer (Unix socket, TLS, SSH) | 🔧 Unix socket done |
+| [`gvm-connection`](crates/gvm-connection/) | Transport layer (Unix socket, SSH) | ✅ Unix + SSH done |
 | [`gvm-gmp`](crates/gvm-gmp/) | Typed GMP command builders per version (22.4–22.8+) | ✅ Implemented |
 | [`gvm-client`](crates/gvm-client/) | High-level async client with version negotiation | ✅ Implemented |
 
@@ -34,6 +34,94 @@ rust-gvm provides everything needed to talk to [Greenbone Vulnerability Manager 
 ```
 
 ## Quick Start
+
+### Client — Connect to gvmd
+
+The high-level client handles version negotiation automatically:
+
+```rust
+use gvm_client::{GmpClient, GmpVersioned, GvmError};
+use gvm_connection::{UnixSocketConfig, UnixSocketConnection};
+use gvm_gmp::commands::{authentication, targets, tasks, version};
+
+#[tokio::main]
+async fn main() -> Result<(), GvmError> {
+    // 1. Create a transport
+    let config = UnixSocketConfig::new("/run/gvmd/gvmd.sock");
+    let conn = UnixSocketConnection::new(config);
+
+    // 2. Connect — auto-negotiates GMP version (22.4–22.7+)
+    let mut client = GmpClient::connect(conn).await?;
+    println!("Connected, GMP version: {}", client.version());
+
+    // 3. Authenticate
+    client.call(authentication::authenticate("admin", "admin")).await?;
+
+    // 4. Create a target
+    let response = client.call(targets::create_target("My Target", targets::CreateTargetOpts {
+        hosts: vec!["192.168.1.0/24".to_string()],
+        ..Default::default()
+    })).await?;
+    let target_id = response.id().expect("target id");
+    println!("Created target: {target_id}");
+
+    // 5. Create and start a scan task
+    let response = client.call(tasks::create_task(
+        "My Scan",
+        &target_id.parse().unwrap(),
+        &"daba56c8-73ec-11df-a475-002264764cea".parse().unwrap(),  // Full and fast config
+        &"08b69003-5fc2-4037-a479-93b440211c73".parse().unwrap(),  // OpenVAS scanner
+        Default::default(),
+    )).await?;
+    let task_id = response.id().expect("task id");
+    println!("Created task: {task_id}");
+
+    // 6. List all tasks
+    let response = client.call(tasks::get_tasks(Default::default())).await?;
+    println!("Tasks response: {} bytes", response.data().len());
+
+    client.disconnect().await?;
+    Ok(())
+}
+```
+
+#### Version-aware client
+
+Use `GmpVersioned` when you need to branch on the server's GMP version:
+
+```rust
+use gvm_client::GmpVersioned;
+use gvm_connection::{UnixSocketConfig, UnixSocketConnection};
+
+let conn = UnixSocketConnection::new(UnixSocketConfig::new("/run/gvmd/gvmd.sock"));
+let mut client = GmpVersioned::connect(conn).await?;
+
+match &client {
+    GmpVersioned::V225(_) => println!("GMP 22.5"),
+    GmpVersioned::V226(_) => println!("GMP 22.6"),
+    _ => println!("Other version: {}", client.version()),
+}
+
+// All versions share the same send/call API
+client.call(authentication::authenticate("admin", "admin")).await?;
+```
+
+#### SSH transport
+
+Connect to a remote gvmd over SSH tunnel:
+
+```rust
+use gvm_client::GmpClient;
+use gvm_connection::{SshConfig, SshAuth, SshConnection};
+
+let config = SshConfig::new("scanner.example.com", "gvm", SshAuth::Agent)
+    .with_port(22)
+    .with_remote_socket("/run/gvmd/gvmd.sock");
+let conn = SshConnection::new(config);
+
+let mut client = GmpClient::connect(conn).await?;
+// Same API as Unix socket — connect/call/disconnect
+```
 
 ### Mock Server (library usage)
 
@@ -133,10 +221,10 @@ conn.disconnect().await?;
 | Transport | Status | Feature Flag |
 |-----------|--------|-------------|
 | Unix socket | ✅ Implemented | `unix` (default) |
+| SSH tunnel | ✅ Implemented | `ssh` |
 | TLS over TCP | 📋 Planned | `tls` |
-| SSH tunnel | 📋 Planned | `ssh` |
 
-The Unix socket transport supports the full python-gvm reconnect pattern (connect → get_version → disconnect → reconnect → authenticate → commands) and is integration-tested against `gvm-mock-server`.
+Both transports support the full python-gvm reconnect pattern (connect → get_version → disconnect → reconnect → authenticate → commands) and implement the `GvmConnection` trait, so they're interchangeable with `GmpClient`.
 
 ## Protocol Crate
 
@@ -156,7 +244,7 @@ See [docs/STATUS.md](docs/STATUS.md) for detailed implementation status of each 
 # Build everything
 cargo build --workspace
 
-# Run all tests (620+ tests)
+# Run all tests (630+ tests)
 cargo test --workspace
 
 # Run python-gvm integration tests
