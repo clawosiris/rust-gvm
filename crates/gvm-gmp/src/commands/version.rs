@@ -1,0 +1,17 @@
+use gvm_protocol::{Request, XmlCommand};
+
+/// Build a `get_version` command.
+pub fn get_version() -> impl Request {
+    XmlCommand::new("get_version")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::xml;
+
+    #[test]
+    fn get_version_builds_xml() {
+        assert_eq!(xml(get_version()), "<get_version/>");
+    }
+}
