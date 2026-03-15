@@ -16,6 +16,8 @@ use crate::fixtures::FixtureStore;
 use crate::history::{CommandHistory, CommandRecord};
 use crate::listener::{run_tcp_listener, run_unix_listener, ListenerState};
 use crate::scenario::{ScenarioMode, ScenarioStep};
+#[cfg(feature = "ssh")]
+use crate::ssh_listener::run_ssh_listener;
 use crate::store::ResourceStore;
 use crate::version::GmpVersion;
 use crate::ServerMode;
@@ -26,6 +28,9 @@ pub struct MockGmpServer {
     socket_path: Option<PathBuf>,
     /// The TCP address (if using TCP transport).
     tcp_addr: Option<std::net::SocketAddr>,
+    /// The SSH address (if using SSH transport).
+    #[cfg(feature = "ssh")]
+    ssh_addr: Option<std::net::SocketAddr>,
     /// Command history shared with all sessions.
     history: CommandHistory,
     /// Shutdown signal.
@@ -78,6 +83,8 @@ impl MockGmpServer {
         Ok(Self {
             socket_path: Some(socket_path),
             tcp_addr: None,
+            #[cfg(feature = "ssh")]
+            ssh_addr: None,
             history,
             shutdown,
             _listener_handle: handle,
@@ -118,6 +125,52 @@ impl MockGmpServer {
         Ok(Self {
             socket_path: None,
             tcp_addr: Some(local_addr),
+            #[cfg(feature = "ssh")]
+            ssh_addr: None,
+            history,
+            shutdown,
+            _listener_handle: handle,
+        })
+    }
+
+    /// Create and start a new mock server on SSH.
+    #[cfg(feature = "ssh")]
+    pub(crate) async fn start_ssh(
+        addr: &str,
+        mode: ServerMode,
+        version: GmpVersion,
+        fixtures: Option<FixtureStore>,
+        store: Option<ResourceStore>,
+        fault_engine: FaultEngine,
+        scenario_config: Option<(ScenarioMode, Vec<ScenarioStep>)>,
+    ) -> Result<Self, std::io::Error> {
+        let listener = TcpListener::bind(addr).await?;
+        let local_addr = listener.local_addr()?;
+        let history = CommandHistory::new();
+        let shutdown = Arc::new(Notify::new());
+
+        let state = Arc::new(ListenerState {
+            mode,
+            version,
+            history: history.clone(),
+            session_counter: AtomicU64::new(0),
+            fixtures,
+            store,
+            scenario_config,
+            fault_engine: fault_engine.clone(),
+            shutdown: Arc::clone(&shutdown),
+        });
+
+        let handle = tokio::spawn(async move {
+            if let Err(error) = run_ssh_listener(listener, state).await {
+                tracing::warn!("SSH listener stopped with error: {error}");
+            }
+        });
+
+        Ok(Self {
+            socket_path: None,
+            tcp_addr: None,
+            ssh_addr: Some(local_addr),
             history,
             shutdown,
             _listener_handle: handle,
@@ -137,6 +190,18 @@ impl MockGmpServer {
     /// Get the TCP port (convenience for random port assignment).
     pub fn port(&self) -> Option<u16> {
         self.tcp_addr.map(|a| a.port())
+    }
+
+    /// Get the SSH address (if using SSH transport).
+    #[cfg(feature = "ssh")]
+    pub fn ssh_addr(&self) -> Option<std::net::SocketAddr> {
+        self.ssh_addr
+    }
+
+    /// Get the SSH port (convenience for random port assignment).
+    #[cfg(feature = "ssh")]
+    pub fn ssh_port(&self) -> Option<u16> {
+        self.ssh_addr.map(|a| a.port())
     }
 
     /// Get the command history.

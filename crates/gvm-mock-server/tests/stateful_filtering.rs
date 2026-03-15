@@ -117,7 +117,9 @@ async fn filter_no_match_returns_empty() {
 // FILT-004: No filter returns all
 #[tokio::test]
 async fn no_filter_returns_all() {
-    let Some(server) = stateful_server().await else { return; };
+    let Some(server) = stateful_server().await else {
+        return;
+    };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -144,7 +146,9 @@ async fn no_filter_returns_all() {
 // FILT-005: Trash filter
 #[tokio::test]
 async fn trash_filter_returns_only_trashed() {
-    let Some(server) = stateful_server().await else { return; };
+    let Some(server) = stateful_server().await else {
+        return;
+    };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 

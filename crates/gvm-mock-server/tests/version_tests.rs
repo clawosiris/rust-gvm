@@ -52,11 +52,14 @@ async fn start_server(builder: gvm_mock_server::MockGmpServerBuilder) -> Option<
 
 #[tokio::test]
 async fn version_v22_4() {
-    let Some(server) = start_server(MockGmpServer::builder()
-        .mode(ServerMode::Echo)
-        .version(GmpVersion::V22_4)
-        .unix_socket_auto())
-    .await else {
+    let Some(server) = start_server(
+        MockGmpServer::builder()
+            .mode(ServerMode::Echo)
+            .version(GmpVersion::V22_4)
+            .unix_socket_auto(),
+    )
+    .await
+    else {
         return;
     };
 
@@ -65,11 +68,14 @@ async fn version_v22_4() {
 
 #[tokio::test]
 async fn version_v22_5() {
-    let Some(server) = start_server(MockGmpServer::builder()
-        .mode(ServerMode::Echo)
-        .version(GmpVersion::V22_5)
-        .unix_socket_auto())
-    .await else {
+    let Some(server) = start_server(
+        MockGmpServer::builder()
+            .mode(ServerMode::Echo)
+            .version(GmpVersion::V22_5)
+            .unix_socket_auto(),
+    )
+    .await
+    else {
         return;
     };
 
@@ -78,11 +84,14 @@ async fn version_v22_5() {
 
 #[tokio::test]
 async fn version_v22_6() {
-    let Some(server) = start_server(MockGmpServer::builder()
-        .mode(ServerMode::Echo)
-        .version(GmpVersion::V22_6)
-        .unix_socket_auto())
-    .await else {
+    let Some(server) = start_server(
+        MockGmpServer::builder()
+            .mode(ServerMode::Echo)
+            .version(GmpVersion::V22_6)
+            .unix_socket_auto(),
+    )
+    .await
+    else {
         return;
     };
 
@@ -91,11 +100,14 @@ async fn version_v22_6() {
 
 #[tokio::test]
 async fn version_v22_7() {
-    let Some(server) = start_server(MockGmpServer::builder()
-        .mode(ServerMode::Echo)
-        .version(GmpVersion::V22_7)
-        .unix_socket_auto())
-    .await else {
+    let Some(server) = start_server(
+        MockGmpServer::builder()
+            .mode(ServerMode::Echo)
+            .version(GmpVersion::V22_7)
+            .unix_socket_auto(),
+    )
+    .await
+    else {
         return;
     };
 
@@ -104,11 +116,14 @@ async fn version_v22_7() {
 
 #[tokio::test]
 async fn version_echo_mode() {
-    let Some(server) = start_server(MockGmpServer::builder()
-        .mode(ServerMode::Echo)
-        .version(GmpVersion::V22_5)
-        .unix_socket_auto())
-    .await else {
+    let Some(server) = start_server(
+        MockGmpServer::builder()
+            .mode(ServerMode::Echo)
+            .version(GmpVersion::V22_5)
+            .unix_socket_auto(),
+    )
+    .await
+    else {
         return;
     };
 
@@ -117,11 +132,14 @@ async fn version_echo_mode() {
 
 #[tokio::test]
 async fn version_fixture_mode() {
-    let Some(server) = start_server(MockGmpServer::builder()
-        .mode(ServerMode::Fixture)
-        .version(GmpVersion::V22_5)
-        .unix_socket_auto())
-    .await else {
+    let Some(server) = start_server(
+        MockGmpServer::builder()
+            .mode(ServerMode::Fixture)
+            .version(GmpVersion::V22_5)
+            .unix_socket_auto(),
+    )
+    .await
+    else {
         return;
     };
 
@@ -130,12 +148,15 @@ async fn version_fixture_mode() {
 
 #[tokio::test]
 async fn version_stateful_mode() {
-    let Some(server) = start_server(MockGmpServer::builder()
-        .mode(ServerMode::Stateful)
-        .version(GmpVersion::V22_5)
-        .credentials("admin", "secret")
-        .unix_socket_auto())
-    .await else {
+    let Some(server) = start_server(
+        MockGmpServer::builder()
+            .mode(ServerMode::Stateful)
+            .version(GmpVersion::V22_5)
+            .credentials("admin", "secret")
+            .unix_socket_auto(),
+    )
+    .await
+    else {
         return;
     };
 
@@ -144,10 +165,13 @@ async fn version_stateful_mode() {
 
 #[tokio::test]
 async fn version_default() {
-    let Some(server) = start_server(MockGmpServer::builder()
-        .mode(ServerMode::Echo)
-        .unix_socket_auto())
-    .await else {
+    let Some(server) = start_server(
+        MockGmpServer::builder()
+            .mode(ServerMode::Echo)
+            .unix_socket_auto(),
+    )
+    .await
+    else {
         return;
     };
 

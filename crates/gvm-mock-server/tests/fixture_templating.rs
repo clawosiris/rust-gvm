@@ -83,7 +83,9 @@ async fn template_uuid_substitution() {
 
 #[tokio::test]
 async fn template_uuid_unique_per_call() {
-    let Some((server, mut stream)) = fixture_server(GmpVersion::V22_5).await else { return; };
+    let Some((server, mut stream)) = fixture_server(GmpVersion::V22_5).await else {
+        return;
+    };
 
     let resp1 = send_recv(&mut stream, br#"<get_tasks usage_type="scan"/>"#).await;
     let resp2 = send_recv(&mut stream, br#"<get_tasks usage_type="scan"/>"#).await;
@@ -102,7 +104,9 @@ async fn template_uuid_unique_per_call() {
 
 #[tokio::test]
 async fn template_version_substitution() {
-    let Some((server, mut stream)) = fixture_server(GmpVersion::V22_6).await else { return; };
+    let Some((server, mut stream)) = fixture_server(GmpVersion::V22_6).await else {
+        return;
+    };
 
     let resp = send_recv(&mut stream, b"<get_version/>").await;
     let text = resp.as_str().expect("response should be valid utf8");
@@ -117,7 +121,9 @@ async fn template_version_substitution() {
 
 #[tokio::test]
 async fn template_version_v22_4() {
-    let Some((server, mut stream)) = fixture_server(GmpVersion::V22_4).await else { return; };
+    let Some((server, mut stream)) = fixture_server(GmpVersion::V22_4).await else {
+        return;
+    };
 
     let resp = send_recv(&mut stream, b"<get_version/>").await;
     let text = resp.as_str().expect("response should be valid utf8");
@@ -132,7 +138,9 @@ async fn template_version_v22_4() {
 
 #[tokio::test]
 async fn template_now_substitution() {
-    let Some((server, mut stream)) = fixture_server(GmpVersion::V22_5).await else { return; };
+    let Some((server, mut stream)) = fixture_server(GmpVersion::V22_5).await else {
+        return;
+    };
 
     let resp = send_recv(&mut stream, b"<get_tasks/>").await;
     let text = resp.as_str().expect("response should be valid utf8");
@@ -156,7 +164,9 @@ async fn template_now_substitution() {
 
 #[tokio::test]
 async fn template_no_raw_placeholders() {
-    let Some((server, mut stream)) = fixture_server(GmpVersion::V22_5).await else { return; };
+    let Some((server, mut stream)) = fixture_server(GmpVersion::V22_5).await else {
+        return;
+    };
 
     let resp = send_recv(&mut stream, b"<get_tasks/>").await;
     let text = resp.as_str().expect("response should be valid utf8");

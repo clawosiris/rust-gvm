@@ -1015,6 +1015,7 @@ dependencies = [
  "pretty_assertions",
  "quick-xml",
  "rstest",
+ "russh",
  "rustls",
  "rustls-pemfile",
  "serde",

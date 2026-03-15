@@ -51,6 +51,8 @@ pub mod listener;
 pub mod response_gen;
 pub mod scenario;
 pub mod server;
+#[cfg(feature = "ssh")]
+pub mod ssh_listener;
 pub mod store;
 pub(crate) mod util;
 pub mod version;

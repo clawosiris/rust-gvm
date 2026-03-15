@@ -131,7 +131,9 @@ async fn task_start_new_task() {
 
 #[tokio::test]
 async fn task_stop_running_task() {
-    let Some(server) = stateful_server().await else { return; };
+    let Some(server) = stateful_server().await else {
+        return;
+    };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -171,7 +173,9 @@ async fn task_stop_running_task() {
 
 #[tokio::test]
 async fn task_resume_stopped_task() {
-    let Some(server) = stateful_server().await else { return; };
+    let Some(server) = stateful_server().await else {
+        return;
+    };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -216,7 +220,9 @@ async fn task_resume_stopped_task() {
 
 #[tokio::test]
 async fn task_start_already_running_returns_409() {
-    let Some(server) = stateful_server().await else { return; };
+    let Some(server) = stateful_server().await else {
+        return;
+    };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -245,7 +251,9 @@ async fn task_start_already_running_returns_409() {
 
 #[tokio::test]
 async fn task_stop_already_stopped_returns_409() {
-    let Some(server) = stateful_server().await else { return; };
+    let Some(server) = stateful_server().await else {
+        return;
+    };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -279,7 +287,9 @@ async fn task_stop_already_stopped_returns_409() {
 
 #[tokio::test]
 async fn task_resume_non_stopped_returns_409() {
-    let Some(server) = stateful_server().await else { return; };
+    let Some(server) = stateful_server().await else {
+        return;
+    };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -308,7 +318,9 @@ async fn task_resume_non_stopped_returns_409() {
 
 #[tokio::test]
 async fn task_get_shows_current_status() {
-    let Some(server) = stateful_server().await else { return; };
+    let Some(server) = stateful_server().await else {
+        return;
+    };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -364,7 +376,9 @@ async fn task_get_shows_current_status() {
 
 #[tokio::test]
 async fn task_start_returns_report_id() {
-    let Some(server) = stateful_server().await else { return; };
+    let Some(server) = stateful_server().await else {
+        return;
+    };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 

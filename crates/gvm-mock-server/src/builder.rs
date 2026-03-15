@@ -29,6 +29,8 @@ enum Transport {
     UnixSocket(PathBuf),
     UnixSocketAuto,
     Tcp(String),
+    #[cfg(feature = "ssh")]
+    Ssh(String),
     None,
 }
 
@@ -87,6 +89,14 @@ impl MockGmpServerBuilder {
     #[must_use]
     pub fn tcp(mut self, addr: impl Into<String>) -> Self {
         self.transport = Transport::Tcp(addr.into());
+        self
+    }
+
+    /// Listen on an SSH address (e.g., "127.0.0.1:2222" or "127.0.0.1:0" for random port).
+    #[cfg(feature = "ssh")]
+    #[must_use]
+    pub fn ssh(mut self, addr: impl Into<String>) -> Self {
+        self.transport = Transport::Ssh(addr.into());
         self
     }
 
@@ -211,9 +221,22 @@ impl MockGmpServerBuilder {
                 )
                 .await
             }
+            #[cfg(feature = "ssh")]
+            Transport::Ssh(addr) => {
+                MockGmpServer::start_ssh(
+                    &addr,
+                    mode,
+                    version,
+                    fixtures,
+                    store,
+                    fault_engine,
+                    scenario_config,
+                )
+                .await
+            }
             Transport::None => Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "No transport configured. Use .unix_socket(), .unix_socket_auto(), or .tcp()",
+                "No transport configured. Use .unix_socket(), .unix_socket_auto(), .tcp(), or .ssh()",
             )),
         }
     }

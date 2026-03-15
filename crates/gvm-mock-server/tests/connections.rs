@@ -41,9 +41,9 @@ async fn send_recv_unix(stream: &mut UnixStream, xml: &[u8]) -> Response {
 async fn tcp_echo_server() -> Option<MockGmpServer> {
     build_server(
         MockGmpServer::builder()
-        .mode(ServerMode::Echo)
-        .version(GmpVersion::V22_5)
-        .tcp("127.0.0.1:0"),
+            .mode(ServerMode::Echo)
+            .version(GmpVersion::V22_5)
+            .tcp("127.0.0.1:0"),
     )
     .await
 }
@@ -51,10 +51,10 @@ async fn tcp_echo_server() -> Option<MockGmpServer> {
 async fn tcp_stateful_server() -> Option<MockGmpServer> {
     build_server(
         MockGmpServer::builder()
-        .mode(ServerMode::Stateful)
-        .version(GmpVersion::V22_5)
-        .credentials("admin", "secret")
-        .tcp("127.0.0.1:0"),
+            .mode(ServerMode::Stateful)
+            .version(GmpVersion::V22_5)
+            .credentials("admin", "secret")
+            .tcp("127.0.0.1:0"),
     )
     .await
 }
@@ -140,11 +140,14 @@ async fn tcp_multiple_clients() {
 
 #[tokio::test]
 async fn unix_reconnect() {
-    let Some(server) = build_server(MockGmpServer::builder()
-        .mode(ServerMode::Echo)
-        .version(GmpVersion::V22_5)
-        .unix_socket_auto())
-    .await else {
+    let Some(server) = build_server(
+        MockGmpServer::builder()
+            .mode(ServerMode::Echo)
+            .version(GmpVersion::V22_5)
+            .unix_socket_auto(),
+    )
+    .await
+    else {
         return;
     };
     let path = server.socket_path().expect("should have socket path");
@@ -221,9 +224,7 @@ async fn stateful_session_isolation() {
 
     server.shutdown().await;
 }
-async fn build_server(
-    builder: gvm_mock_server::MockGmpServerBuilder,
-) -> Option<MockGmpServer> {
+async fn build_server(builder: gvm_mock_server::MockGmpServerBuilder) -> Option<MockGmpServer> {
     match builder.build().await {
         Ok(server) => Some(server),
         Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,

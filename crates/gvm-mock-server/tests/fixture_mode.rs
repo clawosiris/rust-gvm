@@ -30,9 +30,9 @@ async fn send_recv(stream: &mut UnixStream, xml: &[u8]) -> Vec<u8> {
 async fn fixture_server() -> Option<MockGmpServer> {
     build_server(
         MockGmpServer::builder()
-        .mode(ServerMode::Fixture)
-        .version(GmpVersion::V22_5)
-        .unix_socket_auto(),
+            .mode(ServerMode::Fixture)
+            .version(GmpVersion::V22_5)
+            .unix_socket_auto(),
     )
     .await
 }
@@ -58,11 +58,14 @@ async fn fixture_get_version() {
 // FIX-020b: get_version returns different version when configured
 #[tokio::test]
 async fn fixture_get_version_v22_4() {
-    let Some(server) = build_server(MockGmpServer::builder()
-        .mode(ServerMode::Fixture)
-        .version(GmpVersion::V22_4)
-        .unix_socket_auto())
-    .await else {
+    let Some(server) = build_server(
+        MockGmpServer::builder()
+            .mode(ServerMode::Fixture)
+            .version(GmpVersion::V22_4)
+            .unix_socket_auto(),
+    )
+    .await
+    else {
         return;
     };
 
@@ -80,7 +83,9 @@ async fn fixture_get_version_v22_4() {
 // FIX-021: authenticate returns role and timezone
 #[tokio::test]
 async fn fixture_authenticate() {
-    let Some(server) = fixture_server().await else { return; };
+    let Some(server) = fixture_server().await else {
+        return;
+    };
     let path = server.socket_path().expect("should have socket path");
     let mut stream = UnixStream::connect(path).await.expect("connect failed");
 
@@ -106,7 +111,9 @@ async fn fixture_authenticate() {
 // FIX-022: get_tasks returns multiple tasks
 #[tokio::test]
 async fn fixture_get_tasks_multiple() {
-    let Some(server) = fixture_server().await else { return; };
+    let Some(server) = fixture_server().await else {
+        return;
+    };
     let path = server.socket_path().expect("should have socket path");
     let mut stream = UnixStream::connect(path).await.expect("connect failed");
 
@@ -130,7 +137,9 @@ async fn fixture_get_tasks_multiple() {
 // FIX-024: create_task returns 201 with id
 #[tokio::test]
 async fn fixture_create_task() {
-    let Some(server) = fixture_server().await else { return; };
+    let Some(server) = fixture_server().await else {
+        return;
+    };
     let path = server.socket_path().expect("should have socket path");
     let mut stream = UnixStream::connect(path).await.expect("connect failed");
 
@@ -154,7 +163,9 @@ async fn fixture_create_task() {
 // FIX: UUID is different each time
 #[tokio::test]
 async fn fixture_uuids_differ() {
-    let Some(server) = fixture_server().await else { return; };
+    let Some(server) = fixture_server().await else {
+        return;
+    };
     let path = server.socket_path().expect("should have socket path");
     let mut stream = UnixStream::connect(path).await.expect("connect failed");
 
@@ -209,9 +220,7 @@ async fn fixture_override_response() {
 
     server.shutdown().await;
 }
-async fn build_server(
-    builder: gvm_mock_server::MockGmpServerBuilder,
-) -> Option<MockGmpServer> {
+async fn build_server(builder: gvm_mock_server::MockGmpServerBuilder) -> Option<MockGmpServer> {
     match builder.build().await {
         Ok(server) => Some(server),
         Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,

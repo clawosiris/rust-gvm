@@ -156,7 +156,9 @@ async fn matrix_configs_create_get_list() {
 
 #[tokio::test]
 async fn matrix_scanners_create_delete_ultimate() {
-    let Some(server) = stateful_server().await else { return; };
+    let Some(server) = stateful_server().await else {
+        return;
+    };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -186,7 +188,9 @@ async fn matrix_scanners_create_delete_ultimate() {
 
 #[tokio::test]
 async fn matrix_alerts_create_list_nonempty() {
-    let Some(server) = stateful_server().await else { return; };
+    let Some(server) = stateful_server().await else {
+        return;
+    };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -209,7 +213,9 @@ async fn matrix_alerts_create_list_nonempty() {
 
 #[tokio::test]
 async fn matrix_credentials_create_get_by_id() {
-    let Some(server) = stateful_server().await else { return; };
+    let Some(server) = stateful_server().await else {
+        return;
+    };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -235,7 +241,9 @@ async fn matrix_credentials_create_get_by_id() {
 
 #[tokio::test]
 async fn matrix_filters_create_modify_name() {
-    let Some(server) = stateful_server().await else { return; };
+    let Some(server) = stateful_server().await else {
+        return;
+    };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -276,7 +284,9 @@ async fn matrix_filters_create_modify_name() {
 
 #[tokio::test]
 async fn matrix_schedules_create_delete_to_trash_and_restore() {
-    let Some(server) = stateful_server().await else { return; };
+    let Some(server) = stateful_server().await else {
+        return;
+    };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -321,7 +331,9 @@ async fn matrix_schedules_create_delete_to_trash_and_restore() {
 
 #[tokio::test]
 async fn matrix_tags_create_and_empty_trashcan() {
-    let Some(server) = stateful_server().await else { return; };
+    let Some(server) = stateful_server().await else {
+        return;
+    };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 

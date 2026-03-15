@@ -36,10 +36,10 @@ async fn auth_admin(stream: &mut UnixStream) {
 async fn stateful_server() -> Option<MockGmpServer> {
     build_server(
         MockGmpServer::builder()
-        .mode(ServerMode::Stateful)
-        .version(GmpVersion::V22_5)
-        .credentials("admin", "admin")
-        .unix_socket_auto(),
+            .mode(ServerMode::Stateful)
+            .version(GmpVersion::V22_5)
+            .credentials("admin", "admin")
+            .unix_socket_auto(),
     )
     .await
 }
@@ -94,25 +94,28 @@ async fn get_results_and_nvts_return_stateful_resources() {
     let nvt_id = Uuid::new_v4();
     let report_id = Uuid::new_v4();
 
-    let Some(server) = build_server(MockGmpServer::builder()
-        .mode(ServerMode::Stateful)
-        .version(GmpVersion::V22_5)
-        .credentials("admin", "admin")
-        .seed(move |store| {
-            let mut result = Resource::with_id("result", "Test Result", result_id);
-            result.set_attr("host", "192.168.1.1");
-            result.set_attr("port", "443/tcp");
-            result.set_attr("threat", "High");
-            result.set_attr("severity", "8.5");
-            result.set_attr("report_id", &report_id.to_string());
-            store.seed(result);
+    let Some(server) = build_server(
+        MockGmpServer::builder()
+            .mode(ServerMode::Stateful)
+            .version(GmpVersion::V22_5)
+            .credentials("admin", "admin")
+            .seed(move |store| {
+                let mut result = Resource::with_id("result", "Test Result", result_id);
+                result.set_attr("host", "192.168.1.1");
+                result.set_attr("port", "443/tcp");
+                result.set_attr("threat", "High");
+                result.set_attr("severity", "8.5");
+                result.set_attr("report_id", &report_id.to_string());
+                store.seed(result);
 
-            let mut nvt = Resource::with_id("nvt", "Test NVT", nvt_id);
-            nvt.set_attr("family", "General");
-            store.seed(nvt);
-        })
-        .unix_socket_auto())
-    .await else {
+                let mut nvt = Resource::with_id("nvt", "Test NVT", nvt_id);
+                nvt.set_attr("family", "General");
+                store.seed(nvt);
+            })
+            .unix_socket_auto(),
+    )
+    .await
+    else {
         return;
     };
 
@@ -138,7 +141,9 @@ async fn get_results_and_nvts_return_stateful_resources() {
 
 #[tokio::test]
 async fn create_and_modify_note_uses_text_payload() {
-    let Some(server) = stateful_server().await else { return; };
+    let Some(server) = stateful_server().await else {
+        return;
+    };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -176,7 +181,9 @@ async fn create_and_modify_note_uses_text_payload() {
 
 #[tokio::test]
 async fn create_and_modify_ticket_handles_comment_and_status() {
-    let Some(server) = stateful_server().await else { return; };
+    let Some(server) = stateful_server().await else {
+        return;
+    };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -217,24 +224,27 @@ async fn get_report_by_id_returns_nested_results() {
     let report_id = Uuid::new_v4();
     let result_id = Uuid::new_v4();
 
-    let Some(server) = build_server(MockGmpServer::builder()
-        .mode(ServerMode::Stateful)
-        .version(GmpVersion::V22_5)
-        .credentials("admin", "admin")
-        .seed(move |store| {
-            let report = Resource::with_id("report", "Report Name", report_id);
-            store.seed(report);
+    let Some(server) = build_server(
+        MockGmpServer::builder()
+            .mode(ServerMode::Stateful)
+            .version(GmpVersion::V22_5)
+            .credentials("admin", "admin")
+            .seed(move |store| {
+                let report = Resource::with_id("report", "Report Name", report_id);
+                store.seed(report);
 
-            let mut result = Resource::with_id("result", "Test Finding", result_id);
-            result.set_attr("report_id", &report_id.to_string());
-            result.set_attr("host", "192.168.1.1");
-            result.set_attr("port", "443/tcp");
-            result.set_attr("threat", "High");
-            result.set_attr("severity", "8.5");
-            store.seed(result);
-        })
-        .unix_socket_auto())
-    .await else {
+                let mut result = Resource::with_id("result", "Test Finding", result_id);
+                result.set_attr("report_id", &report_id.to_string());
+                result.set_attr("host", "192.168.1.1");
+                result.set_attr("port", "443/tcp");
+                result.set_attr("threat", "High");
+                result.set_attr("severity", "8.5");
+                store.seed(result);
+            })
+            .unix_socket_auto(),
+    )
+    .await
+    else {
         return;
     };
 
@@ -254,9 +264,7 @@ async fn get_report_by_id_returns_nested_results() {
 
     server.shutdown().await;
 }
-async fn build_server(
-    builder: gvm_mock_server::MockGmpServerBuilder,
-) -> Option<MockGmpServer> {
+async fn build_server(builder: gvm_mock_server::MockGmpServerBuilder) -> Option<MockGmpServer> {
     match builder.build().await {
         Ok(server) => Some(server),
         Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,

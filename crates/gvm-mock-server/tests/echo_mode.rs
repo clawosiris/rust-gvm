@@ -93,7 +93,9 @@ async fn echo_create_task_returns_201_with_id() {
 // ECHO-003: get_version returns configured version
 #[tokio::test]
 async fn echo_get_version_returns_configured_version() {
-    let Some(server) = echo_server().await else { return; };
+    let Some(server) = echo_server().await else {
+        return;
+    };
     let path = server.socket_path().expect("should have socket path");
     let mut stream = UnixStream::connect(path).await.expect("connect failed");
 
@@ -109,7 +111,9 @@ async fn echo_get_version_returns_configured_version() {
 // ECHO-004: Unknown command returns 400
 #[tokio::test]
 async fn echo_unknown_command_returns_400() {
-    let Some(server) = echo_server().await else { return; };
+    let Some(server) = echo_server().await else {
+        return;
+    };
     let path = server.socket_path().expect("should have socket path");
     let mut stream = UnixStream::connect(path).await.expect("connect failed");
 
@@ -125,7 +129,9 @@ async fn echo_unknown_command_returns_400() {
 // ECHO-005: Multiple sequential commands all get valid responses
 #[tokio::test]
 async fn echo_multiple_commands_sequential() {
-    let Some(server) = echo_server().await else { return; };
+    let Some(server) = echo_server().await else {
+        return;
+    };
     let path = server.socket_path().expect("should have socket path");
     let mut stream = UnixStream::connect(path).await.expect("connect failed");
 
@@ -160,7 +166,9 @@ async fn echo_multiple_commands_sequential() {
 // ECHO-006: Command history records all commands
 #[tokio::test]
 async fn echo_command_history() {
-    let Some(server) = echo_server().await else { return; };
+    let Some(server) = echo_server().await else {
+        return;
+    };
     let path = server.socket_path().expect("should have socket path");
     let mut stream = UnixStream::connect(path).await.expect("connect failed");
 
@@ -187,7 +195,9 @@ async fn echo_command_history() {
 // ECHO-007: Response tag matches command name
 #[tokio::test]
 async fn echo_response_tag_matches_command() {
-    let Some(server) = echo_server().await else { return; };
+    let Some(server) = echo_server().await else {
+        return;
+    };
     let path = server.socket_path().expect("should have socket path");
     let mut stream = UnixStream::connect(path).await.expect("connect failed");
 

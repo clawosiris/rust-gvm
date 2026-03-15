@@ -33,7 +33,7 @@ russh = { workspace = true, optional = true }
 pretty_assertions.workspace = true
 tempfile.workspace = true
 tokio-test.workspace = true
-gvm-mock-server.workspace = true
+gvm-mock-server = { workspace = true, features = ["ssh"] }
 
 [lints]
 workspace = true

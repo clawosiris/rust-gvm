@@ -25,10 +25,12 @@ async fn send_recv(stream: &mut UnixStream, xml: &[u8]) -> Response {
 }
 
 async fn server() -> Option<(MockGmpServer, UnixStream)> {
-    let s = build_server(MockGmpServer::builder()
-        .mode(ServerMode::Fixture)
-        .version(GmpVersion::V22_5)
-        .unix_socket_auto())
+    let s = build_server(
+        MockGmpServer::builder()
+            .mode(ServerMode::Fixture)
+            .version(GmpVersion::V22_5)
+            .unix_socket_auto(),
+    )
     .await?;
     let path = s.socket_path().unwrap().to_owned();
     let stream = UnixStream::connect(&path).await.expect("connect");
@@ -91,7 +93,9 @@ async fn fixture_get_alerts() {
 
 #[tokio::test]
 async fn fixture_get_credentials() {
-    let Some((server, mut s)) = server().await else { return; };
+    let Some((server, mut s)) = server().await else {
+        return;
+    };
     let r = send_recv(&mut s, b"<get_credentials/>").await;
     assert!(r.is_success());
     server.shutdown().await;
@@ -99,7 +103,9 @@ async fn fixture_get_credentials() {
 
 #[tokio::test]
 async fn fixture_get_filters() {
-    let Some((server, mut s)) = server().await else { return; };
+    let Some((server, mut s)) = server().await else {
+        return;
+    };
     let r = send_recv(&mut s, b"<get_filters/>").await;
     assert!(r.is_success());
     server.shutdown().await;
@@ -107,7 +113,9 @@ async fn fixture_get_filters() {
 
 #[tokio::test]
 async fn fixture_get_reports() {
-    let Some((server, mut s)) = server().await else { return; };
+    let Some((server, mut s)) = server().await else {
+        return;
+    };
     let r = send_recv(&mut s, b"<get_reports/>").await;
     assert!(r.is_success());
     server.shutdown().await;
@@ -115,7 +123,9 @@ async fn fixture_get_reports() {
 
 #[tokio::test]
 async fn fixture_get_schedules() {
-    let Some((server, mut s)) = server().await else { return; };
+    let Some((server, mut s)) = server().await else {
+        return;
+    };
     let r = send_recv(&mut s, b"<get_schedules/>").await;
     assert!(r.is_success());
     server.shutdown().await;
@@ -123,14 +133,14 @@ async fn fixture_get_schedules() {
 
 #[tokio::test]
 async fn fixture_get_port_lists() {
-    let Some((server, mut s)) = server().await else { return; };
+    let Some((server, mut s)) = server().await else {
+        return;
+    };
     let r = send_recv(&mut s, b"<get_port_lists/>").await;
     assert!(r.is_success());
     server.shutdown().await;
 }
-async fn build_server(
-    builder: gvm_mock_server::MockGmpServerBuilder,
-) -> Option<MockGmpServer> {
+async fn build_server(builder: gvm_mock_server::MockGmpServerBuilder) -> Option<MockGmpServer> {
     match builder.build().await {
         Ok(server) => Some(server),
         Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,

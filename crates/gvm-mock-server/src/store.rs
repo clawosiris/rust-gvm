@@ -170,6 +170,12 @@ impl ResourceStore {
         inner.authenticated_sessions.contains(&session_id)
     }
 
+    /// Check whether the provided credentials match the configured SSH credentials.
+    pub(crate) fn credentials_match(&self, username: &str, password: &str) -> bool {
+        let inner = self.inner.read().expect("store lock poisoned");
+        inner.username == username && inner.password == password
+    }
+
     /// Create a resource. Returns the generated UUID.
     pub fn create(&self, mut resource: Resource) -> Uuid {
         let id = resource.id;

@@ -42,7 +42,7 @@ pub struct ListenerState {
 }
 
 impl ListenerState {
-    fn next_session_id(&self) -> u64 {
+    pub(crate) fn next_session_id(&self) -> u64 {
         self.session_counter.fetch_add(1, Ordering::Relaxed)
     }
 }
@@ -166,7 +166,7 @@ pub(crate) enum CommandResult {
 }
 
 /// Try to extract a complete XML command from the buffer.
-fn try_extract_command(buf: &mut Vec<u8>, handler: &SessionHandler) -> CommandResult {
+pub(crate) fn try_extract_command(buf: &mut Vec<u8>, handler: &SessionHandler) -> CommandResult {
     // Simple approach: look for a complete XML element.
     // We use a quick heuristic — find the root element close.
     // For self-closing elements: />

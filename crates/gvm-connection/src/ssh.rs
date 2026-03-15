@@ -52,11 +52,7 @@ impl Default for SshConfig {
 impl SshConfig {
     /// Create config with the required SSH endpoint and authentication.
     #[must_use]
-    pub fn new(
-        hostname: impl Into<String>,
-        username: impl Into<String>,
-        auth: SshAuth,
-    ) -> Self {
+    pub fn new(hostname: impl Into<String>, username: impl Into<String>, auth: SshAuth) -> Self {
         Self {
             hostname: hostname.into(),
             username: username.into(),
@@ -171,11 +167,12 @@ impl SshConnection {
             } => {
                 let key_pair = keys::load_secret_key(key_path, passphrase.as_deref())
                     .map_err(Self::connect_error)?;
-                let hash_alg = tokio::time::timeout(config.timeout, session.best_supported_rsa_hash())
-                    .await
-                    .map_err(|_| ConnectionError::Timeout(config.timeout))?
-                    .map_err(Self::connect_error)?
-                    .flatten();
+                let hash_alg =
+                    tokio::time::timeout(config.timeout, session.best_supported_rsa_hash())
+                        .await
+                        .map_err(|_| ConnectionError::Timeout(config.timeout))?
+                        .map_err(Self::connect_error)?
+                        .flatten();
 
                 tokio::time::timeout(
                     config.timeout,
@@ -202,11 +199,12 @@ impl SshConnection {
                     .ok_or_else(|| {
                         Self::connect_error("ssh-agent did not return any identities")
                     })?;
-                let hash_alg = tokio::time::timeout(config.timeout, session.best_supported_rsa_hash())
-                    .await
-                    .map_err(|_| ConnectionError::Timeout(config.timeout))?
-                    .map_err(Self::connect_error)?
-                    .flatten();
+                let hash_alg =
+                    tokio::time::timeout(config.timeout, session.best_supported_rsa_hash())
+                        .await
+                        .map_err(|_| ConnectionError::Timeout(config.timeout))?
+                        .map_err(Self::connect_error)?
+                        .flatten();
 
                 tokio::time::timeout(
                     config.timeout,
@@ -357,7 +355,9 @@ impl GvmConnection for SshConnection {
                 Some(ChannelMsg::OpenFailure(error)) => {
                     return Err(Self::read_error(format!("{error:?}")));
                 }
-                Some(ChannelMsg::WindowAdjusted { .. } | ChannelMsg::Success | ChannelMsg::Failure) => {}
+                Some(
+                    ChannelMsg::WindowAdjusted { .. } | ChannelMsg::Success | ChannelMsg::Failure,
+                ) => {}
                 Some(other) => {
                     return Err(Self::read_error(format!(
                         "unexpected ssh channel message: {other:?}"
@@ -388,10 +388,14 @@ mod tests {
 
     #[test]
     fn test_custom_config() {
-        let config = SshConfig::new("scanner.example", "alice", SshAuth::Password("secret".into()))
-            .with_port(2222)
-            .with_remote_socket("/tmp/gvmd.sock")
-            .with_timeout(Duration::from_secs(15));
+        let config = SshConfig::new(
+            "scanner.example",
+            "alice",
+            SshAuth::Password("secret".into()),
+        )
+        .with_port(2222)
+        .with_remote_socket("/tmp/gvmd.sock")
+        .with_timeout(Duration::from_secs(15));
 
         assert_eq!(config.hostname, "scanner.example");
         assert_eq!(config.username, "alice");

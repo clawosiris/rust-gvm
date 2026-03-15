@@ -28,9 +28,9 @@ async fn send_recv(stream: &mut UnixStream, xml: &[u8]) -> Response {
 async fn server() -> Option<MockGmpServer> {
     build_server(
         MockGmpServer::builder()
-        .mode(ServerMode::Fixture)
-        .version(GmpVersion::V22_5)
-        .unix_socket_auto(),
+            .mode(ServerMode::Fixture)
+            .version(GmpVersion::V22_5)
+            .unix_socket_auto(),
     )
     .await
 }
@@ -110,9 +110,7 @@ async fn fixture_get_credentials_contains_credential_tag() {
 async fn fixture_get_alerts_contains_alert_tag() {
     assert_fixture_contains(b"<get_alerts/>", "<alert ").await;
 }
-async fn build_server(
-    builder: gvm_mock_server::MockGmpServerBuilder,
-) -> Option<MockGmpServer> {
+async fn build_server(builder: gvm_mock_server::MockGmpServerBuilder) -> Option<MockGmpServer> {
     match builder.build().await {
         Ok(server) => Some(server),
         Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
