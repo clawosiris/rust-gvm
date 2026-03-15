@@ -31,3 +31,4 @@ tarpaulin-report.html
 # Environment
 .env
 .env.local
+CODEX_*.md
