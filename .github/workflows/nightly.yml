@@ -122,29 +122,17 @@ jobs:
         run: cargo install cargo-cyclonedx
 
       - name: Generate CycloneDX SBOM (JSON)
-        run: cargo cyclonedx --format json --all --output-cdx
+        run: cargo cyclonedx --format json --all
 
       - name: Generate CycloneDX SBOM (XML)
-        run: cargo cyclonedx --format xml --all --output-cdx
+        run: cargo cyclonedx --format xml --all
 
       - name: Collect SBOMs
         shell: bash
         run: |
           mkdir -p sbom-artifacts
-          for f in $(find . -name '*_cdx.json' -o -name '*.cdx.json' | grep -v target | grep -v sbom-artifacts); do
-            crate=$(basename "$(dirname "$f")")
-            cp "$f" "sbom-artifacts/${crate}.cdx.json" 2>/dev/null || true
-          done
-          for f in $(find . -name '*_cdx.xml' -o -name '*.cdx.xml' | grep -v target | grep -v sbom-artifacts); do
-            crate=$(basename "$(dirname "$f")")
-            cp "$f" "sbom-artifacts/${crate}.cdx.xml" 2>/dev/null || true
-          done
-          if [ -f bom.json ] || [ -f bom.cdx.json ]; then
-            cp bom*.json sbom-artifacts/workspace.cdx.json 2>/dev/null || true
-          fi
-          if [ -f bom.xml ] || [ -f bom.cdx.xml ]; then
-            cp bom*.xml sbom-artifacts/workspace.cdx.xml 2>/dev/null || true
-          fi
+          find . -name '*.cdx.json' -not -path '*/target/*' -exec cp {} sbom-artifacts/ \;
+          find . -name '*.cdx.xml' -not -path '*/target/*' -exec cp {} sbom-artifacts/ \;
           ls -la sbom-artifacts/
 
       - name: Package SBOMs
