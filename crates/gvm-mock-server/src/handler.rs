@@ -242,7 +242,9 @@ impl SessionHandler {
         }
 
         let name = match resource_type {
-            "note" | "override" => parse_element_text(raw_xml, "text").unwrap_or_default(),
+            "note" | "override" => parse_element_text(raw_xml, "text")
+                .or_else(|| parse_element_text(raw_xml, "name"))
+                .unwrap_or_default(),
             _ => parse_element_text(raw_xml, "name").unwrap_or_default(),
         };
         let requires_name = !matches!(resource_type, "note" | "override" | "ticket" | "port_range");
