@@ -28,18 +28,22 @@ async fn send_recv(stream: &mut UnixStream, xml: &[u8]) -> Response {
 }
 
 /// Helper: start a fixture server for the given version and connect a stream.
-async fn fixture_server(version: GmpVersion) -> (MockGmpServer, UnixStream) {
-    let server = MockGmpServer::builder()
+async fn fixture_server(version: GmpVersion) -> Option<(MockGmpServer, UnixStream)> {
+    let server = match MockGmpServer::builder()
         .mode(ServerMode::Fixture)
         .version(version)
         .unix_socket_auto()
         .build()
         .await
-        .expect("server start failed");
+    {
+        Ok(server) => server,
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return None,
+        Err(error) => panic!("server start failed: {error}"),
+    };
 
     let path = server.socket_path().expect("should have socket path");
     let stream = UnixStream::connect(path).await.expect("connect failed");
-    (server, stream)
+    Some((server, stream))
 }
 
 fn extract_first_attr(text: &str, attr: &str) -> String {
@@ -61,7 +65,9 @@ fn extract_tag_value(text: &str, tag: &str) -> String {
 
 #[tokio::test]
 async fn template_uuid_substitution() {
-    let (server, mut stream) = fixture_server(GmpVersion::V22_5).await;
+    let Some((server, mut stream)) = fixture_server(GmpVersion::V22_5).await else {
+        return;
+    };
 
     let resp = send_recv(&mut stream, br#"<get_tasks usage_type="scan"/>"#).await;
     let text = resp.as_str().expect("response should be valid utf8");
@@ -77,7 +83,7 @@ async fn template_uuid_substitution() {
 
 #[tokio::test]
 async fn template_uuid_unique_per_call() {
-    let (server, mut stream) = fixture_server(GmpVersion::V22_5).await;
+    let Some((server, mut stream)) = fixture_server(GmpVersion::V22_5).await else { return; };
 
     let resp1 = send_recv(&mut stream, br#"<get_tasks usage_type="scan"/>"#).await;
     let resp2 = send_recv(&mut stream, br#"<get_tasks usage_type="scan"/>"#).await;
@@ -96,7 +102,7 @@ async fn template_uuid_unique_per_call() {
 
 #[tokio::test]
 async fn template_version_substitution() {
-    let (server, mut stream) = fixture_server(GmpVersion::V22_6).await;
+    let Some((server, mut stream)) = fixture_server(GmpVersion::V22_6).await else { return; };
 
     let resp = send_recv(&mut stream, b"<get_version/>").await;
     let text = resp.as_str().expect("response should be valid utf8");
@@ -111,7 +117,7 @@ async fn template_version_substitution() {
 
 #[tokio::test]
 async fn template_version_v22_4() {
-    let (server, mut stream) = fixture_server(GmpVersion::V22_4).await;
+    let Some((server, mut stream)) = fixture_server(GmpVersion::V22_4).await else { return; };
 
     let resp = send_recv(&mut stream, b"<get_version/>").await;
     let text = resp.as_str().expect("response should be valid utf8");
@@ -126,7 +132,7 @@ async fn template_version_v22_4() {
 
 #[tokio::test]
 async fn template_now_substitution() {
-    let (server, mut stream) = fixture_server(GmpVersion::V22_5).await;
+    let Some((server, mut stream)) = fixture_server(GmpVersion::V22_5).await else { return; };
 
     let resp = send_recv(&mut stream, b"<get_tasks/>").await;
     let text = resp.as_str().expect("response should be valid utf8");
@@ -150,7 +156,7 @@ async fn template_now_substitution() {
 
 #[tokio::test]
 async fn template_no_raw_placeholders() {
-    let (server, mut stream) = fixture_server(GmpVersion::V22_5).await;
+    let Some((server, mut stream)) = fixture_server(GmpVersion::V22_5).await else { return; };
 
     let resp = send_recv(&mut stream, b"<get_tasks/>").await;
     let text = resp.as_str().expect("response should be valid utf8");

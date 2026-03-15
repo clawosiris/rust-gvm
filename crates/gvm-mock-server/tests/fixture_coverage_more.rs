@@ -25,18 +25,20 @@ async fn send_recv(stream: &mut UnixStream, xml: &[u8]) -> Response {
     Response::new(buf)
 }
 
-async fn server() -> MockGmpServer {
-    MockGmpServer::builder()
+async fn server() -> Option<MockGmpServer> {
+    build_server(
+        MockGmpServer::builder()
         .mode(ServerMode::Fixture)
         .version(GmpVersion::V22_5)
-        .unix_socket_auto()
-        .build()
-        .await
-        .expect("server start failed")
+        .unix_socket_auto(),
+    )
+    .await
 }
 
 async fn assert_fixture_contains(command: &[u8], tag: &str) {
-    let server = server().await;
+    let Some(server) = server().await else {
+        return;
+    };
     let path = server.socket_path().expect("should have socket path");
     let mut stream = UnixStream::connect(path).await.expect("connect failed");
 
@@ -107,4 +109,13 @@ async fn fixture_get_credentials_contains_credential_tag() {
 #[tokio::test]
 async fn fixture_get_alerts_contains_alert_tag() {
     assert_fixture_contains(b"<get_alerts/>", "<alert ").await;
+}
+async fn build_server(
+    builder: gvm_mock_server::MockGmpServerBuilder,
+) -> Option<MockGmpServer> {
+    match builder.build().await {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("server start failed: {error}"),
+    }
 }

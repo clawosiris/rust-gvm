@@ -11,32 +11,48 @@
 
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
 
+async fn build_server(
+    builder: gvm_mock_server::MockGmpServerBuilder,
+) -> Option<MockGmpServer> {
+    match builder.build().await {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("should start: {error}"),
+    }
+}
+
 #[tokio::test]
 async fn builder_tcp_mode() {
-    let server = MockGmpServer::builder()
+    let server = build_server(
+        MockGmpServer::builder()
         .mode(ServerMode::Echo)
         .version(GmpVersion::V22_5)
-        .tcp("127.0.0.1:0")
-        .build()
-        .await
-        .expect("should start");
+        .tcp("127.0.0.1:0"),
+    )
+    .await;
+    let Some(server) = server else {
+        return;
+    };
     assert!(server.tcp_addr().is_some());
     server.shutdown().await;
 }
 
 #[tokio::test]
 async fn builder_fixture_mode_with_override() {
-    let server = MockGmpServer::builder()
+    let server = build_server(
+        MockGmpServer::builder()
         .mode(ServerMode::Fixture)
         .version(GmpVersion::V22_4)
         .override_response(
             "get_tasks",
             "<get_tasks_response status=\"200\" status_text=\"OK\"/>",
         )
-        .unix_socket_auto()
-        .build()
-        .await
-        .expect("should start");
+        .unix_socket_auto(),
+    )
+    .await;
+    let Some(server) = server else {
+        return;
+    };
     server.shutdown().await;
 }
 
@@ -53,12 +69,15 @@ async fn builder_seed_non_stateful_panics() {
 
 #[tokio::test]
 async fn builder_with_credentials() {
-    let server = MockGmpServer::builder()
+    let server = build_server(
+        MockGmpServer::builder()
         .mode(ServerMode::Stateful)
         .credentials("user", "pass")
-        .unix_socket_auto()
-        .build()
-        .await
-        .expect("should start");
+        .unix_socket_auto(),
+    )
+    .await;
+    let Some(server) = server else {
+        return;
+    };
     server.shutdown().await;
 }

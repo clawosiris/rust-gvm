@@ -136,7 +136,7 @@ fn parse_children(
                 });
             }
             Ok(Event::Text(ref t)) => {
-                if let Ok(unescaped) = t.unescape() {
+                if let Ok(unescaped) = t.xml_content() {
                     current_text.push_str(&unescaped);
                 }
             }
@@ -179,7 +179,7 @@ pub fn parse_element_text(xml: &[u8], element_name: &str) -> Option<String> {
                 }
             }
             Ok(Event::Text(ref t)) if inside => {
-                if let Ok(unescaped) = t.unescape() {
+                if let Ok(unescaped) = t.xml_content() {
                     result.push_str(&unescaped);
                 }
             }

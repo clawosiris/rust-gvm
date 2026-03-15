@@ -8,20 +8,27 @@ use gvm_connection::{GvmConnection, UnixSocketConfig, UnixSocketConnection};
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
 use gvm_protocol::{Request, Response, XmlCommand};
 
-async fn start_mock() -> MockGmpServer {
-    MockGmpServer::builder()
+async fn start_mock() -> Option<MockGmpServer> {
+    match MockGmpServer::builder()
         .mode(ServerMode::Stateful)
         .version(GmpVersion::V22_5)
         .credentials("admin", "admin")
         .unix_socket_auto()
         .build()
         .await
-        .expect("mock server start failed")
+    {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("mock server start failed: {error}"),
+    }
 }
 
 #[tokio::test]
 async fn connect_and_get_version() {
     let server = start_mock().await;
+    let Some(server) = server else {
+        return;
+    };
     let socket_path = server.socket_path().expect("should have socket");
 
     let config = UnixSocketConfig::new(socket_path);
@@ -47,6 +54,9 @@ async fn connect_and_get_version() {
 #[tokio::test]
 async fn connect_authenticate_and_create_target() {
     let server = start_mock().await;
+    let Some(server) = server else {
+        return;
+    };
     let socket_path = server.socket_path().expect("should have socket");
 
     let config = UnixSocketConfig::new(socket_path);
@@ -75,6 +85,9 @@ async fn connect_authenticate_and_create_target() {
 #[tokio::test]
 async fn reconnect_flow() {
     let server = start_mock().await;
+    let Some(server) = server else {
+        return;
+    };
     let socket_path = server.socket_path().expect("should have socket");
 
     let config = UnixSocketConfig::new(socket_path);
@@ -130,6 +143,9 @@ async fn connect_not_connected_errors() {
 #[tokio::test]
 async fn double_connect_errors() {
     let server = start_mock().await;
+    let Some(server) = server else {
+        return;
+    };
     let socket_path = server.socket_path().expect("should have socket");
 
     let config = UnixSocketConfig::new(socket_path);

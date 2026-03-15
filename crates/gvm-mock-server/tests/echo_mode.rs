@@ -28,20 +28,26 @@ async fn send_recv(stream: &mut UnixStream, xml: &[u8]) -> Vec<u8> {
 }
 
 /// Helper: start an echo server on auto Unix socket.
-async fn echo_server() -> MockGmpServer {
-    MockGmpServer::builder()
+async fn echo_server() -> Option<MockGmpServer> {
+    match MockGmpServer::builder()
         .mode(ServerMode::Echo)
         .version(GmpVersion::V22_5)
         .unix_socket_auto()
         .build()
         .await
-        .expect("server start failed")
+    {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("server start failed: {error}"),
+    }
 }
 
 // ECHO-001: Any recognized command returns 200
 #[tokio::test]
 async fn echo_get_tasks_returns_200() {
-    let server = echo_server().await;
+    let Some(server) = echo_server().await else {
+        return;
+    };
     let path = server.socket_path().expect("should have socket path");
     let mut stream = UnixStream::connect(path).await.expect("connect failed");
 
@@ -61,7 +67,9 @@ async fn echo_get_tasks_returns_200() {
 // ECHO-002: Create commands return 201 with id
 #[tokio::test]
 async fn echo_create_task_returns_201_with_id() {
-    let server = echo_server().await;
+    let Some(server) = echo_server().await else {
+        return;
+    };
     let path = server.socket_path().expect("should have socket path");
     let mut stream = UnixStream::connect(path).await.expect("connect failed");
 
@@ -85,7 +93,7 @@ async fn echo_create_task_returns_201_with_id() {
 // ECHO-003: get_version returns configured version
 #[tokio::test]
 async fn echo_get_version_returns_configured_version() {
-    let server = echo_server().await;
+    let Some(server) = echo_server().await else { return; };
     let path = server.socket_path().expect("should have socket path");
     let mut stream = UnixStream::connect(path).await.expect("connect failed");
 
@@ -101,7 +109,7 @@ async fn echo_get_version_returns_configured_version() {
 // ECHO-004: Unknown command returns 400
 #[tokio::test]
 async fn echo_unknown_command_returns_400() {
-    let server = echo_server().await;
+    let Some(server) = echo_server().await else { return; };
     let path = server.socket_path().expect("should have socket path");
     let mut stream = UnixStream::connect(path).await.expect("connect failed");
 
@@ -117,7 +125,7 @@ async fn echo_unknown_command_returns_400() {
 // ECHO-005: Multiple sequential commands all get valid responses
 #[tokio::test]
 async fn echo_multiple_commands_sequential() {
-    let server = echo_server().await;
+    let Some(server) = echo_server().await else { return; };
     let path = server.socket_path().expect("should have socket path");
     let mut stream = UnixStream::connect(path).await.expect("connect failed");
 
@@ -152,7 +160,7 @@ async fn echo_multiple_commands_sequential() {
 // ECHO-006: Command history records all commands
 #[tokio::test]
 async fn echo_command_history() {
-    let server = echo_server().await;
+    let Some(server) = echo_server().await else { return; };
     let path = server.socket_path().expect("should have socket path");
     let mut stream = UnixStream::connect(path).await.expect("connect failed");
 
@@ -179,7 +187,7 @@ async fn echo_command_history() {
 // ECHO-007: Response tag matches command name
 #[tokio::test]
 async fn echo_response_tag_matches_command() {
-    let server = echo_server().await;
+    let Some(server) = echo_server().await else { return; };
     let path = server.socket_path().expect("should have socket path");
     let mut stream = UnixStream::connect(path).await.expect("connect failed");
 

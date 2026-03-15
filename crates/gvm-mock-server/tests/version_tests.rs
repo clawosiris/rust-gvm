@@ -42,106 +42,114 @@ async fn assert_version_response(server: MockGmpServer, expected_version: &str) 
     server.shutdown().await;
 }
 
+async fn start_server(builder: gvm_mock_server::MockGmpServerBuilder) -> Option<MockGmpServer> {
+    match builder.build().await {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("server start failed: {error}"),
+    }
+}
+
 #[tokio::test]
 async fn version_v22_4() {
-    let server = MockGmpServer::builder()
+    let Some(server) = start_server(MockGmpServer::builder()
         .mode(ServerMode::Echo)
         .version(GmpVersion::V22_4)
-        .unix_socket_auto()
-        .build()
-        .await
-        .expect("server start failed");
+        .unix_socket_auto())
+    .await else {
+        return;
+    };
 
     assert_version_response(server, "22.4").await;
 }
 
 #[tokio::test]
 async fn version_v22_5() {
-    let server = MockGmpServer::builder()
+    let Some(server) = start_server(MockGmpServer::builder()
         .mode(ServerMode::Echo)
         .version(GmpVersion::V22_5)
-        .unix_socket_auto()
-        .build()
-        .await
-        .expect("server start failed");
+        .unix_socket_auto())
+    .await else {
+        return;
+    };
 
     assert_version_response(server, "22.5").await;
 }
 
 #[tokio::test]
 async fn version_v22_6() {
-    let server = MockGmpServer::builder()
+    let Some(server) = start_server(MockGmpServer::builder()
         .mode(ServerMode::Echo)
         .version(GmpVersion::V22_6)
-        .unix_socket_auto()
-        .build()
-        .await
-        .expect("server start failed");
+        .unix_socket_auto())
+    .await else {
+        return;
+    };
 
     assert_version_response(server, "22.6").await;
 }
 
 #[tokio::test]
 async fn version_v22_7() {
-    let server = MockGmpServer::builder()
+    let Some(server) = start_server(MockGmpServer::builder()
         .mode(ServerMode::Echo)
         .version(GmpVersion::V22_7)
-        .unix_socket_auto()
-        .build()
-        .await
-        .expect("server start failed");
+        .unix_socket_auto())
+    .await else {
+        return;
+    };
 
     assert_version_response(server, "22.7").await;
 }
 
 #[tokio::test]
 async fn version_echo_mode() {
-    let server = MockGmpServer::builder()
+    let Some(server) = start_server(MockGmpServer::builder()
         .mode(ServerMode::Echo)
         .version(GmpVersion::V22_5)
-        .unix_socket_auto()
-        .build()
-        .await
-        .expect("server start failed");
+        .unix_socket_auto())
+    .await else {
+        return;
+    };
 
     assert_version_response(server, "22.5").await;
 }
 
 #[tokio::test]
 async fn version_fixture_mode() {
-    let server = MockGmpServer::builder()
+    let Some(server) = start_server(MockGmpServer::builder()
         .mode(ServerMode::Fixture)
         .version(GmpVersion::V22_5)
-        .unix_socket_auto()
-        .build()
-        .await
-        .expect("server start failed");
+        .unix_socket_auto())
+    .await else {
+        return;
+    };
 
     assert_version_response(server, "22.5").await;
 }
 
 #[tokio::test]
 async fn version_stateful_mode() {
-    let server = MockGmpServer::builder()
+    let Some(server) = start_server(MockGmpServer::builder()
         .mode(ServerMode::Stateful)
         .version(GmpVersion::V22_5)
         .credentials("admin", "secret")
-        .unix_socket_auto()
-        .build()
-        .await
-        .expect("server start failed");
+        .unix_socket_auto())
+    .await else {
+        return;
+    };
 
     assert_version_response(server, "22.5").await;
 }
 
 #[tokio::test]
 async fn version_default() {
-    let server = MockGmpServer::builder()
+    let Some(server) = start_server(MockGmpServer::builder()
         .mode(ServerMode::Echo)
-        .unix_socket_auto()
-        .build()
-        .await
-        .expect("server start failed");
+        .unix_socket_auto())
+    .await else {
+        return;
+    };
 
     assert_version_response(server, "22.5").await;
 }

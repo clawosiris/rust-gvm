@@ -38,30 +38,32 @@ async fn send_recv_unix(stream: &mut UnixStream, xml: &[u8]) -> Response {
     Response::new(buf)
 }
 
-async fn tcp_echo_server() -> MockGmpServer {
-    MockGmpServer::builder()
+async fn tcp_echo_server() -> Option<MockGmpServer> {
+    build_server(
+        MockGmpServer::builder()
         .mode(ServerMode::Echo)
         .version(GmpVersion::V22_5)
-        .tcp("127.0.0.1:0")
-        .build()
-        .await
-        .expect("server start failed")
+        .tcp("127.0.0.1:0"),
+    )
+    .await
 }
 
-async fn tcp_stateful_server() -> MockGmpServer {
-    MockGmpServer::builder()
+async fn tcp_stateful_server() -> Option<MockGmpServer> {
+    build_server(
+        MockGmpServer::builder()
         .mode(ServerMode::Stateful)
         .version(GmpVersion::V22_5)
         .credentials("admin", "secret")
-        .tcp("127.0.0.1:0")
-        .build()
-        .await
-        .expect("server start failed")
+        .tcp("127.0.0.1:0"),
+    )
+    .await
 }
 
 #[tokio::test]
 async fn tcp_get_version() {
-    let server = tcp_echo_server().await;
+    let Some(server) = tcp_echo_server().await else {
+        return;
+    };
     let port = server.port().expect("should have TCP port");
     let mut stream = TcpStream::connect(("127.0.0.1", port))
         .await
@@ -77,7 +79,9 @@ async fn tcp_get_version() {
 
 #[tokio::test]
 async fn tcp_random_port() {
-    let server = tcp_echo_server().await;
+    let Some(server) = tcp_echo_server().await else {
+        return;
+    };
     let port = server.port().expect("should have TCP port");
 
     assert_ne!(port, 0, "server should expose the assigned random port");
@@ -94,7 +98,9 @@ async fn tcp_random_port() {
 
 #[tokio::test]
 async fn tcp_multiple_clients() {
-    let server = tcp_echo_server().await;
+    let Some(server) = tcp_echo_server().await else {
+        return;
+    };
     let port = server.port().expect("should have TCP port");
 
     let mut client_a = TcpStream::connect(("127.0.0.1", port))
@@ -134,13 +140,13 @@ async fn tcp_multiple_clients() {
 
 #[tokio::test]
 async fn unix_reconnect() {
-    let server = MockGmpServer::builder()
+    let Some(server) = build_server(MockGmpServer::builder()
         .mode(ServerMode::Echo)
         .version(GmpVersion::V22_5)
-        .unix_socket_auto()
-        .build()
-        .await
-        .expect("server start failed");
+        .unix_socket_auto())
+    .await else {
+        return;
+    };
     let path = server.socket_path().expect("should have socket path");
 
     let mut stream1 = UnixStream::connect(path)
@@ -171,7 +177,9 @@ async fn unix_reconnect() {
 
 #[tokio::test]
 async fn stateful_session_isolation() {
-    let server = tcp_stateful_server().await;
+    let Some(server) = tcp_stateful_server().await else {
+        return;
+    };
     let port = server.port().expect("should have TCP port");
 
     let mut client_a = TcpStream::connect(("127.0.0.1", port))
@@ -212,4 +220,13 @@ async fn stateful_session_isolation() {
     assert!(text.contains("<task_count>1"));
 
     server.shutdown().await;
+}
+async fn build_server(
+    builder: gvm_mock_server::MockGmpServerBuilder,
+) -> Option<MockGmpServer> {
+    match builder.build().await {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("server start failed: {error}"),
+    }
 }

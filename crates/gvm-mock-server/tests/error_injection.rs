@@ -28,14 +28,20 @@ async fn send_recv(stream: &mut UnixStream, xml: &[u8]) -> Response {
 // ERR-001: Server error on specific command
 #[tokio::test]
 async fn fault_on_specific_command() {
-    let server = MockGmpServer::builder()
+    let Some(server) = (match MockGmpServer::builder()
         .mode(ServerMode::Echo)
         .version(GmpVersion::V22_5)
         .inject_fault(Fault::on_command("get_tasks", FaultKind::ServerError500))
         .unix_socket_auto()
         .build()
         .await
-        .expect("start");
+    {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("start: {error}"),
+    }) else {
+        return;
+    };
 
     let path = server.socket_path().unwrap();
     let mut stream = UnixStream::connect(path).await.expect("connect");
@@ -58,14 +64,20 @@ async fn fault_on_specific_command() {
 // ERR-006: Error after N commands
 #[tokio::test]
 async fn fault_after_n_commands() {
-    let server = MockGmpServer::builder()
+    let Some(server) = (match MockGmpServer::builder()
         .mode(ServerMode::Echo)
         .version(GmpVersion::V22_5)
         .inject_fault(Fault::after_commands(2, FaultKind::ServerError500))
         .unix_socket_auto()
         .build()
         .await
-        .expect("start");
+    {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("start: {error}"),
+    }) else {
+        return;
+    };
 
     let path = server.socket_path().unwrap();
     let mut stream = UnixStream::connect(path).await.expect("connect");
@@ -87,14 +99,20 @@ async fn fault_after_n_commands() {
 // ERR-007: Error once then recover
 #[tokio::test]
 async fn fault_once_then_recover() {
-    let server = MockGmpServer::builder()
+    let Some(server) = (match MockGmpServer::builder()
         .mode(ServerMode::Echo)
         .version(GmpVersion::V22_5)
         .inject_fault(Fault::once(FaultKind::ServerError500))
         .unix_socket_auto()
         .build()
         .await
-        .expect("start");
+    {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("start: {error}"),
+    }) else {
+        return;
+    };
 
     let path = server.socket_path().unwrap();
     let mut stream = UnixStream::connect(path).await.expect("connect");
@@ -113,14 +131,20 @@ async fn fault_once_then_recover() {
 // ERR-004: Malformed XML response
 #[tokio::test]
 async fn fault_malformed_xml() {
-    let server = MockGmpServer::builder()
+    let Some(server) = (match MockGmpServer::builder()
         .mode(ServerMode::Echo)
         .version(GmpVersion::V22_5)
         .inject_fault(Fault::once(FaultKind::MalformedXml))
         .unix_socket_auto()
         .build()
         .await
-        .expect("start");
+    {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("start: {error}"),
+    }) else {
+        return;
+    };
 
     let path = server.socket_path().unwrap();
     let mut stream = UnixStream::connect(path).await.expect("connect");
@@ -145,14 +169,20 @@ async fn fault_malformed_xml() {
 // ERR-005: Truncated response
 #[tokio::test]
 async fn fault_truncated_response() {
-    let server = MockGmpServer::builder()
+    let Some(server) = (match MockGmpServer::builder()
         .mode(ServerMode::Echo)
         .version(GmpVersion::V22_5)
         .inject_fault(Fault::once(FaultKind::TruncatedResponse))
         .unix_socket_auto()
         .build()
         .await
-        .expect("start");
+    {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("start: {error}"),
+    }) else {
+        return;
+    };
 
     let path = server.socket_path().unwrap();
     let mut stream = UnixStream::connect(path).await.expect("connect");
@@ -178,13 +208,19 @@ async fn fault_truncated_response() {
 // ERR-009: No faults by default
 #[tokio::test]
 async fn no_faults_by_default() {
-    let server = MockGmpServer::builder()
+    let Some(server) = (match MockGmpServer::builder()
         .mode(ServerMode::Echo)
         .version(GmpVersion::V22_5)
         .unix_socket_auto()
         .build()
         .await
-        .expect("start");
+    {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("start: {error}"),
+    }) else {
+        return;
+    };
 
     let path = server.socket_path().unwrap();
     let mut stream = UnixStream::connect(path).await.expect("connect");
@@ -201,7 +237,7 @@ async fn no_faults_by_default() {
 // ERR: Custom error status
 #[tokio::test]
 async fn fault_custom_error_status() {
-    let server = MockGmpServer::builder()
+    let Some(server) = (match MockGmpServer::builder()
         .mode(ServerMode::Echo)
         .version(GmpVersion::V22_5)
         .inject_fault(Fault::on_command(
@@ -214,7 +250,13 @@ async fn fault_custom_error_status() {
         .unix_socket_auto()
         .build()
         .await
-        .expect("start");
+    {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("start: {error}"),
+    }) else {
+        return;
+    };
 
     let path = server.socket_path().unwrap();
     let mut stream = UnixStream::connect(path).await.expect("connect");

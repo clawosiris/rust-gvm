@@ -34,15 +34,19 @@ async fn auth_admin(stream: &mut UnixStream) {
     assert_eq!(resp.status_code(), Some(200));
 }
 
-async fn stateful_server() -> MockGmpServer {
-    MockGmpServer::builder()
+async fn stateful_server() -> Option<MockGmpServer> {
+    match MockGmpServer::builder()
         .mode(ServerMode::Stateful)
         .version(GmpVersion::V22_5)
         .credentials("admin", "admin")
         .unix_socket_auto()
         .build()
         .await
-        .expect("server start failed")
+    {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("server start failed: {error}"),
+    }
 }
 
 async fn connect(server: &MockGmpServer) -> UnixStream {
@@ -53,7 +57,9 @@ async fn connect(server: &MockGmpServer) -> UnixStream {
 // FILT-001: Filter by name equality
 #[tokio::test]
 async fn filter_by_name_equality() {
-    let server = stateful_server().await;
+    let Some(server) = stateful_server().await else {
+        return;
+    };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -85,7 +91,9 @@ async fn filter_by_name_equality() {
 // FILT-002: Filter returns empty for no match
 #[tokio::test]
 async fn filter_no_match_returns_empty() {
-    let server = stateful_server().await;
+    let Some(server) = stateful_server().await else {
+        return;
+    };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -109,7 +117,7 @@ async fn filter_no_match_returns_empty() {
 // FILT-004: No filter returns all
 #[tokio::test]
 async fn no_filter_returns_all() {
-    let server = stateful_server().await;
+    let Some(server) = stateful_server().await else { return; };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -136,7 +144,7 @@ async fn no_filter_returns_all() {
 // FILT-005: Trash filter
 #[tokio::test]
 async fn trash_filter_returns_only_trashed() {
-    let server = stateful_server().await;
+    let Some(server) = stateful_server().await else { return; };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 

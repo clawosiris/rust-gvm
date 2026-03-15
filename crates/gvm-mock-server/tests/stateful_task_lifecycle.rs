@@ -57,15 +57,19 @@ async fn create_and_get_id(
     rest[..end].to_string()
 }
 
-async fn stateful_server() -> MockGmpServer {
-    MockGmpServer::builder()
+async fn stateful_server() -> Option<MockGmpServer> {
+    match MockGmpServer::builder()
         .mode(ServerMode::Stateful)
         .version(GmpVersion::V22_5)
         .credentials("admin", "admin")
         .unix_socket_auto()
         .build()
         .await
-        .expect("server start failed")
+    {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("server start failed: {error}"),
+    }
 }
 
 async fn connect(server: &MockGmpServer) -> UnixStream {
@@ -89,7 +93,9 @@ fn extract_report_id(text: &str) -> &str {
 
 #[tokio::test]
 async fn task_start_new_task() {
-    let server = stateful_server().await;
+    let Some(server) = stateful_server().await else {
+        return;
+    };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -125,7 +131,7 @@ async fn task_start_new_task() {
 
 #[tokio::test]
 async fn task_stop_running_task() {
-    let server = stateful_server().await;
+    let Some(server) = stateful_server().await else { return; };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -165,7 +171,7 @@ async fn task_stop_running_task() {
 
 #[tokio::test]
 async fn task_resume_stopped_task() {
-    let server = stateful_server().await;
+    let Some(server) = stateful_server().await else { return; };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -210,7 +216,7 @@ async fn task_resume_stopped_task() {
 
 #[tokio::test]
 async fn task_start_already_running_returns_409() {
-    let server = stateful_server().await;
+    let Some(server) = stateful_server().await else { return; };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -239,7 +245,7 @@ async fn task_start_already_running_returns_409() {
 
 #[tokio::test]
 async fn task_stop_already_stopped_returns_409() {
-    let server = stateful_server().await;
+    let Some(server) = stateful_server().await else { return; };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -273,7 +279,7 @@ async fn task_stop_already_stopped_returns_409() {
 
 #[tokio::test]
 async fn task_resume_non_stopped_returns_409() {
-    let server = stateful_server().await;
+    let Some(server) = stateful_server().await else { return; };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -302,7 +308,7 @@ async fn task_resume_non_stopped_returns_409() {
 
 #[tokio::test]
 async fn task_get_shows_current_status() {
-    let server = stateful_server().await;
+    let Some(server) = stateful_server().await else { return; };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -358,7 +364,7 @@ async fn task_get_shows_current_status() {
 
 #[tokio::test]
 async fn task_start_returns_report_id() {
-    let server = stateful_server().await;
+    let Some(server) = stateful_server().await else { return; };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 

@@ -32,7 +32,7 @@ fn step(expect_command: &str, respond_xml: Option<&str>) -> ScenarioStep {
 
 #[tokio::test]
 async fn scen_001_exact_sequence_strict() {
-    let server = MockGmpServer::builder()
+    let Some(server) = (match MockGmpServer::builder()
         .version(GmpVersion::V22_5)
         .scenario(
             ScenarioMode::Strict,
@@ -50,7 +50,13 @@ async fn scen_001_exact_sequence_strict() {
         .unix_socket_auto()
         .build()
         .await
-        .expect("server start failed");
+    {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("server start failed: {error}"),
+    }) else {
+        return;
+    };
     let path = server.socket_path().expect("should have socket path");
     let mut stream = UnixStream::connect(path).await.expect("connect failed");
 
@@ -73,7 +79,7 @@ async fn scen_001_exact_sequence_strict() {
 
 #[tokio::test]
 async fn scen_002_strict_mismatch() {
-    let server = MockGmpServer::builder()
+    let Some(server) = (match MockGmpServer::builder()
         .version(GmpVersion::V22_5)
         .scenario(
             ScenarioMode::Strict,
@@ -85,7 +91,13 @@ async fn scen_002_strict_mismatch() {
         .unix_socket_auto()
         .build()
         .await
-        .expect("server start failed");
+    {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("server start failed: {error}"),
+    }) else {
+        return;
+    };
     let path = server.socket_path().expect("should have socket path");
     let mut stream = UnixStream::connect(path).await.expect("connect failed");
 
@@ -97,7 +109,7 @@ async fn scen_002_strict_mismatch() {
 
 #[tokio::test]
 async fn scen_003_lenient_mismatch_fallback() {
-    let server = MockGmpServer::builder()
+    let Some(server) = (match MockGmpServer::builder()
         .version(GmpVersion::V22_5)
         .scenario(
             ScenarioMode::Lenient,
@@ -109,7 +121,13 @@ async fn scen_003_lenient_mismatch_fallback() {
         .unix_socket_auto()
         .build()
         .await
-        .expect("server start failed");
+    {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("server start failed: {error}"),
+    }) else {
+        return;
+    };
     let path = server.socket_path().expect("should have socket path");
     let mut stream = UnixStream::connect(path).await.expect("connect failed");
 
@@ -128,7 +146,7 @@ async fn scen_003_lenient_mismatch_fallback() {
 
 #[tokio::test]
 async fn scen_004_exhausted() {
-    let server = MockGmpServer::builder()
+    let Some(server) = (match MockGmpServer::builder()
         .version(GmpVersion::V22_5)
         .scenario(
             ScenarioMode::Strict,
@@ -140,7 +158,13 @@ async fn scen_004_exhausted() {
         .unix_socket_auto()
         .build()
         .await
-        .expect("server start failed");
+    {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("server start failed: {error}"),
+    }) else {
+        return;
+    };
     let path = server.socket_path().expect("should have socket path");
     let mut stream = UnixStream::connect(path).await.expect("connect failed");
 

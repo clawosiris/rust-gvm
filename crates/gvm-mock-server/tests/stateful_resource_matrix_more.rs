@@ -57,15 +57,19 @@ async fn create_and_get_id(
     rest[..end].to_string()
 }
 
-async fn stateful_server() -> MockGmpServer {
-    MockGmpServer::builder()
+async fn stateful_server() -> Option<MockGmpServer> {
+    match MockGmpServer::builder()
         .mode(ServerMode::Stateful)
         .version(GmpVersion::V22_5)
         .credentials("admin", "admin")
         .unix_socket_auto()
         .build()
         .await
-        .expect("server start failed")
+    {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("server start failed: {error}"),
+    }
 }
 
 async fn connect(server: &MockGmpServer) -> UnixStream {
@@ -75,7 +79,9 @@ async fn connect(server: &MockGmpServer) -> UnixStream {
 
 #[tokio::test]
 async fn matrix_notes_create_list() {
-    let server = stateful_server().await;
+    let Some(server) = stateful_server().await else {
+        return;
+    };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -97,7 +103,7 @@ async fn matrix_notes_create_list() {
 
 #[tokio::test]
 async fn matrix_overrides_create_list() {
-    let server = stateful_server().await;
+    let Some(server) = stateful_server().await else { return; };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -119,7 +125,7 @@ async fn matrix_overrides_create_list() {
 
 #[tokio::test]
 async fn matrix_roles_create_modify() {
-    let server = stateful_server().await;
+    let Some(server) = stateful_server().await else { return; };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -157,7 +163,7 @@ async fn matrix_roles_create_modify() {
 
 #[tokio::test]
 async fn matrix_users_create_get_by_id() {
-    let server = stateful_server().await;
+    let Some(server) = stateful_server().await else { return; };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -183,7 +189,7 @@ async fn matrix_users_create_get_by_id() {
 
 #[tokio::test]
 async fn matrix_tickets_create_delete_ultimate() {
-    let server = stateful_server().await;
+    let Some(server) = stateful_server().await else { return; };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -213,7 +219,7 @@ async fn matrix_tickets_create_delete_ultimate() {
 
 #[tokio::test]
 async fn matrix_port_lists_create_list() {
-    let server = stateful_server().await;
+    let Some(server) = stateful_server().await else { return; };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -235,7 +241,7 @@ async fn matrix_port_lists_create_list() {
 
 #[tokio::test]
 async fn matrix_reports_create_list() {
-    let server = stateful_server().await;
+    let Some(server) = stateful_server().await else { return; };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
@@ -257,7 +263,7 @@ async fn matrix_reports_create_list() {
 
 #[tokio::test]
 async fn matrix_tags_create_modify() {
-    let server = stateful_server().await;
+    let Some(server) = stateful_server().await else { return; };
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 

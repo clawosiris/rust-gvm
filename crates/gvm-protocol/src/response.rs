@@ -127,7 +127,7 @@ impl Response {
                     }
                 }
                 Ok(Event::Text(ref t)) if inside_target => {
-                    let unescaped = t.unescape().ok()?;
+                    let unescaped = t.xml_content().ok()?;
                     buf.push_str(&unescaped);
                 }
                 Ok(Event::End(ref e)) if inside_target => {

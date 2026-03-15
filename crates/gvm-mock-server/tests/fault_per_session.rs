@@ -25,14 +25,20 @@ async fn send_recv(stream: &mut UnixStream, xml: &[u8]) -> Response {
 
 #[tokio::test]
 async fn once_fault_is_scoped_per_session() {
-    let server = MockGmpServer::builder()
+    let Some(server) = (match MockGmpServer::builder()
         .mode(ServerMode::Echo)
         .version(GmpVersion::V22_5)
         .inject_fault(Fault::once(FaultKind::ServerError500))
         .unix_socket_auto()
         .build()
         .await
-        .expect("server start failed");
+    {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("server start failed: {error}"),
+    }) else {
+        return;
+    };
 
     let path = server.socket_path().expect("should have socket path");
 

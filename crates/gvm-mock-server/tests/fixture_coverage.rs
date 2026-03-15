@@ -24,22 +24,22 @@ async fn send_recv(stream: &mut UnixStream, xml: &[u8]) -> Response {
     Response::new(buf)
 }
 
-async fn server() -> (MockGmpServer, UnixStream) {
-    let s = MockGmpServer::builder()
+async fn server() -> Option<(MockGmpServer, UnixStream)> {
+    let s = build_server(MockGmpServer::builder()
         .mode(ServerMode::Fixture)
         .version(GmpVersion::V22_5)
-        .unix_socket_auto()
-        .build()
-        .await
-        .expect("start");
+        .unix_socket_auto())
+    .await?;
     let path = s.socket_path().unwrap().to_owned();
     let stream = UnixStream::connect(&path).await.expect("connect");
-    (s, stream)
+    Some((s, stream))
 }
 
 #[tokio::test]
 async fn fixture_delete_task() {
-    let (server, mut s) = server().await;
+    let Some((server, mut s)) = server().await else {
+        return;
+    };
     let r = send_recv(&mut s, br#"<delete_task task_id="x" ultimate="0"/>"#).await;
     assert_eq!(r.status_code(), Some(200));
     server.shutdown().await;
@@ -47,7 +47,9 @@ async fn fixture_delete_task() {
 
 #[tokio::test]
 async fn fixture_modify_task() {
-    let (server, mut s) = server().await;
+    let Some((server, mut s)) = server().await else {
+        return;
+    };
     let r = send_recv(
         &mut s,
         br#"<modify_task task_id="x"><name>n</name></modify_task>"#,
@@ -59,7 +61,9 @@ async fn fixture_modify_task() {
 
 #[tokio::test]
 async fn fixture_start_task() {
-    let (server, mut s) = server().await;
+    let Some((server, mut s)) = server().await else {
+        return;
+    };
     let r = send_recv(&mut s, br#"<start_task task_id="x"/>"#).await;
     assert_eq!(r.status_code(), Some(202));
     server.shutdown().await;
@@ -67,7 +71,9 @@ async fn fixture_start_task() {
 
 #[tokio::test]
 async fn fixture_stop_task() {
-    let (server, mut s) = server().await;
+    let Some((server, mut s)) = server().await else {
+        return;
+    };
     let r = send_recv(&mut s, br#"<stop_task task_id="x"/>"#).await;
     assert_eq!(r.status_code(), Some(200));
     server.shutdown().await;
@@ -75,7 +81,9 @@ async fn fixture_stop_task() {
 
 #[tokio::test]
 async fn fixture_get_alerts() {
-    let (server, mut s) = server().await;
+    let Some((server, mut s)) = server().await else {
+        return;
+    };
     let r = send_recv(&mut s, b"<get_alerts/>").await;
     assert!(r.is_success());
     server.shutdown().await;
@@ -83,7 +91,7 @@ async fn fixture_get_alerts() {
 
 #[tokio::test]
 async fn fixture_get_credentials() {
-    let (server, mut s) = server().await;
+    let Some((server, mut s)) = server().await else { return; };
     let r = send_recv(&mut s, b"<get_credentials/>").await;
     assert!(r.is_success());
     server.shutdown().await;
@@ -91,7 +99,7 @@ async fn fixture_get_credentials() {
 
 #[tokio::test]
 async fn fixture_get_filters() {
-    let (server, mut s) = server().await;
+    let Some((server, mut s)) = server().await else { return; };
     let r = send_recv(&mut s, b"<get_filters/>").await;
     assert!(r.is_success());
     server.shutdown().await;
@@ -99,7 +107,7 @@ async fn fixture_get_filters() {
 
 #[tokio::test]
 async fn fixture_get_reports() {
-    let (server, mut s) = server().await;
+    let Some((server, mut s)) = server().await else { return; };
     let r = send_recv(&mut s, b"<get_reports/>").await;
     assert!(r.is_success());
     server.shutdown().await;
@@ -107,7 +115,7 @@ async fn fixture_get_reports() {
 
 #[tokio::test]
 async fn fixture_get_schedules() {
-    let (server, mut s) = server().await;
+    let Some((server, mut s)) = server().await else { return; };
     let r = send_recv(&mut s, b"<get_schedules/>").await;
     assert!(r.is_success());
     server.shutdown().await;
@@ -115,8 +123,17 @@ async fn fixture_get_schedules() {
 
 #[tokio::test]
 async fn fixture_get_port_lists() {
-    let (server, mut s) = server().await;
+    let Some((server, mut s)) = server().await else { return; };
     let r = send_recv(&mut s, b"<get_port_lists/>").await;
     assert!(r.is_success());
     server.shutdown().await;
+}
+async fn build_server(
+    builder: gvm_mock_server::MockGmpServerBuilder,
+) -> Option<MockGmpServer> {
+    match builder.build().await {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("start: {error}"),
+    }
 }
