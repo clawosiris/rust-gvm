@@ -52,7 +52,7 @@ clap = { version = "4", features = ["derive"] }
 
 # Testing
 pretty_assertions = "1"
-rstest = "0.24"
+rstest = "0.26"
 proptest = "1"
 tempfile = "3"
 tokio-test = "0.4"
