@@ -1,4 +1,4 @@
-.PHONY: all build check test test-all fmt clippy doc deny clean setup-hooks coverage
+.PHONY: all build check test test-all test-integration fmt clippy doc deny clean setup-hooks coverage
 
 # Default: full check cycle
 all: fmt clippy test doc
@@ -18,6 +18,11 @@ test:
 # Run all tests including integration and feature-gated
 test-all:
 	cargo test --workspace --all-features
+
+# Run the python-gvm integration test against the standalone mock server
+test-integration:
+	cargo build -p gvm-mock-server
+	python3 tests/integration/test_python_gvm.py
 
 # Format code
 fmt:

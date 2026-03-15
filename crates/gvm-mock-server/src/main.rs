@@ -6,7 +6,7 @@ use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
 #[derive(Parser)]
 #[command(name = "gvm-mock-server", about = "Programmable mock GMP server")]
 struct Args {
-    /// Server mode: echo or fixture
+    /// Server mode: echo, fixture, or stateful
     #[arg(long, default_value = "echo")]
     mode: String,
 
@@ -32,8 +32,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mode = match args.mode.as_str() {
         "echo" => ServerMode::Echo,
         "fixture" => ServerMode::Fixture,
+        "stateful" => ServerMode::Stateful,
         other => {
-            eprintln!("Unknown mode: {other}. Use 'echo' or 'fixture'.");
+            eprintln!("Unknown mode: {other}. Use 'echo', 'fixture', or 'stateful'.");
             std::process::exit(1);
         }
     };

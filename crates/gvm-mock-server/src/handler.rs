@@ -29,11 +29,16 @@ pub struct SessionHandler {
     command_count: AtomicUsize,
 }
 
-/// Command handling result for transport layer.
+/// Command handling result for the transport layer.
 pub enum HandleResult {
     /// Send a response (optionally after delay).
-    Respond { bytes: Vec<u8>, delay: Option<Duration> },
-    /// Close the connection immediately.
+    Respond {
+        /// Response bytes to send.
+        bytes: Vec<u8>,
+        /// Optional delay before sending.
+        delay: Option<Duration>,
+    },
+    /// Close the connection immediately (fault injection).
     Disconnect,
 }
 
@@ -185,10 +190,7 @@ impl SessionHandler {
             // Trashcan
             "empty_trashcan" => {
                 store.empty_trashcan();
-                format!(
-                    "<empty_trashcan_response status=\"200\" status_text=\"OK\"/>"
-                )
-                .into_bytes()
+                format!("<empty_trashcan_response status=\"200\" status_text=\"OK\"/>").into_bytes()
             }
             "restore" => self.handle_restore(cmd, store),
             // Help
@@ -220,12 +222,7 @@ impl SessionHandler {
         }
     }
 
-    fn handle_create(
-        &self,
-        cmd: &ParsedCommand,
-        raw_xml: &[u8],
-        store: &ResourceStore,
-    ) -> Vec<u8> {
+    fn handle_create(&self, cmd: &ParsedCommand, raw_xml: &[u8], store: &ResourceStore) -> Vec<u8> {
         let resource_type = cmd.name.strip_prefix("create_").unwrap_or("unknown");
 
         // Check for clone (copy element)
@@ -244,9 +241,12 @@ impl SessionHandler {
             return error_response(&cmd.name, 404, "Resource to clone not found");
         }
 
-        // Extract name
-        let name = parse_element_text(raw_xml, "name").unwrap_or_default();
-        if name.is_empty() && resource_type != "port_range" {
+        let name = match resource_type {
+            "note" | "override" => parse_element_text(raw_xml, "text").unwrap_or_default(),
+            _ => parse_element_text(raw_xml, "name").unwrap_or_default(),
+        };
+        let requires_name = !matches!(resource_type, "note" | "override" | "ticket" | "port_range");
+        if name.is_empty() && requires_name {
             return error_response(&cmd.name, 400, "Missing required element: name");
         }
 
@@ -278,6 +278,56 @@ impl SessionHandler {
             }
         }
 
+        if resource_type == "asset" {
+            let asset_type = cmd
+                .attr("asset_type")
+                .map(str::to_string)
+                .or_else(|| cmd.attr("type").map(str::to_string))
+                .or_else(|| parse_element_text(raw_xml, "type"))
+                .unwrap_or_default();
+            if !asset_type.is_empty() {
+                resource.set_attr("asset_type", &asset_type);
+                resource.set_attr("type", &asset_type);
+            }
+        }
+
+        if matches!(resource_type, "note" | "override") {
+            if let Some(nvt_oid) = parse_element_text(raw_xml, "nvt_oid")
+                .or_else(|| cmd.child_attr("nvt", "oid").map(str::to_string))
+            {
+                resource.set_attr("nvt_oid", &nvt_oid);
+            }
+            if let Some(hosts) = parse_element_text(raw_xml, "hosts") {
+                resource.set_attr("hosts", &hosts);
+            }
+            if let Some(port) = parse_element_text(raw_xml, "port") {
+                resource.set_attr("port", &port);
+            }
+            if let Some(severity) = parse_element_text(raw_xml, "severity") {
+                resource.set_attr("severity", &severity);
+            }
+            if let Some(new_severity) = parse_element_text(raw_xml, "new_severity") {
+                resource.set_attr("new_severity", &new_severity);
+            }
+            if let Some(active) = parse_element_text(raw_xml, "active") {
+                resource.set_attr("active", &active);
+            }
+            if let Some(result_id) = cmd.child_attr("result", "id") {
+                resource.set_attr("result_id", result_id);
+            }
+            if let Some(task_id) = cmd.child_attr("task", "id") {
+                resource.set_attr("task_id", task_id);
+            }
+        }
+
+        if resource_type == "ticket" {
+            if let Some(result_id) = parse_element_text(raw_xml, "result_id")
+                .or_else(|| cmd.child_attr("result", "id").map(str::to_string))
+            {
+                resource.set_attr("result_id", &result_id);
+            }
+        }
+
         let id = store.create(resource);
         format!(
             "<{}_response status=\"201\" \
@@ -304,6 +354,9 @@ impl SessionHandler {
         if let Some(id_str) = cmd.attr(&id_attr) {
             if let Ok(uuid) = Uuid::parse_str(id_str) {
                 if let Some(resource) = store.get(&uuid) {
+                    if cmd.name == "get_reports" {
+                        return self.render_single_report_response(cmd, &resource, store);
+                    }
                     let xml = resource.to_xml();
                     return format!(
                         "<{}_response status=\"200\" status_text=\"OK\">\
@@ -320,13 +373,19 @@ impl SessionHandler {
         // List (with optional filter)
         let trash = cmd.attr("trash") == Some("1");
         let filter = cmd.attr("filter");
-        let resources = if trash {
+        let mut resources = if trash {
             store.list_trashed(resource_type)
         } else if let Some(filter_str) = filter {
             store.list_filtered(resource_type, filter_str)
         } else {
             store.list(resource_type)
         };
+
+        if cmd.name == "get_assets" {
+            if let Some(asset_type) = cmd.attr("asset_type").or_else(|| cmd.attr("type")) {
+                resources.retain(|resource| resource.attr("asset_type") == Some(asset_type));
+            }
+        }
 
         let count = resources.len();
         let items: String = resources.iter().map(|r| r.to_xml()).collect();
@@ -341,12 +400,7 @@ impl SessionHandler {
         .into_bytes()
     }
 
-    fn handle_modify(
-        &self,
-        cmd: &ParsedCommand,
-        raw_xml: &[u8],
-        store: &ResourceStore,
-    ) -> Vec<u8> {
+    fn handle_modify(&self, cmd: &ParsedCommand, raw_xml: &[u8], store: &ResourceStore) -> Vec<u8> {
         let resource_type = cmd.name.strip_prefix("modify_").unwrap_or("unknown");
         let id_attr = format!("{resource_type}_id");
 
@@ -359,14 +413,59 @@ impl SessionHandler {
         };
 
         let new_name = parse_element_text(raw_xml, "name");
+        let new_text = parse_element_text(raw_xml, "text");
         let new_comment = parse_element_text(raw_xml, "comment");
+        let new_hosts = parse_element_text(raw_xml, "hosts");
+        let new_status = parse_element_text(raw_xml, "status");
+        let new_nvt_oid = parse_element_text(raw_xml, "nvt_oid")
+            .or_else(|| cmd.child_attr("nvt", "oid").map(str::to_string));
+        let new_result_id = parse_element_text(raw_xml, "result_id")
+            .or_else(|| cmd.child_attr("result", "id").map(str::to_string));
+        let new_task_id = cmd.child_attr("task", "id").map(str::to_string);
+        let new_port = parse_element_text(raw_xml, "port");
+        let new_severity = parse_element_text(raw_xml, "severity");
+        let new_new_severity = parse_element_text(raw_xml, "new_severity");
+        let new_active = parse_element_text(raw_xml, "active");
 
         let modified = store.modify(&uuid, |r| {
-            if let Some(ref name) = new_name {
+            if matches!(resource_type, "note" | "override") {
+                if let Some(ref text) = new_text {
+                    r.name.clone_from(text);
+                }
+            } else if let Some(ref name) = new_name {
                 r.name.clone_from(name);
             }
             if let Some(ref comment) = new_comment {
                 r.comment.clone_from(comment);
+            }
+            if let Some(ref hosts) = new_hosts {
+                r.set_attr("hosts", hosts);
+            }
+            if let Some(ref nvt_oid) = new_nvt_oid {
+                r.set_attr("nvt_oid", nvt_oid);
+            }
+            if let Some(ref result_id) = new_result_id {
+                r.set_attr("result_id", result_id);
+            }
+            if let Some(ref task_id) = new_task_id {
+                r.set_attr("task_id", task_id);
+            }
+            if let Some(ref port) = new_port {
+                r.set_attr("port", port);
+            }
+            if let Some(ref severity) = new_severity {
+                r.set_attr("severity", severity);
+            }
+            if let Some(ref new_severity) = new_new_severity {
+                r.set_attr("new_severity", new_severity);
+            }
+            if let Some(ref active) = new_active {
+                r.set_attr("active", active);
+            }
+            if resource_type == "ticket" {
+                if let Some(ref status) = new_status {
+                    r.set_attr("status", status);
+                }
             }
         });
 
@@ -414,6 +513,14 @@ impl SessionHandler {
         match current_status.as_deref() {
             Some("New") | Some("Stopped") | Some("Done") => {
                 let report_id = Uuid::new_v4();
+                let task_name = store
+                    .get(&uuid)
+                    .map(|resource| resource.name)
+                    .unwrap_or_else(|| "Task Report".to_string());
+                let mut report =
+                    Resource::with_id("report", &format!("Report for {task_name}"), report_id);
+                report.set_attr("task_id", &uuid.to_string());
+                let _ = store.create(report);
                 store.modify(&uuid, |r| {
                     r.set_attr("status", TaskStatus::Running.as_str());
                     r.set_attr("report_id", &report_id.to_string());
@@ -473,6 +580,14 @@ impl SessionHandler {
         match current_status.as_deref() {
             Some("Stopped") => {
                 let report_id = Uuid::new_v4();
+                let task_name = store
+                    .get(&uuid)
+                    .map(|resource| resource.name)
+                    .unwrap_or_else(|| "Task Report".to_string());
+                let mut report =
+                    Resource::with_id("report", &format!("Report for {task_name}"), report_id);
+                report.set_attr("task_id", &uuid.to_string());
+                let _ = store.create(report);
                 store.modify(&uuid, |r| {
                     r.set_attr("status", TaskStatus::Running.as_str());
                     r.set_attr("report_id", &report_id.to_string());
@@ -486,7 +601,11 @@ impl SessionHandler {
             }
             Some("Running") => error_response(&cmd.name, 409, "Task is already running"),
             None => error_response(&cmd.name, 404, "Task not found"),
-            _ => error_response(&cmd.name, 409, "Task can only be resumed from Stopped state"),
+            _ => error_response(
+                &cmd.name,
+                409,
+                "Task can only be resumed from Stopped state",
+            ),
         }
     }
 
@@ -506,4 +625,74 @@ impl SessionHandler {
             error_response("restore", 404, "Resource not found in trashcan")
         }
     }
+
+    fn render_single_report_response(
+        &self,
+        cmd: &ParsedCommand,
+        report: &Resource,
+        store: &ResourceStore,
+    ) -> Vec<u8> {
+        let report_id = report.id.to_string();
+        let results: Vec<Resource> = store
+            .list("result")
+            .into_iter()
+            .filter(|resource| resource.attr("report_id") == Some(report_id.as_str()))
+            .collect();
+        let count = results.len();
+        let results_xml: String = results.iter().map(render_report_result_xml).collect();
+
+        format!(
+            "<{name}_response status=\"200\" status_text=\"OK\">\
+             <report id=\"{id}\">\
+             <name>{report_name}</name>\
+             <comment>{comment}</comment>\
+             <creation_time>{creation_time}</creation_time>\
+             <modification_time>{modification_time}</modification_time>\
+             <report id=\"{id}\">\
+             <results max=\"100\" start=\"1\">{results_xml}</results>\
+             <result_count><full>{count}</full><filtered>{count}</filtered></result_count>\
+             </report>\
+             </report>\
+             </{name}_response>",
+            name = cmd.name,
+            id = report.id,
+            report_name = xml_escape(&report.name),
+            comment = xml_escape(&report.comment),
+            creation_time = report.creation_time,
+            modification_time = report.modification_time,
+        )
+        .into_bytes()
+    }
+}
+
+fn render_report_result_xml(result: &Resource) -> String {
+    let mut xml = format!(
+        "<result id=\"{id}\"><name>{name}</name>",
+        id = result.id,
+        name = xml_escape(&result.name),
+    );
+
+    if let Some(host) = result.attr("host") {
+        xml.push_str(&format!("<host>{}</host>", xml_escape(host)));
+    }
+    if let Some(port) = result.attr("port") {
+        xml.push_str(&format!("<port>{}</port>", xml_escape(port)));
+    }
+    if let Some(threat) = result.attr("threat") {
+        xml.push_str(&format!("<threat>{}</threat>", xml_escape(threat)));
+    }
+    if let Some(severity) = result.attr("severity") {
+        xml.push_str(&format!("<severity>{}</severity>", xml_escape(severity)));
+    }
+
+    xml.push_str("</result>");
+    xml
+}
+
+fn xml_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
