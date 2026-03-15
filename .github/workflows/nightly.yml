@@ -1,9 +1,10 @@
-name: Release
+name: Nightly
 
 on:
-  push:
-    tags:
-      - "v*"
+  schedule:
+    # Run at 04:00 UTC every day
+    - cron: "0 4 * * *"
+  workflow_dispatch: # Allow manual trigger
 
 permissions:
   contents: write
@@ -13,7 +14,7 @@ env:
   BINARY_NAME: gvm-mock-server
 
 jobs:
-  # Run full test suite before building release artifacts
+  # Full test suite including integration tests
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -21,9 +22,22 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install python-gvm
+
+      # Workspace tests
       - run: cargo test --workspace --all-features
 
-  # Build binaries for each target platform
+      # Python integration test
+      - run: cargo build -p gvm-mock-server
+      - run: python3 tests/integration/test_python_gvm.py
+
+      # Clippy (treat warnings as errors for nightly)
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  # Build nightly binaries for all platforms
   build:
     name: Build (${{ matrix.target }})
     needs: test
@@ -57,29 +71,24 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
+          key: nightly-${{ matrix.target }}
 
-      # Install cross-compilation tools for Linux ARM64
       - name: Install cross
         if: matrix.cross
         run: cargo install cross --git https://github.com/cross-rs/cross
 
-      # Install musl tools for static Linux builds
       - name: Install musl-tools
         if: contains(matrix.target, 'musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-      # Build with cross for cross-compiled targets
       - name: Build (cross)
         if: matrix.cross
         run: cross build --release --target ${{ matrix.target }} -p gvm-mock-server
 
-      # Build natively for same-arch targets
       - name: Build (native)
         if: "!matrix.cross"
         run: cargo build --release --target ${{ matrix.target }} -p gvm-mock-server
 
-      # Package the binary
       - name: Package
         shell: bash
         run: |
@@ -95,10 +104,11 @@ jobs:
           path: |
             ${{ matrix.artifact }}.tar.gz
             ${{ matrix.artifact }}.tar.gz.sha256
+          retention-days: 7
 
-  # Create GitHub Release with all platform binaries
-  release:
-    name: Release
+  # Update the rolling "nightly" pre-release
+  publish:
+    name: Publish Nightly
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -110,10 +120,28 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Create Release
+      - name: Delete existing nightly release
+        run: gh release delete nightly --yes --cleanup-tag 2>/dev/null || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create nightly tag
+        run: |
+          git tag -f nightly
+          git push -f origin nightly
+
+      - name: Create nightly release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          tag_name: nightly
+          name: "Nightly Build ($(date -u +%Y-%m-%d))"
+          prerelease: true
+          body: |
+            Automated nightly build from `main` branch.
+
+            **⚠️ This is a development build — not recommended for production.**
+
+            Built from commit: ${{ github.sha }}
           files: |
             artifacts/*.tar.gz
             artifacts/*.sha256
