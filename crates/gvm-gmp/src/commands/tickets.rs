@@ -40,11 +40,13 @@ pub struct GetTicketsOpts {
 }
 
 /// Build a clone request for an existing ticket.
+#[must_use]
 pub fn clone_ticket(ticket_id: &EntityId) -> impl Request {
     XmlCommand::new("create_ticket").child_with_text("copy", ticket_id.as_str())
 }
 
 /// Build a `create_ticket` request.
+#[must_use]
 pub fn create_ticket(result_id: &EntityId, opts: TicketOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_ticket");
     cmd.add_element("result")
@@ -54,6 +56,7 @@ pub fn create_ticket(result_id: &EntityId, opts: TicketOpts) -> impl Request {
 }
 
 /// Build a `get_tickets` request.
+#[must_use]
 pub fn get_tickets(opts: GetTicketsOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_tickets");
     add_filter_attrs(
@@ -67,6 +70,7 @@ pub fn get_tickets(opts: GetTicketsOpts) -> impl Request {
 }
 
 /// Build a `get_ticket` request.
+#[must_use]
 pub fn get_ticket(ticket_id: &EntityId) -> impl Request {
     XmlCommand::new("get_tickets")
         .attribute("ticket_id", ticket_id.as_str())
@@ -74,6 +78,7 @@ pub fn get_ticket(ticket_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_ticket` request.
+#[must_use]
 pub fn modify_ticket(ticket_id: &EntityId, opts: TicketOpts) -> impl Request {
     let mut cmd = XmlCommand::new("modify_ticket").attribute("ticket_id", ticket_id.as_str());
     add_ticket_body(&mut cmd, &opts);
@@ -81,6 +86,7 @@ pub fn modify_ticket(ticket_id: &EntityId, opts: TicketOpts) -> impl Request {
 }
 
 /// Build a `delete_ticket` request.
+#[must_use]
 pub fn delete_ticket(ticket_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_ticket")
         .attribute("ticket_id", ticket_id.as_str())

@@ -40,11 +40,13 @@ pub struct GetPermissionsOpts {
 }
 
 /// Build a clone request for an existing permission.
+#[must_use]
 pub fn clone_permission(permission_id: &EntityId) -> impl Request {
     XmlCommand::new("create_permission").child_with_text("copy", permission_id.as_str())
 }
 
 /// Build a `create_permission` request.
+#[must_use]
 pub fn create_permission(opts: PermissionOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_permission");
     add_permission_body(&mut cmd, &opts);
@@ -52,6 +54,7 @@ pub fn create_permission(opts: PermissionOpts) -> impl Request {
 }
 
 /// Build a `get_permissions` request.
+#[must_use]
 pub fn get_permissions(opts: GetPermissionsOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_permissions");
     add_filter_attrs(
@@ -65,6 +68,7 @@ pub fn get_permissions(opts: GetPermissionsOpts) -> impl Request {
 }
 
 /// Build a `get_permission` request.
+#[must_use]
 pub fn get_permission(permission_id: &EntityId) -> impl Request {
     XmlCommand::new("get_permissions")
         .attribute("permission_id", permission_id.as_str())
@@ -72,6 +76,7 @@ pub fn get_permission(permission_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_permission` request.
+#[must_use]
 pub fn modify_permission(permission_id: &EntityId, opts: PermissionOpts) -> impl Request {
     let mut cmd =
         XmlCommand::new("modify_permission").attribute("permission_id", permission_id.as_str());
@@ -80,6 +85,7 @@ pub fn modify_permission(permission_id: &EntityId, opts: PermissionOpts) -> impl
 }
 
 /// Build a `delete_permission` request.
+#[must_use]
 pub fn delete_permission(permission_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_permission")
         .attribute("permission_id", permission_id.as_str())

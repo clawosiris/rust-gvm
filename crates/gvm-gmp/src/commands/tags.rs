@@ -40,11 +40,13 @@ pub struct GetTagsOpts {
 }
 
 /// Build a clone request for an existing tag.
+#[must_use]
 pub fn clone_tag(tag_id: &EntityId) -> impl Request {
     XmlCommand::new("create_tag").child_with_text("copy", tag_id.as_str())
 }
 
 /// Build a `create_tag` request.
+#[must_use]
 pub fn create_tag(name: &str, opts: TagOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_tag");
     cmd.add_element_with_text("name", name);
@@ -53,6 +55,7 @@ pub fn create_tag(name: &str, opts: TagOpts) -> impl Request {
 }
 
 /// Build a `get_tags` request.
+#[must_use]
 pub fn get_tags(opts: GetTagsOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_tags");
     add_filter_attrs(
@@ -66,6 +69,7 @@ pub fn get_tags(opts: GetTagsOpts) -> impl Request {
 }
 
 /// Build a `get_tag` request.
+#[must_use]
 pub fn get_tag(tag_id: &EntityId) -> impl Request {
     XmlCommand::new("get_tags")
         .attribute("tag_id", tag_id.as_str())
@@ -73,6 +77,7 @@ pub fn get_tag(tag_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_tag` request.
+#[must_use]
 pub fn modify_tag(tag_id: &EntityId, opts: TagOpts) -> impl Request {
     let mut cmd = XmlCommand::new("modify_tag").attribute("tag_id", tag_id.as_str());
     add_tag_body(&mut cmd, &opts);
@@ -80,6 +85,7 @@ pub fn modify_tag(tag_id: &EntityId, opts: TagOpts) -> impl Request {
 }
 
 /// Build a `delete_tag` request.
+#[must_use]
 pub fn delete_tag(tag_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_tag")
         .attribute("tag_id", tag_id.as_str())

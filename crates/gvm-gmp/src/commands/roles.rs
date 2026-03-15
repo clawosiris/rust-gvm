@@ -31,11 +31,13 @@ pub struct GetRolesOpts {
 }
 
 /// Build a clone request for an existing role.
+#[must_use]
 pub fn clone_role(role_id: &EntityId) -> impl Request {
     XmlCommand::new("create_role").child_with_text("copy", role_id.as_str())
 }
 
 /// Build a `create_role` request.
+#[must_use]
 pub fn create_role(name: &str, opts: RoleOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_role");
     cmd.add_element_with_text("name", name);
@@ -44,6 +46,7 @@ pub fn create_role(name: &str, opts: RoleOpts) -> impl Request {
 }
 
 /// Build a `get_roles` request.
+#[must_use]
 pub fn get_roles(opts: GetRolesOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_roles");
     add_filter_attrs(
@@ -57,6 +60,7 @@ pub fn get_roles(opts: GetRolesOpts) -> impl Request {
 }
 
 /// Build a `get_role` request.
+#[must_use]
 pub fn get_role(role_id: &EntityId) -> impl Request {
     XmlCommand::new("get_roles")
         .attribute("role_id", role_id.as_str())
@@ -64,6 +68,7 @@ pub fn get_role(role_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_role` request.
+#[must_use]
 pub fn modify_role(role_id: &EntityId, opts: RoleOpts) -> impl Request {
     let mut cmd = XmlCommand::new("modify_role").attribute("role_id", role_id.as_str());
     add_role_body(&mut cmd, &opts);
@@ -71,6 +76,7 @@ pub fn modify_role(role_id: &EntityId, opts: RoleOpts) -> impl Request {
 }
 
 /// Build a `delete_role` request.
+#[must_use]
 pub fn delete_role(role_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_role")
         .attribute("role_id", role_id.as_str())

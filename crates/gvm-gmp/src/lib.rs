@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
+#![allow(clippy::needless_pass_by_value)]
+
 //! Typed GMP command builders.
 
 /// GMP command-builder modules.

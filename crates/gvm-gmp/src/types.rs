@@ -12,6 +12,9 @@ pub struct EntityId(String);
 
 impl EntityId {
     /// Create a new entity identifier.
+    ///
+    /// # Errors
+    /// Returns an error if the identifier is empty or contains invalid characters.
     pub fn new(id: impl Into<String>) -> Result<Self, EntityIdError> {
         let id = id.into();
         if id.is_empty() {

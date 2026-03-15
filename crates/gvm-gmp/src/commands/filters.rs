@@ -36,11 +36,13 @@ pub struct GetFiltersOpts {
 }
 
 /// Build a clone request for an existing filter.
+#[must_use]
 pub fn clone_filter(filter_id: &EntityId) -> impl Request {
     XmlCommand::new("create_filter").child_with_text("copy", filter_id.as_str())
 }
 
 /// Build a `create_filter` request.
+#[must_use]
 pub fn create_filter(name: &str, opts: FilterOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_filter");
     cmd.add_element_with_text("name", name);
@@ -49,6 +51,7 @@ pub fn create_filter(name: &str, opts: FilterOpts) -> impl Request {
 }
 
 /// Build a `get_filters` request.
+#[must_use]
 pub fn get_filters(opts: GetFiltersOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_filters");
     add_filter_attrs(
@@ -62,6 +65,7 @@ pub fn get_filters(opts: GetFiltersOpts) -> impl Request {
 }
 
 /// Build a `get_filter` request.
+#[must_use]
 pub fn get_filter(filter_id: &EntityId) -> impl Request {
     XmlCommand::new("get_filters")
         .attribute("filter_id", filter_id.as_str())
@@ -69,6 +73,7 @@ pub fn get_filter(filter_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_filter` request.
+#[must_use]
 pub fn modify_filter(filter_id: &EntityId, opts: FilterOpts) -> impl Request {
     let mut cmd = XmlCommand::new("modify_filter").attribute("filter_id", filter_id.as_str());
     add_filter_body(&mut cmd, &opts);
@@ -76,6 +81,7 @@ pub fn modify_filter(filter_id: &EntityId, opts: FilterOpts) -> impl Request {
 }
 
 /// Build a `delete_filter` request.
+#[must_use]
 pub fn delete_filter(filter_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_filter")
         .attribute("filter_id", filter_id.as_str())

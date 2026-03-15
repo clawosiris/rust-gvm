@@ -34,6 +34,7 @@ pub struct GetReportFormatsOpts {
 }
 
 /// Build a `create_report_format` request.
+#[must_use]
 pub fn create_report_format(name: &str, opts: ReportFormatOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_report_format");
     cmd.add_element_with_text("name", name);
@@ -42,6 +43,7 @@ pub fn create_report_format(name: &str, opts: ReportFormatOpts) -> impl Request 
 }
 
 /// Build a `get_report_formats` request.
+#[must_use]
 pub fn get_report_formats(opts: GetReportFormatsOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_report_formats");
     add_filter_attrs(
@@ -55,6 +57,7 @@ pub fn get_report_formats(opts: GetReportFormatsOpts) -> impl Request {
 }
 
 /// Build a `get_report_format` request.
+#[must_use]
 pub fn get_report_format(report_format_id: &EntityId) -> impl Request {
     XmlCommand::new("get_report_formats")
         .attribute("report_format_id", report_format_id.as_str())
@@ -62,6 +65,7 @@ pub fn get_report_format(report_format_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_report_format` request.
+#[must_use]
 pub fn modify_report_format(report_format_id: &EntityId, opts: ReportFormatOpts) -> impl Request {
     let mut cmd = XmlCommand::new("modify_report_format")
         .attribute("report_format_id", report_format_id.as_str());
@@ -70,6 +74,7 @@ pub fn modify_report_format(report_format_id: &EntityId, opts: ReportFormatOpts)
 }
 
 /// Build a `delete_report_format` request.
+#[must_use]
 pub fn delete_report_format(report_format_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_report_format")
         .attribute("report_format_id", report_format_id.as_str())
@@ -77,6 +82,7 @@ pub fn delete_report_format(report_format_id: &EntityId, ultimate: bool) -> impl
 }
 
 /// Build a `verify_report_format` request.
+#[must_use]
 pub fn verify_report_format(report_format_id: &EntityId) -> impl Request {
     XmlCommand::new("verify_report_format").attribute("report_format_id", report_format_id.as_str())
 }

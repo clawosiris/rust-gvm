@@ -38,11 +38,13 @@ pub struct GetUsersOpts {
 }
 
 /// Build a clone request for an existing user.
+#[must_use]
 pub fn clone_user(user_id: &EntityId) -> impl Request {
     XmlCommand::new("create_user").child_with_text("copy", user_id.as_str())
 }
 
 /// Build a `create_user` request.
+#[must_use]
 pub fn create_user(name: &str, opts: UserOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_user");
     cmd.add_element_with_text("name", name);
@@ -51,6 +53,7 @@ pub fn create_user(name: &str, opts: UserOpts) -> impl Request {
 }
 
 /// Build a `get_users` request.
+#[must_use]
 pub fn get_users(opts: GetUsersOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_users");
     add_filter_attrs(
@@ -64,6 +67,7 @@ pub fn get_users(opts: GetUsersOpts) -> impl Request {
 }
 
 /// Build a `get_user` request.
+#[must_use]
 pub fn get_user(user_id: &EntityId) -> impl Request {
     XmlCommand::new("get_users")
         .attribute("user_id", user_id.as_str())
@@ -71,6 +75,7 @@ pub fn get_user(user_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_user` request.
+#[must_use]
 pub fn modify_user(user_id: &EntityId, opts: UserOpts) -> impl Request {
     let mut cmd = XmlCommand::new("modify_user").attribute("user_id", user_id.as_str());
     add_user_body(&mut cmd, &opts);
@@ -78,6 +83,7 @@ pub fn modify_user(user_id: &EntityId, opts: UserOpts) -> impl Request {
 }
 
 /// Build a `delete_user` request.
+#[must_use]
 pub fn delete_user(user_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_user")
         .attribute("user_id", user_id.as_str())

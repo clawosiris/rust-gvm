@@ -71,6 +71,7 @@ pub struct FilteredGetOpts {
 }
 
 /// Build a `help` request.
+#[must_use]
 pub fn help(format: Option<HelpFormat>) -> impl Request {
     let mut cmd = XmlCommand::new("help");
     if let Some(format) = format {
@@ -80,6 +81,7 @@ pub fn help(format: Option<HelpFormat>) -> impl Request {
 }
 
 /// Build a `get_feeds` request.
+#[must_use]
 pub fn get_feeds(opts: GetFeedsOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_feeds");
     if let Some(feed_type) = opts.feed_type {
@@ -89,6 +91,7 @@ pub fn get_feeds(opts: GetFeedsOpts) -> impl Request {
 }
 
 /// Build a `get_settings` request.
+#[must_use]
 pub fn get_settings(opts: FilteredGetOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_settings");
     add_filter_attrs(
@@ -100,6 +103,7 @@ pub fn get_settings(opts: FilteredGetOpts) -> impl Request {
 }
 
 /// Build a `get_aggregates` request.
+#[must_use]
 pub fn get_aggregates(opts: GetAggregatesOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_aggregates");
     add_filter_attrs(
@@ -126,6 +130,7 @@ pub fn get_aggregates(opts: GetAggregatesOpts) -> impl Request {
 }
 
 /// Build a `get_system_reports` request.
+#[must_use]
 pub fn get_system_reports(opts: FilteredGetOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_system_reports");
     add_filter_attrs(
@@ -137,6 +142,7 @@ pub fn get_system_reports(opts: FilteredGetOpts) -> impl Request {
 }
 
 /// Build a `get_info` request.
+#[must_use]
 pub fn get_info(opts: GetInfoOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_info");
     add_filter_attrs(
@@ -154,6 +160,7 @@ pub fn get_info(opts: GetInfoOpts) -> impl Request {
 }
 
 /// Build a `get_preferences` request.
+#[must_use]
 pub fn get_preferences(opts: FilteredGetOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_preferences");
     add_filter_attrs(
@@ -165,6 +172,7 @@ pub fn get_preferences(opts: FilteredGetOpts) -> impl Request {
 }
 
 /// Build a `get_resource_names` request.
+#[must_use]
 pub fn get_resource_names(opts: GetResourceNamesOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_resource_names");
     add_filter_attrs(
@@ -182,6 +190,7 @@ pub fn get_resource_names(opts: GetResourceNamesOpts) -> impl Request {
 }
 
 /// Build a `get_vulns` request.
+#[must_use]
 pub fn get_vulns(opts: FilteredGetOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_vulns");
     add_filter_attrs(
@@ -193,26 +202,31 @@ pub fn get_vulns(opts: FilteredGetOpts) -> impl Request {
 }
 
 /// Build a `get_license` request.
+#[must_use]
 pub fn get_license() -> impl Request {
     XmlCommand::new("get_license")
 }
 
 /// Build a `describe_auth` request.
+#[must_use]
 pub fn describe_auth() -> impl Request {
     XmlCommand::new("describe_auth")
 }
 
 /// Build a `modify_auth` request.
+#[must_use]
 pub fn modify_auth(enabled: bool) -> impl Request {
     XmlCommand::new("modify_auth").attribute("enabled", if enabled { "1" } else { "0" })
 }
 
 /// Build a `modify_license` request.
+#[must_use]
 pub fn modify_license(key: &str) -> impl Request {
     XmlCommand::new("modify_license").child_with_text("key", key)
 }
 
 /// Build a `modify_setting` request.
+#[must_use]
 pub fn modify_setting(setting_id: &EntityId, value: &str) -> impl Request {
     XmlCommand::new("modify_setting")
         .attribute("setting_id", setting_id.as_str())
@@ -220,6 +234,7 @@ pub fn modify_setting(setting_id: &EntityId, value: &str) -> impl Request {
 }
 
 /// Build a `run_wizard` request.
+#[must_use]
 pub fn run_wizard(name: &str, params: &[(String, String)]) -> impl Request {
     let mut cmd = XmlCommand::new("run_wizard").attribute("name", name);
     for (key, value) in params {

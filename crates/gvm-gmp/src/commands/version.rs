@@ -6,6 +6,7 @@
 use gvm_protocol::{Request, XmlCommand};
 
 /// Build a `get_version` command.
+#[must_use]
 pub fn get_version() -> impl Request {
     XmlCommand::new("get_version")
 }

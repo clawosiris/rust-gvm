@@ -20,6 +20,7 @@ pub struct GetNvtsOpts {
 }
 
 /// Build a `get_nvts` request.
+#[must_use]
 pub fn get_nvts(opts: GetNvtsOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_nvts");
     add_filter_attrs(
@@ -32,6 +33,7 @@ pub fn get_nvts(opts: GetNvtsOpts) -> impl Request {
 }
 
 /// Build a `get_nvts` request for a single NVT.
+#[must_use]
 pub fn get_nvt(nvt_oid: &str) -> impl Request {
     XmlCommand::new("get_nvts")
         .attribute("nvt_oid", nvt_oid)
@@ -39,6 +41,7 @@ pub fn get_nvt(nvt_oid: &str) -> impl Request {
 }
 
 /// Build a `get_nvt_families` request.
+#[must_use]
 pub fn get_nvt_families() -> impl Request {
     XmlCommand::new("get_nvt_families")
 }

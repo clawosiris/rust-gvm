@@ -38,11 +38,13 @@ pub struct GetScannersOpts {
 }
 
 /// Build a clone request for an existing scanner.
+#[must_use]
 pub fn clone_scanner(scanner_id: &EntityId) -> impl Request {
     XmlCommand::new("create_scanner").child_with_text("copy", scanner_id.as_str())
 }
 
 /// Build a `create_scanner` request.
+#[must_use]
 pub fn create_scanner(name: &str, opts: ScannerOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_scanner");
     cmd.add_element_with_text("name", name);
@@ -62,6 +64,7 @@ pub fn create_scanner(name: &str, opts: ScannerOpts) -> impl Request {
 }
 
 /// Build a `get_scanners` request.
+#[must_use]
 pub fn get_scanners(opts: GetScannersOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_scanners");
     add_filter_attrs(
@@ -75,6 +78,7 @@ pub fn get_scanners(opts: GetScannersOpts) -> impl Request {
 }
 
 /// Build a `get_scanner` request.
+#[must_use]
 pub fn get_scanner(scanner_id: &EntityId) -> impl Request {
     XmlCommand::new("get_scanners")
         .attribute("scanner_id", scanner_id.as_str())
@@ -82,6 +86,7 @@ pub fn get_scanner(scanner_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_scanner` request.
+#[must_use]
 pub fn modify_scanner(scanner_id: &EntityId, opts: ScannerOpts) -> impl Request {
     let mut cmd = XmlCommand::new("modify_scanner").attribute("scanner_id", scanner_id.as_str());
     add_text_element(&mut cmd, "name", Some(""));
@@ -94,6 +99,7 @@ pub fn modify_scanner(scanner_id: &EntityId, opts: ScannerOpts) -> impl Request 
 }
 
 /// Build a `delete_scanner` request.
+#[must_use]
 pub fn delete_scanner(scanner_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_scanner")
         .attribute("scanner_id", scanner_id.as_str())
@@ -101,6 +107,7 @@ pub fn delete_scanner(scanner_id: &EntityId, ultimate: bool) -> impl Request {
 }
 
 /// Build a `verify_scanner` request.
+#[must_use]
 pub fn verify_scanner(scanner_id: &EntityId) -> impl Request {
     XmlCommand::new("verify_scanner").attribute("scanner_id", scanner_id.as_str())
 }

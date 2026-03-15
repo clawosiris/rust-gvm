@@ -46,11 +46,13 @@ pub struct GetCredentialsOpts {
 }
 
 /// Build a clone request for an existing credential.
+#[must_use]
 pub fn clone_credential(credential_id: &EntityId) -> impl Request {
     XmlCommand::new("create_credential").child_with_text("copy", credential_id.as_str())
 }
 
 /// Build a `create_credential` request.
+#[must_use]
 pub fn create_credential(name: &str, opts: CredentialOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_credential");
     cmd.add_element_with_text("name", name);
@@ -59,6 +61,7 @@ pub fn create_credential(name: &str, opts: CredentialOpts) -> impl Request {
 }
 
 /// Build a `get_credentials` request.
+#[must_use]
 pub fn get_credentials(opts: GetCredentialsOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_credentials");
     add_filter_attrs(
@@ -72,6 +75,7 @@ pub fn get_credentials(opts: GetCredentialsOpts) -> impl Request {
 }
 
 /// Build a `get_credential` request.
+#[must_use]
 pub fn get_credential(credential_id: &EntityId) -> impl Request {
     XmlCommand::new("get_credentials")
         .attribute("credential_id", credential_id.as_str())
@@ -79,6 +83,7 @@ pub fn get_credential(credential_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_credential` request.
+#[must_use]
 pub fn modify_credential(credential_id: &EntityId, opts: CredentialOpts) -> impl Request {
     let mut cmd =
         XmlCommand::new("modify_credential").attribute("credential_id", credential_id.as_str());
@@ -87,6 +92,7 @@ pub fn modify_credential(credential_id: &EntityId, opts: CredentialOpts) -> impl
 }
 
 /// Build a `delete_credential` request.
+#[must_use]
 pub fn delete_credential(credential_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_credential")
         .attribute("credential_id", credential_id.as_str())

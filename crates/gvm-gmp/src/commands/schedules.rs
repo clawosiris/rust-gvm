@@ -35,11 +35,13 @@ pub struct GetSchedulesOpts {
 }
 
 /// Build a clone request for an existing schedule.
+#[must_use]
 pub fn clone_schedule(schedule_id: &EntityId) -> impl Request {
     XmlCommand::new("create_schedule").child_with_text("copy", schedule_id.as_str())
 }
 
 /// Build a `create_schedule` request.
+#[must_use]
 pub fn create_schedule(name: &str, opts: ScheduleOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_schedule");
     cmd.add_element_with_text("name", name);
@@ -48,6 +50,7 @@ pub fn create_schedule(name: &str, opts: ScheduleOpts) -> impl Request {
 }
 
 /// Build a `get_schedules` request.
+#[must_use]
 pub fn get_schedules(opts: GetSchedulesOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_schedules");
     add_filter_attrs(
@@ -61,6 +64,7 @@ pub fn get_schedules(opts: GetSchedulesOpts) -> impl Request {
 }
 
 /// Build a `get_schedule` request.
+#[must_use]
 pub fn get_schedule(schedule_id: &EntityId) -> impl Request {
     XmlCommand::new("get_schedules")
         .attribute("schedule_id", schedule_id.as_str())
@@ -68,6 +72,7 @@ pub fn get_schedule(schedule_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_schedule` request.
+#[must_use]
 pub fn modify_schedule(schedule_id: &EntityId, opts: ScheduleOpts) -> impl Request {
     let mut cmd = XmlCommand::new("modify_schedule").attribute("schedule_id", schedule_id.as_str());
     add_schedule_body(&mut cmd, &opts);
@@ -75,6 +80,7 @@ pub fn modify_schedule(schedule_id: &EntityId, opts: ScheduleOpts) -> impl Reque
 }
 
 /// Build a `delete_schedule` request.
+#[must_use]
 pub fn delete_schedule(schedule_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_schedule")
         .attribute("schedule_id", schedule_id.as_str())

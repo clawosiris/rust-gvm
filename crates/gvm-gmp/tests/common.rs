@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-#![allow(dead_code, missing_docs)]
+#![allow(
+    dead_code,
+    missing_docs,
+    clippy::needless_pass_by_value,
+    clippy::missing_panics_doc,
+    clippy::must_use_candidate
+)]
 
 use gvm_gmp::EntityId;
 use gvm_protocol::Request;

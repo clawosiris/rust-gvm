@@ -33,6 +33,7 @@ pub struct GetTlsCertificatesOpts {
 }
 
 /// Build a `create_tls_certificate` request.
+#[must_use]
 pub fn create_tls_certificate(name: &str, opts: TlsCertificateOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_tls_certificate");
     cmd.add_element_with_text("name", name);
@@ -41,6 +42,7 @@ pub fn create_tls_certificate(name: &str, opts: TlsCertificateOpts) -> impl Requ
 }
 
 /// Build a `get_tls_certificates` request.
+#[must_use]
 pub fn get_tls_certificates(opts: GetTlsCertificatesOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_tls_certificates");
     add_filter_attrs(
@@ -54,6 +56,7 @@ pub fn get_tls_certificates(opts: GetTlsCertificatesOpts) -> impl Request {
 }
 
 /// Build a `get_tls_certificate` request.
+#[must_use]
 pub fn get_tls_certificate(tls_certificate_id: &EntityId) -> impl Request {
     XmlCommand::new("get_tls_certificates")
         .attribute("tls_certificate_id", tls_certificate_id.as_str())
@@ -61,6 +64,7 @@ pub fn get_tls_certificate(tls_certificate_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_tls_certificate` request.
+#[must_use]
 pub fn modify_tls_certificate(
     tls_certificate_id: &EntityId,
     opts: TlsCertificateOpts,
@@ -72,6 +76,7 @@ pub fn modify_tls_certificate(
 }
 
 /// Build a `delete_tls_certificate` request.
+#[must_use]
 pub fn delete_tls_certificate(tls_certificate_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_tls_certificate")
         .attribute("tls_certificate_id", tls_certificate_id.as_str())

@@ -38,11 +38,13 @@ pub struct GetAlertsOpts {
 }
 
 /// Build a clone request for an existing alert.
+#[must_use]
 pub fn clone_alert(alert_id: &EntityId) -> impl Request {
     XmlCommand::new("create_alert").child_with_text("copy", alert_id.as_str())
 }
 
 /// Build a `create_alert` request.
+#[must_use]
 pub fn create_alert(name: &str, opts: AlertOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_alert");
     cmd.add_element_with_text("name", name);
@@ -51,6 +53,7 @@ pub fn create_alert(name: &str, opts: AlertOpts) -> impl Request {
 }
 
 /// Build a `get_alerts` request.
+#[must_use]
 pub fn get_alerts(opts: GetAlertsOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_alerts");
     add_filter_attrs(
@@ -64,6 +67,7 @@ pub fn get_alerts(opts: GetAlertsOpts) -> impl Request {
 }
 
 /// Build a `get_alert` request.
+#[must_use]
 pub fn get_alert(alert_id: &EntityId) -> impl Request {
     XmlCommand::new("get_alerts")
         .attribute("alert_id", alert_id.as_str())
@@ -71,6 +75,7 @@ pub fn get_alert(alert_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_alert` request.
+#[must_use]
 pub fn modify_alert(alert_id: &EntityId, opts: AlertOpts) -> impl Request {
     let mut cmd = XmlCommand::new("modify_alert").attribute("alert_id", alert_id.as_str());
     add_alert_body(&mut cmd, &opts);
@@ -78,6 +83,7 @@ pub fn modify_alert(alert_id: &EntityId, opts: AlertOpts) -> impl Request {
 }
 
 /// Build a `delete_alert` request.
+#[must_use]
 pub fn delete_alert(alert_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_alert")
         .attribute("alert_id", alert_id.as_str())
@@ -85,6 +91,7 @@ pub fn delete_alert(alert_id: &EntityId, ultimate: bool) -> impl Request {
 }
 
 /// Build a `test_alert` request.
+#[must_use]
 pub fn test_alert(alert_id: &EntityId) -> impl Request {
     XmlCommand::new("test_alert").attribute("alert_id", alert_id.as_str())
 }

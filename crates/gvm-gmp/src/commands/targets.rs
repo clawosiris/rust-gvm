@@ -61,11 +61,13 @@ pub struct ModifyTargetOpts {
 }
 
 /// Build a clone request for an existing target.
+#[must_use]
 pub fn clone_target(target_id: &EntityId) -> impl Request {
     XmlCommand::new("create_target").child_with_text("copy", target_id.as_str())
 }
 
 /// Build a `create_target` request.
+#[must_use]
 pub fn create_target(name: &str, opts: CreateTargetOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_target");
     cmd.add_element_with_text("name", name);
@@ -90,6 +92,7 @@ pub fn create_target(name: &str, opts: CreateTargetOpts) -> impl Request {
 }
 
 /// Build a `get_targets` request.
+#[must_use]
 pub fn get_targets(opts: GetTargetsOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_targets");
     add_filter_attrs(
@@ -103,6 +106,7 @@ pub fn get_targets(opts: GetTargetsOpts) -> impl Request {
 }
 
 /// Build a `get_target` request.
+#[must_use]
 pub fn get_target(target_id: &EntityId) -> impl Request {
     XmlCommand::new("get_targets")
         .attribute("target_id", target_id.as_str())
@@ -110,6 +114,7 @@ pub fn get_target(target_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_target` request.
+#[must_use]
 pub fn modify_target(target_id: &EntityId, opts: ModifyTargetOpts) -> impl Request {
     let mut cmd = XmlCommand::new("modify_target").attribute("target_id", target_id.as_str());
     add_text_element(&mut cmd, "name", opts.name.as_deref());
@@ -128,6 +133,7 @@ pub fn modify_target(target_id: &EntityId, opts: ModifyTargetOpts) -> impl Reque
 }
 
 /// Build a `delete_target` request.
+#[must_use]
 pub fn delete_target(target_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_target")
         .attribute("target_id", target_id.as_str())

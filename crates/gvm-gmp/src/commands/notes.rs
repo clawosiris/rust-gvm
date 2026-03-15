@@ -43,11 +43,13 @@ pub struct GetNotesOpts {
 }
 
 /// Build a clone request for an existing note.
+#[must_use]
 pub fn clone_note(note_id: &EntityId) -> impl Request {
     XmlCommand::new("create_note").child_with_text("copy", note_id.as_str())
 }
 
 /// Build a `create_note` request.
+#[must_use]
 pub fn create_note(nvt_oid: &str, opts: NoteOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_note");
     cmd.add_element("nvt").set_attribute("oid", nvt_oid);
@@ -56,6 +58,7 @@ pub fn create_note(nvt_oid: &str, opts: NoteOpts) -> impl Request {
 }
 
 /// Build a `get_notes` request.
+#[must_use]
 pub fn get_notes(opts: GetNotesOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_notes");
     add_filter_attrs(
@@ -69,6 +72,7 @@ pub fn get_notes(opts: GetNotesOpts) -> impl Request {
 }
 
 /// Build a `get_note` request.
+#[must_use]
 pub fn get_note(note_id: &EntityId) -> impl Request {
     XmlCommand::new("get_notes")
         .attribute("note_id", note_id.as_str())
@@ -76,6 +80,7 @@ pub fn get_note(note_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_note` request.
+#[must_use]
 pub fn modify_note(note_id: &EntityId, opts: NoteOpts) -> impl Request {
     let mut cmd = XmlCommand::new("modify_note").attribute("note_id", note_id.as_str());
     add_note_body(&mut cmd, &opts);
@@ -83,6 +88,7 @@ pub fn modify_note(note_id: &EntityId, opts: NoteOpts) -> impl Request {
 }
 
 /// Build a `delete_note` request.
+#[must_use]
 pub fn delete_note(note_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_note")
         .attribute("note_id", note_id.as_str())

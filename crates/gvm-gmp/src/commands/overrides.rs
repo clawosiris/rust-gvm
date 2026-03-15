@@ -43,11 +43,13 @@ pub struct GetOverridesOpts {
 }
 
 /// Build a clone request for an existing override.
+#[must_use]
 pub fn clone_override(override_id: &EntityId) -> impl Request {
     XmlCommand::new("create_override").child_with_text("copy", override_id.as_str())
 }
 
 /// Build a `create_override` request.
+#[must_use]
 pub fn create_override(nvt_oid: &str, opts: OverrideOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_override");
     cmd.add_element("nvt").set_attribute("oid", nvt_oid);
@@ -56,6 +58,7 @@ pub fn create_override(nvt_oid: &str, opts: OverrideOpts) -> impl Request {
 }
 
 /// Build a `get_overrides` request.
+#[must_use]
 pub fn get_overrides(opts: GetOverridesOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_overrides");
     add_filter_attrs(
@@ -69,6 +72,7 @@ pub fn get_overrides(opts: GetOverridesOpts) -> impl Request {
 }
 
 /// Build a `get_override` request.
+#[must_use]
 pub fn get_override(override_id: &EntityId) -> impl Request {
     XmlCommand::new("get_overrides")
         .attribute("override_id", override_id.as_str())
@@ -76,6 +80,7 @@ pub fn get_override(override_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_override` request.
+#[must_use]
 pub fn modify_override(override_id: &EntityId, opts: OverrideOpts) -> impl Request {
     let mut cmd = XmlCommand::new("modify_override").attribute("override_id", override_id.as_str());
     add_override_body(&mut cmd, &opts);
@@ -83,6 +88,7 @@ pub fn modify_override(override_id: &EntityId, opts: OverrideOpts) -> impl Reque
 }
 
 /// Build a `delete_override` request.
+#[must_use]
 pub fn delete_override(override_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_override")
         .attribute("override_id", override_id.as_str())

@@ -31,11 +31,13 @@ pub struct GetGroupsOpts {
 }
 
 /// Build a clone request for an existing group.
+#[must_use]
 pub fn clone_group(group_id: &EntityId) -> impl Request {
     XmlCommand::new("create_group").child_with_text("copy", group_id.as_str())
 }
 
 /// Build a `create_group` request.
+#[must_use]
 pub fn create_group(name: &str, opts: GroupOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_group");
     cmd.add_element_with_text("name", name);
@@ -44,6 +46,7 @@ pub fn create_group(name: &str, opts: GroupOpts) -> impl Request {
 }
 
 /// Build a `get_groups` request.
+#[must_use]
 pub fn get_groups(opts: GetGroupsOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_groups");
     add_filter_attrs(
@@ -57,6 +60,7 @@ pub fn get_groups(opts: GetGroupsOpts) -> impl Request {
 }
 
 /// Build a `get_group` request.
+#[must_use]
 pub fn get_group(group_id: &EntityId) -> impl Request {
     XmlCommand::new("get_groups")
         .attribute("group_id", group_id.as_str())
@@ -64,6 +68,7 @@ pub fn get_group(group_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_group` request.
+#[must_use]
 pub fn modify_group(group_id: &EntityId, opts: GroupOpts) -> impl Request {
     let mut cmd = XmlCommand::new("modify_group").attribute("group_id", group_id.as_str());
     add_group_body(&mut cmd, &opts);
@@ -71,6 +76,7 @@ pub fn modify_group(group_id: &EntityId, opts: GroupOpts) -> impl Request {
 }
 
 /// Build a `delete_group` request.
+#[must_use]
 pub fn delete_group(group_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_group")
         .attribute("group_id", group_id.as_str())

@@ -31,11 +31,13 @@ pub struct GetScanConfigsOpts {
 }
 
 /// Build a clone request for an existing scan config.
+#[must_use]
 pub fn clone_scan_config(config_id: &EntityId) -> impl Request {
     XmlCommand::new("create_config").child_with_text("copy", config_id.as_str())
 }
 
 /// Build a `create_scan_config` request.
+#[must_use]
 pub fn create_scan_config(
     name: &str,
     base_id: Option<&EntityId>,
@@ -52,6 +54,7 @@ pub fn create_scan_config(
 }
 
 /// Build a `get_scan_configs` request.
+#[must_use]
 pub fn get_scan_configs(opts: GetScanConfigsOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_configs");
     add_filter_attrs(
@@ -65,6 +68,7 @@ pub fn get_scan_configs(opts: GetScanConfigsOpts) -> impl Request {
 }
 
 /// Build a `get_scan_config` request.
+#[must_use]
 pub fn get_scan_config(config_id: &EntityId) -> impl Request {
     XmlCommand::new("get_configs")
         .attribute("config_id", config_id.as_str())
@@ -72,6 +76,7 @@ pub fn get_scan_config(config_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_scan_config` request.
+#[must_use]
 pub fn modify_scan_config(config_id: &EntityId, opts: ConfigOpts) -> impl Request {
     let mut cmd = XmlCommand::new("modify_config").attribute("config_id", config_id.as_str());
     add_text_element(&mut cmd, "name", Some(""));
@@ -81,6 +86,7 @@ pub fn modify_scan_config(config_id: &EntityId, opts: ConfigOpts) -> impl Reques
 }
 
 /// Build a `delete_scan_config` request.
+#[must_use]
 pub fn delete_scan_config(config_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_config")
         .attribute("config_id", config_id.as_str())
@@ -88,6 +94,7 @@ pub fn delete_scan_config(config_id: &EntityId, ultimate: bool) -> impl Request 
 }
 
 /// Build a `sync_config` request.
+#[must_use]
 pub fn sync_config(config_id: &EntityId) -> impl Request {
     XmlCommand::new("sync_config").attribute("config_id", config_id.as_str())
 }

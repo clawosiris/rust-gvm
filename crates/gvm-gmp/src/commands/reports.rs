@@ -35,6 +35,7 @@ pub struct GetReportsOpts {
 }
 
 /// Build a `create_report` request.
+#[must_use]
 pub fn create_report(task_id: &EntityId, opts: CreateReportOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_report");
     add_optional_id_element(&mut cmd, "report_format", opts.format_id.as_ref());
@@ -48,6 +49,7 @@ pub fn create_report(task_id: &EntityId, opts: CreateReportOpts) -> impl Request
 }
 
 /// Build a `get_reports` request.
+#[must_use]
 pub fn get_reports(opts: GetReportsOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_reports");
     add_filter_attrs(
@@ -62,6 +64,7 @@ pub fn get_reports(opts: GetReportsOpts) -> impl Request {
 }
 
 /// Build a `get_report` request.
+#[must_use]
 pub fn get_report(report_id: &EntityId) -> impl Request {
     XmlCommand::new("get_reports")
         .attribute("report_id", report_id.as_str())
@@ -69,6 +72,7 @@ pub fn get_report(report_id: &EntityId) -> impl Request {
 }
 
 /// Build a `delete_report` request.
+#[must_use]
 pub fn delete_report(report_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_report")
         .attribute("report_id", report_id.as_str())

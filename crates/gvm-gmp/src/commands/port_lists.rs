@@ -32,11 +32,13 @@ pub struct GetPortListsOpts {
 }
 
 /// Build a clone request for an existing port list.
+#[must_use]
 pub fn clone_port_list(port_list_id: &EntityId) -> impl Request {
     XmlCommand::new("create_port_list").child_with_text("copy", port_list_id.as_str())
 }
 
 /// Build a `create_port_list` request.
+#[must_use]
 pub fn create_port_list(name: &str, opts: PortListOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_port_list");
     cmd.add_element_with_text("name", name);
@@ -46,6 +48,7 @@ pub fn create_port_list(name: &str, opts: PortListOpts) -> impl Request {
 }
 
 /// Build a `create_port_range` request.
+#[must_use]
 pub fn create_port_range(
     port_list_id: &EntityId,
     range_type: PortRangeType,
@@ -60,6 +63,7 @@ pub fn create_port_range(
 }
 
 /// Build a `get_port_lists` request.
+#[must_use]
 pub fn get_port_lists(opts: GetPortListsOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_port_lists");
     add_filter_attrs(
@@ -73,6 +77,7 @@ pub fn get_port_lists(opts: GetPortListsOpts) -> impl Request {
 }
 
 /// Build a `get_port_list` request.
+#[must_use]
 pub fn get_port_list(port_list_id: &EntityId) -> impl Request {
     XmlCommand::new("get_port_lists")
         .attribute("port_list_id", port_list_id.as_str())
@@ -80,6 +85,7 @@ pub fn get_port_list(port_list_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_port_list` request.
+#[must_use]
 pub fn modify_port_list(port_list_id: &EntityId, opts: PortListOpts) -> impl Request {
     let mut cmd =
         XmlCommand::new("modify_port_list").attribute("port_list_id", port_list_id.as_str());
@@ -89,6 +95,7 @@ pub fn modify_port_list(port_list_id: &EntityId, opts: PortListOpts) -> impl Req
 }
 
 /// Build a `delete_port_list` request.
+#[must_use]
 pub fn delete_port_list(port_list_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_port_list")
         .attribute("port_list_id", port_list_id.as_str())
@@ -96,6 +103,7 @@ pub fn delete_port_list(port_list_id: &EntityId, ultimate: bool) -> impl Request
 }
 
 /// Build a `delete_port_range` request.
+#[must_use]
 pub fn delete_port_range(port_range_id: &EntityId) -> impl Request {
     XmlCommand::new("delete_port_range").attribute("port_range_id", port_range_id.as_str())
 }

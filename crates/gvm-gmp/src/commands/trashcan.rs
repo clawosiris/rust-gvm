@@ -8,11 +8,13 @@ use gvm_protocol::{Request, XmlCommand};
 use crate::types::EntityId;
 
 /// Build an `empty_trashcan` request.
+#[must_use]
 pub fn empty_trashcan() -> impl Request {
     XmlCommand::new("empty_trashcan")
 }
 
 /// Build a `restore` request.
+#[must_use]
 pub fn restore(resource_id: &EntityId) -> impl Request {
     XmlCommand::new("restore").attribute("id", resource_id.as_str())
 }

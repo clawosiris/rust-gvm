@@ -31,6 +31,7 @@ pub struct GetHostsOpts {
 }
 
 /// Build a `create_host` request.
+#[must_use]
 pub fn create_host(opts: HostOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_asset");
     cmd.add_element_with_text("asset_type", "host");
@@ -39,6 +40,7 @@ pub fn create_host(opts: HostOpts) -> impl Request {
 }
 
 /// Build a `get_hosts` request.
+#[must_use]
 pub fn get_hosts(opts: GetHostsOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_assets").attribute("asset_type", "host");
     add_filter_attrs(
@@ -52,6 +54,7 @@ pub fn get_hosts(opts: GetHostsOpts) -> impl Request {
 }
 
 /// Build a `get_host` request.
+#[must_use]
 pub fn get_host(host_id: &EntityId) -> impl Request {
     XmlCommand::new("get_assets")
         .attribute("asset_id", host_id.as_str())
@@ -60,6 +63,7 @@ pub fn get_host(host_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_host` request.
+#[must_use]
 pub fn modify_host(host_id: &EntityId, opts: HostOpts) -> impl Request {
     let mut cmd = XmlCommand::new("modify_asset").attribute("asset_id", host_id.as_str());
     add_host_body(&mut cmd, &opts);
@@ -67,6 +71,7 @@ pub fn modify_host(host_id: &EntityId, opts: HostOpts) -> impl Request {
 }
 
 /// Build a `delete_host` request.
+#[must_use]
 pub fn delete_host(host_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_asset")
         .attribute("asset_id", host_id.as_str())

@@ -80,11 +80,13 @@ pub struct ModifyTaskOpts {
 }
 
 /// Build a clone request for an existing task.
+#[must_use]
 pub fn clone_task(task_id: &EntityId) -> impl Request {
     XmlCommand::new("create_task").child_with_text("copy", task_id.as_str())
 }
 
 /// Build a `create_task` request for a container task.
+#[must_use]
 pub fn create_container_task(name: &str, comment: Option<&str>) -> impl Request {
     let mut cmd = XmlCommand::new("create_task");
     cmd.add_element_with_text("name", name);
@@ -94,6 +96,7 @@ pub fn create_container_task(name: &str, comment: Option<&str>) -> impl Request 
 }
 
 /// Build a `create_task` request.
+#[must_use]
 pub fn create_task(
     name: &str,
     config_id: &EntityId,
@@ -127,6 +130,7 @@ pub fn create_task(
 }
 
 /// Build a `delete_task` request.
+#[must_use]
 pub fn delete_task(task_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_task")
         .attribute("task_id", task_id.as_str())
@@ -134,6 +138,7 @@ pub fn delete_task(task_id: &EntityId, ultimate: bool) -> impl Request {
 }
 
 /// Build a `get_tasks` request.
+#[must_use]
 pub fn get_tasks(opts: GetTasksOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_tasks").attribute("usage_type", "scan");
     add_filter_attrs(
@@ -149,6 +154,7 @@ pub fn get_tasks(opts: GetTasksOpts) -> impl Request {
 }
 
 /// Build a `get_task` request.
+#[must_use]
 pub fn get_task(task_id: &EntityId) -> impl Request {
     XmlCommand::new("get_tasks")
         .attribute("task_id", task_id.as_str())
@@ -157,6 +163,7 @@ pub fn get_task(task_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_task` request.
+#[must_use]
 pub fn modify_task(task_id: &EntityId, opts: ModifyTaskOpts) -> impl Request {
     let mut cmd = XmlCommand::new("modify_task").attribute("task_id", task_id.as_str());
     add_text_element(&mut cmd, "name", opts.name.as_deref());
@@ -189,6 +196,7 @@ pub fn modify_task(task_id: &EntityId, opts: ModifyTaskOpts) -> impl Request {
 }
 
 /// Build a `move_task` request.
+#[must_use]
 pub fn move_task(task_id: &EntityId, slave_id: Option<&EntityId>) -> impl Request {
     let mut cmd = XmlCommand::new("move_task").attribute("task_id", task_id.as_str());
     if let Some(slave_id) = slave_id {
@@ -198,16 +206,19 @@ pub fn move_task(task_id: &EntityId, slave_id: Option<&EntityId>) -> impl Reques
 }
 
 /// Build a `start_task` request.
+#[must_use]
 pub fn start_task(task_id: &EntityId) -> impl Request {
     XmlCommand::new("start_task").attribute("task_id", task_id.as_str())
 }
 
 /// Build a `resume_task` request.
+#[must_use]
 pub fn resume_task(task_id: &EntityId) -> impl Request {
     XmlCommand::new("resume_task").attribute("task_id", task_id.as_str())
 }
 
 /// Build a `stop_task` request.
+#[must_use]
 pub fn stop_task(task_id: &EntityId) -> impl Request {
     XmlCommand::new("stop_task").attribute("task_id", task_id.as_str())
 }

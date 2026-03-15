@@ -20,6 +20,7 @@ pub struct GetResultsOpts {
 }
 
 /// Build a `get_results` request.
+#[must_use]
 pub fn get_results(opts: GetResultsOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_results");
     add_filter_attrs(
@@ -32,6 +33,7 @@ pub fn get_results(opts: GetResultsOpts) -> impl Request {
 }
 
 /// Build a `get_result` request.
+#[must_use]
 pub fn get_result(result_id: &EntityId) -> impl Request {
     XmlCommand::new("get_results")
         .attribute("result_id", result_id.as_str())
