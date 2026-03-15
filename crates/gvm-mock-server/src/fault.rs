@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Greenbone AG
+
 //! Error injection / fault engine for testing error handling paths.
 
 use std::sync::atomic::{AtomicUsize, Ordering};

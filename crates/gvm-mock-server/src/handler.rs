@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Greenbone AG
+
 //! GMP session handler — processes commands and generates responses.
 
 use std::sync::atomic::{AtomicUsize, Ordering};

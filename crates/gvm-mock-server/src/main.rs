@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Greenbone AG
+
 //! gvm-mock-server standalone binary.
 
 #![allow(clippy::print_stderr, clippy::print_stdout)]

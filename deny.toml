@@ -12,7 +12,7 @@ ignore = [
 [licenses]
 allow = [
     "GPL-3.0",
-    "GPL-3.0-or-later",
+    "AGPL-3.0-or-later",
     "Apache-2.0",
     "MIT",
     "BSD-2-Clause",

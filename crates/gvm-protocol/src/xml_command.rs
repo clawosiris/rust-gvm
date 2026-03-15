@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Greenbone AG
+
 //! GMP XML command builder.
 //!
 //! Mirrors python-gvm's `XmlCommand` class for constructing GMP XML requests.

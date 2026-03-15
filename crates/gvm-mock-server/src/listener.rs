@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Greenbone AG
+
 //! Network listeners for Unix sockets and TCP.
 
 use std::sync::atomic::{AtomicU64, Ordering};

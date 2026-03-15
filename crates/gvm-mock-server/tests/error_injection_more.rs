@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Greenbone AG
+
 //! Additional integration tests for error injection / fault engine.
 
 #![cfg(feature = "unix-socket-tests")]

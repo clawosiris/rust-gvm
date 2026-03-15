@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Greenbone AG
+
 //! Resource-name command builders.
 
 /// Re-export of the system `get_resource_names` helpers.

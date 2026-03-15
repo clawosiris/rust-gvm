@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Greenbone AG
+
 //! Sans-I/O protocol core for the Greenbone Management Protocol (GMP).
 //!
 //! This crate implements the GMP XML framing state machine, decoupled from I/O.

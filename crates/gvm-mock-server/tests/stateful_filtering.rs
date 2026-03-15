@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Greenbone AG
+
 //! Integration tests for basic filtering in stateful mode (FILT-001..005).
 
 #![cfg(feature = "unix-socket-tests")]

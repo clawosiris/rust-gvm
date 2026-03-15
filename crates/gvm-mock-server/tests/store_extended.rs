@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Greenbone AG
+
 #![allow(
     clippy::print_stdout,
     clippy::redundant_closure_for_method_calls,

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Greenbone AG
+
 //! Scenario playback engine for scripted mock-server interactions.
 
 /// Controls how strictly the engine enforces the scripted command sequence.

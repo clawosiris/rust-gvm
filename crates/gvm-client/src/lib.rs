@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Greenbone AG
+
 //! High-level async GMP client with version negotiation.
 //!
 //! Combines [`gvm_connection`], [`gvm_protocol`], and [`gvm_gmp`] into a

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Greenbone AG
+
 //! Focused stateful task lifecycle coverage.
 
 #![cfg(feature = "unix-socket-tests")]

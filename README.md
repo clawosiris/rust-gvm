@@ -203,7 +203,9 @@ Design specifications live in [`spec/`](spec/):
 
 ## License
 
-GPL-3.0-or-later — matching python-gvm and the Greenbone ecosystem.
+AGPL-3.0-or-later — matching the Greenbone ecosystem.
+
+Copyright 2026 Greenbone AG
 
 ## Related Projects
 
