@@ -9,10 +9,10 @@ Last updated: 2026-03-15
 | `gvm-protocol` | ✅ Implemented | ~860 | 37 | XML command builder, response parser, streaming reader |
 | `gvm-mock-server` | ✅ Implemented | ~3,600 | 198 | Programmable mock GMP server |
 | `gvm-connection` | 🔧 Unix socket done | ~230 | 11 | Async transport layer (Unix socket implemented) |
-| `gvm-gmp` | 📋 Spec'd | ~5 | 0 | Typed GMP command builders (placeholder) |
-| `gvm-client` | 📋 Spec'd | ~5 | 0 | High-level async client (placeholder) |
+| `gvm-gmp` | ✅ Implemented | ~4,430 | 480 | Typed GMP command builders (29 modules, 23 enums, full rustdoc) |
+| `gvm-client` | ✅ Implemented | ~390 | 7 | High-level async client with version negotiation |
 
-**Total: ~4,730 lines of Rust, 255+ tests, 92.2% line coverage**
+**Total: ~9,550 lines of Rust, 620+ tests**
 
 ---
 
@@ -234,15 +234,42 @@ Last updated: 2026-03-15
 | Not-connected error paths | ✅ |
 | Double-connect error | ✅ |
 
-## gvm-gmp (Not Yet Implemented)
+## gvm-gmp
 
-Spec'd in [openspec.md](../spec/openspec.md). Will provide typed command builders for each GMP version.
+Typed GMP command builders covering all entity types, system commands, and enums. Full rustdoc coverage.
 
-Target GMP versions: 22.4, 22.5, 22.6, 22.7, 22.8+
+### Command Modules (29)
 
-## gvm-client (Not Yet Implemented)
+alerts, authentication, credentials, filters, groups, hosts, notes, nvts, overrides, permissions, port_lists, report_formats, reports, resource_names, results, roles, scan_configs, scanners, schedules, system, tags, targets, tasks, tickets, tls_certificates, trashcan, users, version
 
-Spec'd in [openspec.md](../spec/openspec.md). High-level client combining all layers with automatic version negotiation.
+### Enums (23)
+
+AlertEvent, AlertCondition, AlertMethod, AliveTest, AggregateStatistic, CredentialFormat, CredentialType, EntityType (34 variants), FeedType, FilterType (25 variants), HelpFormat, HostsOrdering, InfoType, PermissionSubjectType, PortRangeType, ReportFormatType, ScannerType, SeverityLevel, SnmpAuthAlgorithm, SnmpPrivacyAlgorithm, SortOrder, TicketStatus, UserAuthType
+
+### Tests
+
+| Category | Count |
+|----------|-------|
+| Inline unit tests (command XML) | 80 |
+| External command tests | 53 |
+| Enum exhaustive tests | 347 |
+| EntityId/type tests | 6 |
+| **Total gvm-gmp** | **480** |
+
+## gvm-client
+
+High-level async `GmpClient<C>` and `GmpVersioned<C>` that combines `gvm-connection`, `gvm-protocol`, and `gvm-gmp`. Connects, negotiates GMP version (22.4–22.7), and provides typed `send`/`call` methods.
+
+### Features
+
+| Feature | Status |
+|---------|--------|
+| Auto version negotiation | ✅ |
+| `GmpVersioned` enum (V224–VNext) | ✅ |
+| `GvmError` with server/connection/parse/timeout/unsupported | ✅ |
+| Version parsing from XML | ✅ |
+| Full CRUD lifecycle tests | ✅ |
+| Disconnect + error path tests | ✅ |
 
 ---
 
@@ -257,8 +284,14 @@ Spec'd in [openspec.md](../spec/openspec.md). High-level client combining all la
 | Integration tests (mock server) | 137 | All modes, CRUD, lifecycle, faults, MCP compat (feature-gated) |
 | Integration tests (connection) | 5 | Unix socket transport against mock server (feature-gated) |
 | Unit tests (connection) | 6 | Config, error display, construction |
+| Unit tests (gvm-gmp inline) | 80 | Command builder XML verification |
+| External tests (gvm-gmp) | 53 | Per-module command XML tests |
+| Enum exhaustive tests | 347 | Every variant as_gmp_str + FromStr + invalid |
+| Type tests (EntityId) | 6 | Validation, Display, Hash, FromStr |
+| Unit tests (gvm-client) | 7 | Version parsing and negotiation |
+| Integration tests (gvm-client) | 6 | Version negotiation, CRUD lifecycle, error paths (feature-gated) |
 | Python integration tests | 15 steps | python-gvm full lifecycle against mock server |
-| **Total** | **255+ tests** | |
+| **Total** | **620+ tests** | |
 
 ### Per-File Coverage
 

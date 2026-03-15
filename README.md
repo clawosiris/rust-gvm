@@ -16,8 +16,8 @@ rust-gvm provides everything needed to talk to [Greenbone Vulnerability Manager 
 | [`gvm-protocol`](crates/gvm-protocol/) | Sans-I/O XML framing, command builder, response parser | ✅ Implemented |
 | [`gvm-mock-server`](crates/gvm-mock-server/) | Programmable mock GMP server (4 modes, fault injection) | ✅ Implemented |
 | [`gvm-connection`](crates/gvm-connection/) | Transport layer (Unix socket, TLS, SSH) | 🔧 Unix socket done |
-| [`gvm-gmp`](crates/gvm-gmp/) | Typed GMP command builders per version (22.4–22.8+) | 📋 Spec'd |
-| [`gvm-client`](crates/gvm-client/) | High-level async client with version negotiation | 📋 Spec'd |
+| [`gvm-gmp`](crates/gvm-gmp/) | Typed GMP command builders per version (22.4–22.8+) | ✅ Implemented |
+| [`gvm-client`](crates/gvm-client/) | High-level async client with version negotiation | ✅ Implemented |
 
 ```
 ┌─────────────────────────────────┐
@@ -156,7 +156,7 @@ See [docs/STATUS.md](docs/STATUS.md) for detailed implementation status of each 
 # Build everything
 cargo build --workspace
 
-# Run all tests (255+ tests)
+# Run all tests (620+ tests)
 cargo test --workspace
 
 # Run python-gvm integration tests
