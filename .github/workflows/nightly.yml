@@ -130,11 +130,15 @@ jobs:
           git tag -f nightly
           git push -f origin nightly
 
+      - name: Set date
+        id: date
+        run: echo "today=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
       - name: Create nightly release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: nightly
-          name: "Nightly Build ($(date -u +%Y-%m-%d))"
+          name: "Nightly Build (${{ steps.date.outputs.today }})"
           prerelease: true
           body: |
             Automated nightly build from `main` branch.
