@@ -9,6 +9,13 @@ repository.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[features]
+default = []
+unix-socket-tests = [
+    "gvm-connection/unix-socket-tests",
+    "gvm-mock-server/unix-socket-tests",
+]
+
 [dependencies]
 gvm-connection.workspace = true
 gvm-protocol.workspace = true
