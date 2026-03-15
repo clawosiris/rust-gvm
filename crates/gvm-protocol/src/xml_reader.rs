@@ -10,7 +10,7 @@ use crate::error::ProtocolError;
 
 /// Streaming XML reader that detects when a complete XML root element has been received.
 ///
-/// Feed data incrementally via [`feed`] and check [`is_complete`] to know when
+/// Feed data incrementally via [`XmlReader::feed`] and check [`XmlReader::is_complete`] to know when
 /// a full GMP response has been received.
 pub struct XmlReader {
     buffer: Vec<u8>,

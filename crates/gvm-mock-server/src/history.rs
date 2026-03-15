@@ -73,18 +73,12 @@ impl CommandHistory {
 
     /// Get all recorded commands.
     pub fn all(&self) -> Vec<CommandRecord> {
-        self.records
-            .lock()
-            .expect("history lock poisoned")
-            .clone()
+        self.records.lock().expect("history lock poisoned").clone()
     }
 
     /// Get the number of recorded commands.
     pub fn len(&self) -> usize {
-        self.records
-            .lock()
-            .expect("history lock poisoned")
-            .len()
+        self.records.lock().expect("history lock poisoned").len()
     }
 
     /// Check if the history is empty.
@@ -94,10 +88,7 @@ impl CommandHistory {
 
     /// Clear the history.
     pub fn clear(&self) {
-        self.records
-            .lock()
-            .expect("history lock poisoned")
-            .clear();
+        self.records.lock().expect("history lock poisoned").clear();
     }
 }
 

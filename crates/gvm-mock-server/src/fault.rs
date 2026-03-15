@@ -32,7 +32,12 @@ pub enum FaultKind {
     /// Return a 500 Internal Server Error.
     ServerError500,
     /// Return a specific error status code and message.
-    ErrorStatus { code: u16, message: String },
+    ErrorStatus {
+        /// HTTP-like status code to return.
+        code: u16,
+        /// Error message text.
+        message: String,
+    },
     /// Delay the response by the specified duration.
     Delay(Duration),
     /// Return malformed (non-XML) data.
@@ -80,7 +85,12 @@ impl FaultEngine {
 
     /// Create a new fault engine with the same faults but fresh counters.
     pub fn fork(&self) -> FaultEngine {
-        FaultEngine::new(self.faults.iter().map(|entry| entry.fault.clone()).collect())
+        FaultEngine::new(
+            self.faults
+                .iter()
+                .map(|entry| entry.fault.clone())
+                .collect(),
+        )
     }
 
     /// Check all faults that should fire for this command.
@@ -97,10 +107,17 @@ impl FaultEngine {
 
     /// Compatibility helper: returns the first matching fault action, if any.
     pub fn check(&self, command_name: &str, total_commands: usize) -> Option<FaultAction> {
-        self.check_all(command_name, total_commands).into_iter().next()
+        self.check_all(command_name, total_commands)
+            .into_iter()
+            .next()
     }
 
-    fn should_trigger(&self, entry: &FaultEntry, command_name: &str, total_commands: usize) -> bool {
+    fn should_trigger(
+        &self,
+        entry: &FaultEntry,
+        command_name: &str,
+        total_commands: usize,
+    ) -> bool {
         match &entry.fault.trigger {
             FaultTrigger::Always => true,
             FaultTrigger::Once => entry.fired.load(Ordering::Relaxed) == 0,
@@ -136,7 +153,12 @@ impl FaultEngine {
 #[derive(Debug, Clone)]
 pub enum FaultAction {
     /// Return an error response with the given status and message.
-    ErrorResponse { status: u16, message: String },
+    ErrorResponse {
+        /// HTTP-like status code.
+        status: u16,
+        /// Error message text.
+        message: String,
+    },
     /// Delay before sending the normal response.
     Delay(Duration),
     /// Send malformed (non-XML) bytes.
@@ -190,7 +212,10 @@ mod tests {
         let engine = FaultEngine::new(vec![Fault::always(FaultKind::ServerError500)]);
         let action = engine.check("get_tasks", 0);
         assert!(action.is_some());
-        assert!(matches!(action.unwrap(), FaultAction::ErrorResponse { status: 500, .. }));
+        assert!(matches!(
+            action.unwrap(),
+            FaultAction::ErrorResponse { status: 500, .. }
+        ));
     }
 
     #[test]
@@ -211,7 +236,10 @@ mod tests {
 
     #[test]
     fn test_on_command_fault() {
-        let engine = FaultEngine::new(vec![Fault::on_command("get_reports", FaultKind::ServerError500)]);
+        let engine = FaultEngine::new(vec![Fault::on_command(
+            "get_reports",
+            FaultKind::ServerError500,
+        )]);
         assert!(engine.check("get_tasks", 0).is_none());
         assert!(engine.check("get_reports", 0).is_some());
     }
@@ -225,7 +253,9 @@ mod tests {
 
     #[test]
     fn test_delay_fault() {
-        let engine = FaultEngine::new(vec![Fault::always(FaultKind::Delay(Duration::from_secs(1)))]);
+        let engine = FaultEngine::new(vec![Fault::always(FaultKind::Delay(Duration::from_secs(
+            1,
+        )))]);
         let action = engine.check("get_tasks", 0);
         assert!(matches!(action, Some(FaultAction::Delay(_))));
     }
