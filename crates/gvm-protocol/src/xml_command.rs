@@ -325,4 +325,111 @@ mod tests {
         let xml = String::from_utf8(cmd.to_bytes()).expect("valid utf8");
         assert!(xml.contains(r#"filt_id="f1""#));
     }
+
+    #[test]
+    fn test_set_attribute_mutable() {
+        let mut cmd = XmlCommand::new("get_tasks");
+        cmd.set_attribute("details", "1");
+        let xml = String::from_utf8(cmd.to_bytes()).expect("valid utf8");
+        assert!(xml.contains("details=\"1\""));
+    }
+
+    #[test]
+    fn test_child_with_attr() {
+        let cmd = XmlCommand::new("create_task").child_with_attr("target", "id", "abc-123");
+        let xml = String::from_utf8(cmd.to_bytes()).expect("valid utf8");
+        assert!(xml.contains("<target id=\"abc-123\"/>"));
+    }
+
+    #[test]
+    fn test_add_element_with_text() {
+        let mut cmd = XmlCommand::new("create_task");
+        cmd.add_element_with_text("name", "My Task");
+        cmd.add_element_with_text("comment", "A comment");
+        let xml = String::from_utf8(cmd.to_bytes()).expect("valid utf8");
+        assert!(xml.contains("<name>My Task</name>"));
+        assert!(xml.contains("<comment>A comment</comment>"));
+    }
+
+    #[test]
+    fn test_add_filter_with_filter_id() {
+        let mut cmd = XmlCommand::new("get_tasks");
+        cmd.add_filter(None, Some("filter-uuid-123"));
+        let xml = String::from_utf8(cmd.to_bytes()).expect("valid utf8");
+        assert!(xml.contains("filt_id=\"filter-uuid-123\""));
+    }
+
+    #[test]
+    fn test_add_filter_with_both() {
+        let mut cmd = XmlCommand::new("get_tasks");
+        cmd.add_filter(Some("name=foo"), Some("filter-uuid"));
+        let xml = String::from_utf8(cmd.to_bytes()).expect("valid utf8");
+        assert!(xml.contains("filter=\"name=foo\""));
+        assert!(xml.contains("filt_id=\"filter-uuid\""));
+    }
+
+    #[test]
+    fn test_add_filter_with_neither() {
+        let mut cmd = XmlCommand::new("get_tasks");
+        cmd.add_filter(None, None);
+        let xml = String::from_utf8(cmd.to_bytes()).expect("valid utf8");
+        assert!(!xml.contains("filter="));
+        assert!(!xml.contains("filt_id="));
+    }
+
+    #[test]
+    fn test_name() {
+        let cmd = XmlCommand::new("get_version");
+        assert_eq!(cmd.name(), "get_version");
+    }
+
+    #[test]
+    fn test_has_children() {
+        let cmd = XmlCommand::new("get_version");
+        assert!(!cmd.has_children());
+
+        let cmd_with = XmlCommand::new("create_task").child_with_text("name", "T");
+        assert!(cmd_with.has_children());
+    }
+
+    #[test]
+    fn test_element_set_attribute() {
+        let mut cmd = XmlCommand::new("create_task");
+        let elem = cmd.add_element("target");
+        elem.set_attribute("id", "target-123");
+        let xml = String::from_utf8(cmd.to_bytes()).expect("valid utf8");
+        assert!(xml.contains("<target id=\"target-123\""));
+    }
+
+    #[test]
+    fn test_element_set_text() {
+        let mut cmd = XmlCommand::new("create_task");
+        let elem = cmd.add_element("name");
+        elem.set_text("Dynamic Name");
+        let xml = String::from_utf8(cmd.to_bytes()).expect("valid utf8");
+        assert!(xml.contains("<name>Dynamic Name</name>"));
+    }
+
+    #[test]
+    fn test_element_add_child() {
+        let mut cmd = XmlCommand::new("create_task");
+        let elem = cmd.add_element("preferences");
+        let child = elem.add_child("preference");
+        child.set_text("value1");
+        let xml = String::from_utf8(cmd.to_bytes()).expect("valid utf8");
+        assert!(xml.contains(
+            "<preferences><preference>value1</preference></preferences>"
+        ));
+    }
+
+    #[test]
+    fn test_element_add_child_with_text() {
+        let mut cmd = XmlCommand::new("create_task");
+        let elem = cmd.add_element("preferences");
+        elem.add_child_with_text("pref1", "val1");
+        elem.add_child_with_text("pref2", "val2");
+        let xml = String::from_utf8(cmd.to_bytes()).expect("valid utf8");
+        assert!(xml.contains("<pref1>val1</pref1>"));
+        assert!(xml.contains("<pref2>val2</pref2>"));
+    }
 }

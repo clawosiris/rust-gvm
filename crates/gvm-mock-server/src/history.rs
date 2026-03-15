@@ -97,3 +97,67 @@ impl Default for CommandHistory {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_history_is_empty() {
+        let h = CommandHistory::new();
+        assert!(h.is_empty());
+        assert_eq!(h.len(), 0);
+        assert!(h.all().is_empty());
+    }
+
+    #[test]
+    fn test_record_and_retrieve() {
+        let h = CommandHistory::new();
+        h.record("get_tasks".to_string(), b"<get_tasks/>".to_vec(), 1);
+        assert_eq!(h.len(), 1);
+        assert!(!h.is_empty());
+        let records = h.all();
+        assert_eq!(records[0].command_name(), "get_tasks");
+        assert_eq!(records[0].raw_xml(), b"<get_tasks/>");
+        assert_eq!(records[0].session_id(), 1);
+    }
+
+    #[test]
+    fn test_multiple_records() {
+        let h = CommandHistory::new();
+        h.record("get_version".to_string(), b"<get_version/>".to_vec(), 1);
+        h.record("authenticate".to_string(), b"<authenticate/>".to_vec(), 1);
+        h.record("get_tasks".to_string(), b"<get_tasks/>".to_vec(), 2);
+        assert_eq!(h.len(), 3);
+    }
+
+    #[test]
+    fn test_clear() {
+        let h = CommandHistory::new();
+        h.record("get_tasks".to_string(), b"<get_tasks/>".to_vec(), 1);
+        assert_eq!(h.len(), 1);
+        h.clear();
+        assert!(h.is_empty());
+        assert_eq!(h.len(), 0);
+    }
+
+    #[test]
+    fn test_default() {
+        let h = CommandHistory::default();
+        assert!(h.is_empty());
+    }
+
+    #[test]
+    fn test_command_record_timestamp() {
+        let record = CommandRecord::new("test".to_string(), vec![], 0);
+        let _ = record.timestamp();
+    }
+
+    #[test]
+    fn test_clone() {
+        let h = CommandHistory::new();
+        h.record("get_tasks".to_string(), b"<get_tasks/>".to_vec(), 1);
+        let h2 = h.clone();
+        assert_eq!(h2.len(), 1);
+    }
+}

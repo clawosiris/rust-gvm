@@ -31,3 +31,42 @@ impl std::fmt::Display for GmpVersion {
         f.write_str(self.as_str())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_as_str() {
+        assert_eq!(GmpVersion::V22_4.as_str(), "22.4");
+        assert_eq!(GmpVersion::V22_5.as_str(), "22.5");
+        assert_eq!(GmpVersion::V22_6.as_str(), "22.6");
+        assert_eq!(GmpVersion::V22_7.as_str(), "22.7");
+    }
+
+    #[test]
+    fn test_display() {
+        assert_eq!(format!("{}", GmpVersion::V22_4), "22.4");
+        assert_eq!(format!("{}", GmpVersion::V22_5), "22.5");
+        assert_eq!(format!("{}", GmpVersion::V22_6), "22.6");
+        assert_eq!(format!("{}", GmpVersion::V22_7), "22.7");
+    }
+
+    #[test]
+    fn test_default() {
+        assert_eq!(GmpVersion::default(), GmpVersion::V22_5);
+    }
+
+    #[test]
+    fn test_clone_and_eq() {
+        let v = GmpVersion::V22_6;
+        let v2 = v;
+        assert_eq!(v, v2);
+    }
+
+    #[test]
+    fn test_debug() {
+        let s = format!("{:?}", GmpVersion::V22_7);
+        assert!(s.contains("V22_7"));
+    }
+}

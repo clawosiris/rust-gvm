@@ -18,3 +18,20 @@ impl Request for &[u8] {
         self.to_vec()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_vec_u8_request() {
+        let data = b"<get_version/>".to_vec();
+        assert_eq!(data.to_bytes(), b"<get_version/>");
+    }
+
+    #[test]
+    fn test_slice_request() {
+        let data: &[u8] = b"<get_tasks/>";
+        assert_eq!(data.to_bytes(), b"<get_tasks/>");
+    }
+}
