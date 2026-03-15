@@ -1,21 +1,45 @@
 //! GMP response parsing.
 
+use std::sync::OnceLock;
+
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
 use crate::error::ProtocolError;
 
+#[derive(Debug, Clone, Default)]
+struct ParsedHeader {
+    status_code: Option<u16>,
+    status_text: Option<String>,
+    root_element: Option<String>,
+    id: Option<String>,
+}
+
 /// A GMP response received from the server.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Response {
     data: Vec<u8>,
+    header: OnceLock<ParsedHeader>,
+}
+
+impl Clone for Response {
+    fn clone(&self) -> Self {
+        let cloned = Self::new(self.data.clone());
+        if let Some(header) = self.header.get() {
+            let _ = cloned.header.set(header.clone());
+        }
+        cloned
+    }
 }
 
 impl Response {
     /// Create a new Response from raw bytes.
     #[must_use]
     pub fn new(data: Vec<u8>) -> Self {
-        Self { data }
+        Self {
+            data,
+            header: OnceLock::new(),
+        }
     }
 
     /// Return the raw response data as bytes.
@@ -38,46 +62,13 @@ impl Response {
     /// Returns `None` if the response doesn't contain a valid status code.
     #[must_use]
     pub fn status_code(&self) -> Option<u16> {
-        let text = std::str::from_utf8(&self.data).ok()?;
-        let mut reader = Reader::from_str(text);
-        loop {
-            match reader.read_event() {
-                Ok(Event::Start(ref e) | Event::Empty(ref e)) => {
-                    for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"status" {
-                            let val = std::str::from_utf8(&attr.value).ok()?;
-                            return val.parse::<u16>().ok();
-                        }
-                    }
-                    return None;
-                }
-                Ok(Event::Eof) => return None,
-                Err(_) => return None,
-                _ => continue,
-            }
-        }
+        self.header().status_code
     }
 
     /// Extract the `status_text` from the response root element.
     #[must_use]
     pub fn status_text(&self) -> Option<String> {
-        let text = std::str::from_utf8(&self.data).ok()?;
-        let mut reader = Reader::from_str(text);
-        loop {
-            match reader.read_event() {
-                Ok(Event::Start(ref e) | Event::Empty(ref e)) => {
-                    for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"status_text" {
-                            return std::str::from_utf8(&attr.value).ok().map(String::from);
-                        }
-                    }
-                    return None;
-                }
-                Ok(Event::Eof) => return None,
-                Err(_) => return None,
-                _ => continue,
-            }
-        }
+        self.header().status_text.clone()
     }
 
     /// Returns `true` if the response has a success status code (2xx).
@@ -104,42 +95,15 @@ impl Response {
     }
 
     /// Extract the root element name from the response.
+    #[must_use]
     pub fn root_element_name(&self) -> Option<String> {
-        let text = std::str::from_utf8(&self.data).ok()?;
-        let mut reader = Reader::from_str(text);
-        loop {
-            match reader.read_event() {
-                Ok(Event::Start(ref e) | Event::Empty(ref e)) => {
-                    return std::str::from_utf8(e.name().as_ref())
-                        .ok()
-                        .map(String::from);
-                }
-                Ok(Event::Eof) => return None,
-                Err(_) => return None,
-                _ => continue,
-            }
-        }
+        self.header().root_element.clone()
     }
 
     /// Extract the `id` attribute from the response root element (used for create responses).
+    #[must_use]
     pub fn id(&self) -> Option<String> {
-        let text = std::str::from_utf8(&self.data).ok()?;
-        let mut reader = Reader::from_str(text);
-        loop {
-            match reader.read_event() {
-                Ok(Event::Start(ref e) | Event::Empty(ref e)) => {
-                    for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"id" {
-                            return std::str::from_utf8(&attr.value).ok().map(String::from);
-                        }
-                    }
-                    return None;
-                }
-                Ok(Event::Eof) => return None,
-                Err(_) => return None,
-                _ => continue,
-            }
-        }
+        self.header().id.clone()
     }
 
     /// Extract the text content of a named child element.
@@ -172,6 +136,52 @@ impl Response {
                 }
                 Ok(Event::Eof) => return None,
                 Err(_) => return None,
+                _ => continue,
+            }
+        }
+    }
+
+    fn header(&self) -> &ParsedHeader {
+        self.header.get_or_init(|| self.parse_header())
+    }
+
+    fn parse_header(&self) -> ParsedHeader {
+        let Ok(text) = std::str::from_utf8(&self.data) else {
+            return ParsedHeader::default();
+        };
+
+        let mut reader = Reader::from_str(text);
+        loop {
+            match reader.read_event() {
+                Ok(Event::Start(ref e) | Event::Empty(ref e)) => {
+                    let mut header = ParsedHeader {
+                        root_element: std::str::from_utf8(e.name().as_ref())
+                            .ok()
+                            .map(String::from),
+                        ..ParsedHeader::default()
+                    };
+
+                    for attr in e.attributes().flatten() {
+                        match attr.key.as_ref() {
+                            b"status" => {
+                                header.status_code = std::str::from_utf8(&attr.value)
+                                    .ok()
+                                    .and_then(|value| value.parse::<u16>().ok());
+                            }
+                            b"status_text" => {
+                                header.status_text =
+                                    std::str::from_utf8(&attr.value).ok().map(String::from);
+                            }
+                            b"id" => {
+                                header.id = std::str::from_utf8(&attr.value).ok().map(String::from);
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    return header;
+                }
+                Ok(Event::Eof) | Err(_) => return ParsedHeader::default(),
                 _ => continue,
             }
         }

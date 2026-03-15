@@ -10,7 +10,7 @@ use thiserror::Error;
 pub enum GvmError {
     /// Transport-level failure.
     #[error("connection error: {0}")]
-    Connection(String),
+    Connection(#[source] ConnectionError),
 
     /// Response or version XML could not be parsed.
     #[error("XML parse error: {0}")]
@@ -36,20 +36,13 @@ pub enum GvmError {
     /// Operation timed out.
     #[error("timeout after {0:?}")]
     Timeout(Duration),
-
-    /// Low-level I/O error.
-    #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
 }
 
 impl From<ConnectionError> for GvmError {
     fn from(value: ConnectionError) -> Self {
         match value {
             ConnectionError::Timeout(duration) => Self::Timeout(duration),
-            ConnectionError::ConnectFailed(error)
-            | ConnectionError::SendFailed(error)
-            | ConnectionError::ReadFailed(error) => Self::Connection(error.to_string()),
-            other => Self::Connection(other.to_string()),
+            other => Self::Connection(other),
         }
     }
 }

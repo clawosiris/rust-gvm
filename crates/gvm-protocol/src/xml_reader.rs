@@ -15,6 +15,9 @@ use crate::error::ProtocolError;
 pub struct XmlReader {
     buffer: Vec<u8>,
     complete: bool,
+    depth: i32,
+    seen_start: bool,
+    resume_offset: usize,
 }
 
 impl XmlReader {
@@ -24,6 +27,9 @@ impl XmlReader {
         Self {
             buffer: Vec::new(),
             complete: false,
+            depth: 0,
+            seen_start: false,
+            resume_offset: 0,
         }
     }
 
@@ -58,6 +64,9 @@ impl XmlReader {
     pub fn reset(&mut self) {
         self.buffer.clear();
         self.complete = false;
+        self.depth = 0;
+        self.seen_start = false;
+        self.resume_offset = 0;
     }
 
     fn check_complete(&mut self) -> Result<(), ProtocolError> {
@@ -65,32 +74,31 @@ impl XmlReader {
             return Ok(());
         }
 
-        let text = match std::str::from_utf8(&self.buffer) {
-            Ok(t) => t,
-            Err(_) => return Ok(()), // incomplete UTF-8, wait for more data
-        };
-
-        let mut reader = Reader::from_str(text);
+        let mut reader = Reader::from_reader(&self.buffer[self.resume_offset..]);
         reader.config_mut().trim_text(false);
-
-        let mut depth: i32 = 0;
-        let mut seen_start = false;
+        reader.config_mut().check_end_names = false;
+        reader.config_mut().allow_unmatched_ends = true;
+        let mut event_buf = Vec::new();
+        let mut parsed_len = 0_usize;
 
         loop {
-            match reader.read_event() {
+            match reader.read_event_into(&mut event_buf) {
                 Ok(Event::Start(_)) => {
-                    seen_start = true;
-                    depth += 1;
+                    self.seen_start = true;
+                    self.depth += 1;
+                    parsed_len = reader.buffer_position() as usize;
                 }
                 Ok(Event::End(_)) => {
-                    depth -= 1;
-                    if seen_start && depth == 0 {
+                    self.depth -= 1;
+                    parsed_len = reader.buffer_position() as usize;
+                    if self.seen_start && self.depth == 0 {
                         self.complete = true;
                         return Ok(());
                     }
                 }
                 Ok(Event::Empty(_)) => {
-                    if !seen_start {
+                    parsed_len = reader.buffer_position() as usize;
+                    if !self.seen_start {
                         // Self-closing root element like <get_version_response status="200"/>
                         self.complete = true;
                         return Ok(());
@@ -99,14 +107,20 @@ impl XmlReader {
                 }
                 Ok(Event::Eof) => {
                     // Not complete yet
+                    self.resume_offset += parsed_len;
                     return Ok(());
                 }
-                Ok(_) => continue,
+                Ok(_) => {
+                    parsed_len = reader.buffer_position() as usize;
+                }
                 Err(_) => {
                     // Could be incomplete XML, wait for more data
+                    self.resume_offset += parsed_len;
                     return Ok(());
                 }
             }
+
+            event_buf.clear();
         }
     }
 }
@@ -187,5 +201,20 @@ mod tests {
         reader.reset();
         assert!(!reader.is_complete());
         assert!(reader.data().is_empty());
+    }
+
+    #[test]
+    fn test_resume_offset_tracks_completed_events() {
+        let mut reader = XmlReader::new();
+
+        reader.feed(b"<root><child>").expect("feed ok");
+
+        assert_eq!(reader.resume_offset, b"<root><child>".len());
+        assert_eq!(reader.depth, 2);
+        assert!(reader.seen_start);
+        assert!(!reader.is_complete());
+
+        reader.feed(b"value</child></root>").expect("feed ok");
+        assert!(reader.is_complete());
     }
 }

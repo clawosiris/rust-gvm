@@ -119,23 +119,23 @@ impl<C: GvmConnection> GmpClient<C> {
 
 /// GMP 22.4 client wrapper.
 #[derive(Debug)]
-pub struct Gmp224<C: GvmConnection>(pub GmpClient<C>);
+pub struct Gmp224<C: GvmConnection>(GmpClient<C>);
 
 /// GMP 22.5 client wrapper.
 #[derive(Debug)]
-pub struct Gmp225<C: GvmConnection>(pub GmpClient<C>);
+pub struct Gmp225<C: GvmConnection>(GmpClient<C>);
 
 /// GMP 22.6 client wrapper.
 #[derive(Debug)]
-pub struct Gmp226<C: GvmConnection>(pub GmpClient<C>);
+pub struct Gmp226<C: GvmConnection>(GmpClient<C>);
 
 /// GMP 22.7 client wrapper.
 #[derive(Debug)]
-pub struct Gmp227<C: GvmConnection>(pub GmpClient<C>);
+pub struct Gmp227<C: GvmConnection>(GmpClient<C>);
 
 /// GMP next-version client wrapper.
 #[derive(Debug)]
-pub struct GmpNext<C: GvmConnection>(pub GmpClient<C>);
+pub struct GmpNext<C: GvmConnection>(GmpClient<C>);
 
 /// Versioned GMP client wrapper selected during negotiation.
 #[derive(Debug)]
@@ -153,6 +153,26 @@ pub enum GmpVersioned<C: GvmConnection> {
 }
 
 impl<C: GvmConnection> GmpVersioned<C> {
+    fn inner(&self) -> &GmpClient<C> {
+        match self {
+            Self::V224(client) => &client.0,
+            Self::V225(client) => &client.0,
+            Self::V226(client) => &client.0,
+            Self::V227(client) => &client.0,
+            Self::Next(client) => &client.0,
+        }
+    }
+
+    fn inner_mut(&mut self) -> &mut GmpClient<C> {
+        match self {
+            Self::V224(client) => &mut client.0,
+            Self::V225(client) => &mut client.0,
+            Self::V226(client) => &mut client.0,
+            Self::V227(client) => &mut client.0,
+            Self::Next(client) => &mut client.0,
+        }
+    }
+
     /// Connect and wrap the negotiated client by version.
     ///
     /// # Errors
@@ -171,13 +191,7 @@ impl<C: GvmConnection> GmpVersioned<C> {
     /// Return the negotiated GMP version.
     #[must_use]
     pub fn version(&self) -> GmpVersion {
-        match self {
-            Self::V224(client) => client.0.version(),
-            Self::V225(client) => client.0.version(),
-            Self::V226(client) => client.0.version(),
-            Self::V227(client) => client.0.version(),
-            Self::Next(client) => client.0.version(),
-        }
+        self.inner().version()
     }
 
     /// Send a request and return the raw parsed response.
@@ -185,13 +199,7 @@ impl<C: GvmConnection> GmpVersioned<C> {
     /// # Errors
     /// Returns an error if request transmission or response parsing fails.
     pub async fn send<R: Request>(&mut self, request: R) -> Result<Response, GvmError> {
-        match self {
-            Self::V224(client) => client.0.send(request).await,
-            Self::V225(client) => client.0.send(request).await,
-            Self::V226(client) => client.0.send(request).await,
-            Self::V227(client) => client.0.send(request).await,
-            Self::Next(client) => client.0.send(request).await,
-        }
+        self.inner_mut().send(request).await
     }
 
     /// Send a request and raise a server error on non-2xx responses.
@@ -200,13 +208,7 @@ impl<C: GvmConnection> GmpVersioned<C> {
     /// Returns an error if transport fails, parsing fails, or the server
     /// responds with a non-success status.
     pub async fn call<R: Request>(&mut self, request: R) -> Result<Response, GvmError> {
-        match self {
-            Self::V224(client) => client.0.call(request).await,
-            Self::V225(client) => client.0.call(request).await,
-            Self::V226(client) => client.0.call(request).await,
-            Self::V227(client) => client.0.call(request).await,
-            Self::Next(client) => client.0.call(request).await,
-        }
+        self.inner_mut().call(request).await
     }
 
     /// Disconnect the underlying transport.
@@ -214,12 +216,6 @@ impl<C: GvmConnection> GmpVersioned<C> {
     /// # Errors
     /// Returns an error if the transport fails to disconnect.
     pub async fn disconnect(&mut self) -> Result<(), GvmError> {
-        match self {
-            Self::V224(client) => client.0.disconnect().await,
-            Self::V225(client) => client.0.disconnect().await,
-            Self::V226(client) => client.0.disconnect().await,
-            Self::V227(client) => client.0.disconnect().await,
-            Self::Next(client) => client.0.disconnect().await,
-        }
+        self.inner_mut().disconnect().await
     }
 }

@@ -132,7 +132,12 @@ impl GvmConnection for UnixSocketConnection {
                 )));
             }
 
-            let _ = xml_reader.feed(&buf[..n]);
+            xml_reader.feed(&buf[..n]).map_err(|error| {
+                ConnectionError::ReadFailed(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    error.to_string(),
+                ))
+            })?;
 
             if xml_reader.is_complete() {
                 return Ok(xml_reader.into_data());

@@ -2,7 +2,7 @@
 #![allow(missing_docs)]
 
 use gvm_client::{GmpClient, GmpVersioned, GvmError};
-use gvm_connection::{GvmConnection, UnixSocketConnection};
+use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::targets::{
     create_target, delete_target, get_targets, CreateTargetOpts, GetTargetsOpts,
@@ -360,7 +360,7 @@ async fn send_after_disconnect_returns_connection_error() {
         .await
         .expect_err("sending after disconnect should fail");
     match error {
-        GvmError::Connection(message) => assert!(message.contains("not connected")),
+        GvmError::Connection(ConnectionError::NotConnected) => {}
         other => panic!("expected connection error, got {other:?}"),
     }
 
