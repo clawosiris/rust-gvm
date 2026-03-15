@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 mod common;
 
 use common::xml;
@@ -18,4 +20,3 @@ fn test_authenticate_preserves_empty_values() {
         "<authenticate><credentials><username></username><password></password></credentials></authenticate>"
     );
 }
-

@@ -1,3 +1,5 @@
+//! Version command builders.
+
 use gvm_protocol::{Request, XmlCommand};
 
 /// Build a `get_version` command.

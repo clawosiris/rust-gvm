@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 mod common;
 
 use std::collections::HashSet;
@@ -46,4 +48,3 @@ fn test_entity_id_display_hash_and_eq_work() {
 fn test_entity_id_from_str_works() {
     assert_eq!(EntityId::from_str("abc_123").unwrap().as_str(), "abc_123");
 }
-

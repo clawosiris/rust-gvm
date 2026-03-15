@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 mod common;
 
 use common::{id, xml};
@@ -12,4 +14,3 @@ fn test_empty_trashcan_basic() {
 fn test_restore_basic() {
     assert_eq!(xml(restore(&id("r1"))), "<restore id=\"r1\"/>");
 }
-

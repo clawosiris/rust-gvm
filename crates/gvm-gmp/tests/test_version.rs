@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 mod common;
 
 use common::xml;
@@ -7,4 +9,3 @@ use gvm_gmp::commands::version::get_version;
 fn test_get_version_basic() {
     assert_eq!(xml(get_version()), "<get_version/>");
 }
-

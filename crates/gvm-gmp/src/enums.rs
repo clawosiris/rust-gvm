@@ -4,12 +4,14 @@ use std::str::FromStr;
 
 macro_rules! gmp_enum {
     ($name:ident { $($variant:ident => $value:literal),+ $(,)? }) => {
+        #[doc = concat!("GMP enum values for `", stringify!($name), "`.")]
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         pub enum $name {
-            $($variant),+
+            $(#[doc = concat!("Maps to the GMP wire value `", $value, "`.")] $variant),+
         }
 
         impl $name {
+            /// Returns the GMP wire-format string for this value.
             #[must_use]
             pub const fn as_gmp_str(self) -> &'static str {
                 match self {
@@ -268,25 +270,70 @@ mod tests {
         };
     }
 
-    enum_round_trip_test!(alert_event_round_trip, AlertEvent, TaskRunStatusChanged, "task_run_status_changed");
+    enum_round_trip_test!(
+        alert_event_round_trip,
+        AlertEvent,
+        TaskRunStatusChanged,
+        "task_run_status_changed"
+    );
     enum_round_trip_test!(alert_condition_round_trip, AlertCondition, Always, "always");
     enum_round_trip_test!(alert_method_round_trip, AlertMethod, Email, "email");
-    enum_round_trip_test!(alive_test_round_trip, AliveTest, ConsiderAlive, "Consider Alive");
-    enum_round_trip_test!(aggregate_statistic_round_trip, AggregateStatistic, Count, "count");
+    enum_round_trip_test!(
+        alive_test_round_trip,
+        AliveTest,
+        ConsiderAlive,
+        "Consider Alive"
+    );
+    enum_round_trip_test!(
+        aggregate_statistic_round_trip,
+        AggregateStatistic,
+        Count,
+        "count"
+    );
     enum_round_trip_test!(credential_format_round_trip, CredentialFormat, Pem, "pem");
-    enum_round_trip_test!(credential_type_round_trip, CredentialType, UsernamePassword, "up");
+    enum_round_trip_test!(
+        credential_type_round_trip,
+        CredentialType,
+        UsernamePassword,
+        "up"
+    );
     enum_round_trip_test!(entity_type_round_trip, EntityType, Task, "task");
     enum_round_trip_test!(feed_type_round_trip, FeedType, Nvt, "NVT");
     enum_round_trip_test!(filter_type_round_trip, FilterType, Task, "task");
     enum_round_trip_test!(help_format_round_trip, HelpFormat, Xml, "xml");
-    enum_round_trip_test!(hosts_ordering_round_trip, HostsOrdering, Sequential, "sequential");
+    enum_round_trip_test!(
+        hosts_ordering_round_trip,
+        HostsOrdering,
+        Sequential,
+        "sequential"
+    );
     enum_round_trip_test!(info_type_round_trip, InfoType, Nvt, "NVT");
-    enum_round_trip_test!(permission_subject_type_round_trip, PermissionSubjectType, Role, "role");
+    enum_round_trip_test!(
+        permission_subject_type_round_trip,
+        PermissionSubjectType,
+        Role,
+        "role"
+    );
     enum_round_trip_test!(port_range_type_round_trip, PortRangeType, Tcp, "tcp");
     enum_round_trip_test!(report_format_type_round_trip, ReportFormatType, Pdf, "pdf");
-    enum_round_trip_test!(scanner_type_round_trip, ScannerType, OpenVasScanner, "OpenVAS");
-    enum_round_trip_test!(snmp_auth_algorithm_round_trip, SnmpAuthAlgorithm, Sha1, "sha1");
-    enum_round_trip_test!(snmp_privacy_algorithm_round_trip, SnmpPrivacyAlgorithm, Aes, "aes");
+    enum_round_trip_test!(
+        scanner_type_round_trip,
+        ScannerType,
+        OpenVasScanner,
+        "OpenVAS"
+    );
+    enum_round_trip_test!(
+        snmp_auth_algorithm_round_trip,
+        SnmpAuthAlgorithm,
+        Sha1,
+        "sha1"
+    );
+    enum_round_trip_test!(
+        snmp_privacy_algorithm_round_trip,
+        SnmpPrivacyAlgorithm,
+        Aes,
+        "aes"
+    );
     enum_round_trip_test!(sort_order_round_trip, SortOrder, Ascending, "ascending");
     enum_round_trip_test!(severity_level_round_trip, SeverityLevel, High, "high");
     enum_round_trip_test!(ticket_status_round_trip, TicketStatus, Open, "open");

@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 mod common;
 
 use common::{id, xml};
@@ -5,7 +7,10 @@ use gvm_gmp::commands::overrides::*;
 
 #[test]
 fn test_create_override_basic() {
-    assert_eq!(xml(create_override("oid", Default::default())), "<create_override><nvt oid=\"oid\"/></create_override>");
+    assert_eq!(
+        xml(create_override("oid", Default::default())),
+        "<create_override><nvt oid=\"oid\"/></create_override>"
+    );
 }
 
 #[test]
@@ -30,8 +35,16 @@ fn test_create_override_with_optionals() {
 
 #[test]
 fn test_override_get_modify_delete() {
-    assert_eq!(xml(clone_override(&id("o1"))), "<create_override><copy>o1</copy></create_override>");
-    assert_eq!(xml(get_override(&id("o1"))), "<get_overrides details=\"1\" override_id=\"o1\"/>");
-    assert_eq!(xml(delete_override(&id("o1"), false)), "<delete_override override_id=\"o1\" ultimate=\"0\"/>");
+    assert_eq!(
+        xml(clone_override(&id("o1"))),
+        "<create_override><copy>o1</copy></create_override>"
+    );
+    assert_eq!(
+        xml(get_override(&id("o1"))),
+        "<get_overrides details=\"1\" override_id=\"o1\"/>"
+    );
+    assert_eq!(
+        xml(delete_override(&id("o1"), false)),
+        "<delete_override override_id=\"o1\" ultimate=\"0\"/>"
+    );
 }
-

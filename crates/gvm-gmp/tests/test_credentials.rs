@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 mod common;
 
 use common::{id, xml};
@@ -6,7 +8,10 @@ use gvm_gmp::{CredentialFormat, CredentialType, SnmpAuthAlgorithm, SnmpPrivacyAl
 
 #[test]
 fn test_create_credential_basic() {
-    assert_eq!(xml(create_credential("cred", Default::default())), "<create_credential><name>cred</name></create_credential>");
+    assert_eq!(
+        xml(create_credential("cred", Default::default())),
+        "<create_credential><name>cred</name></create_credential>"
+    );
 }
 
 #[test]
@@ -32,8 +37,16 @@ fn test_create_credential_with_all_optionals() {
 
 #[test]
 fn test_credential_get_modify_delete() {
-    assert_eq!(xml(clone_credential(&id("c1"))), "<create_credential><copy>c1</copy></create_credential>");
-    assert_eq!(xml(get_credential(&id("c1"))), "<get_credentials credential_id=\"c1\" details=\"1\"/>");
-    assert_eq!(xml(delete_credential(&id("c1"), true)), "<delete_credential credential_id=\"c1\" ultimate=\"1\"/>");
+    assert_eq!(
+        xml(clone_credential(&id("c1"))),
+        "<create_credential><copy>c1</copy></create_credential>"
+    );
+    assert_eq!(
+        xml(get_credential(&id("c1"))),
+        "<get_credentials credential_id=\"c1\" details=\"1\"/>"
+    );
+    assert_eq!(
+        xml(delete_credential(&id("c1"), true)),
+        "<delete_credential credential_id=\"c1\" ultimate=\"1\"/>"
+    );
 }
-

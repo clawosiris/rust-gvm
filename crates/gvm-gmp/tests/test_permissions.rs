@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 mod common;
 
 use common::{id, xml};
@@ -6,7 +8,10 @@ use gvm_gmp::PermissionSubjectType;
 
 #[test]
 fn test_create_permission_basic() {
-    assert_eq!(xml(create_permission(Default::default())), "<create_permission/>");
+    assert_eq!(
+        xml(create_permission(Default::default())),
+        "<create_permission/>"
+    );
 }
 
 #[test]
@@ -26,8 +31,16 @@ fn test_create_permission_with_optionals() {
 
 #[test]
 fn test_permission_get_modify_delete() {
-    assert_eq!(xml(clone_permission(&id("p1"))), "<create_permission><copy>p1</copy></create_permission>");
-    assert_eq!(xml(get_permission(&id("p1"))), "<get_permissions details=\"1\" permission_id=\"p1\"/>");
-    assert_eq!(xml(delete_permission(&id("p1"), false)), "<delete_permission permission_id=\"p1\" ultimate=\"0\"/>");
+    assert_eq!(
+        xml(clone_permission(&id("p1"))),
+        "<create_permission><copy>p1</copy></create_permission>"
+    );
+    assert_eq!(
+        xml(get_permission(&id("p1"))),
+        "<get_permissions details=\"1\" permission_id=\"p1\"/>"
+    );
+    assert_eq!(
+        xml(delete_permission(&id("p1"), false)),
+        "<delete_permission permission_id=\"p1\" ultimate=\"0\"/>"
+    );
 }
-

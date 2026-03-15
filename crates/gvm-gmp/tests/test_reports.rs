@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 mod common;
 
 use common::{id, xml};
@@ -5,7 +7,10 @@ use gvm_gmp::commands::reports::*;
 
 #[test]
 fn test_create_report_basic() {
-    assert_eq!(xml(create_report(&id("t1"), Default::default())), "<create_report><task id=\"t1\"/></create_report>");
+    assert_eq!(
+        xml(create_report(&id("t1"), Default::default())),
+        "<create_report><task id=\"t1\"/></create_report>"
+    );
 }
 
 #[test]
@@ -25,7 +30,12 @@ fn test_create_report_with_optionals() {
 
 #[test]
 fn test_report_get_and_delete() {
-    assert_eq!(xml(get_report(&id("r1"))), "<get_reports details=\"1\" report_id=\"r1\"/>");
-    assert_eq!(xml(delete_report(&id("r1"), false)), "<delete_report report_id=\"r1\" ultimate=\"0\"/>");
+    assert_eq!(
+        xml(get_report(&id("r1"))),
+        "<get_reports details=\"1\" report_id=\"r1\"/>"
+    );
+    assert_eq!(
+        xml(delete_report(&id("r1"), false)),
+        "<delete_report report_id=\"r1\" ultimate=\"0\"/>"
+    );
 }
-

@@ -3,7 +3,11 @@ use gvm_protocol::XmlCommand;
 use crate::types::EntityId;
 
 pub(crate) fn bool_str(value: bool) -> &'static str {
-    if value { "1" } else { "0" }
+    if value {
+        "1"
+    } else {
+        "0"
+    }
 }
 
 pub(crate) fn add_text_element(cmd: &mut XmlCommand, name: &str, value: Option<&str>) {

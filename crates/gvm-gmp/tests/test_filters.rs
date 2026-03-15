@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 mod common;
 
 use common::{id, xml};
@@ -6,7 +8,10 @@ use gvm_gmp::{FilterType, SortOrder};
 
 #[test]
 fn test_create_filter_basic() {
-    assert_eq!(xml(create_filter("f", Default::default())), "<create_filter><name>f</name></create_filter>");
+    assert_eq!(
+        xml(create_filter("f", Default::default())),
+        "<create_filter><name>f</name></create_filter>"
+    );
 }
 
 #[test]
@@ -27,8 +32,16 @@ fn test_create_filter_with_optionals() {
 
 #[test]
 fn test_filter_get_modify_delete() {
-    assert_eq!(xml(clone_filter(&id("f1"))), "<create_filter><copy>f1</copy></create_filter>");
-    assert_eq!(xml(get_filter(&id("f1"))), "<get_filters details=\"1\" filter_id=\"f1\"/>");
-    assert_eq!(xml(delete_filter(&id("f1"), false)), "<delete_filter filter_id=\"f1\" ultimate=\"0\"/>");
+    assert_eq!(
+        xml(clone_filter(&id("f1"))),
+        "<create_filter><copy>f1</copy></create_filter>"
+    );
+    assert_eq!(
+        xml(get_filter(&id("f1"))),
+        "<get_filters details=\"1\" filter_id=\"f1\"/>"
+    );
+    assert_eq!(
+        xml(delete_filter(&id("f1"), false)),
+        "<delete_filter filter_id=\"f1\" ultimate=\"0\"/>"
+    );
 }
-

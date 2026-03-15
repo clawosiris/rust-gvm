@@ -1,58 +1,87 @@
+//! Ticket command builders.
+
 use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
 use crate::enums::TicketStatus;
 use crate::types::EntityId;
 
+/// Optional fields for ticket create and modify requests.
 #[derive(Debug, Clone, Default)]
 pub struct TicketOpts {
+    /// Optional assignee name.
     pub assigned_to: Option<String>,
+    /// Optional comment text included in the request.
     pub comment: Option<String>,
+    /// Optional ticket status.
     pub status: Option<TicketStatus>,
+    /// Optional note for the open state.
     pub open_note: Option<String>,
+    /// Optional note for the fixed state.
     pub fixed_note: Option<String>,
+    /// Optional note for the closed state.
     pub closed_note: Option<String>,
 }
 
+/// Options for `get_tickets` requests.
 #[derive(Debug, Clone, Default)]
 pub struct GetTicketsOpts {
+    /// Optional inline filter expression.
     pub filter_string: Option<String>,
+    /// Optional saved filter identifier.
     pub filter_id: Option<EntityId>,
+    /// Whether to query trashcan resources.
     pub trash: Option<bool>,
+    /// Whether to request detailed output.
     pub details: Option<bool>,
 }
 
+/// Build a clone request for an existing ticket.
 pub fn clone_ticket(ticket_id: &EntityId) -> impl Request {
     XmlCommand::new("create_ticket").child_with_text("copy", ticket_id.as_str())
 }
 
+/// Build a `create_ticket` request.
 pub fn create_ticket(result_id: &EntityId, opts: TicketOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_ticket");
-    cmd.add_element("result").set_attribute("id", result_id.as_str());
+    cmd.add_element("result")
+        .set_attribute("id", result_id.as_str());
     add_ticket_body(&mut cmd, &opts);
     cmd
 }
 
+/// Build a `get_tickets` request.
 pub fn get_tickets(opts: GetTicketsOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_tickets");
-    add_filter_attrs(&mut cmd, opts.filter_string.as_deref(), opts.filter_id.as_ref());
+    add_filter_attrs(
+        &mut cmd,
+        opts.filter_string.as_deref(),
+        opts.filter_id.as_ref(),
+    );
     set_optional_bool_attr(&mut cmd, "trash", opts.trash);
     set_optional_bool_attr(&mut cmd, "details", opts.details);
     cmd
 }
 
+/// Build a `get_ticket` request.
 pub fn get_ticket(ticket_id: &EntityId) -> impl Request {
-    XmlCommand::new("get_tickets").attribute("ticket_id", ticket_id.as_str()).attribute("details", "1")
+    XmlCommand::new("get_tickets")
+        .attribute("ticket_id", ticket_id.as_str())
+        .attribute("details", "1")
 }
 
+/// Build a `modify_ticket` request.
 pub fn modify_ticket(ticket_id: &EntityId, opts: TicketOpts) -> impl Request {
     let mut cmd = XmlCommand::new("modify_ticket").attribute("ticket_id", ticket_id.as_str());
     add_ticket_body(&mut cmd, &opts);
     cmd
 }
 
+/// Build a `delete_ticket` request.
 pub fn delete_ticket(ticket_id: &EntityId, ultimate: bool) -> impl Request {
-    XmlCommand::new("delete_ticket").attribute("ticket_id", ticket_id.as_str()).attribute("ultimate", bool_str(ultimate))
+    XmlCommand::new("delete_ticket")
+        .attribute("ticket_id", ticket_id.as_str())
+        .attribute("ultimate", bool_str(ultimate))
 }
 
 fn add_ticket_body(cmd: &mut XmlCommand, opts: &TicketOpts) {
@@ -71,23 +100,53 @@ mod tests {
     use super::*;
     use crate::common::xml;
 
-    fn id(value: &str) -> EntityId { EntityId::new(value).expect("valid id") }
+    fn id(value: &str) -> EntityId {
+        EntityId::new(value).expect("valid id")
+    }
 
     #[test]
     fn ticket_commands_build_xml() {
-        let rendered = xml(create_ticket(&id("r1"), TicketOpts { comment: Some("c".into()), status: Some(TicketStatus::Open), ..Default::default() }));
+        let rendered = xml(create_ticket(
+            &id("r1"),
+            TicketOpts {
+                comment: Some("c".into()),
+                status: Some(TicketStatus::Open),
+                ..Default::default()
+            },
+        ));
         assert!(rendered.contains("<result id=\"r1\"/>"));
         assert!(rendered.contains("<status>open</status>"));
-        assert_eq!(xml(clone_ticket(&id("tick1"))), "<create_ticket><copy>tick1</copy></create_ticket>");
-        assert_eq!(xml(get_ticket(&id("tick1"))), "<get_tickets details=\"1\" ticket_id=\"tick1\"/>");
+        assert_eq!(
+            xml(clone_ticket(&id("tick1"))),
+            "<create_ticket><copy>tick1</copy></create_ticket>"
+        );
+        assert_eq!(
+            xml(get_ticket(&id("tick1"))),
+            "<get_tickets details=\"1\" ticket_id=\"tick1\"/>"
+        );
     }
 
     #[test]
     fn ticket_modify_get_delete_build_xml() {
-        let rendered = xml(get_tickets(GetTicketsOpts { filter_string: Some("status=open".into()), ..Default::default() }));
+        let rendered = xml(get_tickets(GetTicketsOpts {
+            filter_string: Some("status=open".into()),
+            ..Default::default()
+        }));
         assert!(rendered.contains("filter=\"status=open\""));
-        let rendered = xml(modify_ticket(&id("tick1"), TicketOpts { comment: Some("updated".into()), ..Default::default() }));
-        assert_eq!(rendered, "<modify_ticket ticket_id=\"tick1\"><comment>updated</comment></modify_ticket>");
-        assert_eq!(xml(delete_ticket(&id("tick1"), true)), "<delete_ticket ticket_id=\"tick1\" ultimate=\"1\"/>");
+        let rendered = xml(modify_ticket(
+            &id("tick1"),
+            TicketOpts {
+                comment: Some("updated".into()),
+                ..Default::default()
+            },
+        ));
+        assert_eq!(
+            rendered,
+            "<modify_ticket ticket_id=\"tick1\"><comment>updated</comment></modify_ticket>"
+        );
+        assert_eq!(
+            xml(delete_ticket(&id("tick1"), true)),
+            "<delete_ticket ticket_id=\"tick1\" ultimate=\"1\"/>"
+        );
     }
 }

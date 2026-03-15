@@ -1,3 +1,5 @@
+#![allow(dead_code, missing_docs)]
+
 use gvm_gmp::EntityId;
 use gvm_protocol::Request;
 
@@ -8,4 +10,3 @@ pub fn xml(request: impl Request) -> String {
 pub fn id(s: &str) -> EntityId {
     EntityId::new(s).expect("valid id")
 }
-

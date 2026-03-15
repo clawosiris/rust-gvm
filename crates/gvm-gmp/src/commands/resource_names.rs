@@ -1,9 +1,12 @@
+//! Resource-name command builders.
+
+/// Re-export of the system `get_resource_names` helpers.
 pub use crate::commands::system::{get_resource_names, GetResourceNamesOpts};
 
 #[cfg(test)]
 mod tests {
-    use crate::common::xml;
     use crate::commands::resource_names::{get_resource_names, GetResourceNamesOpts};
+    use crate::common::xml;
     use crate::enums::EntityType;
     use crate::types::EntityId;
 

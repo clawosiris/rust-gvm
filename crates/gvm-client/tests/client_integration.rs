@@ -4,7 +4,9 @@
 use gvm_client::{GmpClient, GmpVersioned, GvmError};
 use gvm_connection::{GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::authentication::authenticate;
-use gvm_gmp::commands::targets::{create_target, delete_target, get_targets, CreateTargetOpts, GetTargetsOpts};
+use gvm_gmp::commands::targets::{
+    create_target, delete_target, get_targets, CreateTargetOpts, GetTargetsOpts,
+};
 use gvm_gmp::commands::tasks::{create_task, delete_task, get_task, start_task, stop_task};
 use gvm_gmp::types::GmpVersion;
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
@@ -139,7 +141,10 @@ async fn authenticate_succeeds() {
         .expect("authenticate should succeed");
 
     assert_eq!(response.status_code(), Some(200));
-    assert_eq!(response.root_element_name().as_deref(), Some("authenticate_response"));
+    assert_eq!(
+        response.root_element_name().as_deref(),
+        Some("authenticate_response")
+    );
 
     server.shutdown().await;
 }
@@ -180,12 +185,10 @@ async fn create_target_and_get_targets_succeed() {
         .await
         .expect("get_targets should succeed");
     assert_eq!(list_response.status_code(), Some(200));
-    assert!(
-        list_response
-            .as_str()
-            .expect("valid UTF-8 XML")
-            .contains("Integration Target")
-    );
+    assert!(list_response
+        .as_str()
+        .expect("valid UTF-8 XML")
+        .contains("Integration Target"));
 
     server.shutdown().await;
 }
@@ -260,8 +263,12 @@ async fn full_crud_lifecycle_succeeds() {
         .expect("create_target should succeed");
     let target_id = target_response.id().expect("target id");
 
-    let config_id = "550e8400-e29b-41d4-a716-446655440001".parse().expect("entity id");
-    let scanner_id = "550e8400-e29b-41d4-a716-446655440002".parse().expect("entity id");
+    let config_id = "550e8400-e29b-41d4-a716-446655440001"
+        .parse()
+        .expect("entity id");
+    let scanner_id = "550e8400-e29b-41d4-a716-446655440002"
+        .parse()
+        .expect("entity id");
     let target_entity_id = target_id.parse().expect("entity id");
 
     let task_response = client
@@ -323,7 +330,10 @@ async fn disconnect_leaves_transport_disconnected() {
         .await
         .expect("client should connect");
 
-    client.disconnect().await.expect("disconnect should succeed");
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
 
     assert!(!client.connection().is_connected());
 
@@ -340,7 +350,10 @@ async fn send_after_disconnect_returns_connection_error() {
         .await
         .expect("client should connect");
 
-    client.disconnect().await.expect("disconnect should succeed");
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
 
     let error = client
         .send(get_targets(Default::default()))

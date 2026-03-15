@@ -1,54 +1,87 @@
+//! Task command builders.
+
 use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::{
-    add_filter_attrs, add_id_element, add_optional_id_element, add_preferences, add_text_element,
-    add_string_list, bool_str, set_optional_bool_attr,
+    add_filter_attrs, add_id_element, add_optional_id_element, add_preferences, add_string_list,
+    add_text_element, bool_str, set_optional_bool_attr,
 };
 use crate::enums::HostsOrdering;
 use crate::types::EntityId;
 
+/// Optional fields for `create_task` requests.
 #[derive(Debug, Clone, Default)]
 pub struct CreateTaskOpts {
+    /// Whether the task should be alterable.
     pub alterable: Option<bool>,
+    /// Optional task host ordering.
     pub hosts_ordering: Option<HostsOrdering>,
+    /// Optional schedule identifier.
     pub schedule_id: Option<EntityId>,
+    /// Alert identifiers associated with the request.
     pub alert_ids: Vec<EntityId>,
+    /// Optional comment text included in the request.
     pub comment: Option<String>,
+    /// Optional schedule period count.
     pub schedule_periods: Option<u32>,
+    /// Observer names associated with the task.
     pub observers: Vec<String>,
+    /// Preference key/value pairs to include.
     pub preferences: Vec<(String, String)>,
 }
 
+/// Options for `get_tasks` requests.
 #[derive(Debug, Clone, Default)]
 pub struct GetTasksOpts {
+    /// Optional inline filter expression.
     pub filter_string: Option<String>,
+    /// Optional saved filter identifier.
     pub filter_id: Option<EntityId>,
+    /// Whether to query trashcan resources.
     pub trash: Option<bool>,
+    /// Whether to request detailed output.
     pub details: Option<bool>,
+    /// Whether to limit results to scheduled tasks.
     pub schedules_only: Option<bool>,
+    /// Whether pagination should be ignored.
     pub ignore_pagination: Option<bool>,
 }
 
+/// Optional fields for `modify_task` requests.
 #[derive(Debug, Clone, Default)]
 pub struct ModifyTaskOpts {
+    /// Optional resource name.
     pub name: Option<String>,
+    /// Optional comment text included in the request.
     pub comment: Option<String>,
+    /// Whether the task should be alterable.
     pub alterable: Option<bool>,
+    /// Optional task host ordering.
     pub hosts_ordering: Option<HostsOrdering>,
+    /// Optional schedule identifier.
     pub schedule_id: Option<EntityId>,
+    /// Optional schedule period count.
     pub schedule_periods: Option<u32>,
+    /// Optional target identifier.
     pub target_id: Option<EntityId>,
+    /// Optional scan configuration identifier.
     pub config_id: Option<EntityId>,
+    /// Optional scanner identifier.
     pub scanner_id: Option<EntityId>,
+    /// Alert identifiers associated with the request.
     pub alert_ids: Option<Vec<EntityId>>,
+    /// Observer names associated with the task.
     pub observers: Vec<String>,
+    /// Preference key/value pairs to include.
     pub preferences: Vec<(String, String)>,
 }
 
+/// Build a clone request for an existing task.
 pub fn clone_task(task_id: &EntityId) -> impl Request {
     XmlCommand::new("create_task").child_with_text("copy", task_id.as_str())
 }
 
+/// Build a `create_task` request for a container task.
 pub fn create_container_task(name: &str, comment: Option<&str>) -> impl Request {
     let mut cmd = XmlCommand::new("create_task");
     cmd.add_element_with_text("name", name);
@@ -57,6 +90,7 @@ pub fn create_container_task(name: &str, comment: Option<&str>) -> impl Request 
     cmd
 }
 
+/// Build a `create_task` request.
 pub fn create_task(
     name: &str,
     config_id: &EntityId,
@@ -89,15 +123,21 @@ pub fn create_task(
     cmd
 }
 
+/// Build a `delete_task` request.
 pub fn delete_task(task_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_task")
         .attribute("task_id", task_id.as_str())
         .attribute("ultimate", bool_str(ultimate))
 }
 
+/// Build a `get_tasks` request.
 pub fn get_tasks(opts: GetTasksOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_tasks").attribute("usage_type", "scan");
-    add_filter_attrs(&mut cmd, opts.filter_string.as_deref(), opts.filter_id.as_ref());
+    add_filter_attrs(
+        &mut cmd,
+        opts.filter_string.as_deref(),
+        opts.filter_id.as_ref(),
+    );
     set_optional_bool_attr(&mut cmd, "trash", opts.trash);
     set_optional_bool_attr(&mut cmd, "details", opts.details);
     set_optional_bool_attr(&mut cmd, "schedules_only", opts.schedules_only);
@@ -105,6 +145,7 @@ pub fn get_tasks(opts: GetTasksOpts) -> impl Request {
     cmd
 }
 
+/// Build a `get_task` request.
 pub fn get_task(task_id: &EntityId) -> impl Request {
     XmlCommand::new("get_tasks")
         .attribute("task_id", task_id.as_str())
@@ -112,6 +153,7 @@ pub fn get_task(task_id: &EntityId) -> impl Request {
         .attribute("details", "1")
 }
 
+/// Build a `modify_task` request.
 pub fn modify_task(task_id: &EntityId, opts: ModifyTaskOpts) -> impl Request {
     let mut cmd = XmlCommand::new("modify_task").attribute("task_id", task_id.as_str());
     add_text_element(&mut cmd, "name", opts.name.as_deref());
@@ -143,6 +185,7 @@ pub fn modify_task(task_id: &EntityId, opts: ModifyTaskOpts) -> impl Request {
     cmd
 }
 
+/// Build a `move_task` request.
 pub fn move_task(task_id: &EntityId, slave_id: Option<&EntityId>) -> impl Request {
     let mut cmd = XmlCommand::new("move_task").attribute("task_id", task_id.as_str());
     if let Some(slave_id) = slave_id {
@@ -151,14 +194,17 @@ pub fn move_task(task_id: &EntityId, slave_id: Option<&EntityId>) -> impl Reques
     cmd
 }
 
+/// Build a `start_task` request.
 pub fn start_task(task_id: &EntityId) -> impl Request {
     XmlCommand::new("start_task").attribute("task_id", task_id.as_str())
 }
 
+/// Build a `resume_task` request.
 pub fn resume_task(task_id: &EntityId) -> impl Request {
     XmlCommand::new("resume_task").attribute("task_id", task_id.as_str())
 }
 
+/// Build a `stop_task` request.
 pub fn stop_task(task_id: &EntityId) -> impl Request {
     XmlCommand::new("stop_task").attribute("task_id", task_id.as_str())
 }
@@ -175,7 +221,10 @@ mod tests {
 
     #[test]
     fn clone_task_builds_copy_xml() {
-        assert_eq!(xml(clone_task(&id("a1"))), "<create_task><copy>a1</copy></create_task>");
+        assert_eq!(
+            xml(clone_task(&id("a1"))),
+            "<create_task><copy>a1</copy></create_task>"
+        );
     }
 
     #[test]
@@ -227,8 +276,14 @@ mod tests {
                 ..Default::default()
             },
         ));
-        assert_eq!(rendered, "<modify_task task_id=\"t1\"><name>foo</name><alert id=\"0\"/></modify_task>");
-        assert_eq!(xml(move_task(&id("a1"), Some(&id("s1")))), "<move_task slave_id=\"s1\" task_id=\"a1\"/>");
+        assert_eq!(
+            rendered,
+            "<modify_task task_id=\"t1\"><name>foo</name><alert id=\"0\"/></modify_task>"
+        );
+        assert_eq!(
+            xml(move_task(&id("a1"), Some(&id("s1")))),
+            "<move_task slave_id=\"s1\" task_id=\"a1\"/>"
+        );
         assert_eq!(xml(start_task(&id("a1"))), "<start_task task_id=\"a1\"/>");
         assert_eq!(xml(resume_task(&id("a1"))), "<resume_task task_id=\"a1\"/>");
         assert_eq!(xml(stop_task(&id("a1"))), "<stop_task task_id=\"a1\"/>");

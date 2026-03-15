@@ -417,9 +417,7 @@ mod tests {
         let child = elem.add_child("preference");
         child.set_text("value1");
         let xml = String::from_utf8(cmd.to_bytes()).expect("valid utf8");
-        assert!(xml.contains(
-            "<preferences><preference>value1</preference></preferences>"
-        ));
+        assert!(xml.contains("<preferences><preference>value1</preference></preferences>"));
     }
 
     #[test]

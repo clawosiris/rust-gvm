@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 mod common;
 
 use common::{id, xml};
@@ -22,6 +24,8 @@ fn test_get_results_with_filter_and_details() {
 
 #[test]
 fn test_get_result_basic() {
-    assert_eq!(xml(get_result(&id("res1"))), "<get_results details=\"1\" result_id=\"res1\"/>");
+    assert_eq!(
+        xml(get_result(&id("res1"))),
+        "<get_results details=\"1\" result_id=\"res1\"/>"
+    );
 }
-

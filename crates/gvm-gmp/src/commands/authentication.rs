@@ -1,6 +1,8 @@
+//! Authentication command builders.
+
 use gvm_protocol::{Request, XmlCommand};
 
-/// Build an `authenticate` command.
+/// Build an `authenticate` request.
 pub fn authenticate(username: &str, password: &str) -> impl Request {
     let mut cmd = XmlCommand::new("authenticate");
     let credentials = cmd.add_element("credentials");

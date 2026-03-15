@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 mod common;
 
 use common::{id, xml};
@@ -6,7 +8,10 @@ use gvm_gmp::AliveTest;
 
 #[test]
 fn test_create_target_basic() {
-    assert_eq!(xml(create_target("target", Default::default())), "<create_target><name>target</name></create_target>");
+    assert_eq!(
+        xml(create_target("target", Default::default())),
+        "<create_target><name>target</name></create_target>"
+    );
 }
 
 #[test]
@@ -30,8 +35,16 @@ fn test_create_target_with_optionals() {
 
 #[test]
 fn test_target_get_modify_delete() {
-    assert_eq!(xml(clone_target(&id("t1"))), "<create_target><copy>t1</copy></create_target>");
-    assert_eq!(xml(get_target(&id("t1"))), "<get_targets details=\"1\" target_id=\"t1\"/>");
-    assert_eq!(xml(delete_target(&id("t1"), false)), "<delete_target target_id=\"t1\" ultimate=\"0\"/>");
+    assert_eq!(
+        xml(clone_target(&id("t1"))),
+        "<create_target><copy>t1</copy></create_target>"
+    );
+    assert_eq!(
+        xml(get_target(&id("t1"))),
+        "<get_targets details=\"1\" target_id=\"t1\"/>"
+    );
+    assert_eq!(
+        xml(delete_target(&id("t1"), false)),
+        "<delete_target target_id=\"t1\" ultimate=\"0\"/>"
+    );
 }
-

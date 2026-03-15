@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 mod common;
 
 use common::{id, xml};
@@ -6,7 +8,10 @@ use gvm_gmp::ReportFormatType;
 
 #[test]
 fn test_create_report_format_basic() {
-    assert_eq!(xml(create_report_format("rf", Default::default())), "<create_report_format><name>rf</name></create_report_format>");
+    assert_eq!(
+        xml(create_report_format("rf", Default::default())),
+        "<create_report_format><name>rf</name></create_report_format>"
+    );
 }
 
 #[test]
@@ -26,8 +31,16 @@ fn test_create_report_format_with_optionals() {
 
 #[test]
 fn test_report_format_get_delete_verify() {
-    assert_eq!(xml(get_report_format(&id("rf1"))), "<get_report_formats details=\"1\" report_format_id=\"rf1\"/>");
-    assert_eq!(xml(delete_report_format(&id("rf1"), false)), "<delete_report_format report_format_id=\"rf1\" ultimate=\"0\"/>");
-    assert_eq!(xml(verify_report_format(&id("rf1"))), "<verify_report_format report_format_id=\"rf1\"/>");
+    assert_eq!(
+        xml(get_report_format(&id("rf1"))),
+        "<get_report_formats details=\"1\" report_format_id=\"rf1\"/>"
+    );
+    assert_eq!(
+        xml(delete_report_format(&id("rf1"), false)),
+        "<delete_report_format report_format_id=\"rf1\" ultimate=\"0\"/>"
+    );
+    assert_eq!(
+        xml(verify_report_format(&id("rf1"))),
+        "<verify_report_format report_format_id=\"rf1\"/>"
+    );
 }
-

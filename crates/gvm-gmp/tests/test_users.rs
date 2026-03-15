@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 mod common;
 
 use common::{id, xml};
@@ -6,7 +8,10 @@ use gvm_gmp::UserAuthType;
 
 #[test]
 fn test_create_user_basic() {
-    assert_eq!(xml(create_user("alice", Default::default())), "<create_user><name>alice</name></create_user>");
+    assert_eq!(
+        xml(create_user("alice", Default::default())),
+        "<create_user><name>alice</name></create_user>"
+    );
 }
 
 #[test]
@@ -28,7 +33,16 @@ fn test_create_user_with_optionals() {
 
 #[test]
 fn test_user_get_modify_delete() {
-    assert_eq!(xml(clone_user(&id("u1"))), "<create_user><copy>u1</copy></create_user>");
-    assert_eq!(xml(get_user(&id("u1"))), "<get_users details=\"1\" user_id=\"u1\"/>");
-    assert_eq!(xml(delete_user(&id("u1"), true)), "<delete_user ultimate=\"1\" user_id=\"u1\"/>");
+    assert_eq!(
+        xml(clone_user(&id("u1"))),
+        "<create_user><copy>u1</copy></create_user>"
+    );
+    assert_eq!(
+        xml(get_user(&id("u1"))),
+        "<get_users details=\"1\" user_id=\"u1\"/>"
+    );
+    assert_eq!(
+        xml(delete_user(&id("u1"), true)),
+        "<delete_user ultimate=\"1\" user_id=\"u1\"/>"
+    );
 }

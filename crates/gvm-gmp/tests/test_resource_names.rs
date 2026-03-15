@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 mod common;
 
 use common::{id, xml};
@@ -6,7 +8,10 @@ use gvm_gmp::EntityType;
 
 #[test]
 fn test_get_resource_names_basic() {
-    assert_eq!(xml(get_resource_names(Default::default())), "<get_resource_names/>");
+    assert_eq!(
+        xml(get_resource_names(Default::default())),
+        "<get_resource_names/>"
+    );
 }
 
 #[test]
@@ -21,4 +26,3 @@ fn test_get_resource_names_with_options() {
         "<get_resource_names filt_id=\"f1\" filter=\"name=foo\" resource_id=\"t1\" type=\"task\"/>"
     );
 }
-

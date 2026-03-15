@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 mod common;
 
 use common::{id, xml};
@@ -6,7 +8,10 @@ use gvm_gmp::TicketStatus;
 
 #[test]
 fn test_create_ticket_basic() {
-    assert_eq!(xml(create_ticket(&id("r1"), Default::default())), "<create_ticket><result id=\"r1\"/></create_ticket>");
+    assert_eq!(
+        xml(create_ticket(&id("r1"), Default::default())),
+        "<create_ticket><result id=\"r1\"/></create_ticket>"
+    );
 }
 
 #[test]
@@ -29,8 +34,16 @@ fn test_create_ticket_with_optionals() {
 
 #[test]
 fn test_ticket_get_modify_delete() {
-    assert_eq!(xml(clone_ticket(&id("tick1"))), "<create_ticket><copy>tick1</copy></create_ticket>");
-    assert_eq!(xml(get_ticket(&id("tick1"))), "<get_tickets details=\"1\" ticket_id=\"tick1\"/>");
-    assert_eq!(xml(delete_ticket(&id("tick1"), true)), "<delete_ticket ticket_id=\"tick1\" ultimate=\"1\"/>");
+    assert_eq!(
+        xml(clone_ticket(&id("tick1"))),
+        "<create_ticket><copy>tick1</copy></create_ticket>"
+    );
+    assert_eq!(
+        xml(get_ticket(&id("tick1"))),
+        "<get_tickets details=\"1\" ticket_id=\"tick1\"/>"
+    );
+    assert_eq!(
+        xml(delete_ticket(&id("tick1"), true)),
+        "<delete_ticket ticket_id=\"tick1\" ultimate=\"1\"/>"
+    );
 }
-

@@ -57,7 +57,12 @@ pub enum EntityIdError {
 
 /// GMP protocol version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct GmpVersion(pub u16, pub u16);
+pub struct GmpVersion(
+    /// The major GMP version component.
+    pub u16,
+    /// The minor GMP version component.
+    pub u16,
+);
 
 impl fmt::Display for GmpVersion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -79,7 +84,10 @@ mod tests {
 
     #[test]
     fn entity_id_rejects_empty_values() {
-        assert_eq!(EntityId::new("").expect_err("empty id"), EntityIdError::Empty);
+        assert_eq!(
+            EntityId::new("").expect_err("empty id"),
+            EntityIdError::Empty
+        );
     }
 
     #[test]

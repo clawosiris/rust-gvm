@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 mod common;
 
 use common::{id, xml};
@@ -5,7 +7,10 @@ use gvm_gmp::commands::schedules::*;
 
 #[test]
 fn test_create_schedule_basic() {
-    assert_eq!(xml(create_schedule("sched", Default::default())), "<create_schedule><name>sched</name></create_schedule>");
+    assert_eq!(
+        xml(create_schedule("sched", Default::default())),
+        "<create_schedule><name>sched</name></create_schedule>"
+    );
 }
 
 #[test]
@@ -26,8 +31,16 @@ fn test_create_schedule_with_optionals() {
 
 #[test]
 fn test_schedule_get_modify_delete() {
-    assert_eq!(xml(clone_schedule(&id("sc1"))), "<create_schedule><copy>sc1</copy></create_schedule>");
-    assert_eq!(xml(get_schedule(&id("sc1"))), "<get_schedules details=\"1\" schedule_id=\"sc1\"/>");
-    assert_eq!(xml(delete_schedule(&id("sc1"), false)), "<delete_schedule schedule_id=\"sc1\" ultimate=\"0\"/>");
+    assert_eq!(
+        xml(clone_schedule(&id("sc1"))),
+        "<create_schedule><copy>sc1</copy></create_schedule>"
+    );
+    assert_eq!(
+        xml(get_schedule(&id("sc1"))),
+        "<get_schedules details=\"1\" schedule_id=\"sc1\"/>"
+    );
+    assert_eq!(
+        xml(delete_schedule(&id("sc1"), false)),
+        "<delete_schedule schedule_id=\"sc1\" ultimate=\"0\"/>"
+    );
 }
-

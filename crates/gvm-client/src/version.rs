@@ -47,7 +47,10 @@ mod tests {
 
     #[test]
     fn parses_major_minor() {
-        assert_eq!(parse_version_text("22.5").expect("valid"), GmpVersion(22, 5));
+        assert_eq!(
+            parse_version_text("22.5").expect("valid"),
+            GmpVersion(22, 5)
+        );
     }
 
     #[test]

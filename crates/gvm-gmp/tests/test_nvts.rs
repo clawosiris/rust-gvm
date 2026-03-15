@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 mod common;
 
 use common::{id, xml};
@@ -22,7 +24,9 @@ fn test_get_nvts_with_options() {
 
 #[test]
 fn test_get_nvt_and_families() {
-    assert_eq!(xml(get_nvt("1.3.6.1")), "<get_nvts details=\"1\" nvt_oid=\"1.3.6.1\"/>");
+    assert_eq!(
+        xml(get_nvt("1.3.6.1")),
+        "<get_nvts details=\"1\" nvt_oid=\"1.3.6.1\"/>"
+    );
     assert_eq!(xml(get_nvt_families()), "<get_nvt_families/>");
 }
-

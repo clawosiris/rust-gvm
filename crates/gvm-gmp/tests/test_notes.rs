@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 mod common;
 
 use common::{id, xml};
@@ -5,7 +7,10 @@ use gvm_gmp::commands::notes::*;
 
 #[test]
 fn test_create_note_basic() {
-    assert_eq!(xml(create_note("1.3.6.1", Default::default())), "<create_note><nvt oid=\"1.3.6.1\"/></create_note>");
+    assert_eq!(
+        xml(create_note("1.3.6.1", Default::default())),
+        "<create_note><nvt oid=\"1.3.6.1\"/></create_note>"
+    );
 }
 
 #[test]
@@ -30,8 +35,16 @@ fn test_create_note_with_optionals() {
 
 #[test]
 fn test_note_get_modify_delete() {
-    assert_eq!(xml(clone_note(&id("n1"))), "<create_note><copy>n1</copy></create_note>");
-    assert_eq!(xml(get_note(&id("n1"))), "<get_notes details=\"1\" note_id=\"n1\"/>");
-    assert_eq!(xml(delete_note(&id("n1"), true)), "<delete_note note_id=\"n1\" ultimate=\"1\"/>");
+    assert_eq!(
+        xml(clone_note(&id("n1"))),
+        "<create_note><copy>n1</copy></create_note>"
+    );
+    assert_eq!(
+        xml(get_note(&id("n1"))),
+        "<get_notes details=\"1\" note_id=\"n1\"/>"
+    );
+    assert_eq!(
+        xml(delete_note(&id("n1"), true)),
+        "<delete_note note_id=\"n1\" ultimate=\"1\"/>"
+    );
 }
-
