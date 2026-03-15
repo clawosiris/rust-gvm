@@ -21,7 +21,13 @@
 
 ### License
 
-GPL-3.0-or-later (matching python-gvm)
+AGPL-3.0-or-later (matching the Greenbone ecosystem)
+
+> **Note:** Originally GPL-3.0-or-later; changed to AGPL-3.0-or-later to align with Greenbone's licensing direction. All source files carry SPDX headers:
+> ```
+> // SPDX-License-Identifier: AGPL-3.0-or-later
+> // SPDX-FileCopyrightText: 2026 Greenbone AG
+> ```
 
 ---
 
@@ -92,7 +98,7 @@ pub trait GvmConnection: Send + Sync {
 |------|-----------|-----------------|--------------|
 | `UnixSocketConnection` | Unix domain socket | `/run/gvmd/gvmd.sock` | `tokio` |
 | `TlsConnection` | TLS over TCP | `127.0.0.1:9390` | `tokio`, `tokio-rustls` or `tokio-native-tls` |
-| `SshConnection` | SSH tunnel | `127.0.0.1:22` (user: `gmp`) | `tokio`, `russh` |
+| `SshConnection` | SSH tunnel via `direct-streamlocal` | `localhost:22` (user: `root`) | `tokio`, `russh` |
 
 #### Configuration
 
@@ -113,12 +119,19 @@ pub struct TlsConfig {
 }
 
 pub struct SshConfig {
-    pub hostname: String,
+    pub hostname: String,        // default: "localhost"
     pub port: u16,               // default: 22
-    pub username: String,        // default: "gmp"
-    pub password: Option<String>,
-    pub known_hosts_file: Option<PathBuf>,
-    pub timeout: Duration,
+    pub username: String,        // default: "root"
+    pub auth: SshAuth,           // default: Agent
+    pub remote_socket: String,   // default: "/run/gvmd/gvmd.sock"
+    pub timeout: Duration,       // default: 60s
+    pub read_buffer_size: usize, // default: 64KB
+}
+
+pub enum SshAuth {
+    Password(String),
+    PrivateKey { key_path: PathBuf, passphrase: Option<String> },
+    Agent,
 }
 ```
 
@@ -485,37 +498,45 @@ async fn main() -> Result<()> {
 
 ## 4. Error Handling
 
+#### `gvm-client::GvmError` (high-level client)
 ```rust
 #[derive(Debug, thiserror::Error)]
 pub enum GvmError {
-    #[error("Connection error: {0}")]
-    Connection(#[source] Box<dyn std::error::Error + Send + Sync>),
+    #[error("connection error: {0}")]
+    Connection(#[source] ConnectionError),
 
     #[error("XML parse error: {0}")]
     XmlParse(String),
 
-    #[error("Protocol state error: {0}")]
+    #[error("invalid state: {0}")]
     InvalidState(String),
 
-    #[error("Server error (status {status}): {message}")]
+    #[error("server error (status {status}): {message}")]
     Server { status: u16, message: String },
 
-    #[error("Required argument missing: {function} requires {argument}")]
-    RequiredArgument { function: String, argument: String },
-
-    #[error("Invalid argument: {0}")]
-    InvalidArgument(String),
-
-    #[error("Unsupported GMP version: {0}.{1}")]
+    #[error("unsupported GMP version: {0}.{1}")]
     UnsupportedVersion(u16, u16),
 
-    #[error("Timeout after {0:?}")]
-    Timeout(std::time::Duration),
-
-    #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
+    #[error("timeout after {0:?}")]
+    Timeout(Duration),
 }
 ```
+
+#### `gvm-connection::ConnectionError` (transport-level)
+```rust
+#[derive(Debug, thiserror::Error)]
+pub enum ConnectionError {
+    NotConnected,
+    AlreadyConnected,
+    ConnectFailed(#[source] std::io::Error),
+    SendFailed(#[source] std::io::Error),
+    ReadFailed(#[source] std::io::Error),
+    Timeout(Duration),
+    SocketNotFound(PathBuf),
+}
+```
+
+`GvmError::Connection` preserves the full `ConnectionError` source chain. `ConnectionError::Timeout` is automatically promoted to `GvmError::Timeout`.
 
 ---
 
@@ -541,24 +562,98 @@ Dev dependencies: `tokio-test`, `pretty_assertions`, `rstest`
 - Command builders: verify XML output matches expected GMP XML
 - State machine: verify state transitions, error states
 - Response parsing: verify typed extraction from XML
+- Enum exhaustive tests: every variant tested for `as_gmp_str()`, `FromStr`, and invalid input
 
 ### Integration Tests
-- Against a real or mocked gvmd instance
-- Feature: `integration-tests` flag
+- Against `gvm-mock-server` (all modes: Echo, Fixture, Stateful, Scenario)
+- Feature-gated: `unix-socket-tests` for socket-based tests
+- Feature-gated: `ssh` for SSH transport E2E tests
+- `gvm-client` integration: version negotiation, CRUD lifecycle, error paths
+- `gvm-connection` integration: Unix socket + SSH transport against mock server
+
+### python-gvm Cross-Validation
+- CI job runs `python-gvm` against `gvm-mock-server` (standalone binary)
+- Full lifecycle: version negotiation → auth → target/task CRUD → notes CRUD → cleanup
+- Test harness: `tests/integration/test_python_gvm.py`
+- Validates protocol compatibility, not just XML generation
 
 ### Property-Based Tests
 - Round-trip: `Request → bytes → parse → equivalent structure`
 - Fuzz XML reader with arbitrary byte sequences
 
-### Compatibility Tests
-- Port key python-gvm test cases (there are ~200+ test files)
-- Verify XML output byte-for-byte matches python-gvm for same inputs
+### Test Coverage
+- Line coverage tracked via `cargo-llvm-cov` (target: ≥90%)
+- Coverage report: `make coverage`
+
+### Current Test Count: 630+
+| Category | Count |
+|----------|-------|
+| gvm-protocol unit | 38 |
+| gvm-mock-server unit | 73 |
+| gvm-mock-server integration | 137 |
+| gvm-connection unit + integration | 20 |
+| gvm-gmp unit (inline) | 80 |
+| gvm-gmp external command tests | 53 |
+| gvm-gmp enum exhaustive tests | 347 |
+| gvm-gmp type tests | 6 |
+| gvm-client unit + integration | 13 |
+| python-gvm integration | 15 steps |
 
 ---
 
-## 7. Implementation Phases
+## 7. CI/CD & Build Infrastructure
 
-### Phase 1: Core Foundation
+### CI Workflows (`.github/workflows/`)
+
+| Workflow | Trigger | Jobs |
+|----------|---------|------|
+| `ci.yml` | Push/PR to main | Format, Clippy, Test (stable + MSRV 1.75), Test (all features), Documentation, Cargo Deny, Coverage, python-gvm integration |
+| `nightly.yml` | Daily 04:00 UTC + manual | Full CI + 5-target cross-platform binary builds |
+| `release.yml` | `v*` tag push | Test → 5-target builds → SBOM generation → GitHub Release with checksums |
+
+### Cross-Platform Binaries
+
+Built for 5 targets:
+- `x86_64-unknown-linux-gnu` (Linux amd64)
+- `aarch64-unknown-linux-gnu` (Linux arm64, via `cross`)
+- `x86_64-unknown-linux-musl` (Linux amd64 static)
+- `x86_64-apple-darwin` (macOS amd64)
+- `aarch64-apple-darwin` (macOS arm64)
+
+### SBOM (Software Bill of Materials)
+
+Generated in release and nightly workflows using `cargo-cyclonedx`:
+- CycloneDX format (JSON + XML) for each workspace crate
+- Packaged as `rust-gvm-sbom.tar.gz` with SHA256 checksum
+- Attached to GitHub releases alongside platform binaries
+
+### Dependency Management
+
+- **Dependabot** (`.github/dependabot.yml`):
+  - Cargo: weekly, Monday, grouped minor/patch
+  - GitHub Actions: weekly, grouped
+  - pip: monthly
+- **cargo-deny** (`deny.toml`): license allowlist, advisory database, v2 schema
+  - Ignored advisories: RUSTSEC-2023-0071 (rsa Marvin Attack, transitive via russh), RUSTSEC-2025-0134 (rustls-pemfile unmaintained)
+
+### Makefile
+
+Development commands available via `make`:
+- `make all` — fmt + clippy + test + doc
+- `make test` / `make test-all` — workspace tests (default / all features)
+- `make test-integration` — python-gvm integration tests
+- `make clippy` / `make fmt` — lint and format
+- `make doc` / `make doc-open` — build/open rustdoc
+- `make deny` / `make audit` / `make outdated` / `make machete` — dependency checks
+- `make coverage` / `make coverage-lcov` — line coverage reports
+- `make ci` — full local CI simulation
+- `make setup-tools` — install dev tools (cargo-deny, cargo-llvm-cov, etc.)
+
+---
+
+## 8. Implementation Phases (Status)
+
+### Phase 1: Core Foundation ✅
 1. `gvm-protocol` — Sans-I/O state machine + `XmlCommand` builder
 2. `gvm-connection` — Unix socket only
 3. Basic `gvm-gmp` — `Version`, `authenticate`, `Tasks` (as proof of concept)
@@ -566,7 +661,7 @@ Dev dependencies: `tokio-test`, `pretty_assertions`, `rstest`
 
 **Exit criteria:** Can connect to gvmd, authenticate, and list tasks.
 
-### Phase 2: Full GMP 22.4 Coverage
+### Phase 2: Full GMP 22.4 Coverage ✅
 1. All command builders for GMP 22.4
 2. All enums
 3. Response parsing for core types
@@ -575,15 +670,26 @@ Dev dependencies: `tokio-test`, `pretty_assertions`, `rstest`
 
 **Exit criteria:** Feature parity with python-gvm for GMP 22.4.
 
-### Phase 3: Version Variants + Polish
-1. Version deltas (22.5, 22.6, 22.7, next)
-2. SSH connection support
-3. Sync wrapper API
-4. Documentation (rustdoc, examples, README)
-5. CI/CD pipeline
-6. Publish to crates.io
+### Phase 3: Version Variants + Polish (Mostly Complete)
+1. ✅ Version deltas (22.5, 22.6, 22.7, next) — `GmpVersioned` enum
+2. ✅ SSH connection support — `russh`-based `SshConnection`
+3. ⬜ Sync wrapper API — deferred
+4. ✅ Documentation (rustdoc, examples, README)
+5. ✅ CI/CD pipeline (CI, nightly, release workflows)
+6. ⬜ Publish to crates.io — deferred pending v0.2.0
 
 **Exit criteria:** Full feature parity with python-gvm, published crate.
+
+### Phase 3 Additions (Not in Original Spec)
+- ✅ SBOM generation (CycloneDX) in release/nightly pipelines
+- ✅ Dependabot configuration (cargo + actions + pip)
+- ✅ cargo-deny license/advisory checking
+- ✅ Makefile with full development workflow commands
+- ✅ python-gvm integration test CI job
+- ✅ Cross-platform binary builds (5 targets)
+- ✅ AGPL-3.0-or-later license (changed from GPL)
+- ✅ SPDX headers on all source files
+- ✅ SSH listener in mock server (for E2E testing)
 
 ---
 

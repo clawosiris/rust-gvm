@@ -36,7 +36,7 @@ This means:
 
 ### License
 
-GPL-3.0-or-later (matching python-gvm and the rust-gvm project)
+AGPL-3.0-or-later (matching the Greenbone ecosystem)
 
 ---
 
@@ -106,6 +106,27 @@ Returns pre-built GMP XML responses from a fixture library. Each command maps to
 
 #### Mode 3: Stateful (Simulated CRUD)
 Maintains an in-memory resource store. Create commands generate UUIDs and store resources. Get commands return stored resources. Modify/delete commands update/remove them. Authentication is validated. This mode enables testing of multi-step workflows.
+
+### 3.3 Transport Listeners
+
+The mock server supports three listener types, all routing to the same `handle_stream` pipeline:
+
+| Transport | Builder Method | Feature Flag | Notes |
+|-----------|---------------|-------------|-------|
+| Unix socket | `.unix_socket(path)` / `.unix_socket_auto()` | — (always available) | Default for local testing |
+| TCP | `.tcp("addr:port")` | — (always available) | For cross-language testing |
+| SSH | `.ssh("addr:port")` | `ssh` | Embeds `russh` SSH server with ephemeral Ed25519 host key |
+
+#### SSH Listener Details
+
+The SSH listener (`ssh_listener.rs`) implements `russh::server::Handler`:
+- Generates an ephemeral Ed25519 host key at server start (no disk key required)
+- Accepts password authentication (checks against configured credentials in Stateful mode, accepts all in other modes)
+- Handles `direct-streamlocal@openssh.com` channel requests (used by `SshConnection`)
+- Each SSH channel gets its own `SessionHandler` (same isolation as TCP/Unix connections)
+- Respects server shutdown signal for graceful termination
+
+This enables full end-to-end testing: `SshConnection` → mock SSH server → GMP handler → response, without needing a real SSH server or gvmd.
 
 ### 3.2 GMP Protocol Compliance
 
@@ -605,14 +626,15 @@ pytest tests/ --gvmd-socket /tmp/gvmd-test.sock
 | `clap` | CLI argument parsing (standalone binary) |
 | `serde` + `serde_yaml` | Scenario YAML parsing (standalone binary) |
 | `tokio-rustls` | TLS support (feature-gated) |
+| `russh` | SSH listener (feature-gated) |
 
-Dev: `tempfile` (auto-cleanup socket paths)
+Dev: `tempfile` (auto-cleanup socket paths), `gvm-connection` (integration tests)
 
 ---
 
 ## 10. Implementation Phases
 
-### Phase 1: Echo + Fixture Modes
+### Phase 1: Echo + Fixture Modes ✅
 1. TCP and Unix socket listeners
 2. GMP XML command parser (extract command name + attributes)
 3. Echo mode (well-formed generic responses)
@@ -622,7 +644,7 @@ Dev: `tempfile` (auto-cleanup socket paths)
 
 **Exit criteria:** rust-gvm integration tests pass against mock server for version negotiation, authentication, and basic get/create commands.
 
-### Phase 2: Stateful Mode
+### Phase 2: Stateful Mode ✅
 1. In-memory resource store
 2. CRUD operations for all resource types
 3. Task state machine
@@ -632,7 +654,7 @@ Dev: `tempfile` (auto-cleanup socket paths)
 
 **Exit criteria:** Full CRUD round-trip tests pass. Task lifecycle tests pass.
 
-### Phase 3: Error Injection + Scenarios
+### Phase 3: Error Injection + Scenarios ✅
 1. Fault injection engine
 2. Scenario playback mode
 3. Concurrent client support
@@ -640,14 +662,22 @@ Dev: `tempfile` (auto-cleanup socket paths)
 
 **Exit criteria:** Error handling tests pass. Scenario playback works.
 
-### Phase 4: Python Ecosystem
-1. Standalone binary with CLI
-2. Scenario YAML format
-3. TLS support
-4. Python wrapper package with pytest fixture
-5. Example python-gvm test migration
+### Phase 4: Python Ecosystem (Partial)
+1. ✅ Standalone binary with CLI (`--mode`, `--version`, `--socket`, `--tcp`)
+2. ⬜ Scenario YAML format — deferred
+3. ⬜ TLS support — deferred
+4. ⬜ Python wrapper package with pytest fixture — deferred
+5. ✅ python-gvm integration test in CI (`tests/integration/test_python_gvm.py`)
 
-**Exit criteria:** python-gvm can run tests against the mock server. PyPI package published.
+**Exit criteria:** python-gvm can run tests against the mock server. ~~PyPI package published.~~
+
+### Phase 4 Additions (Not in Original Spec)
+- ✅ SSH listener (`ssh_listener.rs`) for E2E testing of SSH transport
+- ✅ `util.rs` — shared `now_iso()` (Rata Die), `xml_escape()`, `xml_escape_attr()`
+- ✅ Cross-platform binary builds (5 targets) in CI
+- ✅ SBOM generation (CycloneDX) attached to releases
+- ✅ Makefile with `test-integration` target
+- ✅ Comprehensive test suite (198 mock-server tests)
 
 ---
 
@@ -669,9 +699,9 @@ Dev: `tempfile` (auto-cleanup socket paths)
 **Decision:** Build both a Rust library crate and a standalone binary.
 **Rationale:** The testing gap exists across all GMP client languages. A binary with a simple CLI makes the mock server accessible to Python, Go, and shell-based test suites. The pytest fixture wrapper makes adoption by python-gvm nearly zero-effort.
 
-### D5: GPL-3.0-or-later License
-**Decision:** Match the rust-gvm project license.
-**Rationale:** Consistent with the Greenbone ecosystem. The mock server is part of the rust-gvm workspace.
+### D5: AGPL-3.0-or-later License
+**Decision:** Match the Greenbone ecosystem licensing direction.
+**Rationale:** Changed from GPL-3.0-or-later to AGPL-3.0-or-later. The mock server is part of the rust-gvm workspace. All source files carry SPDX headers.
 
 ---
 
