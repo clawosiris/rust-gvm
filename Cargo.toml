@@ -22,7 +22,7 @@ categories = ["network-programming", "api-bindings"]
 tokio = { version = "1", features = ["full"] }
 
 # XML
-quick-xml = { version = "0.37", features = ["serialize"] }
+quick-xml = { version = "0.39", features = ["serialize"] }
 
 # Error handling
 thiserror = "2"
