@@ -1,0 +1,15 @@
+# cargo-audit configuration
+# Ignore known advisories that are already tracked in deny.toml
+
+[advisories]
+ignore = [
+    # rsa: Marvin Attack (PKCS#1 v1.5 timing side-channel)
+    # Transitive via russh → rsa. No direct exposure; SSH transport
+    # doesn't use raw RSA PKCS#1. Tracked upstream.
+    "RUSTSEC-2023-0071",
+
+    # rustls-pemfile: unmaintained
+    # Optional TLS dependency, not yet active. Will migrate when
+    # TLS transport is implemented.
+    "RUSTSEC-2025-0134",
+]
