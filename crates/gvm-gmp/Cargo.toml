@@ -11,9 +11,7 @@ categories.workspace = true
 
 [dependencies]
 gvm-protocol.workspace = true
-quick-xml.workspace = true
 thiserror.workspace = true
-uuid.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true

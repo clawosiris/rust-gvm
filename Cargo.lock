@@ -971,7 +971,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tokio-test",
- "tracing",
 ]
 
 [[package]]
@@ -1000,10 +999,8 @@ dependencies = [
  "gvm-protocol",
  "pretty_assertions",
  "proptest",
- "quick-xml",
  "rstest",
  "thiserror 2.0.18",
- "uuid",
 ]
 
 [[package]]
@@ -1021,7 +1018,6 @@ dependencies = [
  "serde",
  "serde_yaml",
  "tempfile",
- "thiserror 2.0.18",
  "tokio",
  "tokio-rustls",
  "tokio-test",
@@ -1039,7 +1035,6 @@ dependencies = [
  "quick-xml",
  "rstest",
  "thiserror 2.0.18",
- "tracing",
 ]
 
 [[package]]
