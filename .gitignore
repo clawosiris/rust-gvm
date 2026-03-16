@@ -24,6 +24,7 @@ Thumbs.db
 lcov.info
 coverage/
 tarpaulin-report.html
+TASK_*.md
 
 # Debug
 *.pdb
