@@ -17,7 +17,7 @@ use crate::response_gen::{echo_response, error_response};
 use crate::scenario::{ScenarioEngine, ScenarioMode, ScenarioOutcome, ScenarioStep};
 use crate::store::{Resource, ResourceStore, TaskStatus};
 use crate::util::xml_escape;
-use crate::version::GmpVersion;
+use crate::version::{command_available, GmpVersion};
 use crate::ServerMode;
 
 /// Handles GMP commands for a single session.
@@ -177,8 +177,24 @@ impl SessionHandler {
             return error_response(&cmd.name, 401, "Not authenticated");
         }
 
+        if !command_available(&cmd.name, self.version) {
+            return crate::response_gen::error_response(
+                &cmd.name,
+                400,
+                &format!(
+                    "Command '{}' is not available in GMP {}",
+                    cmd.name, self.version
+                ),
+            );
+        }
+
         // Route to specific handlers
         match cmd.name.as_str() {
+            "get_features" => {
+                "<get_features_response status=\"200\" status_text=\"OK\"></get_features_response>"
+                    .as_bytes()
+                    .to_vec()
+            }
             // Create commands
             name if name.starts_with("create_") => self.handle_create(cmd, raw_xml, store),
             // Get commands

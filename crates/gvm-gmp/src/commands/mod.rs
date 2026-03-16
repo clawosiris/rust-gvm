@@ -9,6 +9,8 @@ pub mod alerts;
 pub mod authentication;
 /// Credential command builders.
 pub mod credentials;
+/// Feature command builders.
+pub mod features;
 /// Filter command builders.
 pub mod filters;
 /// Group command builders.
@@ -25,6 +27,8 @@ pub mod overrides;
 pub mod permissions;
 /// Port list command builders.
 pub mod port_lists;
+/// Report configuration command builders.
+pub mod report_configs;
 /// Report format command builders.
 pub mod report_formats;
 /// Report command builders.
