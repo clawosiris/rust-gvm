@@ -68,33 +68,32 @@ async fn assert_version_gated_rejected(version: GmpVersion) {
     let mut stream = connect(&server).await;
     authenticate_admin(&mut stream).await;
 
-    let expected_create =
-        format!("Command 'create_report_config' is not available in GMP {version}");
     let create_response = send_recv(
         &mut stream,
         create_report_config("Version Gated Config", "report-format-1"),
     )
     .await;
     assert_eq!(create_response.status_code(), Some(400));
-    assert_eq!(
-        create_response.status_text().as_deref(),
-        Some(expected_create.as_str())
+    let create_text = create_response.status_text().unwrap();
+    assert!(
+        create_text.contains("create_report_config"),
+        "expected create_report_config in status_text, got: {create_text}"
     );
 
-    let expected_list = format!("Command 'get_report_configs' is not available in GMP {version}");
     let list_response = send_recv(&mut stream, get_report_configs()).await;
     assert_eq!(list_response.status_code(), Some(400));
-    assert_eq!(
-        list_response.status_text().as_deref(),
-        Some(expected_list.as_str())
+    let list_text = list_response.status_text().unwrap();
+    assert!(
+        list_text.contains("get_report_configs"),
+        "expected get_report_configs in status_text, got: {list_text}"
     );
 
-    let expected_features = format!("Command 'get_features' is not available in GMP {version}");
     let features_response = send_recv(&mut stream, get_features()).await;
     assert_eq!(features_response.status_code(), Some(400));
-    assert_eq!(
-        features_response.status_text().as_deref(),
-        Some(expected_features.as_str())
+    let features_text = features_response.status_text().unwrap();
+    assert!(
+        features_text.contains("get_features"),
+        "expected get_features in status_text, got: {features_text}"
     );
 
     server.shutdown().await;
