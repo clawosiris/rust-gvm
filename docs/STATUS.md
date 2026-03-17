@@ -190,6 +190,7 @@ Last updated: 2026-03-17
 | `--socket <path>` | ✅ |
 | `--tcp <addr:port>` | ✅ |
 | Cross-platform binaries | ✅ (5 targets in CI) |
+| GHCR release image | ✅ `ghcr.io/clawosiris/gvm-mock-server:<tag>` |
 
 ---
 
