@@ -1,0 +1,37 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.3",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-03-17T00:00:00Z",
+    "component": {
+      "type": "library",
+      "bom-ref": "path+file:///tmp/rust-gvm-sbom-improve/crates/gvm-client#0.1.0",
+      "name": "gvm-client",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/gvm-client@0.1.0?download_url=file://.",
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/clawosiris/rust-gvm"
+        }
+      ]
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "path+file:///tmp/rust-gvm-sbom-improve/crates/gvm-connection#0.1.0",
+      "name": "gvm-connection",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/gvm-connection@0.1.0?download_url=file://../gvm-connection"
+    },
+    {
+      "type": "library",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#async-trait@0.1.89",
+      "name": "async-trait",
+      "version": "0.1.89",
+      "purl": "pkg:cargo/async-trait@0.1.89"
+    }
+  ]
+}

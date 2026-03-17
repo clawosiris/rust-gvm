@@ -623,7 +623,10 @@ Built for 5 targets:
 ### SBOM (Software Bill of Materials)
 
 Generated in release and nightly workflows using `cargo-cyclonedx`:
-- CycloneDX format (JSON + XML) for each workspace crate
+- CycloneDX 1.5 format (JSON + XML) for each workspace crate
+- JSON SBOMs are post-processed to add CC0 document data licensing, build lifecycle metadata, and supplier names using deterministic heuristics
+- CPEs are intentionally left unchanged unless a reliable package mapping is available
+- Post-processed JSON SBOMs are scored with `sbomqs` before packaging
 - Packaged as `rust-gvm-sbom.tar.gz` with SHA256 checksum
 - Attached to GitHub releases alongside platform binaries
 

@@ -122,10 +122,10 @@ jobs:
         run: cargo install cargo-cyclonedx
 
       - name: Generate CycloneDX SBOM (JSON)
-        run: cargo cyclonedx --format json --all
+        run: cargo cyclonedx --format json --all --spec-version 1.5
 
       - name: Generate CycloneDX SBOM (XML)
-        run: cargo cyclonedx --format xml --all
+        run: cargo cyclonedx --format xml --all --spec-version 1.5
 
       - name: Collect SBOMs
         shell: bash
@@ -135,27 +135,45 @@ jobs:
           find . -name '*.cdx.xml' -not -path '*/target/*' -exec cp {} sbom-artifacts/ \;
           ls -la sbom-artifacts/
 
-      - name: Install sbomqs
-        run: go install github.com/interlynk-io/sbomqs@latest
-
-      - name: Score SBOMs (quality gate ≥ 7.0)
+      - name: Post-process CycloneDX JSON SBOMs
         shell: bash
         run: |
-          PASS=true
-          for f in sbom-artifacts/*.cdx.json; do
-            echo "--- Scoring: $(basename $f) ---"
-            SCORE=$(~/go/bin/sbomqs score "$f" 2>&1 | head -1 | grep -oP 'Score:\K[0-9.]+')
-            echo "Score: $SCORE"
-            if [ "$(echo "$SCORE < 7.0" | bc -l)" -eq 1 ]; then
-              echo "::error::SBOM quality score $SCORE for $(basename $f) is below threshold 7.0"
-              PASS=false
-            fi
-          done
-          if [ "$PASS" = false ]; then
-            echo "::error::One or more SBOMs failed the quality gate"
-            exit 1
-          fi
-          echo "✅ All SBOMs pass quality gate (≥ 7.0)"
+          python3 scripts/sbom_postprocess.py --cargo-toml Cargo.toml sbom-artifacts/*.cdx.json
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: Install sbomqs
+        run: |
+          go install github.com/interlynk-io/sbomqs@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Score post-processed SBOMs
+        shell: bash
+        run: |
+          sbomqs score --json sbom-artifacts/*.cdx.json > sbomqs-results.json
+          python3 - sbomqs-results.json <<'PY'
+          import json
+          import sys
+
+          threshold = 7.0
+          with open(sys.argv[1], "r", encoding="utf-8") as handle:
+              data = json.load(handle)
+
+          failures = []
+          for entry in data.get("files", []):
+              score = float(entry.get("avg_score", 0.0))
+              path = entry.get("path") or entry.get("file") or entry.get("fileName") or "<unknown>"
+              print(f"{path}: {score:.2f}/10")
+              if score < threshold:
+                  failures.append((path, score))
+
+          if failures:
+              for path, score in failures:
+                  print(f"::error file={path}::SBOM quality score below {threshold:.1f}: {score:.2f}")
+              raise SystemExit(1)
+          PY
 
       - name: Package SBOMs
         run: |
@@ -171,6 +189,7 @@ jobs:
           path: |
             rust-gvm-sbom.tar.gz
             rust-gvm-sbom.tar.gz.sha256
+            sbomqs-results.json
           retention-days: 7
 
   # Update the rolling "nightly" pre-release
