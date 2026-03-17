@@ -267,7 +267,7 @@ cargo build --release -p gvm-mock-server
 |----------|---------|-------------|
 | **CI** | Push/PR to main | Format, clippy, test, doc, deny, coverage, MSRV, python-gvm integration |
 | **Nightly** | Daily 04:00 UTC + manual | Full CI + cross-platform binary builds (5 targets) |
-| **Release** | `v*` tag push | Full test → cross-platform builds → GitHub Release with checksums |
+| **Release** | `v*` tag push | Full test → cross-platform builds → GHCR mock-server image → GitHub Release with checksums |
 
 ### Pre-built Binaries
 
@@ -280,6 +280,12 @@ Download from [GitHub Releases](https://github.com/clawosiris/rust-gvm/releases)
 | Linux ARM64 | `gvm-mock-server-linux-arm64.tar.gz` |
 | macOS x86_64 | `gvm-mock-server-macos-amd64.tar.gz` |
 | macOS ARM64 | `gvm-mock-server-macos-arm64.tar.gz` |
+
+### GHCR Image
+
+Tagged releases also publish a container image at `ghcr.io/clawosiris/gvm-mock-server:<tag>`.
+
+See [docs/mock-server-consumption.md](docs/mock-server-consumption.md) for downstream CI usage guidance.
 
 ## Specs
 
