@@ -13,11 +13,16 @@ mod error;
 mod version;
 
 use gvm_connection::GvmConnection;
+use gvm_gmp::commands::features::get_features;
+use gvm_gmp::commands::report_configs::{
+    create_report_config, delete_report_config, get_report_configs, modify_report_config,
+};
 use gvm_gmp::commands::version::get_version;
 use gvm_gmp::types::GmpVersion;
 use gvm_protocol::{Request, Response};
 
 pub use error::GvmError;
+pub use gvm_gmp::commands::report_configs::ModifyReportConfigOpts;
 pub use version::{map_supported_version, parse_version_text};
 
 /// High-level async GMP client over an abstract transport.
@@ -140,6 +145,33 @@ pub struct Gmp227<C: GvmConnection>(GmpClient<C>);
 #[derive(Debug)]
 pub struct GmpNext<C: GvmConnection>(GmpClient<C>);
 
+/// Commands available in GMP 22.6 and later.
+#[async_trait::async_trait]
+pub trait Gmp226Commands {
+    /// Send a `get_features` request.
+    async fn get_features(&mut self) -> Result<Response, GvmError>;
+
+    /// Send a `create_report_config` request.
+    async fn create_report_config(
+        &mut self,
+        name: &str,
+        report_format_id: &str,
+    ) -> Result<Response, GvmError>;
+
+    /// Send a `get_report_configs` request.
+    async fn get_report_configs(&mut self) -> Result<Response, GvmError>;
+
+    /// Send a `modify_report_config` request.
+    async fn modify_report_config(
+        &mut self,
+        id: &str,
+        opts: ModifyReportConfigOpts,
+    ) -> Result<Response, GvmError>;
+
+    /// Send a `delete_report_config` request.
+    async fn delete_report_config(&mut self, id: &str) -> Result<Response, GvmError>;
+}
+
 /// Versioned GMP client wrapper selected during negotiation.
 #[derive(Debug)]
 pub enum GmpVersioned<C: GvmConnection> {
@@ -220,5 +252,104 @@ impl<C: GvmConnection> GmpVersioned<C> {
     /// Returns an error if the transport fails to disconnect.
     pub async fn disconnect(&mut self) -> Result<(), GvmError> {
         self.inner_mut().disconnect().await
+    }
+}
+
+#[async_trait::async_trait]
+impl<C: GvmConnection + Send> Gmp226Commands for Gmp226<C> {
+    async fn get_features(&mut self) -> Result<Response, GvmError> {
+        self.0.call(get_features()).await
+    }
+
+    async fn create_report_config(
+        &mut self,
+        name: &str,
+        report_format_id: &str,
+    ) -> Result<Response, GvmError> {
+        self.0
+            .call(create_report_config(name, report_format_id))
+            .await
+    }
+
+    async fn get_report_configs(&mut self) -> Result<Response, GvmError> {
+        self.0.call(get_report_configs()).await
+    }
+
+    async fn modify_report_config(
+        &mut self,
+        id: &str,
+        opts: ModifyReportConfigOpts,
+    ) -> Result<Response, GvmError> {
+        self.0.call(modify_report_config(id, opts)).await
+    }
+
+    async fn delete_report_config(&mut self, id: &str) -> Result<Response, GvmError> {
+        self.0.call(delete_report_config(id)).await
+    }
+}
+
+#[async_trait::async_trait]
+impl<C: GvmConnection + Send> Gmp226Commands for Gmp227<C> {
+    async fn get_features(&mut self) -> Result<Response, GvmError> {
+        self.0.call(get_features()).await
+    }
+
+    async fn create_report_config(
+        &mut self,
+        name: &str,
+        report_format_id: &str,
+    ) -> Result<Response, GvmError> {
+        self.0
+            .call(create_report_config(name, report_format_id))
+            .await
+    }
+
+    async fn get_report_configs(&mut self) -> Result<Response, GvmError> {
+        self.0.call(get_report_configs()).await
+    }
+
+    async fn modify_report_config(
+        &mut self,
+        id: &str,
+        opts: ModifyReportConfigOpts,
+    ) -> Result<Response, GvmError> {
+        self.0.call(modify_report_config(id, opts)).await
+    }
+
+    async fn delete_report_config(&mut self, id: &str) -> Result<Response, GvmError> {
+        self.0.call(delete_report_config(id)).await
+    }
+}
+
+#[async_trait::async_trait]
+impl<C: GvmConnection + Send> Gmp226Commands for GmpNext<C> {
+    async fn get_features(&mut self) -> Result<Response, GvmError> {
+        self.0.call(get_features()).await
+    }
+
+    async fn create_report_config(
+        &mut self,
+        name: &str,
+        report_format_id: &str,
+    ) -> Result<Response, GvmError> {
+        self.0
+            .call(create_report_config(name, report_format_id))
+            .await
+    }
+
+    async fn get_report_configs(&mut self) -> Result<Response, GvmError> {
+        self.0.call(get_report_configs()).await
+    }
+
+    async fn modify_report_config(
+        &mut self,
+        id: &str,
+        opts: ModifyReportConfigOpts,
+    ) -> Result<Response, GvmError> {
+        self.0.call(modify_report_config(id, opts)).await
+    }
+
+    async fn delete_report_config(&mut self, id: &str) -> Result<Response, GvmError> {
+        self.0.call(delete_report_config(id)).await
     }
 }

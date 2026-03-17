@@ -17,6 +17,7 @@ unix-socket-tests = [
 ]
 
 [dependencies]
+async-trait.workspace = true
 gvm-connection.workspace = true
 gvm-protocol.workspace = true
 gvm-gmp.workspace = true

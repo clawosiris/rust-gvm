@@ -35,6 +35,24 @@ impl std::fmt::Display for GmpVersion {
     }
 }
 
+/// Commands only available in GMP 22.6+.
+const GMP_22_6_COMMANDS: &[&str] = &[
+    "create_report_config",
+    "delete_report_config",
+    "get_report_configs",
+    "modify_report_config",
+    "get_features",
+];
+
+/// Check if a command is available in the given GMP version.
+#[must_use]
+pub fn command_available(command_name: &str, version: GmpVersion) -> bool {
+    if GMP_22_6_COMMANDS.contains(&command_name) {
+        return matches!(version, GmpVersion::V22_6 | GmpVersion::V22_7);
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -71,5 +89,38 @@ mod tests {
     fn test_debug() {
         let s = format!("{:?}", GmpVersion::V22_7);
         assert!(s.contains("V22_7"));
+    }
+
+    #[test]
+    fn test_command_available_for_base_commands() {
+        assert!(command_available("get_version", GmpVersion::V22_4));
+        assert!(command_available("authenticate", GmpVersion::V22_5));
+        assert!(command_available("create_target", GmpVersion::V22_4));
+    }
+
+    #[test]
+    fn test_command_available_for_report_config_commands() {
+        assert!(!command_available(
+            "create_report_config",
+            GmpVersion::V22_4
+        ));
+        assert!(!command_available(
+            "create_report_config",
+            GmpVersion::V22_5
+        ));
+        assert!(command_available("create_report_config", GmpVersion::V22_6));
+        assert!(command_available("create_report_config", GmpVersion::V22_7));
+        assert!(!command_available(
+            "delete_report_config",
+            GmpVersion::V22_4
+        ));
+        assert!(command_available("modify_report_config", GmpVersion::V22_7));
+    }
+
+    #[test]
+    fn test_command_available_for_get_features() {
+        assert!(!command_available("get_features", GmpVersion::V22_5));
+        assert!(command_available("get_features", GmpVersion::V22_6));
+        assert!(command_available("get_features", GmpVersion::V22_7));
     }
 }
