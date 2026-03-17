@@ -135,6 +135,28 @@ jobs:
           find . -name '*.cdx.xml' -not -path '*/target/*' -exec cp {} sbom-artifacts/ \;
           ls -la sbom-artifacts/
 
+      - name: Install sbomqs
+        run: go install github.com/interlynk-io/sbomqs@latest
+
+      - name: Score SBOMs (quality gate ≥ 7.0)
+        shell: bash
+        run: |
+          PASS=true
+          for f in sbom-artifacts/*.cdx.json; do
+            echo "--- Scoring: $(basename $f) ---"
+            SCORE=$(~/go/bin/sbomqs score "$f" 2>&1 | head -1 | grep -oP 'Score:\K[0-9.]+')
+            echo "Score: $SCORE"
+            if [ "$(echo "$SCORE < 7.0" | bc -l)" -eq 1 ]; then
+              echo "::error::SBOM quality score $SCORE for $(basename $f) is below threshold 7.0"
+              PASS=false
+            fi
+          done
+          if [ "$PASS" = false ]; then
+            echo "::error::One or more SBOMs failed the quality gate"
+            exit 1
+          fi
+          echo "✅ All SBOMs pass quality gate (≥ 7.0)"
+
       - name: Package SBOMs
         run: |
           cd sbom-artifacts
