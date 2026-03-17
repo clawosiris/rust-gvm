@@ -149,3 +149,182 @@ There's no HTTP or gRPC interface to implement because **gvmd doesn't offer one*
 1. **Complete TLS transport** (#7) — this is the remaining gap for full parity with python-gvm's connection options.
 2. **Implement streaming reads** (#4) — even without a protocol change, we can stream-parse large XML responses incrementally rather than buffering entire responses in memory.
 3. **Watch for upstream changes** — the `manage_http_scanner.c` addition signals Greenbone is exploring HTTP-based protocols for scanner communication. If they extend this to the client-facing GMP interface, we should be ready to adapt.
+4. **Consider a REST/gRPC proxy** — see Section 5 below.
+
+---
+
+## 5. REST/gRPC Proxy Built on rust-gvm
+
+### The idea
+
+Rather than waiting for Greenbone to modernize gvmd's protocol, we could build a **proxy/gateway service** on top of rust-gvm that:
+
+- Talks GMP over Unix socket (or SSH/TLS) to gvmd on the backend
+- Exposes a **REST API** or **gRPC service** to consumers on the frontend
+
+```
+┌──────────────┐       REST / gRPC        ┌──────────────────┐      GMP/XML       ┌────────┐
+│  Web UI      │◄────────────────────────►│  gvm-gateway     │◄──────────────────►│  gvmd  │
+│  Scripts     │   HTTP/JSON or Protobuf   │  (rust-gvm based)│   Unix socket      │        │
+│  Automation  │                           │                  │   or SSH/TLS       │        │
+│  MCP Server  │                           │                  │                    │        │
+└──────────────┘                           └──────────────────┘                    └────────┘
+```
+
+### Why this is viable
+
+rust-gvm already provides the complete backend stack:
+- **gvm-connection**: Unix socket + SSH transports (TLS coming)
+- **gvm-client**: Async client with version negotiation + auth
+- **gvm-gmp**: Typed command builders for all GMP operations
+- **gvm-protocol**: Response parsing (status codes, XML extraction)
+
+A proxy service would be a relatively thin layer that:
+1. Accepts HTTP/JSON or gRPC requests
+2. Maps them to `gvm-gmp` command builders
+3. Sends via `gvm-client` → `gvm-connection` → gvmd
+4. Parses the XML response
+5. Returns structured JSON or Protobuf
+
+### Architecture options
+
+#### Option A: REST/JSON proxy (recommended first step)
+
+```
+Technology: axum or actix-web
+Auth: Bearer token / API key → maps to gvmd user credentials
+Schema: OpenAPI 3.1 spec → auto-generated docs + client SDKs
+
+Endpoints (examples):
+  GET    /api/v1/version
+  POST   /api/v1/auth/login          → authenticate, returns session token
+  GET    /api/v1/tasks                → get_tasks
+  POST   /api/v1/tasks                → create_task
+  GET    /api/v1/tasks/{id}           → get_tasks task_id=...
+  PUT    /api/v1/tasks/{id}           → modify_task
+  DELETE /api/v1/tasks/{id}           → delete_task
+  POST   /api/v1/tasks/{id}/start     → start_task
+  POST   /api/v1/tasks/{id}/stop      → stop_task
+  GET    /api/v1/reports/{id}         → get_reports report_id=...
+  GET    /api/v1/targets              → get_targets
+  ...
+```
+
+**Strengths:**
+- Instantly accessible from any HTTP client (curl, browser, Postman, any language)
+- OpenAPI spec enables auto-generated SDKs (TypeScript, Python, Go, Java, ...)
+- Stateless requests — no session management burden on clients
+- Easy to deploy as a sidecar container alongside gvmd
+- Could replace GSA's backend (GSA currently talks GMP directly)
+- Natural fit for the MCP server (openvas-mcp-server could use REST instead of raw GMP)
+
+**Weaknesses:**
+- REST doesn't map perfectly to all GMP operations (e.g., `start_task` is an action, not a resource)
+- Response translation: XML → JSON adds latency and complexity
+- Large reports: need pagination or streaming (SSE / chunked responses)
+
+**Estimated effort:** Medium. The command mapping is mechanical; the real work is auth management (session pooling to gvmd) and large-response handling.
+
+#### Option B: gRPC proxy
+
+```
+Technology: tonic (Rust gRPC framework)
+Schema: .proto files → auto-generated clients in 10+ languages
+Transport: HTTP/2, TLS built-in
+
+Service definition (sketch):
+  service GmpService {
+    rpc GetVersion(Empty) returns (VersionResponse);
+    rpc Authenticate(AuthRequest) returns (AuthResponse);
+    rpc GetTasks(GetTasksRequest) returns (GetTasksResponse);
+    rpc CreateTask(CreateTaskRequest) returns (CreateTaskResponse);
+    rpc StartTask(TaskIdRequest) returns (TaskActionResponse);
+    rpc GetReport(GetReportRequest) returns (stream ReportChunk);  // server streaming!
+    ...
+  }
+```
+
+**Strengths:**
+- **Server-side streaming** for large reports — the killer feature. Clients receive report chunks as they're parsed from the gvmd XML response, without buffering the entire thing.
+- Strongly typed contracts — `.proto` is the single source of truth
+- Binary serialization — 3–10× smaller than JSON for structured vulnerability data
+- Auto-generated clients with full type safety
+- Built-in deadline propagation, metadata, interceptors
+- Excellent for service-to-service (e.g., MCP server → gRPC proxy → gvmd)
+
+**Weaknesses:**
+- Not browser-friendly without grpc-web proxy
+- Requires Protobuf toolchain for consumers
+- Harder to debug/inspect than REST
+- More upfront design work (defining all message types in `.proto`)
+
+**Estimated effort:** Medium-High. Proto schema design is significant, but tonic makes the Rust implementation straightforward.
+
+#### Option C: Hybrid (REST + gRPC)
+
+Expose **both** from the same service:
+- REST for human/script consumers (curl, Postman, simple automation)
+- gRPC for programmatic/service consumers (MCP server, custom integrations)
+- Share the same backend: gvm-client → gvmd
+
+This is a common pattern (e.g., Google APIs expose both REST and gRPC from the same service).
+
+### Connection pooling
+
+A critical design consideration: gvmd forks per client and sessions are stateful. The proxy should:
+
+- Maintain a **pool of authenticated gvmd connections** (one per gvmd user)
+- Multiplex incoming REST/gRPC requests onto pooled connections
+- Handle reconnection transparently
+- This transforms gvmd's "one connection = one session" model into a scalable multi-client service
+
+```
+Client A ──┐
+Client B ──┤──► gvm-gateway ──► connection pool ──► gvmd (2-3 forked processes)
+Client C ──┘       │
+                   └── auth cache, rate limiting, request queuing
+```
+
+### Deployment model
+
+The proxy would be a standalone binary (or Docker image) that runs alongside gvmd:
+
+```yaml
+# docker-compose example
+services:
+  gvmd:
+    image: greenbone/gvmd
+    volumes:
+      - gvmd-socket:/run/gvmd
+
+  gvm-gateway:
+    image: ghcr.io/clawosiris/gvm-gateway:latest
+    depends_on: [gvmd]
+    volumes:
+      - gvmd-socket:/run/gvmd:ro
+    ports:
+      - "8080:8080"   # REST
+      - "50051:50051"  # gRPC (optional)
+    environment:
+      - GVM_SOCKET=/run/gvmd/gvmd.sock
+```
+
+### Impact on existing projects
+
+| Consumer | Current | With proxy |
+|----------|---------|------------|
+| openvas-mcp-server | Talks GMP/XML directly | Could use REST or gRPC — much simpler integration |
+| gvm-rools (gvm-cli) | Talks GMP/XML directly | Could add `--rest` transport option |
+| GSA (web UI) | Talks GMP/XML via gsad | Could talk REST directly — removes gsad dependency |
+| Custom automation | python-gvm or raw XML | Standard HTTP/JSON — any language, no GMP library needed |
+| AI/LLM tool use | Needs GMP expertise | OpenAPI spec enables native tool calling |
+
+### Recommendation
+
+**Start with REST** (Option A):
+1. It's the fastest to deliver value (any HTTP client can use it immediately)
+2. OpenAPI spec is a force multiplier (auto-docs, auto-clients)
+3. Add gRPC later for streaming (large reports) and service-to-service efficiency
+4. The proxy architecture decouples consumers from gvmd's protocol — if Greenbone changes GMP, only the proxy needs updating
+
+This could be a new repo (`gvm-gateway`) or a new crate in the rust-gvm workspace.
