@@ -119,8 +119,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p sbom-artifacts
-          find . -name '*.cdx.json' -not -path '*/target/*' -exec cp {} sbom-artifacts/ \;
-          find . -name '*.cdx.xml' -not -path '*/target/*' -exec cp {} sbom-artifacts/ \;
+          find . -name '*.cdx.json' -not -path '*/target/*' -not -path '*/fixtures/*' -not -path '*/sbom-artifacts/*' -exec cp {} sbom-artifacts/ \;
+          find . -name '*.cdx.xml' -not -path '*/target/*' -not -path '*/fixtures/*' -not -path '*/sbom-artifacts/*' -exec cp {} sbom-artifacts/ \;
           ls -la sbom-artifacts/
 
       - name: Post-process CycloneDX JSON SBOMs
