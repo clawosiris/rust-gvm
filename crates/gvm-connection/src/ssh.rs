@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use russh::client;
 use russh::keys::agent::client::AgentClient;
+use russh::keys::ssh_key::{HashAlg, PublicKey};
 use russh::keys::{self, PrivateKeyWithHashAlg};
 use russh::{AgentAuthError, Channel, ChannelMsg, Disconnect};
 use tokio::io::AsyncWriteExt;
@@ -17,7 +18,7 @@ use crate::connection::GvmConnection;
 use crate::error::{ConnectionError, Result};
 
 /// Configuration for SSH tunnel connections.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SshConfig {
     /// SSH server hostname or IP.
     pub hostname: String,
@@ -33,6 +34,26 @@ pub struct SshConfig {
     pub timeout: Duration,
     /// Read buffer size in bytes.
     pub read_buffer_size: usize,
+    /// Maximum XML response size in bytes before aborting the read.
+    pub max_response_bytes: Option<usize>,
+    /// SSH host key verification policy.
+    pub host_key_policy: SshHostKeyPolicy,
+}
+
+impl std::fmt::Debug for SshConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SshConfig")
+            .field("hostname", &self.hostname)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("auth", &self.auth)
+            .field("remote_socket", &self.remote_socket)
+            .field("timeout", &self.timeout)
+            .field("read_buffer_size", &self.read_buffer_size)
+            .field("max_response_bytes", &self.max_response_bytes)
+            .field("host_key_policy", &self.host_key_policy)
+            .finish()
+    }
 }
 
 impl Default for SshConfig {
@@ -45,6 +66,8 @@ impl Default for SshConfig {
             remote_socket: "/run/gvmd/gvmd.sock".to_string(),
             timeout: Duration::from_secs(60),
             read_buffer_size: 64 * 1024,
+            max_response_bytes: Some(64 * 1024 * 1024),
+            host_key_policy: SshHostKeyPolicy::AcceptAll,
         }
     }
 }
@@ -81,10 +104,24 @@ impl SshConfig {
         self.timeout = timeout;
         self
     }
+
+    /// Set the maximum XML response size in bytes.
+    #[must_use]
+    pub fn with_max_response_bytes(mut self, max_response_bytes: Option<usize>) -> Self {
+        self.max_response_bytes = max_response_bytes;
+        self
+    }
+
+    /// Set the SSH host key verification policy.
+    #[must_use]
+    pub fn with_host_key_policy(mut self, host_key_policy: SshHostKeyPolicy) -> Self {
+        self.host_key_policy = host_key_policy;
+        self
+    }
 }
 
 /// SSH authentication methods.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum SshAuth {
     /// Password authentication.
     Password(String),
@@ -99,25 +136,74 @@ pub enum SshAuth {
     Agent,
 }
 
-#[derive(Debug, Default)]
-struct AcceptAllServerKeys;
+impl std::fmt::Debug for SshAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Password(_) => f.debug_tuple("Password").field(&"<redacted>").finish(),
+            Self::PrivateKey {
+                key_path,
+                passphrase,
+            } => {
+                let redacted_passphrase = passphrase.as_ref().map(|_| "<redacted>");
+                f.debug_struct("PrivateKey")
+                    .field("key_path", key_path)
+                    .field("passphrase", &redacted_passphrase)
+                    .finish()
+            }
+            Self::Agent => f.write_str("Agent"),
+        }
+    }
+}
 
-impl client::Handler for AcceptAllServerKeys {
+/// SSH host key verification policy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SshHostKeyPolicy {
+    /// Accept any server key.
+    ///
+    /// This is insecure and vulnerable to man-in-the-middle attacks. Use only in tests or when
+    /// an external layer already authenticates the SSH server.
+    AcceptAll,
+    /// Require the server key fingerprint to match a pinned SHA-256 base64 fingerprint.
+    Fingerprint(String),
+}
+
+#[derive(Debug, Clone)]
+struct SshServerKeyVerifier {
+    policy: SshHostKeyPolicy,
+}
+
+impl SshServerKeyVerifier {
+    fn new(policy: SshHostKeyPolicy) -> Self {
+        Self { policy }
+    }
+}
+
+impl Default for SshServerKeyVerifier {
+    fn default() -> Self {
+        Self::new(SshHostKeyPolicy::AcceptAll)
+    }
+}
+
+impl client::Handler for SshServerKeyVerifier {
     type Error = russh::Error;
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &russh::keys::ssh_key::PublicKey,
+        server_public_key: &PublicKey,
     ) -> std::result::Result<bool, Self::Error> {
-        // Production callers should verify host keys instead of accepting all of them.
-        Ok(true)
+        Ok(match &self.policy {
+            SshHostKeyPolicy::AcceptAll => true,
+            SshHostKeyPolicy::Fingerprint(expected) => {
+                host_key_fingerprint(server_public_key) == normalize_fingerprint(expected)
+            }
+        })
     }
 }
 
 /// SSH connection to a remote gvmd Unix socket.
 pub struct SshConnection {
     config: SshConfig,
-    session: Option<client::Handle<AcceptAllServerKeys>>,
+    session: Option<client::Handle<SshServerKeyVerifier>>,
     channel: Option<Channel<client::Msg>>,
 }
 
@@ -149,9 +235,13 @@ impl SshConnection {
         ConnectionError::ReadFailed(std::io::Error::other(error.to_string()))
     }
 
+    fn disconnect_error(error: impl std::fmt::Display) -> ConnectionError {
+        ConnectionError::DisconnectFailed(error.to_string())
+    }
+
     async fn authenticate(
         config: &SshConfig,
-        session: &mut client::Handle<AcceptAllServerKeys>,
+        session: &mut client::Handle<SshServerKeyVerifier>,
     ) -> Result<()> {
         let result = match &config.auth {
             SshAuth::Password(password) => tokio::time::timeout(
@@ -244,6 +334,18 @@ fn auth_failure_message(result: &client::AuthResult) -> String {
     }
 }
 
+fn host_key_fingerprint(server_public_key: &PublicKey) -> String {
+    server_public_key
+        .fingerprint(HashAlg::Sha256)
+        .to_string()
+        .trim_start_matches("SHA256:")
+        .to_string()
+}
+
+fn normalize_fingerprint(fingerprint: &str) -> String {
+    fingerprint.trim().trim_start_matches("SHA256:").to_string()
+}
+
 #[async_trait::async_trait]
 impl GvmConnection for SshConnection {
     async fn connect(&mut self) -> Result<()> {
@@ -261,7 +363,7 @@ impl GvmConnection for SshConnection {
             client::connect(
                 ssh_config,
                 (self.config.hostname.as_str(), self.config.port),
-                AcceptAllServerKeys,
+                SshServerKeyVerifier::new(self.config.host_key_policy.clone()),
             ),
         )
         .await
@@ -290,7 +392,7 @@ impl GvmConnection for SshConnection {
 
     async fn disconnect(&mut self) -> Result<()> {
         if let Some(channel) = self.channel.take() {
-            channel.close().await.map_err(Self::connect_error)?;
+            channel.close().await.map_err(Self::disconnect_error)?;
         }
 
         if let Some(session) = self.session.take() {
@@ -300,7 +402,7 @@ impl GvmConnection for SshConnection {
             )
             .await
             .map_err(|_| ConnectionError::Timeout(self.config.timeout))?
-            .map_err(Self::connect_error)?;
+            .map_err(Self::disconnect_error)?;
         }
 
         Ok(())
@@ -324,7 +426,8 @@ impl GvmConnection for SshConnection {
 
     async fn read(&mut self) -> Result<Vec<u8>> {
         let channel = self.channel.as_mut().ok_or(ConnectionError::NotConnected)?;
-        let mut xml_reader = gvm_protocol::XmlReader::new();
+        let mut xml_reader =
+            gvm_protocol::XmlReader::with_buffer_limit(self.config.max_response_bytes);
         let mut response = Vec::with_capacity(self.config.read_buffer_size);
 
         loop {
@@ -375,6 +478,7 @@ impl GvmConnection for SshConnection {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use russh::client::Handler;
 
     #[test]
     fn test_default_config() {
@@ -384,6 +488,8 @@ mod tests {
         assert_eq!(config.username, "root");
         assert_eq!(config.remote_socket, "/run/gvmd/gvmd.sock");
         assert_eq!(config.timeout, Duration::from_secs(60));
+        assert_eq!(config.max_response_bytes, Some(64 * 1024 * 1024));
+        assert_eq!(config.host_key_policy, SshHostKeyPolicy::AcceptAll);
     }
 
     #[test]
@@ -402,11 +508,79 @@ mod tests {
         assert_eq!(config.port, 2222);
         assert_eq!(config.remote_socket, "/tmp/gvmd.sock");
         assert_eq!(config.timeout, Duration::from_secs(15));
+        assert_eq!(config.max_response_bytes, Some(64 * 1024 * 1024));
     }
 
     #[test]
     fn test_not_connected_initially() {
         let conn = SshConnection::new(SshConfig::default());
         assert!(!conn.is_connected());
+    }
+
+    #[test]
+    fn test_password_debug_redacts_secret() {
+        let debug = format!("{:?}", SshAuth::Password("secret".into()));
+        assert!(!debug.contains("secret"));
+        assert!(debug.contains("<redacted>"));
+    }
+
+    #[test]
+    fn test_config_debug_redacts_private_key_passphrase() {
+        let config = SshConfig::new(
+            "scanner.example",
+            "alice",
+            SshAuth::PrivateKey {
+                key_path: PathBuf::from("/tmp/id_ed25519"),
+                passphrase: Some("hunter2".into()),
+            },
+        );
+
+        let debug = format!("{debug:?}", debug = config);
+        assert!(debug.contains("/tmp/id_ed25519"));
+        assert!(!debug.contains("hunter2"));
+        assert!(debug.contains("<redacted>"));
+    }
+
+    #[test]
+    fn test_accept_all_host_key_policy() {
+        let public_key = keys::PrivateKey::random(
+            &mut russh::keys::ssh_key::rand_core::OsRng,
+            keys::Algorithm::Ed25519,
+        )
+        .expect("host key")
+        .public_key()
+        .clone();
+        let mut verifier = SshServerKeyVerifier::default();
+
+        let accepted = tokio_test::block_on(verifier.check_server_key(&public_key)).expect("ok");
+
+        assert!(accepted);
+    }
+
+    #[test]
+    fn test_fingerprint_host_key_policy() {
+        let private_key = keys::PrivateKey::random(
+            &mut russh::keys::ssh_key::rand_core::OsRng,
+            keys::Algorithm::Ed25519,
+        )
+        .expect("host key");
+        let public_key = private_key.public_key().clone();
+        let fingerprint = host_key_fingerprint(&public_key);
+        let mut verifier =
+            SshServerKeyVerifier::new(SshHostKeyPolicy::Fingerprint(fingerprint.clone()));
+
+        let accepted = tokio_test::block_on(verifier.check_server_key(&public_key)).expect("ok");
+        let rejected = tokio_test::block_on(
+            SshServerKeyVerifier::new(SshHostKeyPolicy::Fingerprint("invalid".into()))
+                .check_server_key(&public_key),
+        )
+        .expect("ok");
+
+        assert!(accepted);
+        assert_eq!(
+            normalize_fingerprint(&format!("SHA256:{fingerprint}")),
+            fingerprint
+        );
+        assert!(!rejected);
     }
 }

@@ -6,10 +6,13 @@
 //! Reads XML data incrementally and detects when a complete root element
 //! has been received (matching python-gvm's `XmlReader`).
 
+use quick_xml::errors::{Error as XmlError, IllFormedError, SyntaxError};
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
 use crate::error::ProtocolError;
+
+const DEFAULT_MAX_BUFFER_BYTES: usize = 64 * 1024 * 1024;
 
 /// Streaming XML reader that detects when a complete XML root element has been received.
 ///
@@ -17,8 +20,9 @@ use crate::error::ProtocolError;
 /// a full GMP response has been received.
 pub struct XmlReader {
     buffer: Vec<u8>,
+    max_buffer_bytes: Option<usize>,
     complete: bool,
-    depth: i32,
+    depth: usize,
     seen_start: bool,
     resume_offset: usize,
 }
@@ -27,8 +31,21 @@ impl XmlReader {
     /// Create a new `XmlReader`.
     #[must_use]
     pub fn new() -> Self {
+        Self::with_buffer_limit(Some(DEFAULT_MAX_BUFFER_BYTES))
+    }
+
+    /// Create a new `XmlReader` with a custom maximum buffer size.
+    #[must_use]
+    pub fn with_max_buffer(max: usize) -> Self {
+        Self::with_buffer_limit(Some(max))
+    }
+
+    /// Create a new `XmlReader` with an optional maximum buffer size.
+    #[must_use]
+    pub fn with_buffer_limit(max_buffer_bytes: Option<usize>) -> Self {
         Self {
             buffer: Vec::new(),
+            max_buffer_bytes,
             complete: false,
             depth: 0,
             seen_start: false,
@@ -41,6 +58,12 @@ impl XmlReader {
     /// # Errors
     /// Returns an error if the data contains fatally malformed XML.
     pub fn feed(&mut self, data: &[u8]) -> Result<(), ProtocolError> {
+        if let Some(max) = self.max_buffer_bytes {
+            if self.buffer.len().saturating_add(data.len()) > max {
+                return Err(ProtocolError::BufferOverflow { max });
+            }
+        }
+
         self.buffer.extend_from_slice(data);
         self.check_complete()
     }
@@ -92,9 +115,10 @@ impl XmlReader {
                     parsed_len = reader.buffer_position() as usize;
                 }
                 Ok(Event::End(_)) => {
-                    self.depth -= 1;
+                    let depth_before_end = self.depth;
+                    self.depth = self.depth.saturating_sub(1);
                     parsed_len = reader.buffer_position() as usize;
-                    if self.seen_start && self.depth == 0 {
+                    if self.seen_start && depth_before_end > 0 && self.depth == 0 {
                         self.complete = true;
                         return Ok(());
                     }
@@ -116,8 +140,11 @@ impl XmlReader {
                 Ok(_) => {
                     parsed_len = reader.buffer_position() as usize;
                 }
-                Err(_) => {
-                    // Could be incomplete XML, wait for more data
+                Err(error) => {
+                    if self.seen_start && !is_incomplete_xml_error(&error) {
+                        return Err(ProtocolError::XmlParse(format!("Malformed XML: {error}")));
+                    }
+
                     self.resume_offset += parsed_len;
                     return Ok(());
                 }
@@ -132,6 +159,24 @@ impl Default for XmlReader {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn is_incomplete_xml_error(error: &XmlError) -> bool {
+    matches!(
+        error,
+        XmlError::Syntax(
+            SyntaxError::UnclosedPI
+                | SyntaxError::UnclosedXmlDecl
+                | SyntaxError::UnclosedComment
+                | SyntaxError::UnclosedDoctype
+                | SyntaxError::UnclosedCData
+                | SyntaxError::UnclosedTag
+                | SyntaxError::UnclosedSingleQuotedAttributeValue
+                | SyntaxError::UnclosedDoubleQuotedAttributeValue
+        ) | XmlError::IllFormed(
+            IllFormedError::MissingEndTag(_) | IllFormedError::UnclosedReference
+        )
+    )
 }
 
 #[cfg(test)]
@@ -218,6 +263,43 @@ mod tests {
         assert!(!reader.is_complete());
 
         reader.feed(b"value</child></root>").expect("feed ok");
+        assert!(reader.is_complete());
+    }
+
+    #[test]
+    fn test_buffer_overflow() {
+        let mut reader = XmlReader::with_max_buffer(8);
+        let error = reader.feed(b"<response/>").expect_err("buffer overflow");
+
+        assert!(matches!(error, ProtocolError::BufferOverflow { max: 8 }));
+    }
+
+    #[test]
+    fn test_malformed_xml_returns_parse_error_after_start() {
+        let mut reader = XmlReader::new();
+        let error = reader.feed(b"<root><!x></root>").expect_err("parse error");
+
+        assert!(matches!(error, ProtocolError::XmlParse(_)));
+    }
+
+    #[test]
+    fn test_unmatched_end_tag_before_start_does_not_complete() {
+        let mut reader = XmlReader::new();
+
+        reader.feed(b"</garbage>").expect("feed ok");
+
+        assert!(!reader.is_complete());
+        assert_eq!(reader.depth, 0);
+    }
+
+    #[test]
+    fn test_garbage_end_tag_before_real_response_does_not_complete_prematurely() {
+        let mut reader = XmlReader::new();
+
+        reader.feed(b"</garbage>").expect("feed ok");
+        assert!(!reader.is_complete());
+
+        reader.feed(b"<real_response/>").expect("feed ok");
         assert!(reader.is_complete());
     }
 }

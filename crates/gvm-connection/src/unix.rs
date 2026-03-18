@@ -21,6 +21,8 @@ pub struct UnixSocketConfig {
     pub timeout: Duration,
     /// Read buffer size in bytes.
     pub read_buffer_size: usize,
+    /// Maximum XML response size in bytes before aborting the read.
+    pub max_response_bytes: Option<usize>,
 }
 
 impl Default for UnixSocketConfig {
@@ -29,6 +31,7 @@ impl Default for UnixSocketConfig {
             path: PathBuf::from("/run/gvmd/gvmd.sock"),
             timeout: Duration::from_secs(60),
             read_buffer_size: 64 * 1024,
+            max_response_bytes: Some(64 * 1024 * 1024),
         }
     }
 }
@@ -47,6 +50,13 @@ impl UnixSocketConfig {
     #[must_use]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
+        self
+    }
+
+    /// Set the maximum XML response size in bytes.
+    #[must_use]
+    pub fn with_max_response_bytes(mut self, max_response_bytes: Option<usize>) -> Self {
+        self.max_response_bytes = max_response_bytes;
         self
     }
 }
@@ -120,7 +130,8 @@ impl GvmConnection for UnixSocketConnection {
     async fn read(&mut self) -> Result<Vec<u8>> {
         let stream = self.stream.as_mut().ok_or(ConnectionError::NotConnected)?;
         let mut buf = vec![0_u8; self.config.read_buffer_size];
-        let mut xml_reader = gvm_protocol::XmlReader::new();
+        let mut xml_reader =
+            gvm_protocol::XmlReader::with_buffer_limit(self.config.max_response_bytes);
 
         loop {
             let n = tokio::time::timeout(self.config.timeout, stream.read(&mut buf))
@@ -162,13 +173,17 @@ mod tests {
         let config = UnixSocketConfig::default();
         assert_eq!(config.path, PathBuf::from("/run/gvmd/gvmd.sock"));
         assert_eq!(config.timeout, Duration::from_secs(60));
+        assert_eq!(config.max_response_bytes, Some(64 * 1024 * 1024));
     }
 
     #[test]
     fn test_custom_config() {
-        let config = UnixSocketConfig::new("/tmp/test.sock").with_timeout(Duration::from_secs(30));
+        let config = UnixSocketConfig::new("/tmp/test.sock")
+            .with_timeout(Duration::from_secs(30))
+            .with_max_response_bytes(Some(1024));
         assert_eq!(config.path, PathBuf::from("/tmp/test.sock"));
         assert_eq!(config.timeout, Duration::from_secs(30));
+        assert_eq!(config.max_response_bytes, Some(1024));
     }
 
     #[test]

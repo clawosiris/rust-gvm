@@ -3,6 +3,7 @@
 
 //! GMP response parsing.
 
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use quick_xml::events::Event;
@@ -23,6 +24,7 @@ struct ParsedHeader {
 pub struct Response {
     data: Vec<u8>,
     header: OnceLock<ParsedHeader>,
+    child_texts: OnceLock<HashMap<String, String>>,
 }
 
 impl Clone for Response {
@@ -30,6 +32,9 @@ impl Clone for Response {
         let cloned = Self::new(self.data.clone());
         if let Some(header) = self.header.get() {
             let _ = cloned.header.set(header.clone());
+        }
+        if let Some(child_texts) = self.child_texts.get() {
+            let _ = cloned.child_texts.set(child_texts.clone());
         }
         cloned
     }
@@ -42,6 +47,7 @@ impl Response {
         Self {
             data,
             header: OnceLock::new(),
+            child_texts: OnceLock::new(),
         }
     }
 
@@ -109,43 +115,21 @@ impl Response {
         self.header().id.clone()
     }
 
-    /// Extract the text content of a named child element.
+    /// Extract the text content of a named direct child element of the response root.
+    ///
+    /// Returns `None` when the child is absent or the response body is not valid UTF-8 or
+    /// well-formed XML.
     #[must_use]
     pub fn child_text(&self, element_name: &str) -> Option<String> {
-        let text = std::str::from_utf8(&self.data).ok()?;
-        let mut reader = Reader::from_str(text);
-        let mut inside_target = false;
-        let mut buf = String::new();
-        loop {
-            match reader.read_event() {
-                Ok(Event::Start(ref e)) => {
-                    let qname = e.name();
-                    let name = std::str::from_utf8(qname.as_ref()).ok()?;
-                    if name == element_name {
-                        inside_target = true;
-                        buf.clear();
-                    }
-                }
-                Ok(Event::Text(ref t)) if inside_target => {
-                    let unescaped = t.xml_content().ok()?;
-                    buf.push_str(&unescaped);
-                }
-                Ok(Event::End(ref e)) if inside_target => {
-                    let qname = e.name();
-                    let name = std::str::from_utf8(qname.as_ref()).ok()?;
-                    if name == element_name {
-                        return Some(buf);
-                    }
-                }
-                Ok(Event::Eof) => return None,
-                Err(_) => return None,
-                _ => continue,
-            }
-        }
+        self.child_texts().get(element_name).cloned()
     }
 
     fn header(&self) -> &ParsedHeader {
         self.header.get_or_init(|| self.parse_header())
+    }
+
+    fn child_texts(&self) -> &HashMap<String, String> {
+        self.child_texts.get_or_init(|| self.parse_child_texts())
     }
 
     fn parse_header(&self) -> ParsedHeader {
@@ -186,6 +170,83 @@ impl Response {
                 }
                 Ok(Event::Eof) | Err(_) => return ParsedHeader::default(),
                 _ => continue,
+            }
+        }
+    }
+
+    fn parse_child_texts(&self) -> HashMap<String, String> {
+        let Ok(text) = std::str::from_utf8(&self.data) else {
+            return HashMap::new();
+        };
+
+        let mut child_texts = HashMap::new();
+        let mut reader = Reader::from_str(text);
+        let mut root_depth = 0_usize;
+        let mut current_child_name: Option<String> = None;
+        let mut current_child_depth = 0_usize;
+        let mut current_text = String::new();
+
+        loop {
+            match reader.read_event() {
+                Ok(Event::Start(ref e)) => {
+                    root_depth += 1;
+
+                    if current_child_name.is_some() {
+                        current_child_depth += 1;
+                        continue;
+                    }
+
+                    if root_depth == 2 {
+                        let qname = e.name();
+                        let Ok(name) = std::str::from_utf8(qname.as_ref()) else {
+                            return HashMap::new();
+                        };
+                        current_child_name = Some(name.to_string());
+                        current_child_depth = 1;
+                        current_text.clear();
+                    }
+                }
+                Ok(Event::Empty(ref e)) => {
+                    if root_depth == 1 {
+                        let qname = e.name();
+                        let Ok(name) = std::str::from_utf8(qname.as_ref()) else {
+                            return HashMap::new();
+                        };
+                        child_texts.entry(name.to_string()).or_default();
+                    }
+                }
+                Ok(Event::Text(ref text)) => {
+                    if current_child_name.is_some() {
+                        let Ok(unescaped) = text.xml_content() else {
+                            return HashMap::new();
+                        };
+                        current_text.push_str(&unescaped);
+                    }
+                }
+                Ok(Event::CData(ref text)) => {
+                    if current_child_name.is_some() {
+                        let Ok(unescaped) = text.xml_content() else {
+                            return HashMap::new();
+                        };
+                        current_text.push_str(&unescaped);
+                    }
+                }
+                Ok(Event::End(_)) => {
+                    if let Some(name) = current_child_name.as_ref() {
+                        current_child_depth = current_child_depth.saturating_sub(1);
+                        if current_child_depth == 0 {
+                            child_texts
+                                .entry(name.clone())
+                                .or_insert_with(|| std::mem::take(&mut current_text));
+                            current_child_name = None;
+                        }
+                    }
+
+                    root_depth = root_depth.saturating_sub(1);
+                }
+                Ok(Event::Eof) => return child_texts,
+                Err(_) => return HashMap::new(),
+                _ => {}
             }
         }
     }
@@ -272,6 +333,14 @@ mod tests {
             r#"<get_version_response status="200" status_text="OK"><version>22.5</version></get_version_response>"#,
         );
         assert_eq!(resp.child_text("version"), Some("22.5".to_string()));
+    }
+
+    #[test]
+    fn test_child_text_with_nested_same_name_element() {
+        let resp = Response::from(
+            r#"<response><item><item>inner</item><name>outer</name></item></response>"#,
+        );
+        assert_eq!(resp.child_text("item"), Some("innerouter".to_string()));
     }
 
     #[test]

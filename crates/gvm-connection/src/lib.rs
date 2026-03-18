@@ -24,4 +24,4 @@ pub use error::{ConnectionError, Result};
 pub use unix::{UnixSocketConfig, UnixSocketConnection};
 
 #[cfg(feature = "ssh")]
-pub use ssh::{SshAuth, SshConfig, SshConnection};
+pub use ssh::{SshAuth, SshConfig, SshConnection, SshHostKeyPolicy};

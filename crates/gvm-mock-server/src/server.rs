@@ -17,7 +17,7 @@ use crate::history::{CommandHistory, CommandRecord};
 use crate::listener::{run_tcp_listener, run_unix_listener, ListenerState};
 use crate::scenario::{ScenarioMode, ScenarioStep};
 #[cfg(feature = "ssh")]
-use crate::ssh_listener::run_ssh_listener;
+use crate::ssh_listener::{generate_host_key, host_key_fingerprint, run_ssh_listener};
 use crate::store::ResourceStore;
 use crate::version::GmpVersion;
 use crate::ServerMode;
@@ -31,6 +31,9 @@ pub struct MockGmpServer {
     /// The SSH address (if using SSH transport).
     #[cfg(feature = "ssh")]
     ssh_addr: Option<std::net::SocketAddr>,
+    /// The SSH host key fingerprint without the `SHA256:` prefix.
+    #[cfg(feature = "ssh")]
+    ssh_host_key_fingerprint: Option<String>,
     /// Command history shared with all sessions.
     history: CommandHistory,
     /// Shutdown signal.
@@ -85,6 +88,8 @@ impl MockGmpServer {
             tcp_addr: None,
             #[cfg(feature = "ssh")]
             ssh_addr: None,
+            #[cfg(feature = "ssh")]
+            ssh_host_key_fingerprint: None,
             history,
             shutdown,
             _listener_handle: handle,
@@ -127,6 +132,8 @@ impl MockGmpServer {
             tcp_addr: Some(local_addr),
             #[cfg(feature = "ssh")]
             ssh_addr: None,
+            #[cfg(feature = "ssh")]
+            ssh_host_key_fingerprint: None,
             history,
             shutdown,
             _listener_handle: handle,
@@ -146,6 +153,8 @@ impl MockGmpServer {
     ) -> Result<Self, std::io::Error> {
         let listener = TcpListener::bind(addr).await?;
         let local_addr = listener.local_addr()?;
+        let host_key = generate_host_key()?;
+        let fingerprint = host_key_fingerprint(&host_key);
         let history = CommandHistory::new();
         let shutdown = Arc::new(Notify::new());
 
@@ -162,7 +171,7 @@ impl MockGmpServer {
         });
 
         let handle = tokio::spawn(async move {
-            if let Err(error) = run_ssh_listener(listener, state).await {
+            if let Err(error) = run_ssh_listener(listener, host_key, state).await {
                 tracing::warn!("SSH listener stopped with error: {error}");
             }
         });
@@ -171,6 +180,7 @@ impl MockGmpServer {
             socket_path: None,
             tcp_addr: None,
             ssh_addr: Some(local_addr),
+            ssh_host_key_fingerprint: Some(fingerprint),
             history,
             shutdown,
             _listener_handle: handle,
@@ -202,6 +212,12 @@ impl MockGmpServer {
     #[cfg(feature = "ssh")]
     pub fn ssh_port(&self) -> Option<u16> {
         self.ssh_addr.map(|a| a.port())
+    }
+
+    /// Get the SSH host key fingerprint without the `SHA256:` prefix.
+    #[cfg(feature = "ssh")]
+    pub fn ssh_host_key_fingerprint(&self) -> Option<&str> {
+        self.ssh_host_key_fingerprint.as_deref()
     }
 
     /// Get the command history.

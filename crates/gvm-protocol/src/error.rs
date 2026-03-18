@@ -14,6 +14,13 @@ pub enum ProtocolError {
     #[error("Invalid protocol state: {0}")]
     InvalidState(String),
 
+    /// The streaming XML buffer exceeded its configured size limit.
+    #[error("XML buffer exceeded configured limit of {max} bytes")]
+    BufferOverflow {
+        /// The configured buffer size limit in bytes.
+        max: usize,
+    },
+
     /// Server returned an error status.
     #[error("Server error (status {status}): {message}")]
     ServerError {

@@ -28,6 +28,10 @@ pub enum ConnectionError {
     #[error("read failed: {0}")]
     ReadFailed(#[source] std::io::Error),
 
+    /// Disconnecting from the remote server failed.
+    #[error("disconnect failed: {0}")]
+    DisconnectFailed(String),
+
     /// An operation exceeded the configured timeout.
     #[error("timeout after {0:?}")]
     Timeout(std::time::Duration),
@@ -60,5 +64,11 @@ mod tests {
     fn test_socket_not_found() {
         let err = ConnectionError::SocketNotFound("/tmp/missing.sock".to_string());
         assert!(err.to_string().contains("/tmp/missing.sock"));
+    }
+
+    #[test]
+    fn test_disconnect_failed() {
+        let err = ConnectionError::DisconnectFailed("channel closed".to_string());
+        assert_eq!(err.to_string(), "disconnect failed: channel closed");
     }
 }
