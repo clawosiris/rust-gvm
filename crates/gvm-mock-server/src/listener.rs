@@ -14,6 +14,7 @@ use crate::fault::FaultEngine;
 use crate::fixtures::FixtureStore;
 use crate::handler::{HandleResult, SessionHandler};
 use crate::history::CommandHistory;
+use crate::response_gen::LargeReportConfig;
 use crate::scenario::{ScenarioMode, ScenarioStep};
 use crate::store::ResourceStore;
 use crate::version::GmpVersion;
@@ -35,6 +36,8 @@ pub struct ListenerState {
     pub(crate) store: Option<ResourceStore>,
     /// Scenario configuration (if using Scenario mode).
     pub(crate) scenario_config: Option<(ScenarioMode, Vec<ScenarioStep>)>,
+    /// Large synthetic report configuration.
+    pub(crate) large_report: Option<LargeReportConfig>,
     /// Fault injection engine.
     pub(crate) fault_engine: FaultEngine,
     /// Shutdown signal.
@@ -112,6 +115,7 @@ where
         state.fixtures.clone(),
         state.store.clone(),
         state.scenario_config.clone(),
+        state.large_report,
         state.fault_engine.fork(),
     );
 

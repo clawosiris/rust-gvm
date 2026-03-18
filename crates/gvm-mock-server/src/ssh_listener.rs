@@ -90,6 +90,7 @@ impl server::Handler for MockSshHandler {
             state.fixtures.clone(),
             state.store.clone(),
             state.scenario_config.clone(),
+            state.large_report,
             state.fault_engine.fork(),
         );
 

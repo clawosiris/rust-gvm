@@ -13,6 +13,7 @@ categories.workspace = true
 default = ["unix"]
 unix = []
 unix-socket-tests = []
+large-response-tests = ["unix-socket-tests"]
 tls = ["dep:tokio-rustls", "dep:rustls", "dep:rustls-pemfile"]
 ssh = ["dep:russh"]
 
@@ -36,6 +37,7 @@ ignored = ["rustls", "rustls-pemfile", "tokio-rustls"]  # TLS feature-gated, not
 pretty_assertions.workspace = true
 tempfile.workspace = true
 tokio-test.workspace = true
+gvm-gmp.workspace = true
 gvm-mock-server = { workspace = true, features = ["ssh"] }
 
 [lints]

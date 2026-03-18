@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use crate::fault::{Fault, FaultEngine};
 use crate::fixtures::FixtureStore;
+use crate::response_gen::LargeReportConfig;
 use crate::scenario::{ScenarioMode, ScenarioStep};
 use crate::server::MockGmpServer;
 use crate::store::ResourceStore;
@@ -23,6 +24,7 @@ pub struct MockGmpServerBuilder {
     seed_fn: Option<Box<dyn FnOnce(&ResourceStore) + Send>>,
     faults: Vec<Fault>,
     scenario_config: Option<(ScenarioMode, Vec<ScenarioStep>)>,
+    large_report: Option<LargeReportConfig>,
 }
 
 enum Transport {
@@ -46,6 +48,7 @@ impl MockGmpServerBuilder {
             seed_fn: None,
             faults: Vec::new(),
             scenario_config: None,
+            large_report: None,
         }
     }
 
@@ -129,6 +132,29 @@ impl MockGmpServerBuilder {
         self
     }
 
+    /// Enable large synthetic report generation for reports created via `start_task`.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use gvm_mock_server::{LargeReportConfig, MockGmpServer, ServerMode};
+    ///
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let server = MockGmpServer::builder()
+    ///     .mode(ServerMode::Stateful)
+    ///     .large_report(LargeReportConfig::default())
+    ///     .unix_socket_auto()
+    ///     .build()
+    ///     .await?;
+    /// server.shutdown().await;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn large_report(mut self, config: LargeReportConfig) -> Self {
+        self.large_report = Some(config);
+        self
+    }
+
     /// Build and start the mock server.
     ///
     /// # Errors
@@ -143,6 +169,7 @@ impl MockGmpServerBuilder {
             seed_fn,
             faults,
             scenario_config,
+            large_report,
         } = self;
 
         let fixtures = if mode == ServerMode::Fixture || !fixture_overrides.is_empty() {
@@ -189,6 +216,7 @@ impl MockGmpServerBuilder {
                     store,
                     fault_engine,
                     scenario_config,
+                    large_report,
                 )
                 .await
             }
@@ -206,6 +234,7 @@ impl MockGmpServerBuilder {
                     store,
                     fault_engine,
                     scenario_config,
+                    large_report,
                 )
                 .await
             }
@@ -218,6 +247,7 @@ impl MockGmpServerBuilder {
                     store,
                     fault_engine,
                     scenario_config,
+                    large_report,
                 )
                 .await
             }
@@ -231,6 +261,7 @@ impl MockGmpServerBuilder {
                     store,
                     fault_engine,
                     scenario_config,
+                    large_report,
                 )
                 .await
             }

@@ -38,6 +38,7 @@ serde_json = "1"
 
 # UUID
 uuid = { version = "1", features = ["v4"] }
+sha1 = "0.10"
 
 # TLS (feature-gated)
 tokio-rustls = "0.26"
