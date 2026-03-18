@@ -328,3 +328,19 @@ services:
 4. The proxy architecture decouples consumers from gvmd's protocol — if Greenbone changes GMP, only the proxy needs updating
 
 This could be a new repo (`gvm-gateway`) or a new crate in the rust-gvm workspace.
+
+---
+
+## 6. Access Control Gateway Extension
+
+The proxy concept extends naturally into a **multi-endpoint access control gateway** — managing which clients can reach which gvmd instances and what operations they can perform. This transforms the proxy from a protocol translator into an authorization plane.
+
+See [Proxy Access Control Analysis](proxy-access-control-analysis.md) for the full design covering:
+- Multi-endpoint routing (Unix/SSH/TLS heterogeneous backends)
+- RBAC policy engine (role → endpoint × operations)
+- Connection pooling per endpoint
+- Audit trail for compliance (SOC 2, ISO 27001)
+- Credential isolation (clients never see gvmd passwords)
+- Cross-endpoint aggregation (single pane of glass)
+- MSP multi-tenant deployment model
+- Phased implementation roadmap
