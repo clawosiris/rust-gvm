@@ -19,9 +19,9 @@ const DESCRIPTION_SENTENCE: &str =
 /// Configuration for synthetic large report generation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LargeReportConfig {
-    /// Number of <result> elements to generate.
+    /// Number of `<result>` elements to generate.
     pub result_count: usize,
-    /// Approximate bytes of filler text per result's <description>.
+    /// Approximate bytes of filler text per result's `<description>`.
     pub result_payload_bytes: usize,
 }
 
