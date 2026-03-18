@@ -139,10 +139,7 @@ pub enum SshAuth {
 impl std::fmt::Debug for SshAuth {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Password(_) => f
-                .debug_tuple("Password")
-                .field(&"<redacted>")
-                .finish(),
+            Self::Password(_) => f.debug_tuple("Password").field(&"<redacted>").finish(),
             Self::PrivateKey {
                 key_path,
                 passphrase,
@@ -580,7 +577,10 @@ mod tests {
         .expect("ok");
 
         assert!(accepted);
-        assert_eq!(normalize_fingerprint(&format!("SHA256:{fingerprint}")), fingerprint);
+        assert_eq!(
+            normalize_fingerprint(&format!("SHA256:{fingerprint}")),
+            fingerprint
+        );
         assert!(!rejected);
     }
 }

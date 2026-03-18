@@ -5,8 +5,8 @@
 
 use std::sync::Arc;
 
-use russh::keys::ssh_key::HashAlg;
 use russh::keys::ssh_key::rand_core::OsRng;
+use russh::keys::ssh_key::HashAlg;
 use russh::server::{self, Auth, Server as _, Session};
 use russh::{Channel, ChannelMsg};
 use tokio::net::TcpListener;

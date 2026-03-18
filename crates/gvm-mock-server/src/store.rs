@@ -574,7 +574,9 @@ mod tests {
         delete_thread.join().expect("delete thread");
 
         let tasks = store.list("task");
-        assert!(tasks.iter().all(|resource| resource.resource_type == "task"));
+        assert!(tasks
+            .iter()
+            .all(|resource| resource.resource_type == "task"));
         assert!(tasks.iter().any(|resource| resource.id == id));
     }
 }

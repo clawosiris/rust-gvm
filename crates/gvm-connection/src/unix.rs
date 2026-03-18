@@ -130,7 +130,8 @@ impl GvmConnection for UnixSocketConnection {
     async fn read(&mut self) -> Result<Vec<u8>> {
         let stream = self.stream.as_mut().ok_or(ConnectionError::NotConnected)?;
         let mut buf = vec![0_u8; self.config.read_buffer_size];
-        let mut xml_reader = gvm_protocol::XmlReader::with_buffer_limit(self.config.max_response_bytes);
+        let mut xml_reader =
+            gvm_protocol::XmlReader::with_buffer_limit(self.config.max_response_bytes);
 
         loop {
             let n = tokio::time::timeout(self.config.timeout, stream.read(&mut buf))

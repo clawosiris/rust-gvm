@@ -34,7 +34,9 @@ fn parse_component(component: Option<&str>, value: &str) -> Result<u16, GvmError
         .map_err(|_| GvmError::XmlParse(format!("invalid version string: {value}")))?;
 
     if parsed > 99 {
-        return Err(GvmError::XmlParse(format!("invalid version string: {value}")));
+        return Err(GvmError::XmlParse(format!(
+            "invalid version string: {value}"
+        )));
     }
 
     Ok(parsed)

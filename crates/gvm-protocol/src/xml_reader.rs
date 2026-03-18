@@ -6,8 +6,8 @@
 //! Reads XML data incrementally and detects when a complete root element
 //! has been received (matching python-gvm's `XmlReader`).
 
-use quick_xml::events::Event;
 use quick_xml::errors::{Error as XmlError, IllFormedError, SyntaxError};
+use quick_xml::events::Event;
 use quick_xml::Reader;
 
 use crate::error::ProtocolError;
@@ -173,7 +173,9 @@ fn is_incomplete_xml_error(error: &XmlError) -> bool {
                 | SyntaxError::UnclosedTag
                 | SyntaxError::UnclosedSingleQuotedAttributeValue
                 | SyntaxError::UnclosedDoubleQuotedAttributeValue
-        ) | XmlError::IllFormed(IllFormedError::MissingEndTag(_) | IllFormedError::UnclosedReference)
+        ) | XmlError::IllFormed(
+            IllFormedError::MissingEndTag(_) | IllFormedError::UnclosedReference
+        )
     )
 }
 
@@ -275,9 +277,7 @@ mod tests {
     #[test]
     fn test_malformed_xml_returns_parse_error_after_start() {
         let mut reader = XmlReader::new();
-        let error = reader
-            .feed(b"<root><!x></root>")
-            .expect_err("parse error");
+        let error = reader.feed(b"<root><!x></root>").expect_err("parse error");
 
         assert!(matches!(error, ProtocolError::XmlParse(_)));
     }
@@ -302,5 +302,4 @@ mod tests {
         reader.feed(b"<real_response/>").expect("feed ok");
         assert!(reader.is_complete());
     }
-
 }
