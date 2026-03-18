@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use russh::keys::ssh_key::HashAlg;
 use russh::keys::ssh_key::rand_core::OsRng;
 use russh::server::{self, Auth, Server as _, Session};
 use russh::{Channel, ChannelMsg};
@@ -38,6 +39,20 @@ impl server::Server for MockSshServer {
 
 struct MockSshHandler {
     state: Arc<ListenerState>,
+}
+
+pub(crate) fn generate_host_key() -> Result<russh::keys::PrivateKey, std::io::Error> {
+    russh::keys::PrivateKey::random(&mut OsRng, russh::keys::Algorithm::Ed25519)
+        .map_err(std::io::Error::other)
+}
+
+pub(crate) fn host_key_fingerprint(host_key: &russh::keys::PrivateKey) -> String {
+    host_key
+        .public_key()
+        .fingerprint(HashAlg::Sha256)
+        .to_string()
+        .trim_start_matches("SHA256:")
+        .to_string()
 }
 
 impl server::Handler for MockSshHandler {
@@ -151,11 +166,9 @@ impl server::Handler for MockSshHandler {
 /// server fails during startup.
 pub async fn run_ssh_listener(
     listener: TcpListener,
+    host_key: russh::keys::PrivateKey,
     state: Arc<ListenerState>,
 ) -> Result<(), std::io::Error> {
-    let host_key = russh::keys::PrivateKey::random(&mut OsRng, russh::keys::Algorithm::Ed25519)
-        .map_err(std::io::Error::other)?;
-
     let config = Arc::new(server::Config {
         auth_rejection_time_initial: Some(std::time::Duration::from_secs(0)),
         keys: vec![host_key],

@@ -6,7 +6,9 @@
 
 use std::io::ErrorKind;
 
-use gvm_connection::{ConnectionError, GvmConnection, SshAuth, SshConfig, SshConnection};
+use gvm_connection::{
+    ConnectionError, GvmConnection, SshAuth, SshConfig, SshConnection, SshHostKeyPolicy,
+};
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
 use gvm_protocol::{Request, Response, XmlCommand};
 
@@ -145,4 +147,41 @@ async fn ssh_not_connected_errors() {
 
     let read = conn.read().await;
     assert!(matches!(read, Err(ConnectionError::NotConnected)));
+}
+
+#[tokio::test]
+async fn ssh_connect_with_pinned_fingerprint() {
+    let server = start_mock().await;
+    let Some(server) = server else {
+        return;
+    };
+
+    let config = config_for(&server).with_host_key_policy(SshHostKeyPolicy::Fingerprint(
+        server
+            .ssh_host_key_fingerprint()
+            .expect("ssh host key fingerprint")
+            .to_string(),
+    ));
+    let mut conn = SshConnection::new(config);
+
+    conn.connect().await.expect("connect failed");
+    conn.disconnect().await.expect("disconnect failed");
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn ssh_rejects_wrong_fingerprint() {
+    let server = start_mock().await;
+    let Some(server) = server else {
+        return;
+    };
+
+    let config =
+        config_for(&server).with_host_key_policy(SshHostKeyPolicy::Fingerprint("wrong".into()));
+    let mut conn = SshConnection::new(config);
+
+    let error = conn.connect().await.expect_err("connect should fail");
+    assert!(matches!(error, ConnectionError::ConnectFailed(_)));
+
+    server.shutdown().await;
 }
