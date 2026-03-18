@@ -11,12 +11,15 @@ use quick_xml::Reader;
 
 use crate::error::ProtocolError;
 
+const DEFAULT_MAX_BUFFER_BYTES: usize = 64 * 1024 * 1024;
+
 /// Streaming XML reader that detects when a complete XML root element has been received.
 ///
 /// Feed data incrementally via [`XmlReader::feed`] and check [`XmlReader::is_complete`] to know when
 /// a full GMP response has been received.
 pub struct XmlReader {
     buffer: Vec<u8>,
+    max_buffer_bytes: Option<usize>,
     complete: bool,
     depth: i32,
     seen_start: bool,
@@ -27,8 +30,21 @@ impl XmlReader {
     /// Create a new `XmlReader`.
     #[must_use]
     pub fn new() -> Self {
+        Self::with_buffer_limit(Some(DEFAULT_MAX_BUFFER_BYTES))
+    }
+
+    /// Create a new `XmlReader` with a custom maximum buffer size.
+    #[must_use]
+    pub fn with_max_buffer(max: usize) -> Self {
+        Self::with_buffer_limit(Some(max))
+    }
+
+    /// Create a new `XmlReader` with an optional maximum buffer size.
+    #[must_use]
+    pub fn with_buffer_limit(max_buffer_bytes: Option<usize>) -> Self {
         Self {
             buffer: Vec::new(),
+            max_buffer_bytes,
             complete: false,
             depth: 0,
             seen_start: false,
@@ -41,6 +57,12 @@ impl XmlReader {
     /// # Errors
     /// Returns an error if the data contains fatally malformed XML.
     pub fn feed(&mut self, data: &[u8]) -> Result<(), ProtocolError> {
+        if let Some(max) = self.max_buffer_bytes {
+            if self.buffer.len().saturating_add(data.len()) > max {
+                return Err(ProtocolError::BufferOverflow { max });
+            }
+        }
+
         self.buffer.extend_from_slice(data);
         self.check_complete()
     }
@@ -219,5 +241,13 @@ mod tests {
 
         reader.feed(b"value</child></root>").expect("feed ok");
         assert!(reader.is_complete());
+    }
+
+    #[test]
+    fn test_buffer_overflow() {
+        let mut reader = XmlReader::with_max_buffer(8);
+        let error = reader.feed(b"<response/>").expect_err("buffer overflow");
+
+        assert!(matches!(error, ProtocolError::BufferOverflow { max: 8 }));
     }
 }

@@ -34,6 +34,8 @@ pub struct SshConfig {
     pub timeout: Duration,
     /// Read buffer size in bytes.
     pub read_buffer_size: usize,
+    /// Maximum XML response size in bytes before aborting the read.
+    pub max_response_bytes: Option<usize>,
     /// SSH host key verification policy.
     pub host_key_policy: SshHostKeyPolicy,
 }
@@ -48,6 +50,7 @@ impl std::fmt::Debug for SshConfig {
             .field("remote_socket", &self.remote_socket)
             .field("timeout", &self.timeout)
             .field("read_buffer_size", &self.read_buffer_size)
+            .field("max_response_bytes", &self.max_response_bytes)
             .field("host_key_policy", &self.host_key_policy)
             .finish()
     }
@@ -63,6 +66,7 @@ impl Default for SshConfig {
             remote_socket: "/run/gvmd/gvmd.sock".to_string(),
             timeout: Duration::from_secs(60),
             read_buffer_size: 64 * 1024,
+            max_response_bytes: Some(64 * 1024 * 1024),
             host_key_policy: SshHostKeyPolicy::AcceptAll,
         }
     }
@@ -98,6 +102,13 @@ impl SshConfig {
     #[must_use]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
+        self
+    }
+
+    /// Set the maximum XML response size in bytes.
+    #[must_use]
+    pub fn with_max_response_bytes(mut self, max_response_bytes: Option<usize>) -> Self {
+        self.max_response_bytes = max_response_bytes;
         self
     }
 
@@ -414,7 +425,8 @@ impl GvmConnection for SshConnection {
 
     async fn read(&mut self) -> Result<Vec<u8>> {
         let channel = self.channel.as_mut().ok_or(ConnectionError::NotConnected)?;
-        let mut xml_reader = gvm_protocol::XmlReader::new();
+        let mut xml_reader =
+            gvm_protocol::XmlReader::with_buffer_limit(self.config.max_response_bytes);
         let mut response = Vec::with_capacity(self.config.read_buffer_size);
 
         loop {
@@ -475,6 +487,7 @@ mod tests {
         assert_eq!(config.username, "root");
         assert_eq!(config.remote_socket, "/run/gvmd/gvmd.sock");
         assert_eq!(config.timeout, Duration::from_secs(60));
+        assert_eq!(config.max_response_bytes, Some(64 * 1024 * 1024));
         assert_eq!(config.host_key_policy, SshHostKeyPolicy::AcceptAll);
     }
 
@@ -494,6 +507,7 @@ mod tests {
         assert_eq!(config.port, 2222);
         assert_eq!(config.remote_socket, "/tmp/gvmd.sock");
         assert_eq!(config.timeout, Duration::from_secs(15));
+        assert_eq!(config.max_response_bytes, Some(64 * 1024 * 1024));
     }
 
     #[test]
