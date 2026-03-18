@@ -2122,6 +2122,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rust-gvm-workspace"
+version = "0.2.0"
+dependencies = [
+ "gvm-client",
+ "gvm-connection",
+ "gvm-gmp",
+ "gvm-protocol",
+ "quick-xml",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "rustc_version"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -1,3 +1,14 @@
+[package]
+name = "rust-gvm-workspace"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+publish = false
+
 [workspace]
 resolver = "2"
 members = [
@@ -65,6 +76,15 @@ gvm-gmp = { path = "crates/gvm-gmp" }
 gvm-client = { path = "crates/gvm-client" }
 gvm-mock-server = { path = "crates/gvm-mock-server" }
 
+[dependencies]
+tokio.workspace = true
+quick-xml.workspace = true
+thiserror.workspace = true
+gvm-client.workspace = true
+gvm-connection.workspace = true
+gvm-protocol.workspace = true
+gvm-gmp.workspace = true
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
@@ -112,3 +132,6 @@ print_stderr = "warn"
 todo = "warn"
 unimplemented = "warn"
 unwrap_used = "warn"
+
+[lints]
+workspace = true

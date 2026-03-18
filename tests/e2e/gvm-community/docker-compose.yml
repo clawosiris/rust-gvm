@@ -1,0 +1,251 @@
+name: rust-gvm-e2e
+
+services:
+  vulnerability-tests:
+    image: registry.community.greenbone.net/community/vulnerability-tests:stable
+    environment:
+      FEED_RELEASE: "24.10"
+      KEEP_ALIVE: "1"
+    volumes:
+      - vt-data:/mnt
+
+  notus-data:
+    image: registry.community.greenbone.net/community/notus-data:stable
+    environment:
+      KEEP_ALIVE: "1"
+    volumes:
+      - notus-data:/mnt
+
+  scap-data:
+    image: registry.community.greenbone.net/community/scap-data:stable
+    environment:
+      KEEP_ALIVE: "1"
+    volumes:
+      - scap-data:/mnt
+
+  cert-bund-data:
+    image: registry.community.greenbone.net/community/cert-bund-data:stable
+    environment:
+      KEEP_ALIVE: "1"
+    volumes:
+      - cert-data:/mnt
+
+  dfn-cert-data:
+    image: registry.community.greenbone.net/community/dfn-cert-data:stable
+    environment:
+      KEEP_ALIVE: "1"
+    volumes:
+      - cert-data:/mnt
+    depends_on:
+      cert-bund-data:
+        condition: service_started
+
+  data-objects:
+    image: registry.community.greenbone.net/community/data-objects:stable
+    environment:
+      FEED_RELEASE: "24.10"
+      KEEP_ALIVE: "1"
+    volumes:
+      - data-objects:/mnt
+
+  report-formats:
+    image: registry.community.greenbone.net/community/report-formats:stable
+    environment:
+      FEED_RELEASE: "24.10"
+      KEEP_ALIVE: "1"
+    volumes:
+      - data-objects:/mnt
+    depends_on:
+      data-objects:
+        condition: service_started
+
+  gpg-data:
+    image: registry.community.greenbone.net/community/gpg-data:stable
+    volumes:
+      - gpg-data:/mnt
+
+  redis-server:
+    image: registry.community.greenbone.net/community/redis-server:stable
+    restart: on-failure
+    volumes:
+      - redis-socket:/run/redis
+
+  pg-gvm-migrator:
+    image: registry.community.greenbone.net/community/pg-gvm-migrator:stable
+    restart: "no"
+    volumes:
+      - psql-data:/var/lib/postgresql
+      - psql-socket:/var/run/postgresql
+
+  pg-gvm:
+    image: registry.community.greenbone.net/community/pg-gvm:stable
+    restart: on-failure:10
+    volumes:
+      - psql-data:/var/lib/postgresql
+      - psql-socket:/var/run/postgresql
+    depends_on:
+      pg-gvm-migrator:
+        condition: service_completed_successfully
+
+  configure-openvas:
+    image: registry.community.greenbone.net/community/openvas-scanner:stable
+    volumes:
+      - openvas-data:/mnt
+      - openvas-log-data:/var/log/openvas
+    command:
+      - /bin/sh
+      - -c
+      - |
+        printf "table_driven_lsc = yes\nopenvasd_server = http://openvasd:80\n" > /mnt/openvas.conf
+        sed "s/127/128/" /etc/openvas/openvas_log.conf | sed 's/gvm/openvas/' > /mnt/openvas_log.conf
+        chmod 644 /mnt/openvas.conf
+        chmod 644 /mnt/openvas_log.conf
+        touch /var/log/openvas/openvas.log
+        chmod 666 /var/log/openvas/openvas.log
+
+  openvasd:
+    image: registry.community.greenbone.net/community/openvas-scanner:stable
+    restart: on-failure
+    environment:
+      OPENVASD_MODE: service_notus
+      GNUPGHOME: /etc/openvas/gnupg
+      LISTENING: 0.0.0.0:80
+    volumes:
+      - openvas-data:/etc/openvas
+      - openvas-log-data:/var/log/openvas
+      - gpg-data:/etc/openvas/gnupg
+      - notus-data:/var/lib/notus
+    depends_on:
+      vulnerability-tests:
+        condition: service_started
+      notus-data:
+        condition: service_started
+      configure-openvas:
+        condition: service_completed_successfully
+      gpg-data:
+        condition: service_started
+
+  ospd-openvas:
+    image: registry.community.greenbone.net/community/ospd-openvas:stable
+    restart: on-failure
+    hostname: ospd-openvas.local
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    command:
+      - ospd-openvas
+      - -f
+      - --config
+      - /etc/gvm/ospd-openvas.conf
+      - --notus-feed-dir
+      - /var/lib/notus/advisories
+      - -m
+      - "666"
+    volumes:
+      - gpg-data:/etc/openvas/gnupg
+      - vt-data:/var/lib/openvas/plugins
+      - notus-data:/var/lib/notus
+      - ospd-openvas-socket:/run/ospd
+      - redis-socket:/run/redis
+      - openvas-data:/etc/openvas
+      - openvas-log-data:/var/log/openvas
+    depends_on:
+      redis-server:
+        condition: service_started
+      gpg-data:
+        condition: service_started
+      configure-openvas:
+        condition: service_completed_successfully
+      vulnerability-tests:
+        condition: service_started
+      notus-data:
+        condition: service_started
+
+  gvmd:
+    image: registry.community.greenbone.net/community/gvmd:stable
+    restart: on-failure
+    volumes:
+      - gvmd-data:/var/lib/gvm
+      - scap-data:/var/lib/gvm/scap-data
+      - cert-data:/var/lib/gvm/cert-data
+      - data-objects:/var/lib/gvm/data-objects/gvmd
+      - vt-data:/var/lib/openvas/plugins
+      - psql-data:/var/lib/postgresql
+      - gvmd-socket:/run/gvmd
+      - ospd-openvas-socket:/run/ospd
+      - psql-socket:/var/run/postgresql
+    depends_on:
+      pg-gvm:
+        condition: service_started
+      scap-data:
+        condition: service_started
+      cert-bund-data:
+        condition: service_started
+      dfn-cert-data:
+        condition: service_started
+      data-objects:
+        condition: service_started
+      report-formats:
+        condition: service_started
+      ospd-openvas:
+        condition: service_started
+
+  gsad:
+    image: registry.community.greenbone.net/community/gsad:stable
+    restart: on-failure
+    environment:
+      GSAD_ARGS: "--listen=0.0.0.0 --http-only --api-only -f"
+    volumes:
+      - gvmd-socket:/run/gvmd
+    depends_on:
+      gvmd:
+        condition: service_started
+
+  rust-gvm-e2e:
+    build:
+      context: ../../..
+      dockerfile: tests/e2e/gvm-community/Dockerfile.runner
+    profiles:
+      - runner
+    environment:
+      GVM_ADMIN_USER: ${GVM_ADMIN_USER:-admin}
+      GVM_ADMIN_PASS: ${GVM_ADMIN_PASS:-admin}
+      GVM_SOCKET_PATH: ${GVM_SOCKET_PATH:-/run/gvmd/gvmd.sock}
+      E2E_RUN_SCAN: ${E2E_RUN_SCAN:-0}
+      CARGO_TERM_COLOR: always
+    working_dir: /workspace
+    volumes:
+      - ../../..:/workspace
+      - gvmd-socket:/run/gvmd:ro
+      - cargo-registry:/usr/local/cargo/registry
+      - cargo-git:/usr/local/cargo/git
+      - cargo-target:/workspace/target
+    depends_on:
+      gvmd:
+        condition: service_started
+    entrypoint:
+      - /bin/bash
+      - -lc
+    command: ./tests/e2e/gvm-community/scripts/run-smoke.sh
+
+volumes:
+  cert-data:
+  cargo-git:
+  cargo-registry:
+  cargo-target:
+  data-objects:
+  gpg-data:
+  gvmd-data:
+  gvmd-socket:
+  notus-data:
+  openvas-data:
+  openvas-log-data:
+  ospd-openvas-socket:
+  psql-data:
+  psql-socket:
+  redis-socket:
+  scap-data:
+  vt-data:

@@ -1,0 +1,9 @@
+FROM rust:1.75
+
+WORKDIR /workspace
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates bash pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+CMD ["/bin/bash"]
