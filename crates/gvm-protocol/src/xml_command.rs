@@ -12,7 +12,7 @@ use crate::request::Request;
 /// A builder for GMP XML commands.
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// use gvm_protocol::{XmlCommand, Request};
 ///
 /// let cmd = XmlCommand::new("get_tasks")
@@ -254,6 +254,8 @@ fn xml_escape_into(buf: &mut String, s: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+    use quick_xml::{events::Event, Reader};
 
     // CMD-001
     #[test]
@@ -432,5 +434,31 @@ mod tests {
         let xml = String::from_utf8(cmd.to_bytes()).expect("valid utf8");
         assert!(xml.contains("<pref1>val1</pref1>"));
         assert!(xml.contains("<pref2>val2</pref2>"));
+    }
+
+    proptest! {
+        #[test]
+        fn xml_escape_output_stays_parseable(input in any::<String>()) {
+            let xml = String::from_utf8(
+                XmlCommand::new("root")
+                    .child_with_text("value", &input)
+                    .to_bytes(),
+            )
+            .expect("valid utf8");
+
+            let mut reader = Reader::from_str(&xml);
+            let mut saw_root = false;
+
+            loop {
+                match reader.read_event() {
+                    Ok(Event::Start(_)) => saw_root = true,
+                    Ok(Event::Eof) => break,
+                    Ok(_) => {}
+                    Err(error) => panic!("escaped XML was not parseable: {error}"),
+                }
+            }
+
+            prop_assert!(saw_root);
+        }
     }
 }

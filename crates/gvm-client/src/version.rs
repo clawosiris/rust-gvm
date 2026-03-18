@@ -9,7 +9,7 @@ use crate::GvmError;
 
 /// Parse a GMP version string into a major/minor pair.
 ///
-/// Accepts `major.minor` and ignores any later dot-separated components.
+/// Accepts `major.minor` and optional `major.minor.patch` strings.
 ///
 /// # Errors
 /// Returns an error if the string does not start with two numeric components.
@@ -17,18 +17,27 @@ pub fn parse_version_text(input: &str) -> Result<GmpVersion, GvmError> {
     let value = input.trim();
     let mut parts = value.split('.');
 
-    let major = parts
-        .next()
-        .ok_or_else(|| GvmError::XmlParse(format!("invalid version string: {value}")))?
-        .parse::<u16>()
-        .map_err(|_| GvmError::XmlParse(format!("invalid version string: {value}")))?;
-    let minor = parts
-        .next()
+    let major = parse_component(parts.next(), value)?;
+    let minor = parse_component(parts.next(), value)?;
+
+    if let Some(patch) = parts.next() {
+        let _ = parse_component(Some(patch), value)?;
+    }
+
+    Ok(GmpVersion(major, minor))
+}
+
+fn parse_component(component: Option<&str>, value: &str) -> Result<u16, GvmError> {
+    let parsed = component
         .ok_or_else(|| GvmError::XmlParse(format!("invalid version string: {value}")))?
         .parse::<u16>()
         .map_err(|_| GvmError::XmlParse(format!("invalid version string: {value}")))?;
 
-    Ok(GmpVersion(major, minor))
+    if parsed > 99 {
+        return Err(GvmError::XmlParse(format!("invalid version string: {value}")));
+    }
+
+    Ok(parsed)
 }
 
 /// Map a negotiated GMP version into the supported client version set.
@@ -76,6 +85,16 @@ mod tests {
     fn rejects_invalid_versions() {
         let error = parse_version_text("22").expect_err("invalid");
         assert!(matches!(error, GvmError::XmlParse(_)));
+    }
+
+    #[test]
+    fn rejects_malformed_version_strings() {
+        for input in ["abc", "999.999.999", "", "70000.1"] {
+            assert!(matches!(
+                parse_version_text(input).expect_err("invalid"),
+                GvmError::XmlParse(_)
+            ));
+        }
     }
 
     #[test]

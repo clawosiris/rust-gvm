@@ -23,3 +23,11 @@ fn test_authenticate_preserves_empty_values() {
         "<authenticate><credentials><username></username><password></password></credentials></authenticate>"
     );
 }
+
+#[test]
+fn test_authenticate_escapes_xml_special_chars() {
+    assert_eq!(
+        xml(authenticate(r#"<>&"'"#, r#""'&<>"#)),
+        "<authenticate><credentials><username>&lt;&gt;&amp;&quot;&apos;</username><password>&quot;&apos;&amp;&lt;&gt;</password></credentials></authenticate>"
+    );
+}
