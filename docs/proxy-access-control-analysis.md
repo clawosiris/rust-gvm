@@ -570,7 +570,184 @@ gvm-cli --gateway https://gateway.internal:8443 \
 
 ---
 
-## 11. Open Questions
+## 11. Architectural Options: Flow Control Layer Separation
+
+A key design decision is where to place access control. The gateway concept from Sections 1–10 puts everything in one component. But access control decomposes into two distinct layers that can be separated:
+
+| Layer | Concern | Protocol awareness | Decision basis |
+|-------|---------|-------------------|----------------|
+| **Flow control** (L3/L4/identity) | "Can source X connect to destination Y?" | None — protocol-agnostic | Identity, network, endpoint, time |
+| **Operation control** (L7/application) | "Can this identity perform `delete_target` on this endpoint?" | Must parse GMP | Identity, operation, resource, context |
+
+The flow control proxy can't distinguish "read report" from "delete all targets" — both are TCP streams to the same destination. Operation-level authorization requires parsing the GMP command, which only the protocol gateway can do. This natural boundary suggests separation.
+
+### Option A: Monolith — Single gvm-gateway (all-in-one)
+
+Everything in one component, as described in Sections 1–10.
+
+```
+┌──────────┐     ┌─────────────────────────────────────────────┐     ┌────────┐
+│ Clients  │────►│ gvm-gateway                                  │────►│ gvmd   │
+│          │     │                                              │     │        │
+│          │     │ • Identity / Auth (OIDC, API key, mTLS)      │     │        │
+│          │     │ • Flow policy (src → dst allow/deny)         │     │        │
+│          │     │ • REST/gRPC → GMP translation                │     │        │
+│          │     │ • Operation-level RBAC                       │     │        │
+│          │     │ • Connection pooling                         │     │        │
+│          │     │ • Audit (connection + operation)             │     │        │
+└──────────┘     └─────────────────────────────────────────────┘     └────────┘
+```
+
+**Strengths:**
+- Simplest deployment — one binary, one config
+- Single auth decision point — no token passing between layers
+- Lowest latency — no extra hop
+- Easiest to reason about — all policy in one place
+- Good for small/medium deployments (1–5 gvmd endpoints)
+
+**Weaknesses:**
+- Flow control logic is bespoke and GVM-specific — can't reuse for other services
+- If gateway is compromised, both layers fall
+- Must implement mTLS termination, rate limiting, IP allowlisting from scratch
+- Doesn't leverage existing infrastructure (service mesh, API gateway)
+- Harder to scale flow control and protocol translation independently
+
+**Best for:** Single-team deployments, container sidecars, proof-of-concept.
+
+### Option B: Two-Layer — Separate Flow Control Proxy + Protocol Gateway
+
+Split access control into two components at the natural protocol boundary.
+
+```
+┌──────────┐     ┌──────────────────┐     ┌──────────────────┐     ┌────────┐
+│ Clients  │────►│ Flow Control     │────►│ Protocol         │────►│ gvmd   │
+│          │     │ Proxy            │     │ Gateway          │     │        │
+│          │     │                  │     │                  │     │        │
+│          │     │ • Identity       │     │ • REST→GMP       │     │        │
+│          │     │ • Src→Dst policy │     │ • Op-level RBAC  │     │        │
+│          │     │ • Rate limiting  │     │ • Conn pooling   │     │        │
+│          │     │ • TLS term/re    │     │ • Aggregation    │     │        │
+│          │     │ • Conn audit     │     │ • Response cache │     │        │
+└──────────┘     └──────────────────┘     └──────────────────┘     └────────┘
+                   L3/L4/identity            L7/application
+                   (protocol-agnostic)       (GMP-aware)
+```
+
+**Strengths:**
+- **Defense in depth** — compromise of protocol gateway doesn't bypass flow control; compromise of flow proxy doesn't give operation-level access
+- **Reusability** — same flow control proxy governs gvmd, GSA, MCP server, any future service
+- **Leverage existing infra** — flow layer can be Envoy, Istio, Cilium, Traefik, Kong — battle-tested, not custom
+- **Independent scaling** — flow control is lightweight (L3/L4 decisions); protocol gateway is heavier (XML parsing, pooling)
+- **Separation of ownership** — network/platform team owns flow policy; application team owns operation policy
+- **Standard pattern** — mirrors how enterprises already deploy services (API gateway → backend)
+
+**Weaknesses:**
+- Extra network hop (typically <1ms within same host/pod)
+- Two things to deploy, configure, monitor
+- Identity must be passed between layers (forwarded headers, mTLS passthrough)
+- More complex troubleshooting — "which layer denied this?"
+
+**Best for:** Enterprise deployments, multi-team organizations, MSP multi-tenant.
+
+### Option C: Leverage Existing Service Mesh + Thin Gateway
+
+Use an existing service mesh or API gateway for all flow control; build only the GMP-aware protocol gateway.
+
+```
+┌──────────┐     ┌──────────────────┐     ┌──────────────────┐     ┌────────┐
+│ Clients  │────►│ Envoy / Istio /  │────►│ gvm-gateway      │────►│ gvmd   │
+│          │     │ Cilium / Kong    │     │ (thin: GMP only)  │     │        │
+│          │     │                  │     │                  │     │        │
+│          │     │ • mTLS           │     │ • REST→GMP       │     │        │
+│          │     │ • AuthN (OIDC)   │     │ • Op-level RBAC  │     │        │
+│          │     │ • AuthZ (OPA)    │     │ • Conn pooling   │     │        │
+│          │     │ • Rate limiting  │     │ • Aggregation    │     │        │
+│          │     │ • Observability  │     │ • Response cache │     │        │
+└──────────┘     └──────────────────┘     └──────────────────┘     └────────┘
+                   Existing infrastructure    Custom (rust-gvm based)
+```
+
+**Strengths:**
+- Minimal custom code — only build what's GVM-specific
+- All infrastructure concerns (TLS, rate limiting, observability, circuit breaking) handled by proven tools
+- OPA (Open Policy Agent) for flow policy — declarative, auditable, standard
+- Built-in observability (Prometheus metrics, distributed tracing)
+- Enterprises likely already running a mesh — this is just another backend
+
+**Weaknesses:**
+- Requires Kubernetes or equivalent orchestration (not suitable for bare Docker/compose)
+- Configuration spread across mesh config + gateway config + OPA policies — more moving parts
+- Mesh adds operational complexity for smaller teams
+- Overkill for single-scanner deployments
+
+**Best for:** Kubernetes-native organizations, large enterprises with existing service mesh.
+
+### Option D: Sidecar Model — Protocol Gateway per gvmd, Centralized Flow Control
+
+Flip the topology: deploy a thin protocol gateway as a sidecar to each gvmd, with a centralized flow control plane routing traffic.
+
+```
+                                    ┌───────────────────────────┐
+                                ┌──►│ gvm-sidecar + gvmd-prod   │
+┌──────────┐   ┌─────────────┐ │   │ (REST→GMP, local socket)  │
+│ Clients  │──►│ Flow Control │─┤   └───────────────────────────┘
+│          │   │ / Router     │ │   ┌───────────────────────────┐
+│          │   │              │ ├──►│ gvm-sidecar + gvmd-staging │
+│          │   │ • Identity   │ │   └───────────────────────────┘
+│          │   │ • Routing    │ │   ┌───────────────────────────┐
+│          │   │ • Policy     │ └──►│ gvm-sidecar + gvmd-dmz    │
+└──────────┘   └─────────────┘     └───────────────────────────┘
+                                    (each sidecar talks local
+                                     Unix socket to its gvmd)
+```
+
+**Strengths:**
+- Each sidecar connects via local Unix socket — simplest, most secure transport
+- No remote GMP connections — flow control proxy handles all remote networking
+- Sidecars are identical, stateless, easy to deploy via container orchestration
+- Natural fit for Kubernetes DaemonSet/sidecar injection
+- Flow control plane can be anything (Envoy, custom, managed service)
+- Operation-level RBAC can live in sidecar (close to gvmd) or centrally — flexible
+
+**Weaknesses:**
+- More instances to manage (one sidecar per gvmd)
+- Cross-endpoint aggregation needs a separate aggregation service (or the flow control plane does it)
+- Connection pooling is per-sidecar (simpler but less flexible)
+- Requires deploying the sidecar everywhere a gvmd runs
+
+**Best for:** Container-orchestrated environments, geo-distributed scanners, edge deployments.
+
+### Comparison Matrix
+
+| Dimension | A: Monolith | B: Two-Layer | C: Mesh + Gateway | D: Sidecar |
+|-----------|-------------|-------------|-------------------|------------|
+| **Deployment complexity** | Low | Medium | High | Medium |
+| **Custom code** | High (all bespoke) | Medium | Low (GMP only) | Medium |
+| **Defense in depth** | ❌ Single point | ✅ Two layers | ✅ Mesh + app | ✅ Distributed |
+| **Reuse for non-GVM** | ❌ | ✅ Flow proxy | ✅ Mesh | ✅ Flow plane |
+| **Existing infra leverage** | ❌ | ⚡ Partial | ✅ Full | ⚡ Partial |
+| **Bare Docker/compose** | ✅ | ✅ | ❌ Needs K8s | ⚡ Possible |
+| **Kubernetes-native** | ⚡ Works | ✅ | ✅ Ideal | ✅ Ideal |
+| **MSP multi-tenant** | ⚡ Possible | ✅ Good | ✅ Best | ✅ Good |
+| **Small team overhead** | Low | Medium | High | Medium |
+| **Cross-endpoint aggregation** | ✅ Built-in | ✅ In gateway | ✅ In gateway | Needs aggregator |
+| **Latency** | Lowest | +1 hop | +1 hop | Lowest (local) |
+
+### Recommendation
+
+**Start with Option A** (monolith) for Phase 1 — it's the fastest to deliver value and easiest to validate the design. The REST→GMP translation, operation-level RBAC, and connection pooling are the hard problems worth solving first.
+
+**Evolve toward Option B** as the deployment grows beyond a single team or when the flow control proxy needs to govern non-GVM services too. The monolith's auth layer can be extracted cleanly if designed with this boundary in mind from the start.
+
+**Option C** is the right answer for organizations already running Kubernetes + service mesh — but that's a deployment decision, not an architectural one. The protocol gateway (gvm-gateway) should work behind any proxy.
+
+**Option D** is worth considering for geo-distributed or edge scanner deployments where remote GMP connections are undesirable.
+
+The key design principle: **build the protocol gateway to be proxy-agnostic.** It should work standalone (Option A), behind a dedicated flow proxy (Option B), behind a service mesh (Option C), or as a sidecar (Option D). The auth layer should accept both direct authentication (API keys) and forwarded identity (from an upstream proxy). This keeps all options open.
+
+---
+
+## 12. Open Questions
 
 1. **Configuration format**: YAML? TOML? Should policy be separate from endpoint config?
 2. **Dynamic vs static config**: Hot-reload on SIGHUP? Admin API for runtime changes? Or immutable config requiring restart?
