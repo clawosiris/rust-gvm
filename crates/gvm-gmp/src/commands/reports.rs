@@ -5,6 +5,7 @@
 
 use gvm_protocol::{Request, XmlCommand};
 
+use crate::commands::usage_type::UsageType;
 use crate::common::{add_filter_attrs, add_optional_id_element, bool_str, set_optional_bool_attr};
 use crate::types::EntityId;
 
@@ -51,6 +52,10 @@ pub fn create_report(task_id: &EntityId, opts: CreateReportOpts) -> impl Request
 /// Build a `get_reports` request.
 #[must_use]
 pub fn get_reports(opts: GetReportsOpts) -> impl Request {
+    get_reports_with_usage(opts, None)
+}
+
+fn get_reports_with_usage(opts: GetReportsOpts, usage_type: Option<UsageType>) -> XmlCommand {
     let mut cmd = XmlCommand::new("get_reports");
     add_filter_attrs(
         &mut cmd,
@@ -60,6 +65,9 @@ pub fn get_reports(opts: GetReportsOpts) -> impl Request {
     set_optional_bool_attr(&mut cmd, "details", opts.details);
     set_optional_bool_attr(&mut cmd, "ignore_pagination", opts.ignore_pagination);
     set_optional_bool_attr(&mut cmd, "no_report", opts.no_report);
+    if let Some(usage_type) = usage_type {
+        cmd.set_attribute("usage_type", usage_type.as_gmp_str());
+    }
     cmd
 }
 
@@ -77,6 +85,18 @@ pub fn delete_report(report_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_report")
         .attribute("report_id", report_id.as_str())
         .attribute("ultimate", bool_str(ultimate))
+}
+
+/// Build a `get_reports` request scoped to audit reports.
+#[must_use]
+pub fn get_audit_reports(opts: GetReportsOpts) -> impl Request {
+    get_reports_with_usage(opts, Some(UsageType::Audit))
+}
+
+/// Build a `delete_report` request for an audit report.
+#[must_use]
+pub fn delete_audit_report(report_id: &EntityId) -> impl Request {
+    delete_report(report_id, false)
 }
 
 #[cfg(test)]
@@ -116,6 +136,18 @@ mod tests {
         assert!(rendered.contains("no_report=\"1\""));
         assert_eq!(
             xml(delete_report(&id("r1"), false)),
+            "<delete_report report_id=\"r1\" ultimate=\"0\"/>"
+        );
+    }
+
+    #[test]
+    fn audit_report_commands_build_xml() {
+        assert_eq!(
+            xml(get_audit_reports(GetReportsOpts::default())),
+            "<get_reports usage_type=\"audit\"/>"
+        );
+        assert_eq!(
+            xml(delete_audit_report(&id("r1"))),
             "<delete_report report_id=\"r1\" ultimate=\"0\"/>"
         );
     }

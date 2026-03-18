@@ -135,6 +135,30 @@ struct StoreInner {
     password: String,
 }
 
+fn default_resources() -> HashMap<Uuid, Resource> {
+    let mut resources = HashMap::new();
+
+    let mut timezone = Resource::with_id(
+        "setting",
+        "timezone",
+        Uuid::parse_str("00000000-0000-0000-0000-000000000001").expect("valid uuid"),
+    );
+    timezone.comment = "User timezone".to_string();
+    timezone.set_attr("value", "UTC");
+    resources.insert(timezone.id, timezone);
+
+    let mut rows_per_page = Resource::with_id(
+        "setting",
+        "rows_per_page",
+        Uuid::parse_str("00000000-0000-0000-0000-000000000002").expect("valid uuid"),
+    );
+    rows_per_page.comment = "Default rows per page".to_string();
+    rows_per_page.set_attr("value", "100");
+    resources.insert(rows_per_page.id, rows_per_page);
+
+    resources
+}
+
 impl ResourceStore {
     /// Create a new empty store with default credentials.
     pub fn new() -> Self {
@@ -145,7 +169,7 @@ impl ResourceStore {
     pub fn with_credentials(username: &str, password: &str) -> Self {
         Self {
             inner: Arc::new(RwLock::new(StoreInner {
-                resources: HashMap::new(),
+                resources: default_resources(),
                 authenticated_sessions: std::collections::HashSet::new(),
                 username: username.to_string(),
                 password: password.to_string(),

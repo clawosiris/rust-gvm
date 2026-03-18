@@ -214,7 +214,7 @@ impl SessionHandler {
             }
             "restore" => self.handle_restore(cmd, store),
             // Help
-            "help" => echo_response("help", self.version.as_str()),
+            "help" => render_help_response(cmd.attr("format")),
             // Everything else
             _ => echo_response(&cmd.name, self.version.as_str()),
         }
@@ -267,7 +267,10 @@ impl SessionHandler {
                 .unwrap_or_default(),
             _ => parse_element_text(raw_xml, "name").unwrap_or_default(),
         };
-        let requires_name = !matches!(resource_type, "note" | "override" | "ticket" | "port_range");
+        let requires_name = !matches!(
+            resource_type,
+            "note" | "override" | "ticket" | "port_range" | "report"
+        );
         if name.is_empty() && requires_name {
             return error_response(&cmd.name, 400, "Missing required element: name");
         }
@@ -277,6 +280,12 @@ impl SessionHandler {
         // Extract comment
         if let Some(comment) = parse_element_text(raw_xml, "comment") {
             resource.comment = comment;
+        }
+
+        if matches!(resource_type, "config" | "task") {
+            if let Some(usage_type) = parse_element_text(raw_xml, "usage_type") {
+                resource.set_attr("usage_type", &usage_type);
+            }
         }
 
         // Task-specific: extract references
@@ -291,6 +300,19 @@ impl SessionHandler {
                 resource.set_attr("scanner_id", scanner_id);
             }
             resource.set_attr("status", TaskStatus::New.as_str());
+        }
+
+        if resource_type == "report" {
+            if let Some(task_id) = cmd.child_attr("task", "id") {
+                resource.set_attr("task_id", task_id);
+                if let Ok(task_uuid) = Uuid::parse_str(task_id) {
+                    if let Some(task) = store.get(&task_uuid) {
+                        if let Some(usage_type) = task.attr("usage_type") {
+                            resource.set_attr("usage_type", usage_type);
+                        }
+                    }
+                }
+            }
         }
 
         // Target-specific
@@ -361,16 +383,27 @@ impl SessionHandler {
     }
 
     fn handle_get(&self, cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
+        match cmd.name.as_str() {
+            "get_feeds" => return render_feeds_response(),
+            "get_aggregates" => return render_aggregates_response(cmd),
+            "get_system_reports" => return render_system_reports_response(),
+            "get_info" => return render_secinfo_response(cmd),
+            _ => {}
+        }
+
         let resource_type =
             singularize_resource_type(cmd.name.strip_prefix("get_").unwrap_or("unknown"));
+        let requested_usage_type = cmd.attr("usage_type");
 
         // Special: get_version handled above
-        // Special: get_feeds, get_info, etc. → echo for now
         // Check for single resource by ID
         let id_attr = format!("{resource_type}_id");
         if let Some(id_str) = cmd.attr(&id_attr) {
             if let Ok(uuid) = Uuid::parse_str(id_str) {
                 if let Some(resource) = store.get(&uuid) {
+                    if !usage_type_matches(&resource, requested_usage_type) {
+                        return error_response(&cmd.name, 404, "Resource not found");
+                    }
                     if cmd.name == "get_reports" {
                         return self.render_single_report_response(cmd, &resource, store);
                     }
@@ -402,6 +435,10 @@ impl SessionHandler {
             if let Some(asset_type) = cmd.attr("asset_type").or_else(|| cmd.attr("type")) {
                 resources.retain(|resource| resource.attr("asset_type") == Some(asset_type));
             }
+        }
+
+        if let Some(usage_type) = requested_usage_type {
+            resources.retain(|resource| resource.attr("usage_type") == Some(usage_type));
         }
 
         let count = resources.len();
@@ -443,6 +480,8 @@ impl SessionHandler {
         let new_severity = parse_element_text(raw_xml, "severity");
         let new_new_severity = parse_element_text(raw_xml, "new_severity");
         let new_active = parse_element_text(raw_xml, "active");
+        let new_usage_type = parse_element_text(raw_xml, "usage_type");
+        let new_value = parse_element_text(raw_xml, "value");
 
         let modified = store.modify(&uuid, |r| {
             if matches!(resource_type, "note" | "override") {
@@ -478,6 +517,12 @@ impl SessionHandler {
             }
             if let Some(ref active) = new_active {
                 r.set_attr("active", active);
+            }
+            if let Some(ref usage_type) = new_usage_type {
+                r.set_attr("usage_type", usage_type);
+            }
+            if let Some(ref value) = new_value {
+                r.set_attr("value", value);
             }
             if resource_type == "ticket" {
                 if let Some(ref status) = new_status {
@@ -697,6 +742,115 @@ fn render_report_result_xml(result: &Resource) -> String {
 
     xml.push_str("</result>");
     xml
+}
+
+fn usage_type_matches(resource: &Resource, requested_usage_type: Option<&str>) -> bool {
+    match requested_usage_type {
+        Some(usage_type) => resource.attr("usage_type") == Some(usage_type),
+        None => true,
+    }
+}
+
+fn render_help_response(format: Option<&str>) -> Vec<u8> {
+    let body = match format {
+        Some("brief") => "<commands><command>get_feeds</command><command>get_tasks</command><command>get_configs</command></commands>",
+        _ => "<commands><command>get_feeds</command><command>get_tasks</command><command>get_configs</command><command>get_reports</command><command>get_info</command><command>get_settings</command></commands>",
+    };
+    format!("<help_response status=\"200\" status_text=\"OK\">{body}</help_response>").into_bytes()
+}
+
+fn render_feeds_response() -> Vec<u8> {
+    "<get_feeds_response status=\"200\" status_text=\"OK\">\
+     <feed><type>NVT</type><name>Network Vulnerability Tests</name><version>2026031801</version><status>current</status></feed>\
+     <feed><type>SCAP</type><name>SCAP Data</name><version>2026031701</version><status>current</status></feed>\
+     <feed><type>CERT</type><name>CERT Advisories</name><version>2026031601</version><status>current</status></feed>\
+     <feed_count>3<filtered>3</filtered></feed_count>\
+     </get_feeds_response>"
+        .as_bytes()
+        .to_vec()
+}
+
+fn render_aggregates_response(cmd: &ParsedCommand) -> Vec<u8> {
+    let resource_type = cmd.attr("type").unwrap_or("task");
+    let group_column = cmd.attr("group_column").unwrap_or("severity");
+    format!(
+        "<get_aggregates_response status=\"200\" status_text=\"OK\">\
+         <type>{resource_type}</type>\
+         <group_column>{group_column}</group_column>\
+         <aggregate><text>High</text><value>3</value></aggregate>\
+         <aggregate><text>Medium</text><value>5</value></aggregate>\
+         </get_aggregates_response>"
+    )
+    .into_bytes()
+}
+
+fn render_system_reports_response() -> Vec<u8> {
+    "<get_system_reports_response status=\"200\" status_text=\"OK\">\
+     <system_report id=\"system-report-1\">\
+     <name>GVMD Performance Snapshot</name>\
+     <comment>Mock system report</comment>\
+     <created>2026-03-18T00:00:00Z</created>\
+     <duration>15m</duration>\
+     </system_report>\
+     <system_report_count>1<filtered>1</filtered></system_report_count>\
+     </get_system_reports_response>"
+        .as_bytes()
+        .to_vec()
+}
+
+fn render_secinfo_response(cmd: &ParsedCommand) -> Vec<u8> {
+    let info_type = cmd.attr("type").unwrap_or("cve");
+    let (element, entries) = match info_type {
+        "cpe" => (
+            "cpe",
+            vec![
+                ("cpe:/a:greenbone:gvm", "Greenbone GVM"),
+                ("cpe:/o:debian:debian_linux:12", "Debian 12"),
+            ],
+        ),
+        "cve" => (
+            "cve",
+            vec![
+                ("CVE-2026-1000", "Mock CVE one"),
+                ("CVE-2026-1001", "Mock CVE two"),
+            ],
+        ),
+        "cert_bund_adv" => (
+            "cert_bund_adv",
+            vec![
+                ("CB-K26/001", "CERT-Bund advisory one"),
+                ("CB-K26/002", "CERT-Bund advisory two"),
+            ],
+        ),
+        "dfn_cert_adv" => (
+            "dfn_cert_adv",
+            vec![
+                ("DFN-2026-001", "DFN-CERT advisory one"),
+                ("DFN-2026-002", "DFN-CERT advisory two"),
+            ],
+        ),
+        "os" => (
+            "os",
+            vec![("os-1", "Debian GNU/Linux"), ("os-2", "Ubuntu Linux")],
+        ),
+        "vuln" => (
+            "vuln",
+            vec![
+                ("vuln-1", "Outdated package"),
+                ("vuln-2", "Weak configuration"),
+            ],
+        ),
+        _ => ("info", vec![("info-1", "Generic info entry")]),
+    };
+
+    let items: String = entries
+        .into_iter()
+        .map(|(id, name)| format!("<{element} id=\"{id}\"><name>{name}</name></{element}>"))
+        .collect();
+    format!(
+        "<get_info_response status=\"200\" status_text=\"OK\">{items}<{element}_count>2<filtered>2</filtered></{element}_count></get_info_response>"
+    )
+    .into_bytes()
 }
 
 fn singularize_resource_type(plural: &str) -> &str {

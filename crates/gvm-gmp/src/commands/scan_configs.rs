@@ -5,6 +5,7 @@
 
 use gvm_protocol::{Request, XmlCommand};
 
+use crate::commands::usage_type::UsageType;
 use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
 use crate::types::EntityId;
 
@@ -43,19 +44,36 @@ pub fn create_scan_config(
     base_id: Option<&EntityId>,
     opts: ConfigOpts,
 ) -> impl Request {
+    create_config_with_usage(name, base_id, opts, None)
+}
+
+fn create_config_with_usage(
+    name: &str,
+    base_id: Option<&EntityId>,
+    opts: ConfigOpts,
+    usage_type: Option<UsageType>,
+) -> XmlCommand {
     let mut cmd = XmlCommand::new("create_config");
     cmd.add_element_with_text("name", name);
     if let Some(base_id) = base_id {
         cmd.add_element("copy").set_text(base_id.as_str());
     }
     add_text_element(&mut cmd, "comment", opts.comment.as_deref());
-    add_text_element(&mut cmd, "usage_type", opts.usage_type.as_deref());
+    if let Some(usage_type) = usage_type {
+        cmd.add_element_with_text("usage_type", usage_type.as_gmp_str());
+    } else {
+        add_text_element(&mut cmd, "usage_type", opts.usage_type.as_deref());
+    }
     cmd
 }
 
 /// Build a `get_scan_configs` request.
 #[must_use]
 pub fn get_scan_configs(opts: GetScanConfigsOpts) -> impl Request {
+    get_configs_with_usage(opts, None)
+}
+
+fn get_configs_with_usage(opts: GetScanConfigsOpts, usage_type: Option<UsageType>) -> XmlCommand {
     let mut cmd = XmlCommand::new("get_configs");
     add_filter_attrs(
         &mut cmd,
@@ -64,6 +82,9 @@ pub fn get_scan_configs(opts: GetScanConfigsOpts) -> impl Request {
     );
     set_optional_bool_attr(&mut cmd, "trash", opts.trash);
     set_optional_bool_attr(&mut cmd, "details", opts.details);
+    if let Some(usage_type) = usage_type {
+        cmd.set_attribute("usage_type", usage_type.as_gmp_str());
+    }
     cmd
 }
 
@@ -78,10 +99,22 @@ pub fn get_scan_config(config_id: &EntityId) -> impl Request {
 /// Build a `modify_scan_config` request.
 #[must_use]
 pub fn modify_scan_config(config_id: &EntityId, opts: ConfigOpts) -> impl Request {
+    modify_config_with_usage(config_id, opts, None)
+}
+
+fn modify_config_with_usage(
+    config_id: &EntityId,
+    opts: ConfigOpts,
+    usage_type: Option<UsageType>,
+) -> XmlCommand {
     let mut cmd = XmlCommand::new("modify_config").attribute("config_id", config_id.as_str());
     add_text_element(&mut cmd, "name", Some(""));
     add_text_element(&mut cmd, "comment", opts.comment.as_deref());
-    add_text_element(&mut cmd, "usage_type", opts.usage_type.as_deref());
+    if let Some(usage_type) = usage_type {
+        cmd.add_element_with_text("usage_type", usage_type.as_gmp_str());
+    } else {
+        add_text_element(&mut cmd, "usage_type", opts.usage_type.as_deref());
+    }
     cmd
 }
 
@@ -97,6 +130,36 @@ pub fn delete_scan_config(config_id: &EntityId, ultimate: bool) -> impl Request 
 #[must_use]
 pub fn sync_config(config_id: &EntityId) -> impl Request {
     XmlCommand::new("sync_config").attribute("config_id", config_id.as_str())
+}
+
+/// Build a clone request for an existing policy.
+#[must_use]
+pub fn clone_policy(config_id: &EntityId) -> impl Request {
+    clone_scan_config(config_id)
+}
+
+/// Build a `create_config` request for a policy.
+#[must_use]
+pub fn create_policy(name: &str, opts: ConfigOpts) -> impl Request {
+    create_config_with_usage(name, None, opts, Some(UsageType::Policy))
+}
+
+/// Build a `get_configs` request scoped to policies.
+#[must_use]
+pub fn get_policies(opts: GetScanConfigsOpts) -> impl Request {
+    get_configs_with_usage(opts, Some(UsageType::Policy))
+}
+
+/// Build a `modify_config` request scoped to policies.
+#[must_use]
+pub fn modify_policy(config_id: &EntityId, opts: ConfigOpts) -> impl Request {
+    modify_config_with_usage(config_id, opts, Some(UsageType::Policy))
+}
+
+/// Build a `delete_config` request for a policy.
+#[must_use]
+pub fn delete_policy(config_id: &EntityId) -> impl Request {
+    delete_scan_config(config_id, false)
 }
 
 #[cfg(test)]
@@ -154,6 +217,42 @@ mod tests {
         assert_eq!(
             xml(sync_config(&id("c1"))),
             "<sync_config config_id=\"c1\"/>"
+        );
+    }
+
+    #[test]
+    fn policy_commands_build_xml() {
+        assert_eq!(
+            xml(create_policy(
+                "policy",
+                ConfigOpts {
+                    comment: Some("audit baseline".into()),
+                    ..Default::default()
+                }
+            )),
+            "<create_config><name>policy</name><comment>audit baseline</comment><usage_type>policy</usage_type></create_config>"
+        );
+        assert_eq!(
+            xml(get_policies(GetScanConfigsOpts::default())),
+            "<get_configs usage_type=\"policy\"/>"
+        );
+        assert_eq!(
+            xml(modify_policy(
+                &id("p1"),
+                ConfigOpts {
+                    comment: Some("updated".into()),
+                    ..Default::default()
+                }
+            )),
+            "<modify_config config_id=\"p1\"><comment>updated</comment><usage_type>policy</usage_type></modify_config>"
+        );
+        assert_eq!(
+            xml(delete_policy(&id("p1"))),
+            "<delete_config config_id=\"p1\" ultimate=\"0\"/>"
+        );
+        assert_eq!(
+            xml(clone_policy(&id("p1"))),
+            "<create_config><copy>p1</copy></create_config>"
         );
     }
 }
