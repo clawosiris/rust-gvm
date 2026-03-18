@@ -3,9 +3,36 @@
 
 //! GMP response XML generation.
 
+use std::fmt::Write;
+
+use sha1::{Digest, Sha1};
 use uuid::Uuid;
 
 use crate::util::xml_escape_attr;
+
+const LARGE_REPORT_FORMAT_ID: Uuid = Uuid::from_u128(0xc402cc3e_b531_11e1_9163_406186ea4fc5);
+const PORTS: [u16; 5] = [22, 80, 443, 8080, 8443];
+const SEVERITIES: [&str; 7] = ["2.1", "4.3", "5.0", "6.5", "7.5", "8.1", "9.8"];
+const DESCRIPTION_SENTENCE: &str =
+    "Synthetic result payload generated for large-response integration testing. ";
+
+/// Configuration for synthetic large report generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LargeReportConfig {
+    /// Number of <result> elements to generate.
+    pub result_count: usize,
+    /// Approximate bytes of filler text per result's <description>.
+    pub result_payload_bytes: usize,
+}
+
+impl Default for LargeReportConfig {
+    fn default() -> Self {
+        Self {
+            result_count: 1_000,
+            result_payload_bytes: 512,
+        }
+    }
+}
 
 /// Known GMP commands that the mock server recognizes.
 pub static KNOWN_COMMANDS: &[&str] = &[
@@ -201,9 +228,135 @@ pub fn version_response(version: &str) -> Vec<u8> {
     .into_bytes()
 }
 
+/// Generate a deterministic synthetic `get_reports_response`.
+#[must_use]
+pub fn generate_large_report(report_id: Uuid, config: &LargeReportConfig) -> String {
+    let per_result_estimate = config.result_payload_bytes.saturating_add(320);
+    let estimated_len = config
+        .result_count
+        .saturating_mul(per_result_estimate)
+        .saturating_add(512);
+    let description = build_description_payload(config.result_payload_bytes);
+    let mut xml = String::with_capacity(estimated_len);
+
+    write!(
+        xml,
+        "<get_reports_response status=\"200\" status_text=\"OK\">\
+         <report id=\"{report_id}\" format_id=\"{format_id}\" content_type=\"text/xml\">\
+         <report id=\"{report_id}\">\
+         <results max=\"{count}\" start=\"1\">",
+        format_id = LARGE_REPORT_FORMAT_ID,
+        count = config.result_count,
+    )
+    .expect("writing XML into String should not fail");
+
+    for i in 0..config.result_count {
+        let result_id = uuid_v5(report_id, &(i as u64).to_le_bytes());
+        let host_octet = (i % 254) + 1;
+        let port = PORTS[i % PORTS.len()];
+        let severity = SEVERITIES[i % SEVERITIES.len()];
+        let threat = threat_for_severity(severity);
+        let oid = 10_000 + i;
+
+        write!(
+            xml,
+            "<result id=\"{result_id}\">\
+             <host>10.0.0.{host_octet}</host>\
+             <port>{port}/tcp</port>\
+             <nvt oid=\"1.3.6.1.4.1.25623.1.0.{oid}\">\
+             <name>Test NVT {i}</name>\
+             <type>nvt</type>\
+             </nvt>\
+             <severity>{severity}</severity>\
+             <threat>{threat}</threat>\
+             <description>{description}</description>\
+             </result>",
+        )
+        .expect("writing XML into String should not fail");
+    }
+
+    write!(
+        xml,
+        "</results>\
+         <result_count><full>{count}</full><filtered>{count}</filtered></result_count>\
+         </report>\
+         </report>\
+         </get_reports_response>",
+        count = config.result_count,
+    )
+    .expect("writing XML into String should not fail");
+
+    xml
+}
+
+fn build_description_payload(target_bytes: usize) -> String {
+    let mut description = String::with_capacity(target_bytes);
+    while description.len() < target_bytes {
+        let remaining = target_bytes - description.len();
+        if remaining >= DESCRIPTION_SENTENCE.len() {
+            description.push_str(DESCRIPTION_SENTENCE);
+        } else {
+            description.push_str(&DESCRIPTION_SENTENCE[..remaining]);
+        }
+    }
+    description
+}
+
+fn threat_for_severity(severity: &str) -> &'static str {
+    match severity {
+        "2.1" | "4.3" => "Low",
+        "5.0" | "6.5" => "Medium",
+        _ => "High",
+    }
+}
+
+fn uuid_v5(namespace: Uuid, name: &[u8]) -> Uuid {
+    let mut hasher = Sha1::new();
+    hasher.update(namespace.as_bytes());
+    hasher.update(name);
+
+    let mut bytes = [0_u8; 16];
+    bytes.copy_from_slice(&hasher.finalize()[..16]);
+    bytes[6] = (bytes[6] & 0x0f) | 0x50;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+    Uuid::from_bytes(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use quick_xml::events::Event;
+    use quick_xml::Reader;
+
+    fn extract_descriptions(xml: &str) -> Vec<String> {
+        let mut reader = Reader::from_str(xml);
+        let mut descriptions = Vec::new();
+        let mut in_description = false;
+
+        loop {
+            match reader.read_event() {
+                Ok(Event::Start(ref e)) if e.name().as_ref() == b"description" => {
+                    in_description = true;
+                }
+                Ok(Event::Text(text)) if in_description => {
+                    descriptions.push(
+                        text.xml_content()
+                            .expect("description text should decode")
+                            .into_owned(),
+                    );
+                }
+                Ok(Event::End(ref e)) if e.name().as_ref() == b"description" => {
+                    in_description = false;
+                }
+                Ok(Event::Eof) => break,
+                Ok(_) => {}
+                Err(error) => panic!("unexpected xml parse failure: {error}"),
+            }
+        }
+
+        descriptions
+    }
 
     #[test]
     fn test_known_commands() {
@@ -250,5 +403,73 @@ mod tests {
         let text = std::str::from_utf8(&resp).expect("valid utf8");
         assert!(text.contains("status=\"404\""));
         assert!(text.contains("Not Found"));
+    }
+
+    #[test]
+    fn large_report_config_defaults_match_spec() {
+        let config = LargeReportConfig::default();
+        assert_eq!(config.result_count, 1_000);
+        assert_eq!(config.result_payload_bytes, 512);
+    }
+
+    #[test]
+    fn generate_large_report_small_payload_is_valid_xml() {
+        let xml = generate_large_report(
+            Uuid::parse_str("11111111-1111-1111-1111-111111111111").expect("valid uuid"),
+            &LargeReportConfig {
+                result_count: 10,
+                result_payload_bytes: 64,
+            },
+        );
+
+        let mut reader = Reader::from_str(&xml);
+        loop {
+            match reader.read_event() {
+                Ok(Event::Eof) => break,
+                Ok(_) => {}
+                Err(error) => panic!("large report should be valid xml: {error}"),
+            }
+        }
+
+        assert!(xml.contains("<get_reports_response"));
+        assert!(xml.contains("<results max=\"10\" start=\"1\">"));
+        assert!(xml.contains("<result_count><full>10</full><filtered>10</filtered></result_count>"));
+    }
+
+    #[test]
+    fn generate_large_report_is_deterministic() {
+        let report_id =
+            Uuid::parse_str("22222222-2222-2222-2222-222222222222").expect("valid uuid");
+        let config = LargeReportConfig {
+            result_count: 10,
+            result_payload_bytes: 32,
+        };
+
+        let first = generate_large_report(report_id, &config);
+        let second = generate_large_report(report_id, &config);
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn generate_large_report_payload_size_is_approximate() {
+        let config = LargeReportConfig {
+            result_count: 10,
+            result_payload_bytes: 256,
+        };
+        let xml = generate_large_report(
+            Uuid::parse_str("33333333-3333-3333-3333-333333333333").expect("valid uuid"),
+            &config,
+        );
+        let descriptions = extract_descriptions(&xml);
+        let total_description_bytes: usize = descriptions.iter().map(String::len).sum();
+        let expected = config.result_count * config.result_payload_bytes;
+        let lower_bound = expected * 9 / 10;
+        let upper_bound = expected * 11 / 10;
+
+        assert_eq!(descriptions.len(), config.result_count);
+        assert!(
+            (lower_bound..=upper_bound).contains(&total_description_bytes),
+            "description payload bytes {total_description_bytes} not within 10% of {expected}"
+        );
     }
 }

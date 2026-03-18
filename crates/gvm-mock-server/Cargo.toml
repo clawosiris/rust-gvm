@@ -26,6 +26,7 @@ quick-xml.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 uuid.workspace = true
+sha1.workspace = true
 clap.workspace = true
 
 # Feature-gated

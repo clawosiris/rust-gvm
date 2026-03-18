@@ -979,6 +979,7 @@ name = "gvm-connection"
 version = "0.2.0"
 dependencies = [
  "async-trait",
+ "gvm-gmp",
  "gvm-mock-server",
  "gvm-protocol",
  "pretty_assertions",
@@ -1017,6 +1018,7 @@ dependencies = [
  "russh",
  "rustls",
  "rustls-pemfile",
+ "sha1 0.10.6",
  "tempfile",
  "tokio",
  "tokio-rustls",

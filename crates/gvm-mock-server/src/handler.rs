@@ -13,7 +13,9 @@ use crate::command_parser::{parse_command, parse_element_text, ParsedCommand};
 use crate::fault::{FaultAction, FaultEngine};
 use crate::fixtures::FixtureStore;
 use crate::history::CommandHistory;
-use crate::response_gen::{echo_response, error_response};
+use crate::response_gen::{
+    echo_response, error_response, generate_large_report, LargeReportConfig,
+};
 use crate::scenario::{ScenarioEngine, ScenarioMode, ScenarioOutcome, ScenarioStep};
 use crate::store::{Resource, ResourceStore, TaskStatus};
 use crate::util::xml_escape;
@@ -29,6 +31,7 @@ pub struct SessionHandler {
     fixtures: Option<FixtureStore>,
     store: Option<ResourceStore>,
     scenario_engine: Option<Mutex<ScenarioEngine>>,
+    large_report: Option<LargeReportConfig>,
     fault_engine: FaultEngine,
     command_count: AtomicUsize,
 }
@@ -48,6 +51,7 @@ pub enum HandleResult {
 
 impl SessionHandler {
     /// Create a new session handler.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         mode: ServerMode,
         version: GmpVersion,
@@ -56,6 +60,7 @@ impl SessionHandler {
         fixtures: Option<FixtureStore>,
         store: Option<ResourceStore>,
         scenario_config: Option<(ScenarioMode, Vec<ScenarioStep>)>,
+        large_report: Option<LargeReportConfig>,
         fault_engine: FaultEngine,
     ) -> Self {
         Self {
@@ -67,6 +72,7 @@ impl SessionHandler {
             store,
             scenario_engine: scenario_config
                 .map(|(mode, steps)| Mutex::new(ScenarioEngine::new(mode, steps))),
+            large_report,
             fault_engine,
             command_count: AtomicUsize::new(0),
         }
@@ -642,6 +648,12 @@ impl SessionHandler {
         report: &Resource,
         store: &ResourceStore,
     ) -> Vec<u8> {
+        if let Some(config) = self.large_report {
+            if report.attr("task_id").is_some() {
+                return generate_large_report(report.id, &config).into_bytes();
+            }
+        }
+
         let report_id = report.id.to_string();
         let results: Vec<Resource> = store
             .list("result")
