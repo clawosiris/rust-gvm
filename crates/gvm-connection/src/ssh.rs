@@ -17,7 +17,7 @@ use crate::connection::GvmConnection;
 use crate::error::{ConnectionError, Result};
 
 /// Configuration for SSH tunnel connections.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SshConfig {
     /// SSH server hostname or IP.
     pub hostname: String,
@@ -33,6 +33,20 @@ pub struct SshConfig {
     pub timeout: Duration,
     /// Read buffer size in bytes.
     pub read_buffer_size: usize,
+}
+
+impl std::fmt::Debug for SshConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SshConfig")
+            .field("hostname", &self.hostname)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("auth", &self.auth)
+            .field("remote_socket", &self.remote_socket)
+            .field("timeout", &self.timeout)
+            .field("read_buffer_size", &self.read_buffer_size)
+            .finish()
+    }
 }
 
 impl Default for SshConfig {
@@ -84,7 +98,7 @@ impl SshConfig {
 }
 
 /// SSH authentication methods.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum SshAuth {
     /// Password authentication.
     Password(String),
@@ -97,6 +111,28 @@ pub enum SshAuth {
     },
     /// SSH agent authentication.
     Agent,
+}
+
+impl std::fmt::Debug for SshAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Password(_) => f
+                .debug_tuple("Password")
+                .field(&"<redacted>")
+                .finish(),
+            Self::PrivateKey {
+                key_path,
+                passphrase,
+            } => {
+                let redacted_passphrase = passphrase.as_ref().map(|_| "<redacted>");
+                f.debug_struct("PrivateKey")
+                    .field("key_path", key_path)
+                    .field("passphrase", &redacted_passphrase)
+                    .finish()
+            }
+            Self::Agent => f.write_str("Agent"),
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -408,5 +444,29 @@ mod tests {
     fn test_not_connected_initially() {
         let conn = SshConnection::new(SshConfig::default());
         assert!(!conn.is_connected());
+    }
+
+    #[test]
+    fn test_password_debug_redacts_secret() {
+        let debug = format!("{:?}", SshAuth::Password("secret".into()));
+        assert!(!debug.contains("secret"));
+        assert!(debug.contains("<redacted>"));
+    }
+
+    #[test]
+    fn test_config_debug_redacts_private_key_passphrase() {
+        let config = SshConfig::new(
+            "scanner.example",
+            "alice",
+            SshAuth::PrivateKey {
+                key_path: PathBuf::from("/tmp/id_ed25519"),
+                passphrase: Some("hunter2".into()),
+            },
+        );
+
+        let debug = format!("{debug:?}", debug = config);
+        assert!(debug.contains("/tmp/id_ed25519"));
+        assert!(!debug.contains("hunter2"));
+        assert!(debug.contains("<redacted>"));
     }
 }
