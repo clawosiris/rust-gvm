@@ -3,6 +3,8 @@
 
 //! GMP command builders.
 
+/// Aggregate command builders.
+pub mod aggregates;
 /// Alert command builders.
 pub mod alerts;
 /// Authentication command builders.
@@ -11,10 +13,14 @@ pub mod authentication;
 pub mod credentials;
 /// Feature command builders.
 pub mod features;
+/// Feed command builders.
+pub mod feed;
 /// Filter command builders.
 pub mod filters;
 /// Group command builders.
 pub mod groups;
+/// Help command builders.
+pub mod help;
 /// Host command builders.
 pub mod hosts;
 /// Note command builders.
@@ -45,8 +51,12 @@ pub mod scan_configs;
 pub mod scanners;
 /// Schedule command builders.
 pub mod schedules;
+/// SecInfo command builders.
+pub mod secinfo;
 /// System-level command builders.
 pub mod system;
+/// System-report command builders.
+pub mod system_reports;
 /// Tag command builders.
 pub mod tags;
 /// Target command builders.
@@ -59,6 +69,10 @@ pub mod tickets;
 pub mod tls_certificates;
 /// Trashcan command builders.
 pub mod trashcan;
+/// Shared usage-type helpers.
+pub mod usage_type;
+/// User-setting command builders.
+pub mod user_settings;
 /// User command builders.
 pub mod users;
 /// Version command builders.

@@ -5,6 +5,7 @@
 
 use gvm_protocol::{Request, XmlCommand};
 
+use crate::commands::usage_type::UsageType;
 use crate::common::{
     add_filter_attrs, add_id_element, add_optional_id_element, add_preferences, add_string_list,
     add_text_element, bool_str, set_optional_bool_attr,
@@ -104,9 +105,27 @@ pub fn create_task(
     scanner_id: &EntityId,
     opts: CreateTaskOpts,
 ) -> impl Request {
+    create_task_with_usage(
+        name,
+        config_id,
+        target_id,
+        scanner_id,
+        opts,
+        UsageType::Scan,
+    )
+}
+
+fn create_task_with_usage(
+    name: &str,
+    config_id: &EntityId,
+    target_id: &EntityId,
+    scanner_id: &EntityId,
+    opts: CreateTaskOpts,
+    usage_type: UsageType,
+) -> XmlCommand {
     let mut cmd = XmlCommand::new("create_task");
     cmd.add_element_with_text("name", name);
-    cmd.add_element_with_text("usage_type", "scan");
+    cmd.add_element_with_text("usage_type", usage_type.as_gmp_str());
     add_id_element(&mut cmd, "config", config_id);
     add_id_element(&mut cmd, "target", target_id);
     add_id_element(&mut cmd, "scanner", scanner_id);
@@ -140,7 +159,11 @@ pub fn delete_task(task_id: &EntityId, ultimate: bool) -> impl Request {
 /// Build a `get_tasks` request.
 #[must_use]
 pub fn get_tasks(opts: GetTasksOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("get_tasks").attribute("usage_type", "scan");
+    get_tasks_with_usage(opts, UsageType::Scan)
+}
+
+fn get_tasks_with_usage(opts: GetTasksOpts, usage_type: UsageType) -> XmlCommand {
+    let mut cmd = XmlCommand::new("get_tasks").attribute("usage_type", usage_type.as_gmp_str());
     add_filter_attrs(
         &mut cmd,
         opts.filter_string.as_deref(),
@@ -158,16 +181,27 @@ pub fn get_tasks(opts: GetTasksOpts) -> impl Request {
 pub fn get_task(task_id: &EntityId) -> impl Request {
     XmlCommand::new("get_tasks")
         .attribute("task_id", task_id.as_str())
-        .attribute("usage_type", "scan")
+        .attribute("usage_type", UsageType::Scan.as_gmp_str())
         .attribute("details", "1")
 }
 
 /// Build a `modify_task` request.
 #[must_use]
 pub fn modify_task(task_id: &EntityId, opts: ModifyTaskOpts) -> impl Request {
+    modify_task_with_usage(task_id, opts, None)
+}
+
+fn modify_task_with_usage(
+    task_id: &EntityId,
+    opts: ModifyTaskOpts,
+    usage_type: Option<UsageType>,
+) -> XmlCommand {
     let mut cmd = XmlCommand::new("modify_task").attribute("task_id", task_id.as_str());
     add_text_element(&mut cmd, "name", opts.name.as_deref());
     add_text_element(&mut cmd, "comment", opts.comment.as_deref());
+    if let Some(usage_type) = usage_type {
+        cmd.add_element_with_text("usage_type", usage_type.as_gmp_str());
+    }
     if let Some(alterable) = opts.alterable {
         cmd.add_element_with_text("alterable", bool_str(alterable));
     }
@@ -221,6 +255,61 @@ pub fn resume_task(task_id: &EntityId) -> impl Request {
 #[must_use]
 pub fn stop_task(task_id: &EntityId) -> impl Request {
     XmlCommand::new("stop_task").attribute("task_id", task_id.as_str())
+}
+
+/// Build a `create_task` request for an audit.
+#[must_use]
+pub fn create_audit(
+    name: &str,
+    config_id: &EntityId,
+    target_id: &EntityId,
+    scanner_id: &EntityId,
+    opts: CreateTaskOpts,
+) -> impl Request {
+    create_task_with_usage(
+        name,
+        config_id,
+        target_id,
+        scanner_id,
+        opts,
+        UsageType::Audit,
+    )
+}
+
+/// Build a `get_tasks` request scoped to audits.
+#[must_use]
+pub fn get_audits(opts: GetTasksOpts) -> impl Request {
+    get_tasks_with_usage(opts, UsageType::Audit)
+}
+
+/// Build a `start_task` request for an audit.
+#[must_use]
+pub fn start_audit(task_id: &EntityId) -> impl Request {
+    start_task(task_id)
+}
+
+/// Build a `stop_task` request for an audit.
+#[must_use]
+pub fn stop_audit(task_id: &EntityId) -> impl Request {
+    stop_task(task_id)
+}
+
+/// Build a `resume_task` request for an audit.
+#[must_use]
+pub fn resume_audit(task_id: &EntityId) -> impl Request {
+    resume_task(task_id)
+}
+
+/// Build a `modify_task` request scoped to audits.
+#[must_use]
+pub fn modify_audit(task_id: &EntityId, opts: ModifyTaskOpts) -> impl Request {
+    modify_task_with_usage(task_id, opts, Some(UsageType::Audit))
+}
+
+/// Build a `delete_task` request for an audit.
+#[must_use]
+pub fn delete_audit(task_id: &EntityId) -> impl Request {
+    delete_task(task_id, false)
 }
 
 #[cfg(test)]
@@ -320,5 +409,41 @@ mod tests {
         assert!(rendered.contains("details=\"1\""));
         assert!(rendered.contains("schedules_only=\"1\""));
         assert!(rendered.contains("ignore_pagination=\"1\""));
+    }
+
+    #[test]
+    fn audit_commands_build_xml() {
+        assert!(xml(create_audit(
+            "audit",
+            &id("c1"),
+            &id("t1"),
+            &id("s1"),
+            CreateTaskOpts::default(),
+        ))
+        .contains("<usage_type>audit</usage_type>"));
+        assert_eq!(
+            xml(get_audits(GetTasksOpts::default())),
+            "<get_tasks usage_type=\"audit\"/>"
+        );
+        assert_eq!(
+            xml(modify_audit(
+                &id("a1"),
+                ModifyTaskOpts {
+                    comment: Some("updated".into()),
+                    ..Default::default()
+                }
+            )),
+            "<modify_task task_id=\"a1\"><comment>updated</comment><usage_type>audit</usage_type></modify_task>"
+        );
+        assert_eq!(xml(start_audit(&id("a1"))), "<start_task task_id=\"a1\"/>");
+        assert_eq!(xml(stop_audit(&id("a1"))), "<stop_task task_id=\"a1\"/>");
+        assert_eq!(
+            xml(resume_audit(&id("a1"))),
+            "<resume_task task_id=\"a1\"/>"
+        );
+        assert_eq!(
+            xml(delete_audit(&id("a1"))),
+            "<delete_task task_id=\"a1\" ultimate=\"0\"/>"
+        );
     }
 }

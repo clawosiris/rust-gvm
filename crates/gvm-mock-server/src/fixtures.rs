@@ -165,8 +165,54 @@ impl FixtureStore {
         self.fixtures.insert(
             "help".to_string(),
             "<help_response status=\"200\" status_text=\"OK\">\
-             <schema format=\"XML\"/>\
+             <commands><command>get_feeds</command><command>get_tasks</command><command>get_configs</command></commands>\
              </help_response>"
+                .to_string(),
+        );
+
+        // get_feeds
+        self.fixtures.insert(
+            "get_feeds".to_string(),
+            "<get_feeds_response status=\"200\" status_text=\"OK\">\
+             <feed><type>NVT</type><name>Network Vulnerability Tests</name><version>2026031801</version><status>current</status></feed>\
+             <feed><type>SCAP</type><name>SCAP Data</name><version>2026031701</version><status>current</status></feed>\
+             <feed><type>CERT</type><name>CERT Advisories</name><version>2026031601</version><status>current</status></feed>\
+             <feed_count>3<filtered>3</filtered></feed_count>\
+             </get_feeds_response>"
+                .to_string(),
+        );
+
+        // get_aggregates
+        self.fixtures.insert(
+            "get_aggregates".to_string(),
+            "<get_aggregates_response status=\"200\" status_text=\"OK\">\
+             <aggregate><text>High</text><value>3</value></aggregate>\
+             <aggregate><text>Medium</text><value>5</value></aggregate>\
+             </get_aggregates_response>"
+                .to_string(),
+        );
+
+        // get_system_reports
+        self.fixtures.insert(
+            "get_system_reports".to_string(),
+            "<get_system_reports_response status=\"200\" status_text=\"OK\">\
+             <system_report id=\"system-report-1\">\
+             <name>GVMD Performance Snapshot</name>\
+             <comment>Mock system report</comment>\
+             </system_report>\
+             <system_report_count>1<filtered>1</filtered></system_report_count>\
+             </get_system_reports_response>"
+                .to_string(),
+        );
+
+        // get_info
+        self.fixtures.insert(
+            "get_info".to_string(),
+            "<get_info_response status=\"200\" status_text=\"OK\">\
+             <cve id=\"CVE-2026-1000\"><name>Mock CVE one</name></cve>\
+             <cve id=\"CVE-2026-1001\"><name>Mock CVE two</name></cve>\
+             <cve_count>2<filtered>2</filtered></cve_count>\
+             </get_info_response>"
                 .to_string(),
         );
 
