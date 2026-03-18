@@ -7,6 +7,7 @@
 //! has been received (matching python-gvm's `XmlReader`).
 
 use quick_xml::events::Event;
+use quick_xml::errors::{Error as XmlError, IllFormedError, SyntaxError};
 use quick_xml::Reader;
 
 use crate::error::ProtocolError;
@@ -21,7 +22,7 @@ pub struct XmlReader {
     buffer: Vec<u8>,
     max_buffer_bytes: Option<usize>,
     complete: bool,
-    depth: i32,
+    depth: usize,
     seen_start: bool,
     resume_offset: usize,
 }
@@ -114,9 +115,10 @@ impl XmlReader {
                     parsed_len = reader.buffer_position() as usize;
                 }
                 Ok(Event::End(_)) => {
-                    self.depth -= 1;
+                    let depth_before_end = self.depth;
+                    self.depth = self.depth.saturating_sub(1);
                     parsed_len = reader.buffer_position() as usize;
-                    if self.seen_start && self.depth == 0 {
+                    if self.seen_start && depth_before_end > 0 && self.depth == 0 {
                         self.complete = true;
                         return Ok(());
                     }
@@ -138,8 +140,11 @@ impl XmlReader {
                 Ok(_) => {
                     parsed_len = reader.buffer_position() as usize;
                 }
-                Err(_) => {
-                    // Could be incomplete XML, wait for more data
+                Err(error) => {
+                    if self.seen_start && !is_incomplete_xml_error(&error) {
+                        return Err(ProtocolError::XmlParse(format!("Malformed XML: {error}")));
+                    }
+
                     self.resume_offset += parsed_len;
                     return Ok(());
                 }
@@ -154,6 +159,22 @@ impl Default for XmlReader {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn is_incomplete_xml_error(error: &XmlError) -> bool {
+    matches!(
+        error,
+        XmlError::Syntax(
+            SyntaxError::UnclosedPI
+                | SyntaxError::UnclosedXmlDecl
+                | SyntaxError::UnclosedComment
+                | SyntaxError::UnclosedDoctype
+                | SyntaxError::UnclosedCData
+                | SyntaxError::UnclosedTag
+                | SyntaxError::UnclosedSingleQuotedAttributeValue
+                | SyntaxError::UnclosedDoubleQuotedAttributeValue
+        ) | XmlError::IllFormed(IllFormedError::MissingEndTag(_) | IllFormedError::UnclosedReference)
+    )
 }
 
 #[cfg(test)]
@@ -250,4 +271,36 @@ mod tests {
 
         assert!(matches!(error, ProtocolError::BufferOverflow { max: 8 }));
     }
+
+    #[test]
+    fn test_malformed_xml_returns_parse_error_after_start() {
+        let mut reader = XmlReader::new();
+        let error = reader
+            .feed(b"<root><!x></root>")
+            .expect_err("parse error");
+
+        assert!(matches!(error, ProtocolError::XmlParse(_)));
+    }
+
+    #[test]
+    fn test_unmatched_end_tag_before_start_does_not_complete() {
+        let mut reader = XmlReader::new();
+
+        reader.feed(b"</garbage>").expect("feed ok");
+
+        assert!(!reader.is_complete());
+        assert_eq!(reader.depth, 0);
+    }
+
+    #[test]
+    fn test_garbage_end_tag_before_real_response_does_not_complete_prematurely() {
+        let mut reader = XmlReader::new();
+
+        reader.feed(b"</garbage>").expect("feed ok");
+        assert!(!reader.is_complete());
+
+        reader.feed(b"<real_response/>").expect("feed ok");
+        assert!(reader.is_complete());
+    }
+
 }

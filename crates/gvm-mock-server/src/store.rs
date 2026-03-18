@@ -3,7 +3,7 @@
 
 //! In-memory resource store for Stateful mode.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, RwLock};
 
 use uuid::Uuid;
@@ -57,7 +57,7 @@ pub struct Resource {
     /// Modification timestamp (ISO 8601).
     pub modification_time: String,
     /// Additional type-specific attributes.
-    pub attrs: HashMap<String, String>,
+    pub attrs: BTreeMap<String, String>,
     /// Whether this resource is in the trashcan.
     pub trashed: bool,
 }
@@ -73,7 +73,7 @@ impl Resource {
             comment: String::new(),
             creation_time: now.clone(),
             modification_time: now,
-            attrs: HashMap::new(),
+            attrs: BTreeMap::new(),
             trashed: false,
         }
     }
@@ -171,6 +171,7 @@ impl ResourceStore {
     }
 
     /// Check whether the provided credentials match the configured SSH credentials.
+    #[cfg(feature = "ssh")]
     pub(crate) fn credentials_match(&self, username: &str, password: &str) -> bool {
         let inner = self.inner.read().expect("store lock poisoned");
         inner.username == username && inner.password == password
@@ -264,19 +265,19 @@ impl ResourceStore {
 
     /// Clone a resource (create a copy with a new UUID).
     pub fn clone_resource(&self, id: &Uuid) -> Option<Uuid> {
-        let inner = self.inner.read().expect("store lock poisoned");
+        let mut inner = self.inner.write().expect("store lock poisoned");
         let original = inner.resources.get(id)?.clone();
         if original.trashed {
             return None;
         }
-        drop(inner);
 
         let mut copy = original;
         copy.id = Uuid::new_v4();
-        copy.creation_time = now_iso();
-        copy.modification_time = now_iso();
+        let now = now_iso();
+        copy.creation_time = now.clone();
+        copy.modification_time = now;
         let new_id = copy.id;
-        self.create(copy);
+        inner.resources.insert(new_id, copy);
         Some(new_id)
     }
 
@@ -342,6 +343,8 @@ impl Default for ResourceStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Barrier};
+    use std::thread;
 
     #[test]
     fn test_create_and_get() {
@@ -526,5 +529,52 @@ mod tests {
         store.create(r2);
         let filtered = store.list_filtered("task", "name=Alpha status=Running");
         assert_eq!(filtered.len(), 1);
+    }
+
+    #[test]
+    fn test_to_xml_sorts_attributes_deterministically() {
+        let mut resource = Resource::new("task", "Ordered");
+        resource.set_attr("zeta", "last");
+        resource.set_attr("alpha", "first");
+
+        let xml = resource.to_xml();
+
+        assert!(xml.find("<alpha>").unwrap() < xml.find("<zeta>").unwrap());
+    }
+
+    #[test]
+    fn test_clone_resource_stress_with_concurrent_deletes() {
+        let store = ResourceStore::new();
+        let id = store.create(Resource::new("task", "Original"));
+        let barrier = Arc::new(Barrier::new(3));
+
+        let clone_store = store.clone();
+        let clone_barrier = Arc::clone(&barrier);
+        let clone_thread = thread::spawn(move || {
+            clone_barrier.wait();
+            for _ in 0..250 {
+                let _ = clone_store.clone_resource(&id);
+                thread::yield_now();
+            }
+        });
+
+        let delete_store = store.clone();
+        let delete_barrier = Arc::clone(&barrier);
+        let delete_thread = thread::spawn(move || {
+            delete_barrier.wait();
+            for _ in 0..250 {
+                let _ = delete_store.delete(&id, false);
+                let _ = delete_store.restore(&id);
+                thread::yield_now();
+            }
+        });
+
+        barrier.wait();
+        clone_thread.join().expect("clone thread");
+        delete_thread.join().expect("delete thread");
+
+        let tasks = store.list("task");
+        assert!(tasks.iter().all(|resource| resource.resource_type == "task"));
+        assert!(tasks.iter().any(|resource| resource.id == id));
     }
 }

@@ -238,6 +238,10 @@ impl SshConnection {
         ConnectionError::ReadFailed(std::io::Error::other(error.to_string()))
     }
 
+    fn disconnect_error(error: impl std::fmt::Display) -> ConnectionError {
+        ConnectionError::DisconnectFailed(error.to_string())
+    }
+
     async fn authenticate(
         config: &SshConfig,
         session: &mut client::Handle<SshServerKeyVerifier>,
@@ -391,7 +395,7 @@ impl GvmConnection for SshConnection {
 
     async fn disconnect(&mut self) -> Result<()> {
         if let Some(channel) = self.channel.take() {
-            channel.close().await.map_err(Self::connect_error)?;
+            channel.close().await.map_err(Self::disconnect_error)?;
         }
 
         if let Some(session) = self.session.take() {
@@ -401,7 +405,7 @@ impl GvmConnection for SshConnection {
             )
             .await
             .map_err(|_| ConnectionError::Timeout(self.config.timeout))?
-            .map_err(Self::connect_error)?;
+            .map_err(Self::disconnect_error)?;
         }
 
         Ok(())
