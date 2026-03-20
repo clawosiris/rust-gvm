@@ -10,6 +10,11 @@ on:
         description: "Release version (without 'v' prefix)"
         required: true
         type: string
+      release-type:
+        description: "Release type (alpha, beta, release-candidate, patch, minor, major)"
+        required: false
+        type: string
+        default: "patch"
 
 permissions:
   contents: write
@@ -22,59 +27,56 @@ jobs:
   release:
     name: "Release v${{ inputs.version }}"
     runs-on: ubuntu-latest
+    outputs:
+      release-version: ${{ steps.release.outputs.release-version }}
+      git-release-tag: ${{ steps.release.outputs.git-release-tag }}
     steps:
-      # Use RELEASE_TOKEN so the tag push triggers release.yml
-      # (GITHUB_TOKEN-pushed tags do not trigger other workflows)
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_TOKEN }}
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
 
-      - name: Configure git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+      - name: Create release
+        id: release
+        uses: greenbone/actions/release@v3
+        with:
+          github-user: ${{ vars.RELEASE_USER || 'clawosiris' }}
+          github-user-mail: ${{ vars.RELEASE_USER_MAIL || 'clawosiris@users.noreply.github.com' }}
+          github-user-token: ${{ secrets.RELEASE_TOKEN }}
+          release-version: ${{ inputs.version }}
+          release-type: ${{ inputs.release-type }}
+          versioning-scheme: semver
+          project-types: cargo
+          git-tag-prefix: v
+          github-pre-release: ${{ contains(inputs.version, '-') && 'true' || 'false' }}
+          sign-release-files: "false"
+          next-version: "false"
+          update-project: "true"
 
-      - name: Update Cargo.toml versions
+      - name: Regenerate Cargo.lock
         run: |
-          VERSION="${{ inputs.version }}"
-          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
-          sed -i "/\[workspace\.package\]/,/^\[/ s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
-          echo "Updated Cargo.toml to version $VERSION"
-
-      - name: Update Cargo.lock
-        run: |
-          if [ -f Cargo.lock ]; then
-            cargo generate-lockfile
+          cargo generate-lockfile
+          if ! git diff --quiet Cargo.lock; then
+            git add Cargo.lock
+            git commit --amend --no-edit
+            git push --force-with-lease
+            # Move the tag to the amended commit
+            TAG="v${{ steps.release.outputs.release-version || inputs.version }}"
+            git tag -f "$TAG"
+            git push origin "$TAG" --force
           fi
-
-      - name: Commit version bump
-        run: |
-          git add -A
-          if git diff --cached --quiet; then
-            echo "No version changes to commit"
-          else
-            git commit -m "chore: bump version to ${{ inputs.version }}"
-            git push
-          fi
-
-      - name: Create and push tag
-        run: |
-          TAG="v${{ inputs.version }}"
-          git tag -a "$TAG" -m "Release $TAG"
-          git push origin "$TAG"
 
       - name: Wait for release workflow
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v${{ inputs.version }}"
-          echo "Tag $TAG pushed. Waiting for release.yml to trigger..."
-          sleep 10
+          TAG="v${{ steps.release.outputs.release-version || inputs.version }}"
+          echo "Tag $TAG created. Waiting for release.yml to trigger..."
+          sleep 15
 
-          for i in $(seq 1 30); do
+          for i in $(seq 1 60); do
             RUN_ID=$(gh run list --workflow=release.yml --limit=10 --json databaseId,headBranch --jq ".[] | select(.headBranch==\"$TAG\") | .databaseId" 2>/dev/null | head -1 || true)
             if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
               echo "Found release workflow run: $RUN_ID"
@@ -82,8 +84,8 @@ jobs:
               echo "✅ Release workflow completed successfully"
               exit 0
             fi
-            echo "Waiting for release workflow to appear... ($i/30)"
-            sleep 10
+            echo "Waiting for release workflow to appear... ($i/60)"
+            sleep 15
           done
 
           echo "::error::Release workflow did not trigger within timeout"
