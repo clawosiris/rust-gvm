@@ -15,17 +15,22 @@ permissions:
   contents: write
   packages: write
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   release:
     name: "Release v${{ inputs.version }}"
     runs-on: ubuntu-latest
     steps:
       # Use RELEASE_TOKEN so the tag push triggers release.yml
-      # (GITHUB_TOKEN-pushed tags don't trigger other workflows)
+      # (GITHUB_TOKEN-pushed tags do not trigger other workflows)
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_TOKEN }}
+
+      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
 
       - name: Configure git
         run: |
@@ -38,6 +43,12 @@ jobs:
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
           sed -i "/\[workspace\.package\]/,/^\[/ s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
           echo "Updated Cargo.toml to version $VERSION"
+
+      - name: Update Cargo.lock
+        run: |
+          if [ -f Cargo.lock ]; then
+            cargo generate-lockfile
+          fi
 
       - name: Commit version bump
         run: |
@@ -64,10 +75,9 @@ jobs:
           sleep 10
 
           for i in $(seq 1 30); do
-            RUN_ID=$(gh run list --workflow=release.yml --limit=5 --json databaseId,headBranch --jq ".[] | select(.headBranch==\"$TAG\") | .databaseId" 2>/dev/null | head -1 || true)
+            RUN_ID=$(gh run list --workflow=release.yml --limit=10 --json databaseId,headBranch --jq ".[] | select(.headBranch==\"$TAG\") | .databaseId" 2>/dev/null | head -1 || true)
             if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
               echo "Found release workflow run: $RUN_ID"
-              echo "Waiting for completion..."
               gh run watch "$RUN_ID" --exit-status || exit 1
               echo "✅ Release workflow completed successfully"
               exit 0
