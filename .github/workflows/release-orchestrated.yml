@@ -27,43 +27,47 @@ jobs:
   release:
     name: "Release v${{ inputs.version }}"
     runs-on: ubuntu-latest
-    outputs:
-      release-version: ${{ steps.release.outputs.release-version }}
-      git-release-tag: ${{ steps.release.outputs.git-release-tag }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
-          persist-credentials: false
+          token: ${{ secrets.RELEASE_TOKEN }}
 
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
 
-      - name: Create release
-        id: release
-        uses: greenbone/actions/release@v3
-        with:
-          github-user: ${{ vars.RELEASE_USER || 'clawosiris' }}
-          github-user-mail: ${{ vars.RELEASE_USER_MAIL || 'clawosiris@users.noreply.github.com' }}
-          github-user-token: ${{ secrets.RELEASE_TOKEN }}
-          release-version: ${{ inputs.version }}
-          release-type: ${{ inputs.release-type }}
-          versioning-scheme: semver
-          project-types: cargo
-          git-tag-prefix: v
-          github-pre-release: ${{ contains(inputs.version, '-') && 'true' || 'false' }}
-          sign-release-files: "false"
-          next-version: "false"
-          update-project: "true"
+      - name: Set up Python and pontos
+        uses: greenbone/actions/setup-pontos@v3
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create release with pontos
+        env:
+          GITHUB_USER: ${{ vars.RELEASE_USER || 'clawosiris' }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          ARGS="--release-version ${{ inputs.version }}"
+          ARGS="$ARGS --versioning-scheme semver"
+          ARGS="$ARGS --project-types cargo"
+          ARGS="$ARGS --git-tag-prefix v"
+          ARGS="$ARGS --no-next-version"
+
+          if [[ "${{ inputs.version }}" == *"-"* ]]; then
+            ARGS="$ARGS --github-pre-release"
+          fi
+
+          pontos-release create $ARGS --repository ${{ github.repository }}
 
       - name: Regenerate Cargo.lock
         run: |
           cargo generate-lockfile
-          if ! git diff --quiet Cargo.lock; then
+          if ! git diff --quiet Cargo.lock 2>/dev/null; then
             git add Cargo.lock
             git commit --amend --no-edit
             git push --force-with-lease
-            # Move the tag to the amended commit
-            TAG="v${{ steps.release.outputs.release-version || inputs.version }}"
+            TAG="v${{ inputs.version }}"
             git tag -f "$TAG"
             git push origin "$TAG" --force
           fi
@@ -72,8 +76,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v${{ steps.release.outputs.release-version || inputs.version }}"
-          echo "Tag $TAG created. Waiting for release.yml to trigger..."
+          TAG="v${{ inputs.version }}"
+          echo "Tag $TAG created. Waiting for release.yml..."
           sleep 15
 
           for i in $(seq 1 60); do
@@ -81,12 +85,11 @@ jobs:
             if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
               echo "Found release workflow run: $RUN_ID"
               gh run watch "$RUN_ID" --exit-status || exit 1
-              echo "✅ Release workflow completed successfully"
+              echo "✅ Release workflow completed"
               exit 0
             fi
-            echo "Waiting for release workflow to appear... ($i/60)"
+            echo "Waiting... ($i/60)"
             sleep 15
           done
-
           echo "::error::Release workflow did not trigger within timeout"
           exit 1
