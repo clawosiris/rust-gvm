@@ -1,0 +1,97 @@
+# Template: Add this workflow to each component repository
+# Path: .github/workflows/release-orchestrated.yml
+#
+# This workflow is triggered by the release-orchestrator repo.
+# It should NOT be triggered manually — use the orchestrator instead.
+
+name: Orchestrated Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (without 'v' prefix)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    name: "Release v${{ inputs.version }}"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # ── Version bump (for Rust repos) ──
+      - name: Update Cargo.toml versions
+        run: |
+          VERSION="${{ inputs.version }}"
+          # Update workspace version
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+          # Update workspace.package.version if present
+          sed -i "/\[workspace\.package\]/,/^\[/ s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+          echo "Updated Cargo.toml to version $VERSION"
+
+      # ── Update rust-gvm dependency pin (for downstream repos) ──
+      # Uncomment in rust-gvm-api, gvm-rools, openvas-mcp-server:
+      # - name: Pin rust-gvm dependency to release tag
+      #   run: |
+      #     VERSION="${{ inputs.version }}"
+      #     # Replace branch = "main" with tag = "vX.Y.Z" for rust-gvm deps
+      #     sed -i "s|branch = \"main\"|tag = \"v$VERSION\"|g" Cargo.toml
+
+      - name: Commit version bump
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No version changes to commit"
+          else
+            git commit -m "chore: bump version to ${{ inputs.version }}"
+            git push
+          fi
+
+      - name: Create and push tag
+        run: |
+          TAG="v${{ inputs.version }}"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+      # The existing release.yml (triggered by v* tags) will handle
+      # the actual build, test, artifact upload, and GitHub Release creation.
+      # We just need to create the tag.
+
+      - name: Wait for release workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ inputs.version }}"
+          echo "Tag $TAG pushed. The release.yml workflow will handle the rest."
+          echo "Waiting for release workflow to start..."
+          sleep 10
+
+          # Find the release workflow run triggered by our tag
+          for i in $(seq 1 30); do
+            RUN_ID=$(gh run list --workflow=release.yml --branch="$TAG" --limit=1 --json databaseId --jq '.[0].databaseId' 2>/dev/null || true)
+            if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
+              echo "Found release workflow run: $RUN_ID"
+              echo "Waiting for completion..."
+              gh run watch "$RUN_ID" --exit-status || exit 1
+              echo "✅ Release workflow completed successfully"
+              exit 0
+            fi
+            echo "Waiting for release workflow to appear... ($i/30)"
+            sleep 10
+          done
+
+          echo "::warning::Release workflow did not appear within timeout. Check manually."
