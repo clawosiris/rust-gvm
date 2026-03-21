@@ -1,0 +1,61 @@
+# E2E Tests — GVM Community container stack on self-hosted runner
+# Runs the full Greenbone Community stack via Docker Compose and exercises
+# the rust-gvm client against a real gvmd instance.
+#
+# Trigger: manual dispatch or nightly schedule.
+# Runner: self-hosted (etterkal) — requires Docker + Docker Compose.
+
+name: E2E Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      run-scan:
+        description: "Run extended scan test (slow, ~10min+)"
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    # Nightly at 03:00 UTC
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  COMPOSE_FILE: tests/e2e/gvm-community/docker-compose.yml
+
+jobs:
+  e2e:
+    name: GVM Community E2E
+    runs-on: [self-hosted, fedora]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+
+      - name: Start GVM stack
+        run: docker compose -f ${{ env.COMPOSE_FILE }} up -d
+
+      - name: Wait for gvmd readiness
+        run: |
+          bash tests/e2e/gvm-community/scripts/wait-ready.sh
+        timeout-minutes: 10
+
+      - name: Run smoke tests
+        run: |
+          docker compose -f ${{ env.COMPOSE_FILE }} --profile runner run \
+            -e E2E_RUN_SCAN=${{ inputs.run-scan && '1' || '0' }} \
+            --rm rust-gvm-e2e
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          docker compose -f ${{ env.COMPOSE_FILE }} logs --tail=100 gvmd
+          docker compose -f ${{ env.COMPOSE_FILE }} logs --tail=50 ospd-openvas
+
+      - name: Teardown
+        if: always()
+        run: docker compose -f ${{ env.COMPOSE_FILE }} down -v
