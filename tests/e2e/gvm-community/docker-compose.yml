@@ -2,7 +2,7 @@ name: rust-gvm-e2e
 
 services:
   vulnerability-tests:
-    image: registry.community.greenbone.net/community/vulnerability-tests:stable
+    image: registry.community.greenbone.net/community/vulnerability-tests:latest
     environment:
       FEED_RELEASE: "24.10"
       KEEP_ALIVE: "1"
@@ -10,28 +10,28 @@ services:
       - vt-data:/mnt
 
   notus-data:
-    image: registry.community.greenbone.net/community/notus-data:stable
+    image: registry.community.greenbone.net/community/notus-data:latest
     environment:
       KEEP_ALIVE: "1"
     volumes:
       - notus-data:/mnt
 
   scap-data:
-    image: registry.community.greenbone.net/community/scap-data:stable
+    image: registry.community.greenbone.net/community/scap-data:latest
     environment:
       KEEP_ALIVE: "1"
     volumes:
       - scap-data:/mnt
 
   cert-bund-data:
-    image: registry.community.greenbone.net/community/cert-bund-data:stable
+    image: registry.community.greenbone.net/community/cert-bund-data:latest
     environment:
       KEEP_ALIVE: "1"
     volumes:
       - cert-data:/mnt
 
   dfn-cert-data:
-    image: registry.community.greenbone.net/community/dfn-cert-data:stable
+    image: registry.community.greenbone.net/community/dfn-cert-data:latest
     environment:
       KEEP_ALIVE: "1"
     volumes:
@@ -41,7 +41,7 @@ services:
         condition: service_started
 
   data-objects:
-    image: registry.community.greenbone.net/community/data-objects:stable
+    image: registry.community.greenbone.net/community/data-objects:latest
     environment:
       FEED_RELEASE: "24.10"
       KEEP_ALIVE: "1"
@@ -49,7 +49,7 @@ services:
       - data-objects:/mnt
 
   report-formats:
-    image: registry.community.greenbone.net/community/report-formats:stable
+    image: registry.community.greenbone.net/community/report-formats:latest
     environment:
       FEED_RELEASE: "24.10"
       KEEP_ALIVE: "1"
