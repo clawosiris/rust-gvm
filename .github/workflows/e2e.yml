@@ -1,9 +1,9 @@
 # E2E Tests — GVM Community container stack on self-hosted runner
-# Runs the full Greenbone Community stack via Docker Compose and exercises
-# the rust-gvm client against a real gvmd instance.
+# Runs the full Greenbone Community stack via Docker/Podman Compose and
+# exercises the rust-gvm client against a real gvmd instance.
 #
 # Trigger: manual dispatch or nightly schedule.
-# Runner: self-hosted (etterkal) — requires Docker + Docker Compose.
+# Runner: self-hosted (etterkal) — requires Docker or Podman with Compose.
 
 name: E2E Tests
 
@@ -36,8 +36,22 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
 
+      - name: Detect compose backend
+        id: compose
+        run: |
+          if command -v podman-compose &>/dev/null; then
+            echo "cmd=podman-compose" >> "$GITHUB_OUTPUT"
+            echo "Using podman-compose"
+          elif command -v docker && docker compose version &>/dev/null; then
+            echo "cmd=docker compose" >> "$GITHUB_OUTPUT"
+            echo "Using docker compose"
+          else
+            echo "::error::Neither podman-compose nor docker compose found"
+            exit 1
+          fi
+
       - name: Start GVM stack
-        run: docker compose -f ${{ env.COMPOSE_FILE }} up -d
+        run: ${{ steps.compose.outputs.cmd }} -f ${{ env.COMPOSE_FILE }} up -d
 
       - name: Wait for gvmd readiness
         run: |
@@ -46,16 +60,16 @@ jobs:
 
       - name: Run smoke tests
         run: |
-          docker compose -f ${{ env.COMPOSE_FILE }} --profile runner run \
+          ${{ steps.compose.outputs.cmd }} -f ${{ env.COMPOSE_FILE }} --profile runner run \
             -e E2E_RUN_SCAN=${{ inputs.run-scan && '1' || '0' }} \
             --rm rust-gvm-e2e
 
       - name: Collect logs on failure
         if: failure()
         run: |
-          docker compose -f ${{ env.COMPOSE_FILE }} logs --tail=100 gvmd
-          docker compose -f ${{ env.COMPOSE_FILE }} logs --tail=50 ospd-openvas
+          ${{ steps.compose.outputs.cmd }} -f ${{ env.COMPOSE_FILE }} logs --tail=100 gvmd
+          ${{ steps.compose.outputs.cmd }} -f ${{ env.COMPOSE_FILE }} logs --tail=50 ospd-openvas
 
       - name: Teardown
         if: always()
-        run: docker compose -f ${{ env.COMPOSE_FILE }} down -v
+        run: ${{ steps.compose.outputs.cmd }} -f ${{ env.COMPOSE_FILE }} down -v
