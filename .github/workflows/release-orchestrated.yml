@@ -22,10 +22,14 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  BINARY_NAME: gvm-mock-server
 
 jobs:
-  release:
-    name: "Release v${{ inputs.version }}"
+  # ──────────────────────────────────────────────
+  # Step 1: Version bump + tag via pontos
+  # ──────────────────────────────────────────────
+  prepare:
+    name: "Prepare v${{ inputs.version }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -72,24 +76,244 @@ jobs:
             git push origin "$TAG" --force
           fi
 
-      - name: Wait for release workflow
+  # ──────────────────────────────────────────────
+  # Step 2: Test
+  # ──────────────────────────────────────────────
+  test:
+    name: Test
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: v${{ inputs.version }}
+      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+      - run: cargo test --workspace --all-features
+
+  # ──────────────────────────────────────────────
+  # Step 3: Build artifacts (parallel)
+  # ──────────────────────────────────────────────
+  container:
+    name: Publish GHCR image
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: v${{ inputs.version }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ghcr.io/clawosiris/gvm-mock-server
+          tags: |
+            type=raw,value=v${{ inputs.version }}
+          labels: |
+            org.opencontainers.image.title=gvm-mock-server
+            org.opencontainers.image.description=Programmable mock GMP server for testing
+            org.opencontainers.image.vendor=clawosiris
+            org.opencontainers.image.version=v${{ inputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: "{{defaultContext}}"
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  build:
+    name: Build (${{ matrix.target }})
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: gvm-mock-server-linux-amd64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: gvm-mock-server-linux-arm64
+            cross: true
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            artifact: gvm-mock-server-linux-amd64-musl
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            artifact: gvm-mock-server-macos-amd64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            artifact: gvm-mock-server-macos-arm64
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: v${{ inputs.version }}
+
+      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Install musl-tools
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build (cross)
+        if: matrix.cross
+        run: cross build --release --target ${{ matrix.target }} -p gvm-mock-server
+
+      - name: Build (native)
+        if: "!matrix.cross"
+        run: cargo build --release --target ${{ matrix.target }} -p gvm-mock-server
+
+      - name: Package
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../${{ matrix.artifact }}.tar.gz ${{ env.BINARY_NAME }}
+          cd ../../..
+          sha256sum ${{ matrix.artifact }}.tar.gz > ${{ matrix.artifact }}.tar.gz.sha256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.artifact }}.tar.gz
+            ${{ matrix.artifact }}.tar.gz.sha256
+
+  sbom:
+    name: Generate SBOM
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: v${{ inputs.version }}
+      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+
+      - name: Install cargo-cyclonedx
+        run: cargo install cargo-cyclonedx
+
+      - name: Generate CycloneDX SBOM (JSON)
+        run: cargo cyclonedx --format json --all --spec-version 1.5
+
+      - name: Generate CycloneDX SBOM (XML)
+        run: cargo cyclonedx --format xml --all --spec-version 1.5
+
+      - name: Collect SBOMs
+        shell: bash
+        run: |
+          mkdir -p sbom-artifacts
+          find . -name '*.cdx.json' -not -path '*/target/*' -not -path '*/fixtures/*' -not -path '*/sbom-artifacts/*' -exec cp {} sbom-artifacts/ \;
+          find . -name '*.cdx.xml' -not -path '*/target/*' -not -path '*/fixtures/*' -not -path '*/sbom-artifacts/*' -exec cp {} sbom-artifacts/ \;
+          ls -la sbom-artifacts/
+
+      - name: Post-process CycloneDX JSON SBOMs
+        shell: bash
+        run: |
+          python3 scripts/sbom_postprocess.py --cargo-toml Cargo.toml sbom-artifacts/*.cdx.json
+
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
+        with:
+          go-version: stable
+
+      - name: Install sbomqs
+        run: |
+          go install github.com/interlynk-io/sbomqs@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Score post-processed SBOMs
+        shell: bash
+        run: |
+          sbomqs score --json sbom-artifacts/*.cdx.json > sbomqs-results.json
+          python3 - sbomqs-results.json <<'PY'
+          import json
+          import sys
+
+          threshold = 7.0
+          with open(sys.argv[1], "r", encoding="utf-8") as handle:
+              data = json.load(handle)
+
+          failures = []
+          for entry in data.get("files", []):
+              score = float(entry.get("avg_score", 0.0))
+              path = entry.get("path") or entry.get("file") or entry.get("fileName") or "<unknown>"
+              print(f"{path}: {score:.2f}/10")
+              if score < threshold:
+                  failures.append((path, score))
+
+          if failures:
+              for path, score in failures:
+                  print(f"::error file={path}::SBOM quality score below {threshold:.1f}: {score:.2f}")
+              raise SystemExit(1)
+          PY
+
+      - name: Package SBOMs
+        run: |
+          cd sbom-artifacts
+          tar czf ../rust-gvm-sbom.tar.gz *.cdx.*
+          cd ..
+          sha256sum rust-gvm-sbom.tar.gz > rust-gvm-sbom.tar.gz.sha256
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        with:
+          name: sbom
+          path: |
+            rust-gvm-sbom.tar.gz
+            rust-gvm-sbom.tar.gz.sha256
+            sbomqs-results.json
+
+  # ──────────────────────────────────────────────
+  # Step 4: Create GitHub Release with all artifacts
+  # ──────────────────────────────────────────────
+  release:
+    name: Publish Release
+    needs: [build, sbom, container]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: v${{ inputs.version }}
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Upload release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v${{ inputs.version }}"
-          echo "Tag $TAG created. Waiting for release.yml..."
-          sleep 15
-
-          for i in $(seq 1 60); do
-            RUN_ID=$(gh run list --workflow=release.yml --limit=10 --json databaseId,headBranch --jq ".[] | select(.headBranch==\"$TAG\") | .databaseId" 2>/dev/null | head -1 || true)
-            if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
-              echo "Found release workflow run: $RUN_ID"
-              gh run watch "$RUN_ID" --exit-status || exit 1
-              echo "✅ Release workflow completed"
-              exit 0
-            fi
-            echo "Waiting... ($i/60)"
-            sleep 15
-          done
-          echo "::error::Release workflow did not trigger within timeout"
-          exit 1
+          gh release upload "v${{ inputs.version }}" artifacts/*.tar.gz artifacts/*.sha256 --clobber
