@@ -97,14 +97,21 @@ impl Resource {
 
     /// Generate XML representation for get responses.
     pub fn to_xml(&self) -> String {
+        // Notes and overrides use <text> instead of <name>
+        let name_tag = if self.resource_type == "note" || self.resource_type == "override" {
+            "text"
+        } else {
+            "name"
+        };
         let mut xml = format!(
             "<{type} id=\"{id}\">\
-             <name>{name}</name>\
+             <{name_tag}>{name}</{name_tag}>\
              <comment>{comment}</comment>\
              <creation_time>{ct}</creation_time>\
              <modification_time>{mt}</modification_time>",
             type = self.resource_type,
             id = self.id,
+            name_tag = name_tag,
             name = xml_escape(&self.name),
             comment = xml_escape(&self.comment),
             ct = self.creation_time,
