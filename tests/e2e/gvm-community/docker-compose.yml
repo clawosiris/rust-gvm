@@ -61,6 +61,8 @@ services:
 
   gpg-data:
     image: registry.community.greenbone.net/community/gpg-data:stable
+    environment:
+      KEEP_ALIVE: "1"
     volumes:
       - gpg-data:/mnt
 
