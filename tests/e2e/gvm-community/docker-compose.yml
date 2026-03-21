@@ -207,9 +207,7 @@ services:
         condition: service_started
 
   rust-gvm-e2e:
-    build:
-      context: ../../..
-      dockerfile: tests/e2e/gvm-community/Dockerfile.runner
+    image: ${RUNNER_IMAGE:-rust-gvm-e2e-runner:ci}
     profiles:
       - runner
     environment:

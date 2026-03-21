@@ -25,10 +25,45 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   COMPOSE_FILE: tests/e2e/gvm-community/docker-compose.yml
+  RUNNER_IMAGE_NAME: rust-gvm-e2e-runner
+  RUNNER_IMAGE_TAG: ci
 
 jobs:
+  # ──────────────────────────────────────────────
+  # Job 1: Build the test runner container image
+  # ──────────────────────────────────────────────
+  build-runner:
+    name: Build E2E Runner Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Build runner image
+        run: |
+          docker build \
+            -t ${{ env.RUNNER_IMAGE_NAME }}:${{ env.RUNNER_IMAGE_TAG }} \
+            -f tests/e2e/gvm-community/Dockerfile.runner \
+            .
+
+      - name: Export image as tarball
+        run: |
+          docker save ${{ env.RUNNER_IMAGE_NAME }}:${{ env.RUNNER_IMAGE_TAG }} \
+            -o runner-image.tar
+
+      - name: Upload runner image artifact
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        with:
+          name: e2e-runner-image
+          path: runner-image.tar
+          retention-days: 1
+
+  # ──────────────────────────────────────────────
+  # Job 2: Run E2E tests on self-hosted runner
+  # ──────────────────────────────────────────────
   e2e:
     name: GVM Community E2E
+    needs: build-runner
     runs-on: [self-hosted, fedora]
     timeout-minutes: 30
     steps:
@@ -41,14 +76,33 @@ jobs:
         run: |
           if command -v podman-compose &>/dev/null; then
             echo "cmd=podman-compose" >> "$GITHUB_OUTPUT"
+            echo "runtime=podman" >> "$GITHUB_OUTPUT"
             echo "Using podman-compose"
           elif command -v docker && docker compose version &>/dev/null; then
             echo "cmd=docker compose" >> "$GITHUB_OUTPUT"
+            echo "runtime=docker" >> "$GITHUB_OUTPUT"
             echo "Using docker compose"
           else
             echo "::error::Neither podman-compose nor docker compose found"
             exit 1
           fi
+
+      - name: Download runner image artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: e2e-runner-image
+
+      - name: Load runner image
+        run: |
+          if [[ "${{ steps.compose.outputs.runtime }}" == "podman" ]]; then
+            podman load -i runner-image.tar
+            # Tag to match compose service image reference
+            podman tag ${{ env.RUNNER_IMAGE_NAME }}:${{ env.RUNNER_IMAGE_TAG }} \
+              localhost/${{ env.RUNNER_IMAGE_NAME }}:${{ env.RUNNER_IMAGE_TAG }}
+          else
+            docker load -i runner-image.tar
+          fi
+          rm -f runner-image.tar
 
       - name: Start GVM stack
         run: ${{ steps.compose.outputs.cmd }} -f ${{ env.COMPOSE_FILE }} up -d
