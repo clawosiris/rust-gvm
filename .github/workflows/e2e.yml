@@ -7,6 +7,10 @@
 
 name: E2E Tests
 
+concurrency:
+  group: e2e-tests
+  cancel-in-progress: true
+
 on:
   workflow_dispatch:
     inputs:
