@@ -5,10 +5,12 @@ WORKDIR /workspace
 ENV PATH="/usr/local/cargo/bin:${PATH}"
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates bash pkg-config libssl-dev \
+    && apt-get install -y --no-install-recommends \
+       ca-certificates bash pkg-config libssl-dev python3 python3-pip \
+    && pip3 install --break-system-packages gvm-tools \
     && rm -rf /var/lib/apt/lists/*
 
-# Ensure cargo is on PATH for login shells too
+# Ensure cargo is on PATH for login shells
 RUN echo 'export PATH="/usr/local/cargo/bin:${PATH}"' >> /etc/profile.d/cargo.sh
 
 CMD ["/bin/bash"]
