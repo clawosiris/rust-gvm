@@ -14,6 +14,7 @@ use std::time::Duration;
 use gvm_client::{parse_version_text, GmpClient, GvmError};
 use gvm_connection::UnixSocketConnection;
 use gvm_gmp::commands::authentication::authenticate;
+use gvm_gmp::commands::system::{get_feeds, GetFeedsOpts};
 use gvm_gmp::commands::port_lists::{get_port_lists, GetPortListsOpts};
 use gvm_gmp::commands::report_formats::{get_report_formats, GetReportFormatsOpts};
 use gvm_gmp::commands::reports::get_report;
@@ -236,13 +237,70 @@ enum AppError {
 }
 
 async fn wait_ready(config: &EnvConfig) -> Result<(), AppError> {
+    // Phase 1: Connect and verify GMP version
     let mut client = connect_client(config).await?;
     let response = client
         .send(gvm_gmp::commands::version::get_version())
         .await?;
     assert_status(&response, 200, "get_version")?;
+    log_line("GMP version check passed");
+
+    // Authenticate for feed/config queries
+    let auth_response = client
+        .call(authenticate(&config.username, &config.password))
+        .await?;
+    assert_status(&auth_response, 200, "authenticate")?;
+    log_line("Authentication successful");
+
+    // Phase 2: Wait for feeds to finish syncing
+    log_line("Waiting for feed sync to complete...");
+    for poll in 1..=360 {
+        let feeds_response = client
+            .send(get_feeds(GetFeedsOpts::default()))
+            .await?;
+        assert_status(&feeds_response, 200, "get_feeds")?;
+
+        let feeds_xml = feeds_response.as_str().unwrap_or("");
+        let syncing = feeds_xml.matches("<currently_syncing>").count();
+
+        if syncing == 0 {
+            log_line(&format!("Feed sync complete (poll {poll})"));
+            break;
+        }
+        if poll % 10 == 0 {
+            log_line(&format!("Feeds still syncing ({syncing} active, poll {poll}/360)"));
+        }
+        if poll == 360 {
+            log_line("WARNING: feeds still syncing after 30 minutes");
+        }
+        sleep(Duration::from_secs(5)).await;
+    }
+
+    // Phase 3: Wait for scan configs to exist
+    log_line("Waiting for scan configs...");
+    for poll in 1..=120 {
+        let configs_response = client
+            .call(get_scan_configs(GetScanConfigsOpts::default()))
+            .await?;
+        assert_status(&configs_response, 200, "get_scan_configs")?;
+
+        let config_count = count_elements(&configs_response, "config")?;
+        if config_count > 0 {
+            log_line(&format!("Found {config_count} scan config(s) (poll {poll})"));
+            // Grace period for gvmd to finish loading
+            log_line("Allowing 30s grace period...");
+            sleep(Duration::from_secs(30)).await;
+            client.disconnect().await?;
+            return Ok(());
+        }
+        if poll % 6 == 0 {
+            log_line(&format!("No scan configs yet (poll {poll}/120, ~{}s)", poll * 5));
+        }
+        sleep(Duration::from_secs(5)).await;
+    }
+
     client.disconnect().await?;
-    Ok(())
+    Err(AppError::Assertion("no scan configs found after 10 minutes of polling".to_string()))
 }
 
 async fn run_smoke_suite(config: &EnvConfig, tracker: &mut CleanupTracker) -> Result<(), AppError> {
