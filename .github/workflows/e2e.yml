@@ -1,9 +1,10 @@
 # E2E Tests — GVM Community container stack on self-hosted runner
-# Runs the full Greenbone Community stack via Docker/Podman Compose and
+# Runs the full Greenbone Community stack via Docker Compose and
 # exercises the rust-gvm client against a real gvmd instance.
 #
-# Trigger: manual dispatch or nightly schedule.
-# Runner: self-hosted (hetzner-vps) — requires Docker or Podman with Compose.
+# The runner is permanent (hetzner-vps). Docker volumes are kept between
+# runs so that GVM feed data (VTs, SCAP, CERT, scan configs) persists.
+# First run: full feed sync (~20 min). Subsequent runs: delta only (~2-3 min).
 
 name: E2E Tests
 
@@ -19,6 +20,11 @@ on:
         required: false
         type: boolean
         default: false
+      clean:
+        description: "Force clean environment (destroy all volumes)"
+        required: false
+        type: boolean
+        default: false
   schedule:
     # Nightly at 03:00 UTC
     - cron: "0 3 * * *"
@@ -29,90 +35,10 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   COMPOSE_FILE: tests/e2e/gvm-community/docker-compose.yml
-  RUNNER_IMAGE_NAME: rust-gvm-e2e-runner
-  RUNNER_IMAGE_TAG: ci
 
 jobs:
-  # ──────────────────────────────────────────────
-  # Job 1: Build the test runner container image
-  # ──────────────────────────────────────────────
-  build-runner:
-    name: Build E2E Runner Image
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-
-      - name: Build and export runner image
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          context: .
-          file: tests/e2e/gvm-community/Dockerfile.runner
-          tags: ${{ env.RUNNER_IMAGE_NAME }}:${{ env.RUNNER_IMAGE_TAG }}
-          outputs: type=docker,dest=runner-image.tar
-
-      - name: Upload runner image artifact
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
-        with:
-          name: e2e-runner-image
-          path: runner-image.tar
-          retention-days: 1
-
-  # ──────────────────────────────────────────────
-  # Job 2: Pre-pull GVM images (skip if present)
-  # ──────────────────────────────────────────────
-  pull-images:
-    name: Pre-pull GVM Images
-    runs-on: [self-hosted, docker]
-    timeout-minutes: 60
-    steps:
-      - name: Pull GVM Community images (skip cached)
-        run: |
-          set -euo pipefail
-          REGISTRY="registry.community.greenbone.net/community"
-          declare -A IMAGES=(
-            [vulnerability-tests]=latest
-            [notus-data]=latest
-            [scap-data]=latest
-            [cert-bund-data]=latest
-            [dfn-cert-data]=latest
-            [data-objects]=latest
-            [report-formats]=latest
-            [gpg-data]=stable
-            [redis-server]=stable
-            [pg-gvm-migrator]=stable
-            [pg-gvm]=stable
-            [openvas-scanner]=stable
-            [ospd-openvas]=stable
-            [gvmd]=stable
-            [gsad]=stable
-          )
-          pulled=0
-          skipped=0
-          for img in "${!IMAGES[@]}"; do
-            tag="${IMAGES[$img]}"
-            full="${REGISTRY}/${img}:${tag}"
-            if docker image inspect "$full" &>/dev/null; then
-              echo "✓ ${img}:${tag} already cached"
-              skipped=$((skipped + 1))
-            else
-              echo "::group::Pulling ${img}:${tag}"
-              docker pull "$full"
-              echo "::endgroup::"
-              pulled=$((pulled + 1))
-            fi
-          done
-          echo "Done: ${pulled} pulled, ${skipped} cached"
-
-  # ──────────────────────────────────────────────
-  # Job 3: Run E2E tests on self-hosted runner
-  # ──────────────────────────────────────────────
   e2e:
     name: GVM Community E2E
-    needs: [build-runner, pull-images]
     runs-on: [self-hosted, docker]
     timeout-minutes: 45
     steps:
@@ -120,58 +46,41 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
 
-      - name: Detect compose backend
-        id: compose
+      - name: Clean environment (if requested)
+        if: ${{ inputs.clean == true }}
         run: |
-          if command -v podman-compose &>/dev/null; then
-            echo "cmd=podman-compose" >> "$GITHUB_OUTPUT"
-            echo "runtime=podman" >> "$GITHUB_OUTPUT"
-            echo "Using podman-compose"
-          elif command -v docker && docker compose version &>/dev/null; then
-            echo "cmd=docker compose" >> "$GITHUB_OUTPUT"
-            echo "runtime=docker" >> "$GITHUB_OUTPUT"
-            echo "Using docker compose"
-          else
-            echo "::error::Neither podman-compose nor docker compose found"
-            exit 1
-          fi
+          echo "Cleaning all containers and volumes..."
+          docker compose -f ${{ env.COMPOSE_FILE }} down -v --remove-orphans 2>/dev/null || true
 
-      - name: Download runner image artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: e2e-runner-image
+      - name: Pull container images
+        run: docker compose -f ${{ env.COMPOSE_FILE }} pull
 
-      - name: Load runner image
+      - name: Build E2E runner image
         run: |
-          if [[ "${{ steps.compose.outputs.runtime }}" == "podman" ]]; then
-            podman load -i runner-image.tar
-            podman tag ${{ env.RUNNER_IMAGE_NAME }}:${{ env.RUNNER_IMAGE_TAG }} \
-              localhost/${{ env.RUNNER_IMAGE_NAME }}:${{ env.RUNNER_IMAGE_TAG }}
-          else
-            docker load -i runner-image.tar
-          fi
-          rm -f runner-image.tar
+          docker build \
+            -t rust-gvm-e2e-runner:ci \
+            -f tests/e2e/gvm-community/Dockerfile.runner \
+            .
 
       - name: Start GVM stack
-        run: ${{ steps.compose.outputs.cmd }} -f ${{ env.COMPOSE_FILE }} up -d
+        run: docker compose -f ${{ env.COMPOSE_FILE }} up -d
 
       - name: Wait for gvmd readiness
-        run: |
-          bash tests/e2e/gvm-community/scripts/wait-ready.sh
+        run: bash tests/e2e/gvm-community/scripts/wait-ready.sh
         timeout-minutes: 20
 
       - name: Run smoke tests
         run: |
-          ${{ steps.compose.outputs.cmd }} -f ${{ env.COMPOSE_FILE }} --profile runner run \
+          docker compose -f ${{ env.COMPOSE_FILE }} --profile runner run \
             -e E2E_RUN_SCAN=${{ inputs.run-scan && '1' || '0' }} \
             --rm rust-gvm-e2e
 
       - name: Collect logs on failure
         if: failure()
         run: |
-          ${{ steps.compose.outputs.cmd }} -f ${{ env.COMPOSE_FILE }} logs --tail=100 gvmd
-          ${{ steps.compose.outputs.cmd }} -f ${{ env.COMPOSE_FILE }} logs --tail=50 ospd-openvas
+          docker compose -f ${{ env.COMPOSE_FILE }} logs --tail=200 gvmd
+          docker compose -f ${{ env.COMPOSE_FILE }} logs --tail=50 ospd-openvas
 
-      - name: Teardown
+      - name: Stop containers (keep volumes)
         if: always()
-        run: ${{ steps.compose.outputs.cmd }} -f ${{ env.COMPOSE_FILE }} down -v
+        run: docker compose -f ${{ env.COMPOSE_FILE }} down

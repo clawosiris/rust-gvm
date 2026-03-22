@@ -1,76 +1,76 @@
+# E2E test stack — aligned with upstream Greenbone Community Edition compose.
+# Key difference from upstream: adds rust-gvm-e2e runner service (profile: runner).
 name: rust-gvm-e2e
 
 services:
   vulnerability-tests:
-    image: registry.community.greenbone.net/community/vulnerability-tests:latest
+    image: registry.community.greenbone.net/community/vulnerability-tests
     environment:
       FEED_RELEASE: "24.10"
-      KEEP_ALIVE: "1"
+      KEEP_ALIVE: 1
     volumes:
       - vt-data:/mnt
 
   notus-data:
-    image: registry.community.greenbone.net/community/notus-data:latest
+    image: registry.community.greenbone.net/community/notus-data
     environment:
-      KEEP_ALIVE: "1"
+      KEEP_ALIVE: 1
     volumes:
       - notus-data:/mnt
 
   scap-data:
-    image: registry.community.greenbone.net/community/scap-data:latest
+    image: registry.community.greenbone.net/community/scap-data
     environment:
-      KEEP_ALIVE: "1"
+      KEEP_ALIVE: 1
     volumes:
       - scap-data:/mnt
 
   cert-bund-data:
-    image: registry.community.greenbone.net/community/cert-bund-data:latest
+    image: registry.community.greenbone.net/community/cert-bund-data
     environment:
-      KEEP_ALIVE: "1"
+      KEEP_ALIVE: 1
     volumes:
       - cert-data:/mnt
 
   dfn-cert-data:
-    image: registry.community.greenbone.net/community/dfn-cert-data:latest
+    image: registry.community.greenbone.net/community/dfn-cert-data
     environment:
-      KEEP_ALIVE: "1"
+      KEEP_ALIVE: 1
     volumes:
       - cert-data:/mnt
     depends_on:
       cert-bund-data:
-        condition: service_started
+        condition: service_healthy
 
   data-objects:
-    image: registry.community.greenbone.net/community/data-objects:latest
+    image: registry.community.greenbone.net/community/data-objects
     environment:
       FEED_RELEASE: "24.10"
-      KEEP_ALIVE: "1"
+      KEEP_ALIVE: 1
     volumes:
       - data-objects:/mnt
 
   report-formats:
-    image: registry.community.greenbone.net/community/report-formats:latest
+    image: registry.community.greenbone.net/community/report-formats
     environment:
       FEED_RELEASE: "24.10"
-      KEEP_ALIVE: "1"
+      KEEP_ALIVE: 1
     volumes:
       - data-objects:/mnt
     depends_on:
       data-objects:
-        condition: service_started
+        condition: service_healthy
 
   gpg-data:
-    image: registry.community.greenbone.net/community/gpg-data:stable
-    environment:
-      KEEP_ALIVE: "1"
+    image: registry.community.greenbone.net/community/gpg-data
     volumes:
       - gpg-data:/mnt
 
   redis-server:
-    image: registry.community.greenbone.net/community/redis-server:stable
+    image: registry.community.greenbone.net/community/redis-server
     restart: on-failure
     volumes:
-      - redis-socket:/run/redis
+      - redis-socket:/run/redis/
 
   pg-gvm-migrator:
     image: registry.community.greenbone.net/community/pg-gvm-migrator:stable
@@ -171,9 +171,9 @@ services:
     restart: on-failure
     volumes:
       - gvmd-data:/var/lib/gvm
-      - scap-data:/var/lib/gvm/scap-data
+      - scap-data:/var/lib/gvm/scap-data/
       - cert-data:/var/lib/gvm/cert-data
-      - data-objects:/var/lib/gvm/data-objects
+      - data-objects:/var/lib/gvm/data-objects/gvmd
       - vt-data:/var/lib/openvas/plugins
       - psql-data:/var/lib/postgresql
       - gvmd-socket:/run/gvmd
@@ -183,15 +183,15 @@ services:
       pg-gvm:
         condition: service_started
       scap-data:
-        condition: service_started
+        condition: service_healthy
       cert-bund-data:
-        condition: service_started
+        condition: service_healthy
       dfn-cert-data:
-        condition: service_started
+        condition: service_healthy
       data-objects:
-        condition: service_started
+        condition: service_healthy
       report-formats:
-        condition: service_started
+        condition: service_healthy
       ospd-openvas:
         condition: service_started
 
@@ -206,6 +206,7 @@ services:
       gvmd:
         condition: service_started
 
+  # ── E2E test runner (only started with --profile runner) ──
   rust-gvm-e2e:
     image: ${RUNNER_IMAGE:-rust-gvm-e2e-runner:ci}
     profiles:
@@ -232,10 +233,10 @@ services:
     command: ./tests/e2e/gvm-community/scripts/run-smoke.sh
 
 volumes:
-  cert-data:
   cargo-git:
   cargo-registry:
   cargo-target:
+  cert-data:
   data-objects:
   gpg-data:
   gvmd-data:

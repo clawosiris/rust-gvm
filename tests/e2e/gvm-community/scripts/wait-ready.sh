@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
-# Wait for gvmd to be fully ready:
-#   1. Socket exists inside container
-#   2. GMP connection responds
-#   3. Scan configs exist (feed sync complete)
+# Wait for gvmd to be fully ready.
+# With upstream healthchecks on feed containers, gvmd won't start until
+# feed data is copied. We just need to wait for gvmd to finish its own
+# initialization (socket + GMP ready + feed sync).
 set -euo pipefail
 
 COMPOSE_FILE="${COMPOSE_FILE:-tests/e2e/gvm-community/docker-compose.yml}"
 SOCKET_PATH="/run/gvmd/gvmd.sock"
-GVM_USER="${GVM_ADMIN_USER:-admin}"
-GVM_PASS="${GVM_ADMIN_PASS:-admin}"
 
 echo "=== Phase 1: Waiting for gvmd socket ==="
 for i in $(seq 1 300); do
@@ -24,79 +22,44 @@ done
 
 if ! docker compose -f "$COMPOSE_FILE" exec -T gvmd test -S "$SOCKET_PATH" 2>/dev/null; then
   echo "gvmd did not start: socket not found after 300s" >&2
+  docker compose -f "$COMPOSE_FILE" logs --tail=30 gvmd 2>&1 || true
   exit 1
 fi
 
 echo "=== Phase 2: Waiting for GMP readiness ==="
-for i in $(seq 1 60); do
+for i in $(seq 1 120); do
   if docker compose -f "$COMPOSE_FILE" logs gvmd 2>&1 | grep -q "ready to accept GMP connections"; then
     echo "gvmd accepting GMP connections"
     break
   fi
-  echo "Waiting for GMP readiness... (${i}/60)"
+  if (( i % 20 == 0 )); then
+    echo "Waiting for GMP readiness... (${i}/120)"
+  fi
   sleep 2
 done
 
-echo "=== Phase 3: Waiting for scan configs ==="
-# Query scan configs via GMP over the Unix socket using Python inside gvmd container
-GMP_QUERY_SCRIPT=$(cat << 'PYEOF'
-import socket, ssl, sys, time
-
-sock_path = sys.argv[1]
-user = sys.argv[2]
-passwd = sys.argv[3]
-
-auth_xml = f'<authenticate><credentials><username>{user}</username><password>{passwd}</password></credentials></authenticate>'
-configs_xml = '<get_configs/>'
-
-try:
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.settimeout(10)
-    s.connect(sock_path)
-    s.sendall((auth_xml + configs_xml).encode())
-    data = b''
-    while True:
-        try:
-            chunk = s.recv(65536)
-            if not chunk:
-                break
-            data += chunk
-            # Check if we have complete response (ends with </get_configs_response>)
-            if b'</get_configs_response>' in data:
-                break
-        except socket.timeout:
-            break
-    s.close()
-    count = data.count(b'<config ')
-    print(count)
-except Exception as e:
-    print(f'0', file=sys.stdout)
-    print(f'Error: {e}', file=sys.stderr)
-PYEOF
-)
-
+echo "=== Phase 3: Waiting for feed sync ==="
+# Wait for VT update and scan config creation.
+# On a fresh environment this takes ~15 min; with persistent volumes it's fast.
 for i in $(seq 1 180); do
-  RESULT=$(docker compose -f "$COMPOSE_FILE" exec -T gvmd \
-    python3 -c "$GMP_QUERY_SCRIPT" "$SOCKET_PATH" "$GVM_USER" "$GVM_PASS" 2>/dev/null || echo "0")
-  RESULT=$(echo "$RESULT" | tr -d '[:space:]')
+  # Check for scan config creation in logs (gvmd logs "Scan config ... has been created")
+  # OR check for the sync completion markers
+  if docker compose -f "$COMPOSE_FILE" logs gvmd 2>&1 | grep -qE "scan_config.*created|Updating VTs in database.*done"; then
+    echo "Feed sync indicators found after ${i} polls (~$((i * 5))s)"
 
-  if [[ "$RESULT" =~ ^[0-9]+$ ]] && (( RESULT > 0 )); then
-    echo "Found ${RESULT} scan config(s) after ${i} polls (~$((i * 5))s)"
-    echo "=== gvmd readiness check complete ==="
-    exit 0
+    # If VTs are done but configs might still be syncing, wait a bit more
+    if ! docker compose -f "$COMPOSE_FILE" logs gvmd 2>&1 | grep -q "scan_config.*created"; then
+      echo "VTs synced but scan configs not yet visible. Waiting 60s for data-objects sync..."
+      sleep 60
+    fi
+    break
   fi
 
-  if (( i % 10 == 0 )); then
-    echo "Waiting for scan configs... (poll ${i}/180, ~$((i * 5))s elapsed)"
-    # Show recent gvmd feed sync activity
-    docker compose -f "$COMPOSE_FILE" logs --tail=5 gvmd 2>&1 | tail -3 || true
+  if (( i % 12 == 0 )); then
+    echo "Waiting for feed sync... ($((i * 5))s elapsed)"
+    docker compose -f "$COMPOSE_FILE" logs --tail=3 gvmd 2>&1 | tail -3 || true
   fi
   sleep 5
 done
 
-echo "WARNING: No scan configs found after 15 minutes."
-echo "Last gvmd log lines:"
-docker compose -f "$COMPOSE_FILE" logs --tail=10 gvmd 2>&1 | tail -10 || true
-echo "=== gvmd readiness check complete (no configs) ==="
-# Exit 0 to let the smoke test provide its own error message
-exit 0
+echo "=== gvmd readiness check complete ==="
