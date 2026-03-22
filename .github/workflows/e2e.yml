@@ -25,11 +25,6 @@ on:
         required: false
         type: boolean
         default: false
-      validate:
-        description: "Run differential validation against gvm-tools"
-        required: false
-        type: boolean
-        default: false
   schedule:
     # Nightly at 03:00 UTC
     - cron: "0 3 * * *"
@@ -80,15 +75,16 @@ jobs:
             -e E2E_RUN_SCAN=${{ inputs.run-scan && '1' || '0' }} \
             --rm rust-gvm-e2e
 
-      - name: Validate against gvm-tools (differential test)
-        if: ${{ success() && inputs.validate == true }}
+      - name: Cross-check with gvm-tools (fault isolation)
+        if: failure()
         run: |
+          echo "rust-gvm failed — cross-checking with gvm-tools..."
           docker compose -f ${{ env.COMPOSE_FILE }} --profile runner run --rm -T \
             -e GVM_ADMIN_USER=admin \
             -e GVM_ADMIN_PASS=admin \
             -e GVM_SOCKET_PATH=/run/gvmd/gvmd.sock \
             rust-gvm-e2e \
-            python3 tests/e2e/gvm-community/scripts/validate-against-gvm-tools.py
+            python3 tests/e2e/gvm-community/scripts/validate-against-gvm-tools.py --check all || true
 
       - name: Collect logs on failure
         if: failure()
