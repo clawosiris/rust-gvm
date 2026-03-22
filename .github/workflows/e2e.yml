@@ -3,7 +3,7 @@
 # exercises the rust-gvm client against a real gvmd instance.
 #
 # Trigger: manual dispatch or nightly schedule.
-# Runner: self-hosted (etterkal) — requires Docker or Podman with Compose.
+# Runner: self-hosted (hetzner-vps) — requires Docker or Podman with Compose.
 
 name: E2E Tests
 
@@ -67,7 +67,7 @@ jobs:
   e2e:
     name: GVM Community E2E
     needs: build-runner
-    runs-on: [self-hosted, fedora]
+    runs-on: [self-hosted, docker]
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
