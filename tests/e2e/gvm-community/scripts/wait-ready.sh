@@ -27,10 +27,11 @@ fi
 
 echo "=== Running GMP readiness check via rust-gvm ==="
 docker compose -f "$COMPOSE_FILE" --profile runner run --rm -T \
+  --entrypoint "" \
   -e GVM_ADMIN_USER="${GVM_ADMIN_USER:-admin}" \
   -e GVM_ADMIN_PASS="${GVM_ADMIN_PASS:-admin}" \
   -e GVM_SOCKET_PATH="${GVM_SOCKET_PATH:-/run/gvmd/gvmd.sock}" \
   rust-gvm-e2e \
-  cargo run --example e2e_gvm_community -- --mode wait-ready
+  bash -c 'export PATH="/usr/local/cargo/bin:$PATH" && cargo run --example e2e_gvm_community -- --mode wait-ready'
 
 echo "=== gvmd is ready ==="

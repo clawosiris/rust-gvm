@@ -80,6 +80,7 @@ jobs:
         run: |
           echo "rust-gvm failed — cross-checking with gvm-tools..."
           docker compose -f ${{ env.COMPOSE_FILE }} --profile runner run --rm -T \
+            --entrypoint "" \
             -e GVM_ADMIN_USER=admin \
             -e GVM_ADMIN_PASS=admin \
             -e GVM_SOCKET_PATH=/run/gvmd/gvmd.sock \
