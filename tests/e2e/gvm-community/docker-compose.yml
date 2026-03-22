@@ -173,7 +173,7 @@ services:
       - gvmd-data:/var/lib/gvm
       - scap-data:/var/lib/gvm/scap-data
       - cert-data:/var/lib/gvm/cert-data
-      - data-objects:/var/lib/gvm/data-objects/gvmd
+      - data-objects:/var/lib/gvm/data-objects
       - vt-data:/var/lib/openvas/plugins
       - psql-data:/var/lib/postgresql
       - gvmd-socket:/run/gvmd
