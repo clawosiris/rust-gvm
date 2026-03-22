@@ -71,6 +71,7 @@ jobs:
     steps:
       - name: Pull GVM Community images (skip cached)
         run: |
+          set -euo pipefail
           REGISTRY="registry.community.greenbone.net/community"
           declare -A IMAGES=(
             [vulnerability-tests]=latest
@@ -96,12 +97,12 @@ jobs:
             full="${REGISTRY}/${img}:${tag}"
             if docker image inspect "$full" &>/dev/null; then
               echo "✓ ${img}:${tag} already cached"
-              ((skipped++))
+              skipped=$((skipped + 1))
             else
               echo "::group::Pulling ${img}:${tag}"
               docker pull "$full"
               echo "::endgroup::"
-              ((pulled++))
+              pulled=$((pulled + 1))
             fi
           done
           echo "Done: ${pulled} pulled, ${skipped} cached"
