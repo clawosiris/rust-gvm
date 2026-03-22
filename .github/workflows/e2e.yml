@@ -62,11 +62,53 @@ jobs:
           retention-days: 1
 
   # ──────────────────────────────────────────────
-  # Job 2: Run E2E tests on self-hosted runner
+  # Job 2: Pre-pull GVM container images
+  # ──────────────────────────────────────────────
+  pull-images:
+    name: Pre-pull GVM Images
+    runs-on: [self-hosted, docker]
+    timeout-minutes: 60
+    steps:
+      - name: Pull all GVM Community images
+        run: |
+          REGISTRY="registry.community.greenbone.net/community"
+          IMAGES_LATEST=(
+            vulnerability-tests
+            notus-data
+            scap-data
+            cert-bund-data
+            dfn-cert-data
+            data-objects
+            report-formats
+          )
+          IMAGES_STABLE=(
+            gpg-data
+            redis-server
+            pg-gvm-migrator
+            pg-gvm
+            openvas-scanner
+            ospd-openvas
+            gvmd
+            gsad
+          )
+          for img in "${IMAGES_LATEST[@]}"; do
+            echo "::group::Pulling ${img}:latest"
+            docker pull "${REGISTRY}/${img}:latest"
+            echo "::endgroup::"
+          done
+          for img in "${IMAGES_STABLE[@]}"; do
+            echo "::group::Pulling ${img}:stable"
+            docker pull "${REGISTRY}/${img}:stable"
+            echo "::endgroup::"
+          done
+          echo "All images pulled successfully"
+
+  # ──────────────────────────────────────────────
+  # Job 3: Run E2E tests on self-hosted runner
   # ──────────────────────────────────────────────
   e2e:
     name: GVM Community E2E
-    needs: build-runner
+    needs: [build-runner, pull-images]
     runs-on: [self-hosted, docker]
     timeout-minutes: 30
     steps:
