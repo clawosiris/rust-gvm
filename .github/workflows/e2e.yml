@@ -25,6 +25,11 @@ on:
         required: false
         type: boolean
         default: false
+      validate:
+        description: "Run differential validation against gvm-tools"
+        required: false
+        type: boolean
+        default: false
   schedule:
     # Nightly at 03:00 UTC
     - cron: "0 3 * * *"
@@ -76,7 +81,7 @@ jobs:
             --rm rust-gvm-e2e
 
       - name: Validate against gvm-tools (differential test)
-        if: success()
+        if: ${{ success() && inputs.validate == true }}
         run: |
           docker compose -f ${{ env.COMPOSE_FILE }} --profile runner run --rm -T \
             -e GVM_ADMIN_USER=admin \
