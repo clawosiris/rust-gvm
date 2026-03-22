@@ -1,0 +1,92 @@
+name: QM gmp tests
+description: QM gmp tests action.
+
+inputs:
+  config:
+    description: "Robot config to use. Default: gmpv22.04"
+    default: "gmpv22.04"
+  socket:
+    description: "Path to gvmd socket. Default: /run/gvmd/gvmd.sock"
+    default: "/run/gvmd/gvmd.sock"
+  host:
+    description: "IP/DNS to gvmd host. Default: empty"
+  user:
+    description: "Gvmd login user. Default: admin"
+    default: "admin"
+  password:
+    description: "Gvmd login password."
+    required: true
+  ref:
+    description: "Github branch to checkout qm gmp robot tests. Default: main"
+    default: "main"
+  repository:
+    description: "Github repository to checkout qm gmp robot tests. Default: greenbone/qm-gmp-robot"
+    default: "greenbone/qm-gmp-robot"
+  token:
+    description: "Github token to checkout greenbone/qm-gmp-robot."
+    required: true
+  log-artifact:
+    description: "Upload Robot log file as artifact. Default: true"
+    default: "true"
+  exclude-enterprise:
+    description: "Exclude enterprise tests. Default: false"
+    default: "false"
+
+branding:
+  icon: "package"
+  color: "green"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout QM gmp robot tests
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.repository }}
+        path: ./qm-gmp-robot
+        token: ${{ inputs.token }}
+        ref: ${{ inputs.ref }}
+    - name: Setup ssh client
+      if: inputs.host
+      shell: bash
+      run: |
+        mkdir -p $HOME/.ssh/ || true
+        # We need to accept the fingerprint for ssh connections
+        ssh-keyscan ${{ inputs.host }} >> $HOME/.ssh/known_hosts
+    - name: Setup uv
+      uses: greenbone/actions/uv@v3
+      with:
+        working-directory: ./qm-gmp-robot
+    - name: Run QM gmp robot tests
+      shell: bash
+      working-directory: ./qm-gmp-robot
+      run: |
+        mkdir output || true
+        cmd=()
+        if [ "${{ inputs.host }}" ]; then
+          cmd+=(--variable "HOST:${{ inputs.host }}")
+        else
+          cmd+=(--variable "SOCKETPATH:${{ inputs.socket }}")
+          cmd+=(--variable "CONNECTION_LIBRARY:socket_conn_lib")
+        fi
+        cmd+=(--variable "VALID_USERNAME:${{ inputs.user }}")
+        cmd+=(--variable "VALID_PASSWORD:${{ inputs.password }}")
+        cmd+=(--variablefile "./config/${{ inputs.config }}.yaml")
+        if [ "${{ inputs.exclude-enterprise }}" == 'true' ]; then
+          cmd+=(--exclude "Enterprise")
+        fi
+        cmd+=(--outputdir "./output")
+        uv run robot "${cmd[@]}" .
+    - name: Compress qm-gmp-robot log
+      shell: bash
+      if: always() && inputs.log-artifact == 'true'
+      working-directory: ./qm-gmp-robot/output
+      run: |
+        tar --xz -cf output.tar.xz ./*
+    - name: Upload qm-gmp-robot log artifact
+      if: always() && inputs.log-artifact == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: qm-gmp-robot-log
+        path: ./qm-gmp-robot/output/output.tar.xz
+        retention-days: 2

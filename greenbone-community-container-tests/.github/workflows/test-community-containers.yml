@@ -1,0 +1,151 @@
+name: test-community-containers
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Runs every day at 3 AM, because is not under heavy load at this time.
+    - cron: "0 3 * * *"
+
+jobs:
+  test-community-containers:
+    name: test-community-containers
+    runs-on:
+      - self-hosted
+      - self-hosted-generic
+    env:
+      DOWNLOAD_DIR: "greenbone-community-container"
+      GVMD_SOCKET_PATH: "/run/gvmd"
+      GVMD_SOCKET: "/run/gvmd/gvmd.sock"
+      TEST_SCRIPTS_PATH: "tests/community/scripts"
+      GSAD_ADDRESS: "http://127.0.0.1:9392"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {"RELEASE": "22.4", "OSPD_OPENVAS_VERSION": "stable"}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install python
+        if: ${{ !startsWith(runner.name, 'self-hosted-generic') }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: 3.11
+      - name: Install GVM tools
+        run: |
+          python -m pip install --upgrade gvm-tools
+      - name: Download community-container ${{ matrix.RELEASE }} compose file
+        run: |
+          # Export DOWNLOAD_DIR
+          export DOWNLOAD_DIR="$HOME/$DOWNLOAD_DIR"
+          echo "DOWNLOAD_DIR=$(echo $DOWNLOAD_DIR)" >> $GITHUB_ENV
+          # Create folders
+          sudo mkdir -p "$GVMD_SOCKET_PATH" && sudo chmod 0777 "$GVMD_SOCKET_PATH"
+          mkdir -p $DOWNLOAD_DIR && cd $DOWNLOAD_DIR
+          # Download compose file
+          curl -f -L \
+            https://greenbone.github.io/docs/latest/_static/docker-compose-${{ matrix.RELEASE }}.yml \
+            -o docker-compose.yml
+      - name: Install community-container ${{ matrix.RELEASE }}
+        run: |
+          # Set local volume path for gvmd_socket_vol
+          sed -i \
+            s@'  gvmd_socket_vol:'@'  gvmd_socket_vol:\n    driver: local\n    driver_opts:\n      type: none\n      o: bind\n      device: /run/gvmd'@ \
+            "$DOWNLOAD_DIR/docker-compose.yml"
+          # Setup compose
+          docker compose -f $DOWNLOAD_DIR/docker-compose.yml -p greenbone-community-edition up -d --quiet-pull
+          # Since we don't have any health checks in the compose file, we have to wait here
+          sleep 60
+      - name: Set admin user and password
+        run: |
+          # Setup admin user
+          docker compose -f $DOWNLOAD_DIR/docker-compose.yml -p greenbone-community-edition \
+            exec -T -u gvmd gvmd gvmd --user=admin --new-password=${{ secrets.CC_ADMIN_PW }}
+      - name: Modify running community-container ${{ matrix.RELEASE }}
+        run: |
+          # Set openvas log_whole_attack
+          docker compose -f $DOWNLOAD_DIR/docker-compose.yml -p greenbone-community-edition \
+            exec -T -u root openvas \
+            /bin/bash -c 'echo "log_whole_attack = yes" >> /etc/openvas/openvas.conf'
+      - name: Test gvmd.sock
+        shell: bash
+        run: |
+          # Wait for GVMD socket
+          while ! [ -S "$GVMD_SOCKET" ]; do sleep 5; done
+          sudo chmod 0777 "$GVMD_SOCKET"
+          # Test socket
+          gvm-cli --gmp-username admin --gmp-password "${{ secrets.CC_ADMIN_PW }}" \
+            socket --xml "<get_version/>"
+      - name: Test GSAD connection
+        run: |
+          curl "$GSAD_ADDRESS"
+      - name: Run community container check
+        timeout-minutes: 340
+        run: |
+          cd "$TEST_SCRIPTS_PATH"
+          # Start test script
+          gvm-script --gmp-username admin --gmp-password "${{ secrets.CC_ADMIN_PW }}" socket \
+            "test-community-docker.gmp.py" --hosts "${{ secrets.CC_SCAN_TARGET }}"
+      # Run after test-community-docker.gmp.py, because we need a updated feed
+      - name: Run qm gmp robot test
+        uses: ./.github/actions/qm-gmp-robot
+        with:
+          password: ${{ secrets.CC_ADMIN_PW }}
+          token: ${{ secrets.GREENBONE_BOT_TOKEN }}
+          exclude-enterprise: "true"
+          exclude-gos2204: "true"
+          exclude-gos2410: "false"
+          config: "gos24.10"
+      # The browser tests are still not working with the container version
+      #- name: Run qm browser robot test
+      #  uses: ./.github/actions/qm-browser-tests
+      #  with:
+      #    config-yaml: ${{ secrets.CC_QM_BROWSER_CONFIG }}
+      #    token: ${{ secrets.GREENBONE_BOT_TOKEN }}
+      - name: Print openvas log
+        if: always()
+        run: |
+          docker compose -f $DOWNLOAD_DIR/docker-compose.yml -p greenbone-community-edition \
+            exec -T -u root openvas \
+            cat /var/log/openvas/openvas.log
+      - name: Print notus-scanner log
+        if: always()
+        run: |
+          echo "Log files are missing in container"
+          #docker compose -f $DOWNLOAD_DIR/docker-compose.yml -p greenbone-community-edition \
+          #  exec -T -u root notus-scanner \
+          #  cat /var/log/gvm/notus-scanner.log
+      - name: Print gvmd log
+        if: always()
+        run: |
+          echo "Log files are missing in container"
+          #docker compose -f $DOWNLOAD_DIR/docker-compose.yml -p greenbone-community-edition \
+          #  exec -T -u root gvmd \
+          #  cat /var/log/gvm/gvmd.log
+      - name: Print gsad log
+        if: always()
+        run: |
+          docker compose -f $DOWNLOAD_DIR/docker-compose.yml -p greenbone-community-edition \
+            exec -T -u root gsa \
+            cat /var/log/gvm/gsad.log
+      - name: Print redis-server log
+        if: always()
+        run: |
+          echo "Log files are missing in container"
+          #docker compose -f $DOWNLOAD_DIR/docker-compose.yml -p greenbone-community-edition \
+          #  exec -T -u root notus-scanner \
+          #  cat /var/log/redis/redis-server.log
+      - name: Print mosquitto log
+        if: always()
+        run: |
+          echo "Log files are missing in container"
+          #docker compose -f $DOWNLOAD_DIR/docker-compose.yml -p greenbone-community-edition \
+          #  exec -T -u root notus-scanner \
+          #  cat /var/log/mosquitto/mosquitto.log
+  notify:
+    needs: test-community-containers
+    if: ${{ !cancelled() }}
+    uses: greenbone/workflows/.github/workflows/notify-mattermost-qm.yml@main
+    with:
+      shortline: "true"
+      status: ${{ needs.test-community-containers.result }}
+    secrets: inherit

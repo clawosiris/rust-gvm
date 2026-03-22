@@ -1,0 +1,108 @@
+name: QM browser tests
+description: QM browser tests action.
+
+inputs:
+  config:
+    description: "Robot config to use. Default: gos2204"
+    default: "gos2204"
+  config-yaml:
+    description: "Yaml config file as string. Single quotes are not allowed!"
+    required: true
+  ref:
+    description: "Github branch to checkout qm browser robot tests. Default: main"
+    default: "main"
+  repository:
+    description: "Github repository to checkout qm browser robot tests. Default: greenbone/qm-browser-tests"
+    default: "greenbone/qm-browser-tests"
+  token:
+    description: "Github token to checkout greenbone/qm-browser-tests."
+    required: true
+  log-artifact:
+    description: "Upload Robot log file as artifact. Default: true"
+    default: "true"
+  chrome-version:
+    description: "Chrome version to use. Default: 116.0.5845.96"
+    default: "116.0.5845.96"
+
+branding:
+  icon: "package"
+  color: "green"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout QM browser robot tests
+      uses: actions/checkout@v3
+      with:
+        repository: ${{ inputs.repository }}
+        path: ./qm-browser-robot
+        token: ${{ inputs.token }}
+        ref: ${{ inputs.ref }}
+    - name: Install chrome
+      shell: bash
+      working-directory: /tmp
+      run: |
+        # Install chrome from google, ubuntu chromium is based on snapd
+        sudo apt update
+        sudo apt install -y \
+             alsa-topology-conf \
+             alsa-ucm-conf \
+             fonts-liberation \
+             libasound2 \
+             libasound2-data \
+             libgbm1 \
+             libu2f-udev \
+             libvulkan1 \
+             libwayland-server0 \
+             libxcb-randr0 \
+             mesa-vulkan-drivers \
+             systemd-hwe-hwdb \
+             udev
+        sudo mkdir -p "/usr/local/bin" || true
+        wget "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${{ inputs.chrome-version }}/linux64/chrome-linux64.zip"
+        unzip chrome-linux64.zip
+        sudo ln -s "$(pwd)/chrome-linux64/chrome" "/usr/local/bin/chrome"
+        wget "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${{ inputs.chrome-version }}/linux64/chromedriver-linux64.zip"
+        unzip chromedriver-linux64.zip
+        sudo ln -s "$(pwd)/chromedriver-linux64/chromedriver" "/usr/local/bin/chromedriver"
+    - name: Install pipenv and yq
+      shell: bash
+      run: |
+        python -m pip install --upgrade pipenv
+        python -m pip install --upgrade yq
+    - name: Install QM browser robot tests
+      shell: bash
+      working-directory: ./qm-browser-robot
+      run: |
+        mkdir output || true
+        pipenv install
+    - name: Run QM browser robot tests
+      shell: bash
+      working-directory: ./qm-browser-robot
+      run: |
+        # Read yaml 'key:value' into bash array
+        IFS=$'\n' yaml=($(echo '${{ inputs.config-yaml }}' | yq -r '.[] | to_entries[] | select( .value|tostring != "null" ) | .key + ":" + (.value|tostring)'))
+        cmd=()
+        # We need to recreate the array to
+        # get quotes around the values.
+        for arg in "${yaml[@]}" ; do
+          cmd+=(--variable "$arg")
+        done
+        cmd+=(--outputdir "./output")
+        # Print used cmd
+        echo 'CMD in use:' "${cmd[@]}"
+        # Run
+        pipenv run robot "${cmd[@]}" "${{ inputs.config }}" || true
+    - name: Compress qm-browser-robot log
+      shell: bash
+      if: always() && inputs.log-artifact == 'true'
+      working-directory: ./qm-browser-robot/output
+      run: |
+        tar --xz -cf output.tar.xz ./*
+    - name: Upload qm-browser-robot log artifact
+      if: always() && inputs.log-artifact == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: qm-browser-robot-log
+        path: ./qm-browser-robot/output/output.tar.xz
+        retention-days: 2
