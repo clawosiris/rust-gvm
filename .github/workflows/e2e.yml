@@ -62,46 +62,49 @@ jobs:
           retention-days: 1
 
   # ──────────────────────────────────────────────
-  # Job 2: Pre-pull GVM container images
+  # Job 2: Pre-pull GVM images (skip if present)
   # ──────────────────────────────────────────────
   pull-images:
     name: Pre-pull GVM Images
     runs-on: [self-hosted, docker]
     timeout-minutes: 60
     steps:
-      - name: Pull all GVM Community images
+      - name: Pull GVM Community images (skip cached)
         run: |
           REGISTRY="registry.community.greenbone.net/community"
-          IMAGES_LATEST=(
-            vulnerability-tests
-            notus-data
-            scap-data
-            cert-bund-data
-            dfn-cert-data
-            data-objects
-            report-formats
+          declare -A IMAGES=(
+            [vulnerability-tests]=latest
+            [notus-data]=latest
+            [scap-data]=latest
+            [cert-bund-data]=latest
+            [dfn-cert-data]=latest
+            [data-objects]=latest
+            [report-formats]=latest
+            [gpg-data]=stable
+            [redis-server]=stable
+            [pg-gvm-migrator]=stable
+            [pg-gvm]=stable
+            [openvas-scanner]=stable
+            [ospd-openvas]=stable
+            [gvmd]=stable
+            [gsad]=stable
           )
-          IMAGES_STABLE=(
-            gpg-data
-            redis-server
-            pg-gvm-migrator
-            pg-gvm
-            openvas-scanner
-            ospd-openvas
-            gvmd
-            gsad
-          )
-          for img in "${IMAGES_LATEST[@]}"; do
-            echo "::group::Pulling ${img}:latest"
-            docker pull "${REGISTRY}/${img}:latest"
-            echo "::endgroup::"
+          pulled=0
+          skipped=0
+          for img in "${!IMAGES[@]}"; do
+            tag="${IMAGES[$img]}"
+            full="${REGISTRY}/${img}:${tag}"
+            if docker image inspect "$full" &>/dev/null; then
+              echo "✓ ${img}:${tag} already cached"
+              ((skipped++))
+            else
+              echo "::group::Pulling ${img}:${tag}"
+              docker pull "$full"
+              echo "::endgroup::"
+              ((pulled++))
+            fi
           done
-          for img in "${IMAGES_STABLE[@]}"; do
-            echo "::group::Pulling ${img}:stable"
-            docker pull "${REGISTRY}/${img}:stable"
-            echo "::endgroup::"
-          done
-          echo "All images pulled successfully"
+          echo "Done: ${pulled} pulled, ${skipped} cached"
 
   # ──────────────────────────────────────────────
   # Job 3: Run E2E tests on self-hosted runner
@@ -141,7 +144,6 @@ jobs:
         run: |
           if [[ "${{ steps.compose.outputs.runtime }}" == "podman" ]]; then
             podman load -i runner-image.tar
-            # Tag to match compose service image reference
             podman tag ${{ env.RUNNER_IMAGE_NAME }}:${{ env.RUNNER_IMAGE_TAG }} \
               localhost/${{ env.RUNNER_IMAGE_NAME }}:${{ env.RUNNER_IMAGE_TAG }}
           else
@@ -155,7 +157,7 @@ jobs:
       - name: Wait for gvmd readiness
         run: |
           bash tests/e2e/gvm-community/scripts/wait-ready.sh
-        timeout-minutes: 10
+        timeout-minutes: 15
 
       - name: Run smoke tests
         run: |
