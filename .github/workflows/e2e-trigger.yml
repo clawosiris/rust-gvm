@@ -1,0 +1,24 @@
+# Trigger E2E tests on push to main, PRs targeting main, and nightly schedule.
+# Delegates to e2e.yml (workflow_call) with explicit default inputs.
+
+name: E2E Tests (CI)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Nightly at 03:00 UTC
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: E2E Tests
+    uses: ./.github/workflows/e2e.yml
+    with:
+      run-scan: false
+      clean: false

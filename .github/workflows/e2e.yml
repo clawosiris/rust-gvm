@@ -5,6 +5,9 @@
 # The runner is permanent (hetzner-vps). Docker volumes are kept between
 # runs so that GVM feed data (VTs, SCAP, CERT, scan configs) persists.
 # First run: full feed sync (~20 min). Subsequent runs: delta only (~2-3 min).
+#
+# Called by e2e-trigger.yml for push/PR/schedule events.
+# Can also be invoked manually via workflow_dispatch.
 
 name: E2E Tests
 
@@ -13,10 +16,18 @@ concurrency:
   cancel-in-progress: true
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_call:
+    inputs:
+      run-scan:
+        description: "Run extended scan test (slow, ~10min+)"
+        required: false
+        type: boolean
+        default: false
+      clean:
+        description: "Force clean environment (destroy all volumes)"
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       run-scan:
@@ -29,9 +40,6 @@ on:
         required: false
         type: boolean
         default: false
-  schedule:
-    # Nightly at 03:00 UTC
-    - cron: "0 3 * * *"
 
 permissions:
   contents: read
