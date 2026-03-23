@@ -46,7 +46,7 @@ rustls = "0.23"
 rustls-pemfile = "2"
 
 # SSH (feature-gated)
-russh = "0.57"
+russh = "0.58"
 
 # CLI
 clap = { version = "4", features = ["derive"] }
