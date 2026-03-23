@@ -26,48 +26,41 @@ env:
 
 jobs:
   # ──────────────────────────────────────────────
-  # Step 1: Version bump + tag via pontos
+  # Step 1: Version bump + tag + GH Release via greenbone/actions/release
   # ──────────────────────────────────────────────
   prepare:
     name: "Prepare v${{ inputs.version }}"
     runs-on: ubuntu-latest
+    outputs:
+      release-version: ${{ steps.release.outputs.release-version }}
+      git-release-tag: ${{ steps.release.outputs.git-release-tag }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_TOKEN }}
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
 
-      - name: Set up Python and pontos
-        uses: greenbone/actions/setup-pontos@v3
-
-      - name: Configure git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Create release with pontos
-        env:
-          GITHUB_USER: ${{ vars.RELEASE_USER || 'clawosiris' }}
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-        run: |
-          ARGS="--release-version ${{ inputs.version }}"
-          ARGS="$ARGS --versioning-scheme semver"
-          ARGS="$ARGS --project-types cargo"
-          ARGS="$ARGS --git-tag-prefix v"
-          ARGS="$ARGS --no-next-version"
-
-          if [[ "${{ inputs.version }}" == *"-"* ]]; then
-            ARGS="$ARGS --github-pre-release"
-          fi
-
-          pontos-release create $ARGS --repository ${{ github.repository }}
+      - name: Create release
+        id: release
+        uses: greenbone/actions/release@v3
+        with:
+          github-user: ${{ vars.RELEASE_USER || 'clawosiris' }}
+          github-user-mail: ${{ vars.RELEASE_USER_MAIL || 'clawosiris@users.noreply.github.com' }}
+          github-user-token: ${{ secrets.RELEASE_TOKEN }}
+          release-type: ${{ inputs.release-type }}
+          release-version: ${{ inputs.version }}
+          versioning-scheme: semver
+          project-types: cargo
+          next-version: "false"
 
       - name: Regenerate Cargo.lock
         run: |
           cargo generate-lockfile
           if ! git diff --quiet Cargo.lock 2>/dev/null; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
             git add Cargo.lock
             git commit --amend --no-edit
             git push --force-with-lease
@@ -75,6 +68,8 @@ jobs:
             git tag -f "$TAG"
             git push origin "$TAG" --force
           fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
   # ──────────────────────────────────────────────
   # Step 2: Test
@@ -295,7 +290,7 @@ jobs:
             sbomqs-results.json
 
   # ──────────────────────────────────────────────
-  # Step 4: Create GitHub Release with all artifacts
+  # Step 4: Upload all artifacts to the GitHub Release
   # ──────────────────────────────────────────────
   release:
     name: Publish Release
