@@ -14,6 +14,7 @@ use std::time::Duration;
 use gvm_client::{parse_version_text, GmpClient, GvmError};
 use gvm_connection::UnixSocketConnection;
 use gvm_gmp::commands::authentication::authenticate;
+use gvm_gmp::commands::system::{get_feeds, GetFeedsOpts};
 use gvm_gmp::commands::port_lists::{get_port_lists, GetPortListsOpts};
 use gvm_gmp::commands::report_formats::{get_report_formats, GetReportFormatsOpts};
 use gvm_gmp::commands::reports::get_report;
@@ -69,6 +70,9 @@ async fn async_main() -> Result<(), AppError> {
             tracker.cleanup_now().await?;
             log_line("E2E smoke suite passed");
         }
+        Mode::Validate => {
+            run_validate(&config).await?;
+        }
     }
 
     Ok(())
@@ -102,6 +106,7 @@ impl EnvConfig {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Mode {
     Smoke,
+    Validate,
     WaitReady,
 }
 
@@ -115,15 +120,16 @@ impl Mode {
         if values.len() == 2 && values[0] == "--mode" {
             return match values[1].as_str() {
                 "smoke" => Ok(Self::Smoke),
+                "validate" => Ok(Self::Validate),
                 "wait-ready" => Ok(Self::WaitReady),
                 other => Err(AppError::Usage(format!(
-                    "unsupported mode `{other}`; expected `smoke` or `wait-ready`"
+                    "unsupported mode `{other}`; expected `smoke`, `validate`, or `wait-ready`"
                 ))),
             };
         }
 
         Err(AppError::Usage(
-            "usage: cargo run --example e2e_gvm_community -- --mode <smoke|wait-ready>".to_string(),
+            "usage: cargo run --example e2e_gvm_community -- --mode <smoke|validate|wait-ready>".to_string(),
         ))
     }
 }
@@ -235,14 +241,222 @@ enum AppError {
     Client(#[from] GvmError),
 }
 
+async fn run_validate(config: &EnvConfig) -> Result<(), AppError> {
+    use gvm_gmp::commands::report_formats::{get_report_formats, GetReportFormatsOpts};
+
+    let mut client = connect_client(config).await?;
+
+    // Version
+    let version_response = client
+        .send(gvm_gmp::commands::version::get_version())
+        .await?;
+    assert_status(&version_response, 200, "get_version")?;
+    let version = version_response
+        .child_text("version")
+        .unwrap_or_default();
+
+    // Authenticate
+    let auth_response = client
+        .call(authenticate(&config.username, &config.password))
+        .await?;
+    assert_status(&auth_response, 200, "authenticate")?;
+
+    // Scan configs
+    let configs_response = client
+        .call(get_scan_configs(GetScanConfigsOpts::default()))
+        .await?;
+    assert_status(&configs_response, 200, "get_scan_configs")?;
+    let configs_xml = configs_response.as_str().unwrap_or("");
+    let config_names = extract_child_texts(configs_xml, "config", "name");
+    let config_ids = extract_attribute_values(configs_xml, "config", "id");
+
+    // Scanners
+    let scanners_response = client
+        .call(get_scanners(GetScannersOpts::default()))
+        .await?;
+    assert_status(&scanners_response, 200, "get_scanners")?;
+    let scanners_xml = scanners_response.as_str().unwrap_or("");
+    let scanner_names = extract_child_texts(scanners_xml, "scanner", "name");
+
+    // Port lists
+    let port_lists_response = client
+        .call(get_port_lists(GetPortListsOpts::default()))
+        .await?;
+    assert_status(&port_lists_response, 200, "get_port_lists")?;
+    let port_lists_xml = port_lists_response.as_str().unwrap_or("");
+    let port_list_names = extract_child_texts(port_lists_xml, "port_list", "name");
+
+    // Feeds
+    let feeds_response = client
+        .send(get_feeds(GetFeedsOpts::default()))
+        .await?;
+    assert_status(&feeds_response, 200, "get_feeds")?;
+    let feeds_xml = feeds_response.as_str().unwrap_or("");
+    let feed_types = extract_child_texts(feeds_xml, "feed", "type");
+    let feeds_syncing = feeds_xml.matches("<currently_syncing>").count();
+
+    // Report formats
+    let formats_response = client
+        .call(get_report_formats(GetReportFormatsOpts::default()))
+        .await?;
+    assert_status(&formats_response, 200, "get_report_formats")?;
+    let format_count = count_elements(&formats_response, "report_format")?;
+
+    client.disconnect().await?;
+
+    // Output as JSON for comparison with gvm-tools
+    let json = format!(
+        r#"{{"version":"{}","scan_config_count":{},"scan_config_names":{},"scan_config_ids":{},"scanner_count":{},"scanner_names":{},"port_list_count":{},"port_list_names":{},"feed_count":{},"feed_types":{},"feeds_syncing":{},"report_format_count":{}}}"#,
+        version,
+        config_names.len(),
+        to_json_array(&config_names),
+        to_json_array(&config_ids),
+        scanner_names.len(),
+        to_json_array(&scanner_names),
+        port_list_names.len(),
+        to_json_array(&port_list_names),
+        feed_types.len(),
+        to_json_array(&feed_types),
+        feeds_syncing,
+        format_count,
+    );
+    println!("{json}");
+    Ok(())
+}
+
+/// Extract text content of child elements matching `<parent><child_tag>text</child_tag>...`.
+fn extract_child_texts(xml: &str, parent_tag: &str, child_tag: &str) -> Vec<String> {
+    let mut results = Vec::new();
+    let mut reader = Reader::from_str(xml);
+    let mut buf = Vec::new();
+    let mut in_parent = false;
+    let mut in_child = false;
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                let local = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                if local == parent_tag {
+                    in_parent = true;
+                } else if in_parent && local == child_tag {
+                    in_child = true;
+                }
+            }
+            Ok(Event::End(ref e)) => {
+                let local = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                if local == parent_tag {
+                    in_parent = false;
+                } else if local == child_tag {
+                    in_child = false;
+                }
+            }
+            Ok(Event::Text(ref e)) if in_child => {
+                results.push(String::from_utf8_lossy(e.as_ref()).to_string());
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+    results.sort();
+    results
+}
+
+/// Extract attribute values from elements: `<tag attr="value">`.
+fn extract_attribute_values(xml: &str, tag: &str, attr: &str) -> Vec<String> {
+    let mut results = Vec::new();
+    let mut reader = Reader::from_str(xml);
+    let mut buf = Vec::new();
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
+                let local = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                if local == tag {
+                    for a in e.attributes().flatten() {
+                        if String::from_utf8_lossy(a.key.as_ref()) == attr {
+                            results.push(
+                                String::from_utf8_lossy(a.value.as_ref()).to_string()
+                            );
+                        }
+                    }
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+    results.sort();
+    results
+}
+
+fn to_json_array(items: &[String]) -> String {
+    let escaped: Vec<String> = items.iter().map(|s| format!("\"{}\"", s.replace('"', "\\\""))).collect();
+    format!("[{}]", escaped.join(","))
+}
+
 async fn wait_ready(config: &EnvConfig) -> Result<(), AppError> {
+    // Phase 1: Connect and verify GMP version
     let mut client = connect_client(config).await?;
     let response = client
         .send(gvm_gmp::commands::version::get_version())
         .await?;
     assert_status(&response, 200, "get_version")?;
+    log_line("GMP version check passed");
+
+    // Authenticate for feed/config queries
+    let auth_response = client
+        .call(authenticate(&config.username, &config.password))
+        .await?;
+    assert_status(&auth_response, 200, "authenticate")?;
+    log_line("Authentication successful");
+
+    // Phase 2: Wait for scan configs to exist
+    // Skip feed sync polling — scan configs are the actual gate.
+    // gvmd creates them from data-objects feed; once they exist, we're ready.
+    // Reconnect each poll to avoid stale responses on long-lived connections.
     client.disconnect().await?;
-    Ok(())
+    log_line("Waiting for scan configs (feed loading into DB)...");
+    for poll in 1..=1800 {
+        match connect_client(config).await {
+            Ok(mut poll_client) => {
+                let auth = poll_client
+                    .call(authenticate(&config.username, &config.password))
+                    .await;
+                if let Ok(auth_resp) = auth {
+                    if auth_resp.is_success() {
+                        let configs_response = poll_client
+                            .call(get_scan_configs(GetScanConfigsOpts::default()))
+                            .await;
+                        if let Ok(ref resp) = configs_response {
+                            if let Ok(config_count) = count_elements(resp, "config") {
+                                if config_count > 0 {
+                                    log_line(&format!("Found {config_count} scan config(s) (poll {poll}, ~{}s)", poll * 5));
+                                    let _ = poll_client.disconnect().await;
+                                    log_line("Allowing 30s grace period...");
+                                    sleep(Duration::from_secs(30)).await;
+                                    return Ok(());
+                                }
+                            }
+                        }
+                    }
+                }
+                let _ = poll_client.disconnect().await;
+            }
+            Err(_) => {
+                // Connection failed, gvmd might be restarting
+            }
+        }
+        if poll % 12 == 0 {
+            log_line(&format!("No scan configs yet (poll {poll}/1800, ~{}s elapsed)", poll * 5));
+        }
+        sleep(Duration::from_secs(5)).await;
+    }
+
+    Err(AppError::Assertion("no scan configs found after 150 minutes of polling".to_string()))
 }
 
 async fn run_smoke_suite(config: &EnvConfig, tracker: &mut CleanupTracker) -> Result<(), AppError> {
@@ -304,11 +518,21 @@ async fn run_smoke_suite(config: &EnvConfig, tracker: &mut CleanupTracker) -> Re
     ensure(port_list_count >= 1, "expected at least one port list")?;
     log_pass("06", &format!("list port lists ({port_list_count})"));
 
+    // Pick the first port list for target creation (GMP requires PORT_LIST or PORT_RANGE)
+    let port_list_id = {
+        let pl_xml = port_lists_response.as_str().unwrap_or("");
+        let ids = extract_attribute_values(pl_xml, "port_list", "id");
+        let id_str = ids.first()
+            .ok_or_else(|| AppError::Assertion("no port lists available for target creation".to_string()))?;
+        parse_entity_id(id_str)?
+    };
+
     let target_response = client
         .call(create_target(
             SMOKE_TARGET_NAME,
             CreateTargetOpts {
                 hosts: vec!["127.0.0.1".to_string()],
+                port_list_id: Some(port_list_id),
                 ..CreateTargetOpts::default()
             },
         ))
