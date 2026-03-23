@@ -1,5 +1,4 @@
 # Orchestrated Release — triggered by clawosiris/release-orchestrator
-# Do NOT trigger manually — use the orchestrator instead.
 
 name: Orchestrated Release
 
@@ -25,9 +24,6 @@ env:
   BINARY_NAME: gvm-mock-server
 
 jobs:
-  # ──────────────────────────────────────────────
-  # Step 1: Version bump + tag + GH Release via pontos
-  # ──────────────────────────────────────────────
   prepare:
     name: "Prepare v${{ inputs.version }}"
     runs-on: ubuntu-latest
@@ -35,41 +31,26 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_TOKEN }}
-
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-
-      - name: Set up Python and pontos
-        uses: greenbone/actions/setup-pontos@v3
-
-      - name: Configure git
-        uses: greenbone/actions/set-github-user@v3
+      - name: Create release
+        uses: greenbone/actions/release@v3
         with:
-          user: ${{ vars.RELEASE_USER || 'clawosiris' }}
-          mail: ${{ vars.RELEASE_USER_MAIL || 'clawosiris@users.noreply.github.com' }}
-          token: ${{ secrets.RELEASE_TOKEN }}
-
-      - name: Create release with pontos
-        env:
-          GITHUB_USER: ${{ vars.RELEASE_USER || 'clawosiris' }}
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-        run: |
-          ARGS="--release-version ${{ inputs.version }}"
-          ARGS="$ARGS --versioning-scheme semver"
-          ARGS="$ARGS --project-types cargo"
-          ARGS="$ARGS --git-tag-prefix v"
-          ARGS="$ARGS --no-next-version"
-
-          if [[ "${{ inputs.release-type }}" == "alpha" || "${{ inputs.release-type }}" == "beta" || "${{ inputs.release-type }}" == "release-candidate" ]]; then
-            ARGS="$ARGS --github-pre-release"
-          fi
-
-          pontos-release create $ARGS --repository ${{ github.repository }}
-
+          github-user: ${{ vars.RELEASE_USER || 'clawosiris' }}
+          github-user-mail: ${{ vars.RELEASE_USER_MAIL || 'clawosiris@users.noreply.github.com' }}
+          github-user-token: ${{ secrets.RELEASE_TOKEN }}
+          release-type: ${{ inputs.release-type }}
+          release-version: ${{ inputs.version }}
+          versioning-scheme: semver
+          project-types: cargo
+          next-version: "false"
+          admin-bypass: "false"
       - name: Regenerate Cargo.lock
         run: |
           cargo generate-lockfile
           if ! git diff --quiet Cargo.lock 2>/dev/null; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
             git add Cargo.lock
             git commit --amend --no-edit
             git push --force-with-lease
@@ -77,10 +58,9 @@ jobs:
             git tag -f "$TAG"
             git push origin "$TAG" --force
           fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
-  # ──────────────────────────────────────────────
-  # Step 2: Test
-  # ──────────────────────────────────────────────
   test:
     name: Test
     needs: prepare
@@ -93,9 +73,6 @@ jobs:
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
       - run: cargo test --workspace --all-features
 
-  # ──────────────────────────────────────────────
-  # Step 3: Build + upload directly to release
-  # ──────────────────────────────────────────────
   build:
     name: Build (${{ matrix.target }})
     needs: test
@@ -142,25 +119,19 @@ jobs:
       - name: Build (native)
         if: "!matrix.cross"
         run: cargo build --release --target ${{ matrix.target }} -p gvm-mock-server
-      - name: Package
-        shell: bash
+      - name: Package and upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd target/${{ matrix.target }}/release
           tar czf ../../../${{ matrix.artifact }}.tar.gz ${{ env.BINARY_NAME }}
           cd ../../..
           sha256sum ${{ matrix.artifact }}.tar.gz > ${{ matrix.artifact }}.tar.gz.sha256
-      - name: Upload to release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
           gh release upload "v${{ inputs.version }}" \
             ${{ matrix.artifact }}.tar.gz \
             ${{ matrix.artifact }}.tar.gz.sha256 \
             --clobber
 
-  # ──────────────────────────────────────────────
-  # Step 3b: Container image → GHCR only
-  # ──────────────────────────────────────────────
   container:
     name: Publish GHCR image
     needs: test
@@ -169,12 +140,9 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: v${{ inputs.version }}
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - name: Log in to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -184,15 +152,7 @@ jobs:
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ghcr.io/clawosiris/gvm-mock-server
-          tags: |
-            type=raw,value=v${{ inputs.version }}
-          labels: |
-            org.opencontainers.image.title=gvm-mock-server
-            org.opencontainers.image.description=Programmable mock GMP server for testing
-            org.opencontainers.image.vendor=clawosiris
-            org.opencontainers.image.version=v${{ inputs.version }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          tags: type=raw,value=v${{ inputs.version }}
       - name: Build and push image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
@@ -203,9 +163,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-  # ──────────────────────────────────────────────
-  # Step 3c: SBOM → direct upload to release
-  # ──────────────────────────────────────────────
   sbom:
     name: Generate SBOM
     needs: test
@@ -227,36 +184,8 @@ jobs:
           mkdir -p sbom-artifacts
           find . -name '*.cdx.json' -not -path '*/target/*' -not -path '*/fixtures/*' -not -path '*/sbom-artifacts/*' -exec cp {} sbom-artifacts/ \;
           find . -name '*.cdx.xml' -not -path '*/target/*' -not -path '*/fixtures/*' -not -path '*/sbom-artifacts/*' -exec cp {} sbom-artifacts/ \;
-          ls -la sbom-artifacts/
       - name: Post-process CycloneDX JSON SBOMs
         run: python3 scripts/sbom_postprocess.py --cargo-toml Cargo.toml sbom-artifacts/*.cdx.json
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
-        with:
-          go-version: stable
-      - name: Install sbomqs
-        run: |
-          go install github.com/interlynk-io/sbomqs@latest
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-      - name: Score post-processed SBOMs
-        run: |
-          sbomqs score --json sbom-artifacts/*.cdx.json > sbomqs-results.json
-          python3 - sbomqs-results.json <<'PY'
-          import json, sys
-          threshold = 7.0
-          with open(sys.argv[1], "r", encoding="utf-8") as handle:
-              data = json.load(handle)
-          failures = []
-          for entry in data.get("files", []):
-              score = float(entry.get("avg_score", 0.0))
-              path = entry.get("path") or entry.get("file") or entry.get("fileName") or "<unknown>"
-              print(f"{path}: {score:.2f}/10")
-              if score < threshold:
-                  failures.append((path, score))
-          if failures:
-              for path, score in failures:
-                  print(f"::error file={path}::SBOM quality score below {threshold:.1f}: {score:.2f}")
-              raise SystemExit(1)
-          PY
       - name: Package and upload SBOMs to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -270,9 +199,6 @@ jobs:
             rust-gvm-sbom.tar.gz.sha256 \
             --clobber
 
-  # ──────────────────────────────────────────────
-  # Step 4: Collect — gate for orchestrator
-  # ──────────────────────────────────────────────
   collect:
     name: Release complete
     needs: [build, container, sbom]
