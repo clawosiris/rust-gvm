@@ -414,70 +414,49 @@ async fn wait_ready(config: &EnvConfig) -> Result<(), AppError> {
     assert_status(&auth_response, 200, "authenticate")?;
     log_line("Authentication successful");
 
-    // Phase 2: Wait for feeds to finish syncing
-    // IMPORTANT: reconnect on each poll — gvmd can return stale data on
-    // long-lived connections during feed sync.
+    // Phase 2: Wait for scan configs to exist
+    // Skip feed sync polling — scan configs are the actual gate.
+    // gvmd creates them from data-objects feed; once they exist, we're ready.
+    // Reconnect each poll to avoid stale responses on long-lived connections.
     client.disconnect().await?;
-    log_line("Waiting for feed sync to complete...");
+    log_line("Waiting for scan configs (feed loading into DB)...");
     for poll in 1..=360 {
-        let mut poll_client = connect_client(config).await?;
-        let auth = poll_client
-            .call(authenticate(&config.username, &config.password))
-            .await?;
-        assert_status(&auth, 200, "authenticate")?;
-
-        let feeds_response = poll_client
-            .send(get_feeds(GetFeedsOpts::default()))
-            .await?;
-        assert_status(&feeds_response, 200, "get_feeds")?;
-
-        let feeds_xml = feeds_response.as_str().unwrap_or("");
-        let syncing = feeds_xml.matches("<currently_syncing>").count();
-        poll_client.disconnect().await?;
-
-        if syncing == 0 {
-            log_line(&format!("Feed sync complete (poll {poll})"));
-            break;
+        match connect_client(config).await {
+            Ok(mut poll_client) => {
+                let auth = poll_client
+                    .call(authenticate(&config.username, &config.password))
+                    .await;
+                if let Ok(auth_resp) = auth {
+                    if auth_resp.is_success() {
+                        let configs_response = poll_client
+                            .call(get_scan_configs(GetScanConfigsOpts::default()))
+                            .await;
+                        if let Ok(ref resp) = configs_response {
+                            if let Ok(config_count) = count_elements(resp, "config") {
+                                if config_count > 0 {
+                                    log_line(&format!("Found {config_count} scan config(s) (poll {poll}, ~{}s)", poll * 5));
+                                    let _ = poll_client.disconnect().await;
+                                    log_line("Allowing 30s grace period...");
+                                    sleep(Duration::from_secs(30)).await;
+                                    return Ok(());
+                                }
+                            }
+                        }
+                    }
+                }
+                let _ = poll_client.disconnect().await;
+            }
+            Err(_) => {
+                // Connection failed, gvmd might be restarting
+            }
         }
-        if poll % 10 == 0 {
-            log_line(&format!("Feeds still syncing ({syncing} active, poll {poll}/360)"));
-        }
-        if poll == 360 {
-            log_line("WARNING: feeds still syncing after 30 minutes");
-        }
-        sleep(Duration::from_secs(5)).await;
-    }
-
-    // Phase 3: Wait for scan configs to exist
-    log_line("Waiting for scan configs...");
-    for poll in 1..=120 {
-        let mut poll_client = connect_client(config).await?;
-        let auth = poll_client
-            .call(authenticate(&config.username, &config.password))
-            .await?;
-        assert_status(&auth, 200, "authenticate")?;
-
-        let configs_response = poll_client
-            .call(get_scan_configs(GetScanConfigsOpts::default()))
-            .await?;
-        assert_status(&configs_response, 200, "get_scan_configs")?;
-
-        let config_count = count_elements(&configs_response, "config")?;
-        poll_client.disconnect().await?;
-
-        if config_count > 0 {
-            log_line(&format!("Found {config_count} scan config(s) (poll {poll})"));
-            log_line("Allowing 30s grace period...");
-            sleep(Duration::from_secs(30)).await;
-            return Ok(());
-        }
-        if poll % 6 == 0 {
-            log_line(&format!("No scan configs yet (poll {poll}/120, ~{}s)", poll * 5));
+        if poll % 12 == 0 {
+            log_line(&format!("No scan configs yet (poll {poll}/360, ~{}s elapsed)", poll * 5));
         }
         sleep(Duration::from_secs(5)).await;
     }
 
-    Err(AppError::Assertion("no scan configs found after 10 minutes of polling".to_string()))
+    Err(AppError::Assertion("no scan configs found after 30 minutes of polling".to_string()))
 }
 
 async fn run_smoke_suite(config: &EnvConfig, tracker: &mut CleanupTracker) -> Result<(), AppError> {
