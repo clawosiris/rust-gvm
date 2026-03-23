@@ -518,11 +518,21 @@ async fn run_smoke_suite(config: &EnvConfig, tracker: &mut CleanupTracker) -> Re
     ensure(port_list_count >= 1, "expected at least one port list")?;
     log_pass("06", &format!("list port lists ({port_list_count})"));
 
+    // Pick the first port list for target creation (GMP requires PORT_LIST or PORT_RANGE)
+    let port_list_id = {
+        let pl_xml = port_lists_response.as_str().unwrap_or("");
+        let ids = extract_attribute_values(pl_xml, "port_list", "id");
+        let id_str = ids.first()
+            .ok_or_else(|| AppError::Assertion("no port lists available for target creation".to_string()))?;
+        parse_entity_id(id_str)?
+    };
+
     let target_response = client
         .call(create_target(
             SMOKE_TARGET_NAME,
             CreateTargetOpts {
                 hosts: vec!["127.0.0.1".to_string()],
+                port_list_id: Some(port_list_id),
                 ..CreateTargetOpts::default()
             },
         ))
