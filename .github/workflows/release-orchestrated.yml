@@ -26,41 +26,66 @@ env:
 
 jobs:
   # ──────────────────────────────────────────────
-  # Step 1: Version bump + tag + GH Release via greenbone/actions/release
+  # Step 1: Version bump + tag + GH Release via pontos
   # ──────────────────────────────────────────────
+  # NOTE: greenbone/actions/release@v3 requires branch protection API
+  # (GitHub Pro or public repos). Using pontos directly until repos are public.
   prepare:
     name: "Prepare v${{ inputs.version }}"
     runs-on: ubuntu-latest
-    outputs:
-      release-version: ${{ steps.release.outputs.release-version }}
-      git-release-tag: ${{ steps.release.outputs.git-release-tag }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
-          persist-credentials: false
+          token: ${{ secrets.RELEASE_TOKEN }}
 
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
 
-      - name: Create release
-        id: release
-        uses: greenbone/actions/release@v3
+      - name: Set up Python and pontos
+        uses: greenbone/actions/setup-pontos@v3
+
+      - name: Configure git
+        uses: greenbone/actions/set-github-user@v3
         with:
-          github-user: ${{ vars.RELEASE_USER || 'clawosiris' }}
-          github-user-mail: ${{ vars.RELEASE_USER_MAIL || 'clawosiris@users.noreply.github.com' }}
-          github-user-token: ${{ secrets.RELEASE_TOKEN }}
-          release-type: ${{ inputs.release-type }}
-          release-version: ${{ inputs.version }}
-          versioning-scheme: semver
-          project-types: cargo
-          next-version: "false"
+          user: ${{ vars.RELEASE_USER || 'clawosiris' }}
+          mail: ${{ vars.RELEASE_USER_MAIL || 'clawosiris@users.noreply.github.com' }}
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      # greenbone/actions/release@v3 — disabled for private repos (requires branch protection API)
+      # Re-enable when repos go public:
+      # - name: Create release
+      #   uses: greenbone/actions/release@v3
+      #   with:
+      #     github-user: ${{ vars.RELEASE_USER || 'clawosiris' }}
+      #     github-user-mail: ${{ vars.RELEASE_USER_MAIL || 'clawosiris@users.noreply.github.com' }}
+      #     github-user-token: ${{ secrets.RELEASE_TOKEN }}
+      #     release-type: ${{ inputs.release-type }}
+      #     release-version: ${{ inputs.version }}
+      #     versioning-scheme: semver
+      #     project-types: cargo
+      #     next-version: "false"
+
+      - name: Create release with pontos
+        env:
+          GITHUB_USER: ${{ vars.RELEASE_USER || 'clawosiris' }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          ARGS="--release-version ${{ inputs.version }}"
+          ARGS="$ARGS --versioning-scheme semver"
+          ARGS="$ARGS --project-types cargo"
+          ARGS="$ARGS --git-tag-prefix v"
+          ARGS="$ARGS --no-next-version"
+
+          if [[ "${{ inputs.release-type }}" == "alpha" || "${{ inputs.release-type }}" == "beta" || "${{ inputs.release-type }}" == "release-candidate" ]]; then
+            ARGS="$ARGS --github-pre-release"
+          fi
+
+          pontos-release create $ARGS --repository ${{ github.repository }}
 
       - name: Regenerate Cargo.lock
         run: |
           cargo generate-lockfile
           if ! git diff --quiet Cargo.lock 2>/dev/null; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
             git add Cargo.lock
             git commit --amend --no-edit
             git push --force-with-lease
@@ -68,8 +93,6 @@ jobs:
             git tag -f "$TAG"
             git push origin "$TAG" --force
           fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
   # ──────────────────────────────────────────────
   # Step 2: Test
@@ -164,31 +187,24 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: v${{ inputs.version }}
-
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
         with:
           targets: ${{ matrix.target }}
-
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
         with:
           key: ${{ matrix.target }}
-
       - name: Install cross
         if: matrix.cross
         run: cargo install cross --git https://github.com/cross-rs/cross
-
       - name: Install musl-tools
         if: contains(matrix.target, 'musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
-
       - name: Build (cross)
         if: matrix.cross
         run: cross build --release --target ${{ matrix.target }} -p gvm-mock-server
-
       - name: Build (native)
         if: "!matrix.cross"
         run: cargo build --release --target ${{ matrix.target }} -p gvm-mock-server
-
       - name: Package
         shell: bash
         run: |
@@ -196,7 +212,6 @@ jobs:
           tar czf ../../../${{ matrix.artifact }}.tar.gz ${{ env.BINARY_NAME }}
           cd ../../..
           sha256sum ${{ matrix.artifact }}.tar.gz > ${{ matrix.artifact }}.tar.gz.sha256
-
       - name: Upload artifact
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
         with:
@@ -215,16 +230,12 @@ jobs:
           ref: v${{ inputs.version }}
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
-
       - name: Install cargo-cyclonedx
         run: cargo install cargo-cyclonedx
-
       - name: Generate CycloneDX SBOM (JSON)
         run: cargo cyclonedx --format json --all --spec-version 1.5
-
       - name: Generate CycloneDX SBOM (XML)
         run: cargo cyclonedx --format xml --all --spec-version 1.5
-
       - name: Collect SBOMs
         shell: bash
         run: |
@@ -232,21 +243,17 @@ jobs:
           find . -name '*.cdx.json' -not -path '*/target/*' -not -path '*/fixtures/*' -not -path '*/sbom-artifacts/*' -exec cp {} sbom-artifacts/ \;
           find . -name '*.cdx.xml' -not -path '*/target/*' -not -path '*/fixtures/*' -not -path '*/sbom-artifacts/*' -exec cp {} sbom-artifacts/ \;
           ls -la sbom-artifacts/
-
       - name: Post-process CycloneDX JSON SBOMs
         shell: bash
         run: |
           python3 scripts/sbom_postprocess.py --cargo-toml Cargo.toml sbom-artifacts/*.cdx.json
-
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
         with:
           go-version: stable
-
       - name: Install sbomqs
         run: |
           go install github.com/interlynk-io/sbomqs@latest
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-
       - name: Score post-processed SBOMs
         shell: bash
         run: |
@@ -272,14 +279,12 @@ jobs:
                   print(f"::error file={path}::SBOM quality score below {threshold:.1f}: {score:.2f}")
               raise SystemExit(1)
           PY
-
       - name: Package SBOMs
         run: |
           cd sbom-artifacts
           tar czf ../rust-gvm-sbom.tar.gz *.cdx.*
           cd ..
           sha256sum rust-gvm-sbom.tar.gz > rust-gvm-sbom.tar.gz.sha256
-
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
         with:
@@ -300,13 +305,11 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: v${{ inputs.version }}
-
       - name: Download all artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: artifacts
           merge-multiple: true
-
       - name: Upload release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
