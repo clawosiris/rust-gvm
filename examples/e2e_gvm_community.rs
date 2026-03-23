@@ -420,7 +420,7 @@ async fn wait_ready(config: &EnvConfig) -> Result<(), AppError> {
     // Reconnect each poll to avoid stale responses on long-lived connections.
     client.disconnect().await?;
     log_line("Waiting for scan configs (feed loading into DB)...");
-    for poll in 1..=360 {
+    for poll in 1..=1800 {
         match connect_client(config).await {
             Ok(mut poll_client) => {
                 let auth = poll_client
@@ -451,12 +451,12 @@ async fn wait_ready(config: &EnvConfig) -> Result<(), AppError> {
             }
         }
         if poll % 12 == 0 {
-            log_line(&format!("No scan configs yet (poll {poll}/360, ~{}s elapsed)", poll * 5));
+            log_line(&format!("No scan configs yet (poll {poll}/1800, ~{}s elapsed)", poll * 5));
         }
         sleep(Duration::from_secs(5)).await;
     }
 
-    Err(AppError::Assertion("no scan configs found after 30 minutes of polling".to_string()))
+    Err(AppError::Assertion("no scan configs found after 150 minutes of polling".to_string()))
 }
 
 async fn run_smoke_suite(config: &EnvConfig, tracker: &mut CleanupTracker) -> Result<(), AppError> {
