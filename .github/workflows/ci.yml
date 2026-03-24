@@ -138,5 +138,12 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           gh api repos/clawosiris/rust-gvm-e2e-tests/dispatches \
-            -f event_type=component-updated \
-            -f 'client_payload={"component":"rust-gvm","ref":"${{ github.sha }}"}'
+            --method POST --input - <<EOF
+          {
+            "event_type": "component-updated",
+            "client_payload": {
+              "component": "rust-gvm",
+              "ref": "${{ github.sha }}"
+            }
+          }
+          EOF
