@@ -133,17 +133,9 @@ jobs:
     needs: [test]
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger rust-gvm-e2e-tests
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-        run: |
-          gh api repos/clawosiris/rust-gvm-e2e-tests/dispatches \
-            --method POST --input - <<EOF
-          {
-            "event_type": "component-updated",
-            "client_payload": {
-              "component": "rust-gvm",
-              "ref": "${{ github.sha }}"
-            }
-          }
-          EOF
+      - uses: greenbone/actions/trigger-workflow@v3
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+          repository: clawosiris/rust-gvm-e2e-tests
+          workflow: e2e.yml
+          ref: main
