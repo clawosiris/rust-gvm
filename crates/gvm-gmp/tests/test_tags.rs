@@ -31,7 +31,7 @@ fn test_create_tag_with_optionals() {
                 active: Some(true),
             }
         )),
-        "<create_tag><name>tag</name><comment>c</comment><value>blue</value><resource_type>task</resource_type><resource_id>t1</resource_id><severity>high</severity><active>1</active></create_tag>"
+        r#"<create_tag><name>tag</name><comment>c</comment><value>blue</value><resources><resource id="t1"/><type>task</type></resources><severity>high</severity><active>1</active></create_tag>"#
     );
 }
 
