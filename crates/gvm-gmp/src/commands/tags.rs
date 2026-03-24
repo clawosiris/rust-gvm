@@ -112,7 +112,9 @@ fn add_tag_body(cmd: &mut XmlCommand, opts: &TagOpts) {
                 .set_attribute("id", resource_id.as_str());
         }
 
-        resources.add_child("type").set_text(actual_type.as_gmp_str());
+        resources
+            .add_child("type")
+            .set_text(actual_type.as_gmp_str());
     }
 
     if let Some(severity) = opts.severity {
