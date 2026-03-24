@@ -5,15 +5,29 @@ name: Orchestrated Release
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: "Release version (without 'v' prefix)"
-        required: true
-        type: string
       release-type:
-        description: "Release type (alpha, beta, release-candidate, patch, minor, major)"
+        description: "Release type"
+        required: true
+        type: choice
+        default: "patch"
+        options:
+          - patch
+          - minor
+          - major
+      alpha:
+        description: "Alpha pre-release"
+        required: false
+        type: boolean
+        default: false
+      release-candidate:
+        description: "Release candidate"
+        required: false
+        type: boolean
+        default: false
+      version:
+        description: "Manual version override (optional, ignores type/alpha/rc if set)"
         required: false
         type: string
-        default: "patch"
 
 permissions:
   contents: write
@@ -24,9 +38,39 @@ env:
   BINARY_NAME: gvm-mock-server
 
 jobs:
-  prepare:
-    name: "Prepare v${{ inputs.version }}"
+  resolve:
+    name: Resolve version parameters
     runs-on: ubuntu-latest
+    outputs:
+      release-type: ${{ steps.resolve.outputs.release-type }}
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - id: resolve
+        run: |
+          # Manual version override takes precedence
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "release-type=${{ inputs.release-type }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Determine effective release-type from checkboxes
+          if [ "${{ inputs.alpha }}" = "true" ]; then
+            echo "release-type=alpha" >> "$GITHUB_OUTPUT"
+          elif [ "${{ inputs.release-candidate }}" = "true" ]; then
+            echo "release-type=release-candidate" >> "$GITHUB_OUTPUT"
+          else
+            echo "release-type=${{ inputs.release-type }}" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "version=" >> "$GITHUB_OUTPUT"
+
+  prepare:
+    name: Prepare release
+    needs: resolve
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.release-version }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -34,13 +78,14 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       - name: Create release
+        id: release
         uses: greenbone/actions/release@v3
         with:
           github-user: ${{ vars.RELEASE_USER || 'clawosiris' }}
           github-user-mail: ${{ vars.RELEASE_USER_MAIL || 'clawosiris@users.noreply.github.com' }}
           github-user-token: ${{ secrets.RELEASE_TOKEN }}
-          release-type: ${{ inputs.release-type }}
-          release-version: ${{ inputs.version }}
+          release-type: ${{ needs.resolve.outputs.release-type }}
+          release-version: ${{ needs.resolve.outputs.version }}
           versioning-scheme: semver
           project-types: cargo
           next-version: "false"
@@ -54,7 +99,7 @@ jobs:
             git add Cargo.lock
             git commit --amend --no-edit
             git push --force-with-lease
-            TAG="v${{ inputs.version }}"
+            TAG="v${{ steps.release.outputs.release-version }}"
             git tag -f "$TAG"
             git push origin "$TAG" --force
           fi
@@ -68,14 +113,14 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: v${{ inputs.version }}
+          ref: v${{ needs.prepare.outputs.version }}
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
       - run: cargo test --workspace --all-features
 
   build:
     name: Build (${{ matrix.target }})
-    needs: test
+    needs: [prepare, test]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -100,7 +145,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: v${{ inputs.version }}
+          ref: v${{ needs.prepare.outputs.version }}
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
         with:
           targets: ${{ matrix.target }}
@@ -127,19 +172,19 @@ jobs:
           tar czf ../../../${{ matrix.artifact }}.tar.gz ${{ env.BINARY_NAME }}
           cd ../../..
           sha256sum ${{ matrix.artifact }}.tar.gz > ${{ matrix.artifact }}.tar.gz.sha256
-          gh release upload "v${{ inputs.version }}" \
+          gh release upload "v${{ needs.prepare.outputs.version }}" \
             ${{ matrix.artifact }}.tar.gz \
             ${{ matrix.artifact }}.tar.gz.sha256 \
             --clobber
 
   container:
     name: Publish GHCR image
-    needs: test
+    needs: [prepare, test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: v${{ inputs.version }}
+          ref: v${{ needs.prepare.outputs.version }}
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -152,7 +197,7 @@ jobs:
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ghcr.io/clawosiris/gvm-mock-server
-          tags: type=raw,value=v${{ inputs.version }}
+          tags: type=raw,value=v${{ needs.prepare.outputs.version }}
       - name: Build and push image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
@@ -165,12 +210,12 @@ jobs:
 
   sbom:
     name: Generate SBOM
-    needs: test
+    needs: [prepare, test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: v${{ inputs.version }}
+          ref: v${{ needs.prepare.outputs.version }}
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
       - name: Install cargo-cyclonedx
@@ -194,14 +239,14 @@ jobs:
           tar czf ../rust-gvm-sbom.tar.gz *.cdx.*
           cd ..
           sha256sum rust-gvm-sbom.tar.gz > rust-gvm-sbom.tar.gz.sha256
-          gh release upload "v${{ inputs.version }}" \
+          gh release upload "v${{ needs.prepare.outputs.version }}" \
             rust-gvm-sbom.tar.gz \
             rust-gvm-sbom.tar.gz.sha256 \
             --clobber
 
   collect:
     name: Release complete
-    needs: [build, container, sbom]
+    needs: [prepare, build, container, sbom]
     runs-on: ubuntu-latest
     steps:
-      - run: echo "✅ All release artifacts published for v${{ inputs.version }}"
+      - run: echo "✅ All release artifacts published for v${{ needs.prepare.outputs.version }}"
