@@ -95,12 +95,28 @@ pub fn delete_tag(tag_id: &EntityId, ultimate: bool) -> impl Request {
 fn add_tag_body(cmd: &mut XmlCommand, opts: &TagOpts) {
     add_text_element(cmd, "comment", opts.comment.as_deref());
     add_text_element(cmd, "value", opts.value.as_deref());
+
+    // GMP expects a <resources> block with a <type> child.
     if let Some(resource_type) = opts.resource_type {
-        cmd.add_element_with_text("resource_type", resource_type.as_gmp_str());
+        let resources = cmd.add_element("resources");
+
+        // Align with python-gvm behavior: audit -> task, policy -> scan_config
+        let actual_type = match resource_type {
+            EntityType::Policy => EntityType::Config,
+            other => other,
+        };
+
+        if let Some(resource_id) = opts.resource_id.as_ref() {
+            resources
+                .add_child("resource")
+                .set_attribute("id", resource_id.as_str());
+        }
+
+        resources
+            .add_child("type")
+            .set_text(actual_type.as_gmp_str());
     }
-    if let Some(resource_id) = opts.resource_id.as_ref() {
-        cmd.add_element_with_text("resource_id", resource_id.as_str());
-    }
+
     if let Some(severity) = opts.severity {
         cmd.add_element_with_text("severity", severity.as_gmp_str());
     }
@@ -131,7 +147,9 @@ mod tests {
                 ..Default::default()
             },
         ));
-        assert!(rendered.contains("<resource_type>task</resource_type>"));
+        assert!(rendered.contains("<resources>"));
+        assert!(rendered.contains("<resource id=\"t1\"/>"));
+        assert!(rendered.contains("<type>task</type>"));
         assert!(rendered.contains("<severity>high</severity>"));
         assert_eq!(
             xml(clone_tag(&id("tg1"))),
