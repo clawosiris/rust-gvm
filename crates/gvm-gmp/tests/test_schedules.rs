@@ -17,19 +17,21 @@ fn test_create_schedule_basic() {
 }
 
 #[test]
-fn test_create_schedule_with_optionals() {
-    assert_eq!(
-        xml(create_schedule(
-            "sched",
-            ScheduleOpts {
-                comment: Some("c".into()),
-                first_time: Some("2026-03-15T10:00:00Z".into()),
-                period: Some("3600".into()),
-                timezone: Some("UTC".into()),
-            }
-        )),
-        "<create_schedule><name>sched</name><comment>c</comment><first_time>2026-03-15T10:00:00Z</first_time><period>3600</period><timezone>UTC</timezone></create_schedule>"
-    );
+fn test_create_schedule_with_icalendar() {
+    let ical = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR";
+    let rendered = xml(create_schedule(
+        "daily-scan",
+        ScheduleOpts {
+            comment: Some("run daily".into()),
+            icalendar: Some(ical.into()),
+            timezone: Some("UTC".into()),
+            ..Default::default()
+        },
+    ));
+    assert!(rendered.contains("<name>daily-scan</name>"));
+    assert!(rendered.contains("<comment>run daily</comment>"));
+    assert!(rendered.contains("<icalendar>BEGIN:VCALENDAR"));
+    assert!(rendered.contains("<timezone>UTC</timezone>"));
 }
 
 #[test]
@@ -46,4 +48,21 @@ fn test_schedule_get_modify_delete() {
         xml(delete_schedule(&id("sc1"), false)),
         "<delete_schedule schedule_id=\"sc1\" ultimate=\"0\"/>"
     );
+}
+
+#[test]
+fn test_modify_schedule_with_icalendar() {
+    let rendered = xml(modify_schedule(
+        &id("sc1"),
+        ScheduleOpts {
+            name: Some("updated".into()),
+            icalendar: Some("BEGIN:VCALENDAR\r\nEND:VCALENDAR".into()),
+            timezone: Some("Europe/Berlin".into()),
+            ..Default::default()
+        },
+    ));
+    assert!(rendered.contains("schedule_id=\"sc1\""));
+    assert!(rendered.contains("<name>updated</name>"));
+    assert!(rendered.contains("<icalendar>"));
+    assert!(rendered.contains("<timezone>Europe/Berlin</timezone>"));
 }

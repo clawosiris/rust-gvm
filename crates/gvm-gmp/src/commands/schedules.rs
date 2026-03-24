@@ -9,16 +9,24 @@ use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_b
 use crate::types::EntityId;
 
 /// Optional fields for schedule create and modify requests.
+///
+/// GMP 22.4+ requires an iCalendar (RFC 5545) payload instead of
+/// the legacy `first_time` / `period` elements.
 #[derive(Debug, Clone, Default)]
 pub struct ScheduleOpts {
     /// Optional comment text included in the request.
     pub comment: Option<String>,
-    /// Optional first execution time.
-    pub first_time: Option<String>,
-    /// Optional recurrence period.
-    pub period: Option<String>,
-    /// Optional timezone name.
+    /// iCalendar (RFC 5545) data describing the schedule.
+    ///
+    /// Required for `create_schedule`; optional for `modify_schedule`.
+    pub icalendar: Option<String>,
+    /// Timezone applied to iCalendar events when they lack timezone
+    /// information (e.g. `"Europe/Berlin"`).
+    ///
+    /// Required for `create_schedule`; optional for `modify_schedule`.
     pub timezone: Option<String>,
+    /// Optional schedule name override (used in `modify_schedule`).
+    pub name: Option<String>,
 }
 
 /// Options for `get_schedules` requests.
@@ -32,6 +40,8 @@ pub struct GetSchedulesOpts {
     pub trash: Option<bool>,
     /// Whether to request detailed output.
     pub details: Option<bool>,
+    /// Whether to include tasks using the schedules.
+    pub tasks: Option<bool>,
 }
 
 /// Build a clone request for an existing schedule.
@@ -41,6 +51,9 @@ pub fn clone_schedule(schedule_id: &EntityId) -> impl Request {
 }
 
 /// Build a `create_schedule` request.
+///
+/// The caller **must** set `icalendar` and `timezone` in `opts`; gvmd will
+/// reject requests that lack an iCalendar entity.
 #[must_use]
 pub fn create_schedule(name: &str, opts: ScheduleOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_schedule");
@@ -60,6 +73,7 @@ pub fn get_schedules(opts: GetSchedulesOpts) -> impl Request {
     );
     set_optional_bool_attr(&mut cmd, "trash", opts.trash);
     set_optional_bool_attr(&mut cmd, "details", opts.details);
+    set_optional_bool_attr(&mut cmd, "tasks", opts.tasks);
     cmd
 }
 
@@ -75,6 +89,7 @@ pub fn get_schedule(schedule_id: &EntityId) -> impl Request {
 #[must_use]
 pub fn modify_schedule(schedule_id: &EntityId, opts: ScheduleOpts) -> impl Request {
     let mut cmd = XmlCommand::new("modify_schedule").attribute("schedule_id", schedule_id.as_str());
+    add_text_element(&mut cmd, "name", opts.name.as_deref());
     add_schedule_body(&mut cmd, &opts);
     cmd
 }
@@ -89,8 +104,7 @@ pub fn delete_schedule(schedule_id: &EntityId, ultimate: bool) -> impl Request {
 
 fn add_schedule_body(cmd: &mut XmlCommand, opts: &ScheduleOpts) {
     add_text_element(cmd, "comment", opts.comment.as_deref());
-    add_text_element(cmd, "first_time", opts.first_time.as_deref());
-    add_text_element(cmd, "period", opts.period.as_deref());
+    add_text_element(cmd, "icalendar", opts.icalendar.as_deref());
     add_text_element(cmd, "timezone", opts.timezone.as_deref());
 }
 
@@ -101,6 +115,24 @@ mod tests {
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
+    }
+
+    #[test]
+    fn schedule_create_with_icalendar() {
+        let ical = "BEGIN:VCALENDAR\r\nEND:VCALENDAR";
+        let rendered = xml(create_schedule(
+            "daily-scan",
+            ScheduleOpts {
+                icalendar: Some(ical.into()),
+                timezone: Some("UTC".into()),
+                comment: Some("test".into()),
+                ..Default::default()
+            },
+        ));
+        assert!(rendered.contains("<name>daily-scan</name>"));
+        assert!(rendered.contains("<icalendar>"));
+        assert!(rendered.contains("<timezone>UTC</timezone>"));
+        assert!(rendered.contains("<comment>test</comment>"));
     }
 
     #[test]
@@ -134,14 +166,14 @@ mod tests {
         let rendered = xml(modify_schedule(
             &id("sc1"),
             ScheduleOpts {
-                period: Some("3600".into()),
+                icalendar: Some("BEGIN:VCALENDAR\r\nEND:VCALENDAR".into()),
+                timezone: Some("Europe/Berlin".into()),
                 ..Default::default()
             },
         ));
-        assert_eq!(
-            rendered,
-            "<modify_schedule schedule_id=\"sc1\"><period>3600</period></modify_schedule>"
-        );
+        assert!(rendered.contains("schedule_id=\"sc1\""));
+        assert!(rendered.contains("<icalendar>"));
+        assert!(rendered.contains("<timezone>Europe/Berlin</timezone>"));
         assert_eq!(
             xml(delete_schedule(&id("sc1"), false)),
             "<delete_schedule schedule_id=\"sc1\" ultimate=\"0\"/>"
