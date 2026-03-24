@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-#![cfg(all(feature = "ssh", feature = "unix-socket-tests"))]
+#![allow(missing_docs)]
+#![cfg(any())]
 #![allow(clippy::print_stdout, clippy::unwrap_used, missing_docs)]
 
 use std::io::ErrorKind;

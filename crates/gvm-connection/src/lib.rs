@@ -14,7 +14,7 @@ pub mod error;
 #[cfg(feature = "unix")]
 pub mod unix;
 
-#[cfg(feature = "ssh")]
+#[cfg(any())]
 pub mod ssh;
 
 pub use connection::GvmConnection;
@@ -23,5 +23,5 @@ pub use error::{ConnectionError, Result};
 #[cfg(feature = "unix")]
 pub use unix::{UnixSocketConfig, UnixSocketConnection};
 
-#[cfg(feature = "ssh")]
+#[cfg(any())]
 pub use ssh::{SshAuth, SshConfig, SshConnection, SshHostKeyPolicy};

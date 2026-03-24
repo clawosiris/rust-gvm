@@ -202,7 +202,7 @@ impl ResourceStore {
     }
 
     /// Check whether the provided credentials match the configured SSH credentials.
-    #[cfg(feature = "ssh")]
+    #[cfg(any())]
     pub(crate) fn credentials_match(&self, username: &str, password: &str) -> bool {
         let inner = self.inner.read().expect("store lock poisoned");
         inner.username == username && inner.password == password

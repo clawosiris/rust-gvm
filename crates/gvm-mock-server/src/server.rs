@@ -17,7 +17,7 @@ use crate::history::{CommandHistory, CommandRecord};
 use crate::listener::{run_tcp_listener, run_unix_listener, ListenerState};
 use crate::response_gen::LargeReportConfig;
 use crate::scenario::{ScenarioMode, ScenarioStep};
-#[cfg(feature = "ssh")]
+#[cfg(any())]
 use crate::ssh_listener::{generate_host_key, host_key_fingerprint, run_ssh_listener};
 use crate::store::ResourceStore;
 use crate::version::GmpVersion;
@@ -30,10 +30,10 @@ pub struct MockGmpServer {
     /// The TCP address (if using TCP transport).
     tcp_addr: Option<std::net::SocketAddr>,
     /// The SSH address (if using SSH transport).
-    #[cfg(feature = "ssh")]
+    #[cfg(any())]
     ssh_addr: Option<std::net::SocketAddr>,
     /// The SSH host key fingerprint without the `SHA256:` prefix.
-    #[cfg(feature = "ssh")]
+    #[cfg(any())]
     ssh_host_key_fingerprint: Option<String>,
     /// Command history shared with all sessions.
     history: CommandHistory,
@@ -89,9 +89,9 @@ impl MockGmpServer {
         Ok(Self {
             socket_path: Some(socket_path),
             tcp_addr: None,
-            #[cfg(feature = "ssh")]
+            #[cfg(any())]
             ssh_addr: None,
-            #[cfg(feature = "ssh")]
+            #[cfg(any())]
             ssh_host_key_fingerprint: None,
             history,
             shutdown,
@@ -135,9 +135,9 @@ impl MockGmpServer {
         Ok(Self {
             socket_path: None,
             tcp_addr: Some(local_addr),
-            #[cfg(feature = "ssh")]
+            #[cfg(any())]
             ssh_addr: None,
-            #[cfg(feature = "ssh")]
+            #[cfg(any())]
             ssh_host_key_fingerprint: None,
             history,
             shutdown,
@@ -146,7 +146,7 @@ impl MockGmpServer {
     }
 
     /// Create and start a new mock server on SSH.
-    #[cfg(feature = "ssh")]
+    #[cfg(any())]
     pub(crate) async fn start_ssh(
         addr: &str,
         mode: ServerMode,
@@ -210,19 +210,19 @@ impl MockGmpServer {
     }
 
     /// Get the SSH address (if using SSH transport).
-    #[cfg(feature = "ssh")]
+    #[cfg(any())]
     pub fn ssh_addr(&self) -> Option<std::net::SocketAddr> {
         self.ssh_addr
     }
 
     /// Get the SSH port (convenience for random port assignment).
-    #[cfg(feature = "ssh")]
+    #[cfg(any())]
     pub fn ssh_port(&self) -> Option<u16> {
         self.ssh_addr.map(|a| a.port())
     }
 
     /// Get the SSH host key fingerprint without the `SHA256:` prefix.
-    #[cfg(feature = "ssh")]
+    #[cfg(any())]
     pub fn ssh_host_key_fingerprint(&self) -> Option<&str> {
         self.ssh_host_key_fingerprint.as_deref()
     }

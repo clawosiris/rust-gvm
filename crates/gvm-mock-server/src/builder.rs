@@ -31,7 +31,7 @@ enum Transport {
     UnixSocket(PathBuf),
     UnixSocketAuto,
     Tcp(String),
-    #[cfg(feature = "ssh")]
+    #[cfg(any())]
     Ssh(String),
     None,
 }
@@ -96,7 +96,7 @@ impl MockGmpServerBuilder {
     }
 
     /// Listen on an SSH address (e.g., "127.0.0.1:2222" or "127.0.0.1:0" for random port).
-    #[cfg(feature = "ssh")]
+    #[cfg(any())]
     #[must_use]
     pub fn ssh(mut self, addr: impl Into<String>) -> Self {
         self.transport = Transport::Ssh(addr.into());
@@ -251,7 +251,7 @@ impl MockGmpServerBuilder {
                 )
                 .await
             }
-            #[cfg(feature = "ssh")]
+            #[cfg(any())]
             Transport::Ssh(addr) => {
                 MockGmpServer::start_ssh(
                     &addr,

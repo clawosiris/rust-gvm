@@ -17,7 +17,6 @@ path = "src/main.rs"
 default = []
 unix-socket-tests = []
 tls = ["dep:tokio-rustls", "dep:rustls", "dep:rustls-pemfile"]
-ssh = ["dep:russh"]
 
 [dependencies]
 gvm-protocol.workspace = true
@@ -33,8 +32,6 @@ clap.workspace = true
 tokio-rustls = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
 rustls-pemfile = { workspace = true, optional = true }
-russh = { workspace = true, optional = true }
-
 [dev-dependencies]
 gvm-gmp.workspace = true
 pretty_assertions.workspace = true
