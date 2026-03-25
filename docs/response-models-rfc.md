@@ -53,152 +53,155 @@ Currently, rust-gvm returns raw `gvm_protocol::Response` objects from all GMP co
 
 ---
 
-## Proposed Architecture Options
+## Proposed Architecture: Domain-Based Structure
 
-### Option A: Response Models in `gvm-gmp` (Recommended)
-
-Add a new `responses` module alongside `commands`:
+Reorganize `gvm-gmp` around **domains** (entities), with each domain containing its request, response, and handler logic:
 
 ```
-crates/gvm-gmp/
-├── src/
-│   ├── commands/       # Existing request builders
-│   │   ├── targets.rs
-│   │   └── ...
-│   ├── responses/      # NEW: Response models + parsing
-│   │   ├── mod.rs
-│   │   ├── targets.rs  # Target, GetTargetsResponse
-│   │   ├── tasks.rs    # Task, GetTasksResponse
-│   │   ├── common.rs   # Shared types (Timestamp, Permissions, etc.)
-│   │   └── ...
-│   ├── enums.rs
-│   ├── types.rs
-│   └── lib.rs
+crates/gvm-gmp/src/
+├── scanner/
+│   ├── mod.rs          # Re-exports
+│   ├── request.rs      # GetScannersOpts, CreateScannerOpts, ModifyScannerOpts
+│   ├── response.rs     # Scanner, GetScannersResponse, CreateScannerResponse
+│   └── handler.rs      # get_scanners(), create_scanner(), delete_scanner()
+│
+├── target/
+│   ├── mod.rs
+│   ├── request.rs      # CreateTargetOpts, GetTargetsOpts, ModifyTargetOpts
+│   ├── response.rs     # Target, PortListRef, GetTargetsResponse, CreateTargetResponse
+│   └── handler.rs      # create_target(), get_targets(), modify_target(), delete_target()
+│
+├── task/
+│   ├── mod.rs
+│   ├── request.rs      # CreateTaskOpts, GetTasksOpts, StartTaskOpts
+│   ├── response.rs     # Task, GetTasksResponse, CreateTaskResponse, StartTaskResponse
+│   └── handler.rs      # create_task(), get_tasks(), start_task(), stop_task()
+│
+├── scan_config/
+│   ├── mod.rs
+│   ├── request.rs
+│   ├── response.rs
+│   └── handler.rs
+│
+├── port_list/
+│   ├── mod.rs
+│   ├── request.rs
+│   ├── response.rs
+│   └── handler.rs
+│
+├── report/
+│   ├── mod.rs
+│   ├── request.rs
+│   ├── response.rs
+│   └── handler.rs
+│
+├── result/
+│   ├── mod.rs
+│   ├── request.rs
+│   ├── response.rs
+│   └── handler.rs
+│
+├── feed/
+│   ├── mod.rs
+│   ├── request.rs
+│   ├── response.rs
+│   └── handler.rs
+│
+├── nvt/
+│   ├── mod.rs
+│   ├── request.rs
+│   ├── response.rs
+│   └── handler.rs
+│
+├── alert/
+│   ├── mod.rs
+│   ├── request.rs
+│   ├── response.rs
+│   └── handler.rs
+│
+├── credential/
+│   ├── mod.rs
+│   ├── request.rs
+│   ├── response.rs
+│   └── handler.rs
+│
+├── filter/
+│   ├── mod.rs
+│   ├── request.rs
+│   ├── response.rs
+│   └── handler.rs
+│
+├── ... (remaining domains)
+│
+├── common/
+│   ├── mod.rs
+│   ├── entity.rs       # EntityMeta, Owner, Permissions (shared)
+│   ├── error.rs        # ParseError
+│   └── parse.rs        # XmlParser utilities
+│
+├── enums.rs            # AliveTest, AlertCondition, etc. (keep existing)
+├── types.rs            # EntityId, GmpVersion (keep existing)
+└── lib.rs              # Top-level re-exports
 ```
-
-**Pros:**
-- Keeps request/response logic together per command
-- Natural pairing: `commands::targets::create_target()` ↔ `responses::targets::CreateTargetResponse`
-- Single crate for all GMP protocol knowledge
-- gvm-mock-server can use same models for fixture generation
-
-**Cons:**
-- Makes gvm-gmp larger
-- Parsing logic mixed with command building
 
 ---
 
-### Option B: New `gvm-models` Crate
+## Design Pattern
 
-Create a dedicated models crate:
+Each domain follows a consistent structure:
 
-```
-crates/
-├── gvm-gmp/         # Request builders only
-├── gvm-protocol/    # Wire format
-├── gvm-models/      # NEW: Response models
-│   ├── src/
-│   │   ├── lib.rs
-│   │   ├── target.rs
-│   │   ├── task.rs
-│   │   ├── scanner.rs
-│   │   └── ...
-│   └── Cargo.toml
-└── gvm-client/      # Adds typed methods
-```
-
-**Pros:**
-- Clean separation: models are purely data structures
-- Can be versioned independently
-- Smaller, focused crate
-
-**Cons:**
-- Another crate to maintain
-- Dependency chain: gvm-client → gvm-models + gvm-gmp
-- Models divorced from command context
-
----
-
-### Option C: Response Models in `gvm-protocol`
-
-Extend gvm-protocol with typed parsing:
-
-```
-crates/gvm-protocol/
-├── src/
-│   ├── response.rs    # Existing Response
-│   ├── models/        # NEW
-│   │   ├── mod.rs
-│   │   ├── target.rs
-│   │   └── ...
-│   └── lib.rs
-```
-
-**Pros:**
-- Protocol-level concern (parsing belongs with protocol)
-- Minimal crate count
-
-**Cons:**
-- gvm-protocol is meant to be "sans-I/O" and low-level
-- Would need to depend on gvm-gmp for enums/types (circular risk)
-- Mixes concerns: wire framing vs. domain models
-
----
-
-## Recommendation: Option A (`gvm-gmp/responses`)
-
-Option A is the cleanest fit because:
-
-1. **Command ↔ Response symmetry:** Each command module gets a matching response module
-2. **Single source of truth:** All GMP protocol knowledge in one crate
-3. **Mock server reuse:** gvm-mock-server can import response models for fixture generation
-4. **No new dependencies:** Uses existing quick_xml, thiserror, etc.
-
----
-
-## Model Design
-
-### Base Entity Pattern
-
+### request.rs — Input Types
 ```rust
-// responses/common.rs
-
-/// Common entity metadata present on all GMP resources.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EntityMeta {
-    pub id: EntityId,
-    pub name: String,
-    pub comment: Option<String>,
-    pub creation_time: Option<DateTime<Utc>>,
-    pub modification_time: Option<DateTime<Utc>>,
-    pub owner: Option<Owner>,
-    pub permissions: Option<Permissions>,
-    pub in_use: bool,
-    pub writable: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Owner {
-    pub name: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Permissions {
-    pub permission: Vec<Permission>,
-}
-```
-
-### Response Envelope Pattern
-
-```rust
-// responses/targets.rs
+// target/request.rs
 
 use crate::enums::AliveTest;
 use crate::types::EntityId;
-use super::common::{EntityMeta, parse_response};
 
-/// A GMP target resource.
+/// Options for creating a target.
+#[derive(Debug, Clone, Default)]
+pub struct CreateTargetOpts {
+    pub comment: Option<String>,
+    pub hosts: Vec<String>,
+    pub exclude_hosts: Vec<String>,
+    pub alive_test: Option<AliveTest>,
+    pub port_list_id: Option<EntityId>,
+    pub reverse_lookup_only: Option<bool>,
+    pub reverse_lookup_unify: Option<bool>,
+}
+
+/// Options for listing targets.
+#[derive(Debug, Clone, Default)]
+pub struct GetTargetsOpts {
+    pub filter_string: Option<String>,
+    pub filter_id: Option<EntityId>,
+    pub trash: Option<bool>,
+    pub details: Option<bool>,
+}
+
+/// Options for modifying a target.
+#[derive(Debug, Clone, Default)]
+pub struct ModifyTargetOpts {
+    pub name: Option<String>,
+    pub comment: Option<String>,
+    pub hosts: Vec<String>,
+    pub exclude_hosts: Vec<String>,
+    pub alive_test: Option<AliveTest>,
+    pub port_list_id: Option<EntityId>,
+}
+```
+
+### response.rs — Output Types
+```rust
+// target/response.rs
+
+use crate::common::{EntityMeta, ParseError};
+use crate::enums::AliveTest;
+use crate::types::EntityId;
+use gvm_protocol::Response;
+
+/// A GMP target entity.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct Target {
     pub meta: EntityMeta,
     pub hosts: Vec<String>,
@@ -219,18 +222,12 @@ pub struct PortListRef {
 
 /// Response from get_targets command.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct GetTargetsResponse {
     pub status: u16,
     pub status_text: String,
     pub targets: Vec<Target>,
     pub target_count: TargetCount,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TargetCount {
-    pub total: u32,
-    pub filtered: u32,
-    pub page: u32,
 }
 
 /// Response from create_target command.
@@ -241,163 +238,252 @@ pub struct CreateTargetResponse {
     pub id: EntityId,
 }
 
+/// Response from modify_target / delete_target commands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TargetActionResponse {
+    pub status: u16,
+    pub status_text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TargetCount {
+    pub total: u32,
+    pub filtered: u32,
+    pub page: u32,
+}
+
 impl GetTargetsResponse {
-    /// Parse from raw Response.
+    /// Parse from raw GMP response.
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
-        // Implementation
+        // XML parsing implementation
+    }
+}
+
+impl CreateTargetResponse {
+    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+        // XML parsing implementation
     }
 }
 ```
 
-### Parsing Approach
-
+### handler.rs — Command Builders
 ```rust
-// responses/parse.rs
+// target/handler.rs
 
-use gvm_protocol::Response;
-use quick_xml::Reader;
-use quick_xml::events::Event;
+use gvm_protocol::{Request, XmlCommand};
+use crate::types::EntityId;
+use super::request::{CreateTargetOpts, GetTargetsOpts, ModifyTargetOpts};
 
+/// Build a create_target request.
+#[must_use]
+pub fn create_target(name: &str, opts: CreateTargetOpts) -> impl Request {
+    let mut cmd = XmlCommand::new("create_target");
+    cmd.add_element_with_text("name", name);
+    // ... build XML
+    cmd
+}
+
+/// Build a get_targets request.
+#[must_use]
+pub fn get_targets(opts: GetTargetsOpts) -> impl Request {
+    let mut cmd = XmlCommand::new("get_targets");
+    // ... build XML
+    cmd
+}
+
+/// Build a get_target request (single target by ID).
+#[must_use]
+pub fn get_target(target_id: &EntityId) -> impl Request {
+    XmlCommand::new("get_targets")
+        .attribute("target_id", target_id.as_str())
+        .attribute("details", "1")
+}
+
+/// Build a modify_target request.
+#[must_use]
+pub fn modify_target(target_id: &EntityId, opts: ModifyTargetOpts) -> impl Request {
+    let mut cmd = XmlCommand::new("modify_target")
+        .attribute("target_id", target_id.as_str());
+    // ... build XML
+    cmd
+}
+
+/// Build a delete_target request.
+#[must_use]
+pub fn delete_target(target_id: &EntityId, ultimate: bool) -> impl Request {
+    XmlCommand::new("delete_target")
+        .attribute("target_id", target_id.as_str())
+        .attribute("ultimate", if ultimate { "1" } else { "0" })
+}
+```
+
+### mod.rs — Re-exports
+```rust
+// target/mod.rs
+
+mod request;
+mod response;
+mod handler;
+
+pub use request::*;
+pub use response::*;
+pub use handler::*;
+```
+
+---
+
+## Common Types
+
+### common/entity.rs — Shared Entity Metadata
+```rust
+use crate::types::EntityId;
+
+/// Common metadata present on all GMP entities.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct EntityMeta {
+    pub id: EntityId,
+    pub name: String,
+    pub comment: Option<String>,
+    pub creation_time: Option<String>,  // ISO 8601 string
+    pub modification_time: Option<String>,
+    pub owner: Option<Owner>,
+    pub in_use: bool,
+    pub writable: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Owner {
+    pub name: String,
+}
+```
+
+### common/error.rs — Parse Errors
+```rust
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
     #[error("invalid XML: {0}")]
     Xml(#[from] quick_xml::Error),
+    
     #[error("missing required element: {0}")]
     MissingElement(String),
+    
     #[error("invalid value for {field}: {value}")]
     InvalidValue { field: String, value: String },
+    
     #[error("server error {status}: {message}")]
     ServerError { status: u16, message: String },
 }
+```
 
-/// Parse helper for common patterns.
-pub(crate) struct XmlParser<'a> {
-    reader: Reader<&'a [u8]>,
-}
+---
 
-impl<'a> XmlParser<'a> {
-    pub fn new(response: &'a Response) -> Result<Self, ParseError> {
-        // ...
-    }
-    
-    pub fn text_content(&mut self, element: &str) -> Result<Option<String>, ParseError> {
-        // ...
-    }
-    
-    pub fn attribute(&mut self, attr: &str) -> Result<Option<String>, ParseError> {
-        // ...
-    }
+## Usage Examples
+
+### Consumer Code (After)
+```rust
+use gvm_gmp::target::{CreateTargetOpts, create_target, CreateTargetResponse};
+use gvm_gmp::scanner::{get_scanners, GetScannersOpts, Scanner};
+use gvm_gmp::task::{Task, get_tasks, GetTasksOpts};
+
+// Create a target
+let opts = CreateTargetOpts {
+    hosts: vec!["192.168.1.0/24".to_string()],
+    port_list_id: Some(port_list_id),
+    ..Default::default()
+};
+let response = client.call(create_target("My Target", opts)).await?;
+let result = CreateTargetResponse::from_response(&response)?;
+println!("Created target: {}", result.id);
+
+// List scanners
+let response = client.call(get_scanners(GetScannersOpts::default())).await?;
+let scanners = GetScannersResponse::from_response(&response)?;
+for scanner in &scanners.scanners {
+    println!("Scanner: {} ({})", scanner.meta.name, scanner.meta.id);
 }
 ```
 
 ---
 
-## Integration with Existing Code
+## Migration Strategy
 
-### gvm-client Changes
+### Phase 1: Create New Structure (Non-Breaking)
 
-Add typed methods alongside raw `send`/`call`:
+1. Add domain folders alongside existing `commands/` module
+2. Implement request/response/handler for core domains
+3. Re-export from top-level `lib.rs` for new API
+4. Existing `commands::*` paths continue to work
 
-```rust
-// gvm-client/src/lib.rs
+### Phase 2: Migrate Consumers
 
-impl<C: GvmConnection> GmpClient<C> {
-    // Existing raw methods
-    pub async fn send<R: Request>(&mut self, request: R) -> Result<Response, GvmError>;
-    pub async fn call<R: Request>(&mut self, request: R) -> Result<Response, GvmError>;
-    
-    // NEW: Typed methods
-    pub async fn get_targets(
-        &mut self, 
-        opts: GetTargetsOpts
-    ) -> Result<GetTargetsResponse, GvmError> {
-        let response = self.call(gvm_gmp::commands::targets::get_targets(opts)).await?;
-        GetTargetsResponse::from_response(&response)
-            .map_err(|e| GvmError::Parse(e.to_string()))
-    }
-    
-    pub async fn create_target(
-        &mut self,
-        name: &str,
-        opts: CreateTargetOpts,
-    ) -> Result<CreateTargetResponse, GvmError> {
-        let response = self.call(gvm_gmp::commands::targets::create_target(name, opts)).await?;
-        CreateTargetResponse::from_response(&response)
-            .map_err(|e| GvmError::Parse(e.to_string()))
-    }
-}
-```
+1. Update gvm-rools to use new domain imports
+2. Update rust-gvm-api to use new domain imports
+3. Update E2E tests to use typed responses
 
-### gvm-mock-server Integration
+### Phase 3: Deprecate Old Structure
 
-Use response models for fixture generation:
-
-```rust
-// gvm-mock-server/src/fixtures.rs
-
-use gvm_gmp::responses::targets::{Target, GetTargetsResponse};
-
-impl GetTargetsResponse {
-    /// Generate fixture XML from model.
-    pub fn to_xml(&self) -> String {
-        // Serialize back to GMP XML
-    }
-}
-
-// Or keep as separate trait:
-pub trait ToGmpXml {
-    fn to_gmp_xml(&self) -> String;
-}
-```
+1. Mark `commands::*` as `#[deprecated]`
+2. Point users to new domain-based imports
+3. Remove in next major version
 
 ---
 
-## Commands to Model (Priority Order)
+## Domains to Implement
 
-### Phase 1: Core Commands (Week 1)
-| Command | Response Model |
-|---------|----------------|
-| `get_version` | `GetVersionResponse` |
-| `authenticate` | `AuthenticateResponse` |
-| `get_targets` | `GetTargetsResponse`, `Target` |
-| `create_target` | `CreateTargetResponse` |
-| `get_scan_configs` | `GetScanConfigsResponse`, `ScanConfig` |
-| `get_scanners` | `GetScannersResponse`, `Scanner` |
-| `get_port_lists` | `GetPortListsResponse`, `PortList` |
+### Phase 1: Core (Week 1)
+| Domain | Operations |
+|--------|------------|
+| `version` | get_version |
+| `auth` | authenticate |
+| `target` | create, get, get_all, modify, delete, clone |
+| `scan_config` | create, get, get_all, modify, delete, clone |
+| `scanner` | create, get, get_all, modify, delete |
+| `port_list` | create, get, get_all, modify, delete, clone |
 
-### Phase 2: Tasks & Scans (Week 2)
-| Command | Response Model |
-|---------|----------------|
-| `get_tasks` | `GetTasksResponse`, `Task` |
-| `create_task` | `CreateTaskResponse` |
-| `start_task` | `StartTaskResponse` |
-| `get_reports` | `GetReportsResponse`, `Report` |
-| `get_results` | `GetResultsResponse`, `Result` |
+### Phase 2: Tasks & Reports (Week 2)
+| Domain | Operations |
+|--------|------------|
+| `task` | create, get, get_all, modify, delete, clone, start, stop, resume |
+| `report` | get, get_all, delete |
+| `result` | get, get_all |
 
 ### Phase 3: Security Info (Week 3)
-| Command | Response Model |
-|---------|----------------|
-| `get_nvts` | `GetNvtsResponse`, `Nvt` |
-| `get_cves` | `GetCvesResponse`, `Cve` |
-| `get_cpes` | `GetCpesResponse`, `Cpe` |
-| `get_feeds` | `GetFeedsResponse`, `Feed` |
+| Domain | Operations |
+|--------|------------|
+| `feed` | get_all |
+| `nvt` | get, get_all |
+| `cve` | get, get_all |
+| `cpe` | get, get_all |
+| `cert_bund` | get, get_all |
+| `dfn_cert` | get, get_all |
 
-### Phase 4: Remaining Commands (Week 4)
-- Alerts, Credentials, Filters, Notes, Overrides
-- Users, Groups, Roles, Permissions
-- Tags, Tickets, Schedules
+### Phase 4: Remaining (Week 4)
+| Domain | Operations |
+|--------|------------|
+| `alert` | CRUD |
+| `credential` | CRUD |
+| `filter` | CRUD |
+| `note` | CRUD |
+| `override` | CRUD |
+| `schedule` | CRUD |
+| `tag` | CRUD |
+| `ticket` | CRUD |
+| `user` | CRUD |
+| `group` | CRUD |
+| `role` | CRUD |
+| `permission` | CRUD |
 
 ---
 
-## Serde Support
-
-Add optional serde feature for JSON serialization:
+## Feature Flags
 
 ```toml
 # crates/gvm-gmp/Cargo.toml
+
 [features]
 default = []
-serde = ["dep:serde"]
+serde = ["dep:serde"]  # Enable JSON serialization
 
 [dependencies]
 serde = { version = "1", features = ["derive"], optional = true }
@@ -406,6 +492,7 @@ serde = { version = "1", features = ["derive"], optional = true }
 ```rust
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub struct Target {
     // ...
 }
@@ -413,56 +500,16 @@ pub struct Target {
 
 ---
 
-## Migration Path
+## Open Questions
 
-1. **Non-breaking:** New `responses` module is additive
-2. **Existing code continues to work:** `send()`/`call()` still return `Response`
-3. **Gradual adoption:** Consumers migrate one command at a time
-4. **Deprecation (future):** Eventually deprecate raw `Response` methods
+1. **Timestamp handling:** Start with `String` (ISO 8601), add parsed `DateTime` later?
+   - Recommendation: Yes, keep it simple initially
 
----
+2. **`#[non_exhaustive]` on all structs?**
+   - Recommendation: Yes, allows adding fields without breaking changes
 
-## Open Questions for Decision
-
-1. **Should we use `derive` macros for XML parsing?**
-   - Options: Hand-written parsing vs. `serde-xml-rs` vs. custom derive
-   - Recommendation: Hand-written for control, consider macro later
-
-2. **Should response models be `#[non_exhaustive]`?**
-   - Allows adding fields without breaking changes
-   - Recommendation: Yes
-
-3. **Should we include raw XML alongside parsed data?**
-   - Useful for debugging, extensions
-   - Recommendation: No (can call `as_str()` on original Response if needed)
-
-4. **Timestamp handling: `chrono` or `time`?**
-   - `chrono` is more common but has had security issues
-   - `time` is lighter but less mature
-   - Recommendation: Start with String, add parsed timestamp later
-
----
-
-## Files to Create
-
-```
-crates/gvm-gmp/src/responses/
-├── mod.rs              # Module exports
-├── common.rs           # EntityMeta, Owner, Permissions, parsing utilities
-├── error.rs            # ParseError
-├── parse.rs            # XmlParser helper
-├── version.rs          # GetVersionResponse
-├── authentication.rs   # AuthenticateResponse
-├── targets.rs          # Target, GetTargetsResponse, CreateTargetResponse
-├── scan_configs.rs     # ScanConfig, GetScanConfigsResponse
-├── scanners.rs         # Scanner, GetScannersResponse
-├── port_lists.rs       # PortList, GetPortListsResponse
-├── tasks.rs            # Task, GetTasksResponse, CreateTaskResponse
-├── reports.rs          # Report, GetReportsResponse
-├── results.rs          # Result, GetResultsResponse
-├── feeds.rs            # Feed, GetFeedsResponse
-└── ... (remaining commands)
-```
+3. **Separate `get` vs `get_all` handlers, or unified with options?**
+   - Recommendation: Unified — `get_targets(opts)` handles both via `target_id` option
 
 ---
 
@@ -470,15 +517,18 @@ crates/gvm-gmp/src/responses/
 
 | Aspect | Decision |
 |--------|----------|
-| **Location** | `gvm-gmp/src/responses/` (Option A) |
-| **Pattern** | Struct per entity + struct per response envelope |
+| **Structure** | Domain-based (`target/`, `scanner/`, `task/`) |
+| **Files per domain** | `mod.rs`, `request.rs`, `response.rs`, `handler.rs` |
+| **Shared types** | `common/` module |
 | **Parsing** | Hand-written with quick_xml |
 | **Serde** | Optional feature flag |
-| **Breaking changes** | None (additive) |
+| **Non-exhaustive** | Yes, on all public structs |
+| **Breaking changes** | None (additive, deprecate later) |
 | **Timeline** | 4 weeks for full coverage |
 
 ---
 
 *Author: Thoth*  
 *Date: 2026-03-25*  
-*Status: RFC — Awaiting Review*
+*Revised: Domain-based structure per @recepkizilarslan feedback*  
+*Status: RFC v2 — Awaiting Final Review*
