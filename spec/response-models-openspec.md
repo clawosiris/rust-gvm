@@ -247,45 +247,25 @@ Key parsing helpers:
 
 **Totals:** 6 modules, 4 entity structs, 14 response types, 26 tests, ~1,290 lines added.
 
-### Phase 2: Tasks & Reports
+### Phase 2: Tasks & Reports ✅ (Complete — PR #68)
 
-| Domain | Entity | Responses | Notes |
-|--------|--------|-----------|-------|
-| `task` | `Task` | `GetTasksResponse`, `CreateTaskResponse`, `StartTaskResponse`, `StopTaskResponse`, `ResumeTaskResponse` | Includes audit variants; `StartTaskResponse` has `report_id` |
-| `report` | `Report`, `ReportResult` | `GetReportsResponse`, `GetReportResponse` (single, detailed) | Large response handling; nested results |
-| `result` | `Result_` | `GetResultsResponse` | Vulnerability finding details; severity, threat, QoD |
+| Domain | Entity | List Response | Create Response | Action/Other Types | Tests |
+|--------|--------|---------------|-----------------|-------------------|-------|
+| `task` | `Task`, `LastReport` | `GetTasksResponse` | `CreateTaskResponse` | `StartTaskResponse`, `Stop`, `Resume`, `Modify`, `Delete`, `Move` | 6 |
+| `report` | `Report`, `ResultCount`, `Severity` | `GetReportsResponse` | — | `DeleteReportResponse` | 5 |
+| `result` | `ScanResult`, `NvtRef`, `QodInfo` | `GetResultsResponse` | — | — | 5 |
 
-**Task entity fields:**
-- `meta: EntityMeta`
-- `status: Option<String>` (e.g., "Done", "Running", "New")
-- `progress: Option<i32>` (-1 = not started, 0-100 = percent)
-- `scanner: Option<NamedEntity>`
-- `target: Option<NamedEntity>`
-- `config: Option<NamedEntity>`
-- `schedule: Option<NamedEntity>`
-- `alert: Vec<NamedEntity>`
-- `last_report: Option<ReportRef>` (id + timestamp)
-- `report_count: Option<u32>`
-- `trend: Option<String>`
+**Totals:** 3 modules, 7 entity/helper structs, 11 response types, 16 tests, ~811 lines added.
 
-**Report entity fields:**
-- `meta: EntityMeta`
-- `task: Option<NamedEntity>`
-- `scan_start: Option<String>`
-- `scan_end: Option<String>`
-- `result_count: Option<ResultCount>` (total, filtered, by severity)
-- `severity: Option<Severity>` (score, level)
-- `hosts: Option<HostSummary>` (count)
-
-**Result entity fields:**
-- `meta: EntityMeta`
-- `host: Option<String>`
-- `port: Option<String>`
-- `nvt: Option<NvtRef>` (oid, name, family, cvss_base)
-- `threat: Option<String>` (High/Medium/Low/Log/Debug)
-- `severity: Option<f64>` — note: use `String` initially, parse later
-- `qod: Option<QodInfo>` (value, type)
-- `description: Option<String>`
+**Implementation highlights:**
+- `Task.progress` uses `i32` (-1 = not started, 0-100 = percent)
+- `Task.alerts` is `Vec<NamedEntity>` (multiple alerts per task)
+- `LastReport` contains `id: EntityId` + `timestamp: Option<String>` from nested `<last_report><report id="...">` XML
+- `StartTaskResponse` extracts `report_id` from the 202 response body
+- `Report` handles GMP's double-`<report>` nesting (outer = entity metadata, inner = scan details with result_count, severity, hosts)
+- `ScanResult.nvt` parses `oid` from XML attribute, name/family/cvss_base from child elements
+- `QodInfo` has `value: Option<u32>` + `type_: Option<String>`
+- All severity values stored as `String` (not f64) per design rules
 
 ### Phase 3: Security Info
 
@@ -374,15 +354,108 @@ for target in &parsed.items {
 
 ### Per-Domain Test Matrix
 
-Each domain module includes these test categories:
+Each domain module includes these standard test categories:
 
-| Test | Description |
-|------|-------------|
-| `parses_multiple_*` | Multi-item list response with all fields populated |
-| `parses_empty_*` | Empty list (0 items, counts at 0) |
-| `parses_create_*_response` | Create response with id extraction |
-| `rejects_server_error` | Non-2xx status returns `ParseError::ServerError` |
-| `parses_missing_optional_*_fields` | Entity with only required fields (name, id); optionals are `None`/defaults |
+| Category | Test Name Pattern | Description |
+|----------|-------------------|-------------|
+| Multi-item | `parses_multiple_*` | List response with 2+ items, all fields populated; validates counts, entity fields, nested refs |
+| Empty list | `parses_empty_*` | Empty list (0 items, counts at 0); verifies no panic on missing items |
+| Create | `parses_create_*_response` | Create response (201) with `id` extraction from root attribute |
+| Error | `rejects_server_error` | Non-2xx status returns `ParseError::ServerError` with correct status + message |
+| Optional fields | `parses_missing_optional_*_fields` | Entity with only required fields (name, id); all optionals are `None`/defaults |
+
+### Complete Test Inventory
+
+#### Phase 1 Tests (26 total)
+
+**`version.rs`** (3 tests):
+| Test | Validates |
+|------|-----------|
+| `parses_version_response` | Status 200, status_text, version string extraction |
+| `rejects_server_error` | Status 500 → `ParseError::ServerError` |
+| `rejects_missing_version` | Missing `<version>` element → `ParseError::MissingElement` |
+
+**`auth.rs`** (3 tests):
+| Test | Validates |
+|------|-----------|
+| `parses_authenticate_response` | Status 200 with child elements |
+| `parses_self_closing_authenticate_response` | Self-closing `<authenticate_response ... />` (no body) |
+| `rejects_server_error` | Status 400 → `ParseError::ServerError` |
+
+**`target.rs`** (5 tests):
+| Test | Validates |
+|------|-----------|
+| `parses_multiple_targets` | 2 targets with owner, hosts, exclude_hosts, alive_tests, reverse_lookup flags, port_list ref (NamedEntity), max_hosts, counts with page |
+| `parses_empty_targets` | 0 items, total count = 0 |
+| `parses_create_target_response` | Status 201, id from root attribute |
+| `rejects_server_error` | Status 400 → error |
+| `parses_missing_optional_target_fields` | Only name+id present; comment, hosts, port_list all None; in_use/writable false |
+
+**`scan_config.rs`** (5 tests):
+| Test | Validates |
+|------|-----------|
+| `parses_multiple_scan_configs` | 2 configs with usage_type (scan/policy), counts |
+| `parses_empty_scan_configs` | 0 items |
+| `parses_create_scan_config_response` | Status 201, id extraction |
+| `rejects_server_error` | Status 404 → error |
+| `parses_missing_optional_scan_config_fields` | comment=None, usage_type=None, in_use=false |
+
+**`scanner.rs`** (5 tests):
+| Test | Validates |
+|------|-----------|
+| `parses_multiple_scanners` | 2 scanners with type, host, port (u16), credential ref (NamedEntity) |
+| `parses_empty_scanners` | 0 items |
+| `parses_create_scanner_response` | Status 201, id extraction |
+| `rejects_server_error` | Status 503 → error |
+| `parses_missing_optional_scanner_fields` | host=None, port=None, credential=None |
+
+**`port_list.rs`** (5 tests):
+| Test | Validates |
+|------|-----------|
+| `parses_multiple_port_lists` | 2 port lists with port_count (u32), port_range string, page count |
+| `parses_empty_port_lists` | 0 items |
+| `parses_create_port_list_response` | Status 201, id extraction |
+| `rejects_server_error` | Status 500 → error |
+| `parses_missing_optional_port_list_fields` | comment=None, port_count=None, port_range=None |
+
+#### Phase 2 Tests (16 total)
+
+**`task.rs`** (6 tests):
+| Test | Validates |
+|------|-----------|
+| `parses_multiple_tasks` | 2 tasks with status, progress (i32), target/config/scanner/schedule refs, 2 alerts (Vec\<NamedEntity\>), last_report (nested report id+timestamp), report_count, trend, usage_type, hosts_ordering |
+| `parses_empty_tasks` | 0 items |
+| `parses_create_task_response` | Status 201, id extraction |
+| `parses_start_task_response` | **Status 202** (not 200), report_id extraction from `<report_id>` child |
+| `rejects_server_error` | Status 400 → error |
+| `parses_missing_optional_task_fields` | All optional fields None/empty; alerts vec empty |
+
+**`report.rs`** (5 tests):
+| Test | Validates |
+|------|-----------|
+| `parses_multiple_reports` | 2 reports; first has nested inner `<report>` with scan_start, scan_end, result_count (full+filtered), severity (full+filtered), host_count; second has no inner report |
+| `parses_empty_reports` | 0 items |
+| `parses_nested_report_details` | **Double-report nesting**: outer entity metadata + inner scan details; validates scan_end, result_count.filtered, severity.full, host_count |
+| `rejects_server_error` | Status 500 → error |
+| `parses_missing_optional_report_fields` | task=None, scan_start=None, result_count=None, severity=None, host_count=None |
+
+**`result.rs`** (5 tests):
+| Test | Validates |
+|------|-----------|
+| `parses_multiple_results` | 2 results with host, port, NvtRef (oid from attribute, name, family, cvss_base), threat, severity (String), QodInfo (value u32, type_), description |
+| `parses_empty_results` | 0 items |
+| `parses_nvt_with_oid_attribute` | **NVT oid from XML attribute** (not child element); validates oid + nested name |
+| `rejects_server_error` | Status 503 → error |
+| `parses_missing_optional_result_fields` | host=None, nvt=None, qod=None, description=None |
+
+### Planned Tests (Phase 3-4)
+
+Each new domain module will follow the same 5-test minimum pattern. Domain-specific tests will be added for:
+- **feed**: No entity id (feeds use type as key, not UUID)
+- **nvt**: OID-keyed entities (not UUID), tags parsing
+- **secinfo**: Generic response over multiple info types
+- **alert**: Condition/event/method sub-structures
+- **schedule**: iCalendar data parsing
 
 ### Integration Testing
 
@@ -460,3 +533,5 @@ impl<C: GvmConnection> GmpClient<C> {
 ---
 
 *This spec is a living document. Updated as phases complete and design evolves.*
+
+*Last updated: 2026-03-26 (Phase 2 complete)*
