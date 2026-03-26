@@ -126,7 +126,13 @@ mod tests {
         assert_eq!(parsed.items.len(), 2);
         assert_eq!(parsed.items[0].scanner_type.as_deref(), Some("OpenVAS"));
         assert_eq!(parsed.items[0].port, Some(9390));
-        assert_eq!(parsed.items[0].credential.as_ref().map(|credential| credential.name.as_str()), Some("OSP Credential"));
+        assert_eq!(
+            parsed.items[0]
+                .credential
+                .as_ref()
+                .map(|credential| credential.name.as_str()),
+            Some("OSP Credential")
+        );
     }
 
     #[test]

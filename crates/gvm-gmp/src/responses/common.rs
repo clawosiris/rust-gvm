@@ -209,7 +209,9 @@ fn collect_attributes(
         let attribute = attribute.map_err(quick_xml::Error::from)?;
         attributes.insert(
             str::from_utf8(attribute.key.as_ref())?.to_string(),
-            attribute.decode_and_unescape_value(event.decoder())?.into_owned(),
+            attribute
+                .decode_and_unescape_value(event.decoder())?
+                .into_owned(),
         );
     }
     Ok(attributes)
@@ -296,7 +298,10 @@ pub(crate) fn parse_owner(node: &XmlNode) -> Result<Option<Owner>, ParseError> {
         .transpose()
 }
 
-pub(crate) fn parse_named_entity(node: &XmlNode, field: &str) -> Result<Option<NamedEntity>, ParseError> {
+pub(crate) fn parse_named_entity(
+    node: &XmlNode,
+    field: &str,
+) -> Result<Option<NamedEntity>, ParseError> {
     node.child(field)
         .map(|child| {
             let id = parse_entity_id(

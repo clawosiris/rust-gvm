@@ -145,8 +145,21 @@ mod tests {
         assert_eq!(parsed.counts.total, Some(2));
         assert_eq!(parsed.counts.filtered, Some(2));
         assert_eq!(parsed.counts.page, Some(1));
-        assert_eq!(parsed.items[0].meta.owner.as_ref().map(|owner| owner.name.as_str()), Some("admin"));
-        assert_eq!(parsed.items[0].port_list.as_ref().map(|port_list| port_list.name.as_str()), Some("All TCP"));
+        assert_eq!(
+            parsed.items[0]
+                .meta
+                .owner
+                .as_ref()
+                .map(|owner| owner.name.as_str()),
+            Some("admin")
+        );
+        assert_eq!(
+            parsed.items[0]
+                .port_list
+                .as_ref()
+                .map(|port_list| port_list.name.as_str()),
+            Some("All TCP")
+        );
         assert!(parsed.items[0].reverse_lookup_unify);
         assert!(parsed.items[1].meta.in_use);
     }

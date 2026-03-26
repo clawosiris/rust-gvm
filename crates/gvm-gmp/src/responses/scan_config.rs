@@ -138,8 +138,7 @@ mod tests {
             r#"<create_config_response status="201" status_text="OK, resource created" id="cfg-1"/>"#,
         );
 
-        let parsed =
-            CreateScanConfigResponse::from_response(&response).expect("create parses");
+        let parsed = CreateScanConfigResponse::from_response(&response).expect("create parses");
 
         assert_eq!(parsed.id.as_str(), "cfg-1");
     }
@@ -149,8 +148,7 @@ mod tests {
         let response =
             Response::from(r#"<get_configs_response status="404" status_text="Not Found"/>"#);
 
-        let error =
-            GetScanConfigsResponse::from_response(&response).expect_err("error expected");
+        let error = GetScanConfigsResponse::from_response(&response).expect_err("error expected");
 
         assert!(matches!(
             error,

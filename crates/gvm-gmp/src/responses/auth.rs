@@ -38,8 +38,7 @@ mod tests {
             r#"<authenticate_response status="200" status_text="OK"><role>Admin</role></authenticate_response>"#,
         );
 
-        let parsed =
-            AuthenticateResponse::from_response(&response).expect("authenticate parses");
+        let parsed = AuthenticateResponse::from_response(&response).expect("authenticate parses");
 
         assert_eq!(parsed.status, 200);
         assert_eq!(parsed.status_text, "OK");
@@ -49,8 +48,7 @@ mod tests {
     fn parses_self_closing_authenticate_response() {
         let response = Response::from(r#"<authenticate_response status="200" status_text="OK"/>"#);
 
-        let parsed =
-            AuthenticateResponse::from_response(&response).expect("authenticate parses");
+        let parsed = AuthenticateResponse::from_response(&response).expect("authenticate parses");
 
         assert_eq!(parsed.status, 200);
     }
