@@ -3,7 +3,7 @@
 **Version:** 1.0  
 **Author:** Thoth  
 **Date:** 2026-03-26  
-**Status:** Implementation In Progress (Phase 1 complete)  
+**Status:** Implementation In Progress (Phases 1-3 complete)  
 **RFC:** [PR #65](https://github.com/clawosiris/rust-gvm/pull/65)  
 **Phase 1 PR:** [PR #67](https://github.com/clawosiris/rust-gvm/pull/67)
 
@@ -267,13 +267,22 @@ Key parsing helpers:
 - `QodInfo` has `value: Option<u32>` + `type_: Option<String>`
 - All severity values stored as `String` (not f64) per design rules
 
-### Phase 3: Security Info
+### Phase 3: Security Info ✅ (Complete)
 
 | Domain | Entity | Responses | Notes |
 |--------|--------|-----------|-------|
-| `feed` | `Feed` | `GetFeedsResponse` | Feed type, version, status |
-| `nvt` | `Nvt`, `NvtFamily` | `GetNvtsResponse`, `GetNvtFamiliesResponse` | OID-keyed; refs, tags, solution |
-| `secinfo` | `Cve`, `Cpe`, `CertBundAdvisory`, `DfnCertAdvisory` | `GetSecInfoResponse<T>` | Generic over info type; parsed from `get_info` |
+| `feed` | `Feed` | `GetFeedsResponse` | Feed type/name required; version, status, description, sync state optional |
+| `nvt` | `Nvt`, `NvtFamily` | `GetNvtsResponse`, `GetNvtFamiliesResponse` | OID from `oid` attr with `id` fallback; family counts support both `nvt_family_count` and `family_count` |
+| `secinfo` | `Cve`, `Cpe`, `CertBundAdvisory`, `DfnCertAdvisory` | `GetCvesResponse`, `GetCpesResponse`, `GetCertBundAdvisoriesResponse`, `GetDfnCertAdvisoriesResponse` | Typed `get_info_response` variants keyed by entry element name and count element |
+
+**Totals:** 3 modules, 7 entity structs, 7 response types, 19 tests, ~764 lines added.
+
+**Implementation highlights:**
+- `Feed` parsing enforces required `<type>` and `<name>` children and reads list counts from `<feed_count>`
+- `Nvt` supports both `<nvt oid=\"...\">` and `<nvt id=\"...\">` for mock compatibility
+- `NvtFamily.max_nvt_count` parses from `<count>` and list counts fall back from `nvt_family_count` to `family_count`
+- Secinfo responses all parse from `get_info_response`, with required `id` attribute + `<name>` child per entry
+- Missing secinfo count elements default to `CountInfo::default()` to match existing helper behavior
 
 **Feed entity fields:**
 - `type_: String` (NVT, SCAP, CERT, GVMD_DATA)
@@ -290,7 +299,6 @@ Key parsing helpers:
 - `severity: Option<String>`
 - `tags: Option<String>` (pipe-separated key=value)
 - `solution_type: Option<String>`
-- `refs: Vec<NvtRef>` (type + id, e.g., CVE, BID, URL)
 
 ### Phase 4: Remaining Entities
 
@@ -448,12 +456,42 @@ Each domain module includes these standard test categories:
 | `rejects_server_error` | Status 503 → error |
 | `parses_missing_optional_result_fields` | host=None, nvt=None, qod=None, description=None |
 
-### Planned Tests (Phase 3-4)
+#### Phase 3 Tests (19 total)
 
-Each new domain module will follow the same 5-test minimum pattern. Domain-specific tests will be added for:
-- **feed**: No entity id (feeds use type as key, not UUID)
-- **nvt**: OID-keyed entities (not UUID), tags parsing
-- **secinfo**: Generic response over multiple info types
+**`feed.rs`** (5 tests):
+| Test | Validates |
+|------|-----------|
+| `parses_multiple_feeds` | 2 feeds with required type/name plus version, status, description, currently_syncing, and `<feed_count>` pagination |
+| `parses_empty_feeds` | 0 items with total count = 0 |
+| `rejects_server_error` | Status 500 → `ParseError::ServerError` |
+| `parses_missing_optional_feed_fields` | Required type+name only; all optional feed fields are `None` |
+| `rejects_missing_required_feed_fields` | Missing `<type>` or `<name>` rejects with `ParseError::MissingElement` |
+
+**`nvt.rs`** (6 tests):
+| Test | Validates |
+|------|-----------|
+| `parses_multiple_nvts` | 2 NVTs with oid, family, cvss_base, severity, tags, solution_type, and `<nvt_count>` pagination |
+| `parses_empty_nvts` | 0 items with total count = 0 |
+| `parses_nvt_oid_from_id_fallback` | OID fallback from `<nvt id=\"...\">` when `oid` attr is absent |
+| `rejects_server_error` | Status 503 → `ParseError::ServerError` |
+| `parses_missing_optional_nvt_fields` | Required oid+name only; all optional NVT fields are `None` |
+| `parses_nvt_families` | `NvtFamily` parsing from `<nvt_family>` entries with `<count>` values and count-element fallback from `family_count` |
+
+**`secinfo.rs`** (8 tests):
+| Test | Validates |
+|------|-----------|
+| `parses_multiple_cves` | 2 CVEs from `get_info_response` with `id` attr, `<name>`, and `<cve_count>` pagination |
+| `parses_empty_cves` | 0 CVE items with total count = 0 |
+| `rejects_server_error_for_cves` | Status 404 → `ParseError::ServerError` |
+| `rejects_missing_required_cve_fields` | Missing CVE `id` attr or `<name>` rejects with `ParseError::MissingElement` |
+| `parses_multiple_cpes` | 2 CPE entries with `cpe_count.filtered` parsing |
+| `parses_multiple_cert_bund_advisories` | 2 CERT-Bund advisories with `cert_bund_adv_count` total |
+| `parses_multiple_dfn_cert_advisories` | 2 DFN-CERT advisories with `dfn_cert_adv_count` total |
+| `counts_default_when_missing_count_element` | Absent count element returns `CountInfo::default()` |
+
+### Planned Tests (Phase 4)
+
+Domain-specific tests will be added for:
 - **alert**: Condition/event/method sub-structures
 - **schedule**: iCalendar data parsing
 
@@ -534,4 +572,4 @@ impl<C: GvmConnection> GmpClient<C> {
 
 *This spec is a living document. Updated as phases complete and design evolves.*
 
-*Last updated: 2026-03-26 (Phase 2 complete)*
+*Last updated: 2026-03-26 (Phase 3 complete)*
