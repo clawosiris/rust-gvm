@@ -51,6 +51,62 @@ jobs:
       - name: Run cargo-machete
         run: cargo machete
 
+  # Track dependency audit coverage and block unvetted updates
+  cargo-vet:
+    name: Cargo Vet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - uses: taiki-e/install-action@660ccd1d376e9007f8fbbc3c66b63643fa9ddd6e # cargo-vet
+        with:
+          tool: cargo-vet
+      - name: Run cargo-vet
+        run: cargo vet
+
+  # Non-blocking dependency unsafe usage report
+  cargo-geiger-report:
+    name: Cargo Geiger Report
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - uses: taiki-e/install-action@660ccd1d376e9007f8fbbc3c66b63643fa9ddd6e # cargo-geiger
+        with:
+          tool: cargo-geiger
+      - name: Generate geiger reports (all workspace crates)
+        shell: bash
+        run: |
+          mkdir -p target/geiger
+          crates=(gvm-protocol gvm-gmp gvm-client gvm-connection gvm-mock-server)
+          for crate in "${crates[@]}"; do
+            cargo geiger \
+              --manifest-path "$PWD/crates/$crate/Cargo.toml" \
+              --all-features \
+              --all-dependencies \
+              --output-format Ascii > "target/geiger/${crate}.txt" || true
+          done
+      - name: Upload geiger artifacts
+        if: always()
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4
+        with:
+          name: cargo-geiger-report
+          path: target/geiger
+
+  # Blocking check: our crates must not use unsafe
+  cargo-geiger-workspace-gate:
+    name: Cargo Geiger Workspace Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - uses: taiki-e/install-action@660ccd1d376e9007f8fbbc3c66b63643fa9ddd6e # cargo-geiger
+        with:
+          tool: cargo-geiger
+      - name: Fail if workspace crates use unsafe
+        run: python3 scripts/check_workspace_unsafe.py
+
   # OSSF Scorecard (supply chain security)
   # Requires public repo — enable when repo visibility changes
   # scorecard:
