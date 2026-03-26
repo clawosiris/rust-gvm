@@ -247,45 +247,25 @@ Key parsing helpers:
 
 **Totals:** 6 modules, 4 entity structs, 14 response types, 26 tests, ~1,290 lines added.
 
-### Phase 2: Tasks & Reports
+### Phase 2: Tasks & Reports ✅ (Complete — PR #68)
 
-| Domain | Entity | Responses | Notes |
-|--------|--------|-----------|-------|
-| `task` | `Task` | `GetTasksResponse`, `CreateTaskResponse`, `StartTaskResponse`, `StopTaskResponse`, `ResumeTaskResponse` | Includes audit variants; `StartTaskResponse` has `report_id` |
-| `report` | `Report`, `ReportResult` | `GetReportsResponse`, `GetReportResponse` (single, detailed) | Large response handling; nested results |
-| `result` | `Result_` | `GetResultsResponse` | Vulnerability finding details; severity, threat, QoD |
+| Domain | Entity | List Response | Create Response | Action/Other Types | Tests |
+|--------|--------|---------------|-----------------|-------------------|-------|
+| `task` | `Task`, `LastReport` | `GetTasksResponse` | `CreateTaskResponse` | `StartTaskResponse`, `Stop`, `Resume`, `Modify`, `Delete`, `Move` | 6 |
+| `report` | `Report`, `ResultCount`, `Severity` | `GetReportsResponse` | — | `DeleteReportResponse` | 5 |
+| `result` | `ScanResult`, `NvtRef`, `QodInfo` | `GetResultsResponse` | — | — | 5 |
 
-**Task entity fields:**
-- `meta: EntityMeta`
-- `status: Option<String>` (e.g., "Done", "Running", "New")
-- `progress: Option<i32>` (-1 = not started, 0-100 = percent)
-- `scanner: Option<NamedEntity>`
-- `target: Option<NamedEntity>`
-- `config: Option<NamedEntity>`
-- `schedule: Option<NamedEntity>`
-- `alert: Vec<NamedEntity>`
-- `last_report: Option<ReportRef>` (id + timestamp)
-- `report_count: Option<u32>`
-- `trend: Option<String>`
+**Totals:** 3 modules, 7 entity/helper structs, 11 response types, 16 tests, ~811 lines added.
 
-**Report entity fields:**
-- `meta: EntityMeta`
-- `task: Option<NamedEntity>`
-- `scan_start: Option<String>`
-- `scan_end: Option<String>`
-- `result_count: Option<ResultCount>` (total, filtered, by severity)
-- `severity: Option<Severity>` (score, level)
-- `hosts: Option<HostSummary>` (count)
-
-**Result entity fields:**
-- `meta: EntityMeta`
-- `host: Option<String>`
-- `port: Option<String>`
-- `nvt: Option<NvtRef>` (oid, name, family, cvss_base)
-- `threat: Option<String>` (High/Medium/Low/Log/Debug)
-- `severity: Option<f64>` — note: use `String` initially, parse later
-- `qod: Option<QodInfo>` (value, type)
-- `description: Option<String>`
+**Implementation highlights:**
+- `Task.progress` uses `i32` (-1 = not started, 0-100 = percent)
+- `Task.alerts` is `Vec<NamedEntity>` (multiple alerts per task)
+- `LastReport` contains `id: EntityId` + `timestamp: Option<String>` from nested `<last_report><report id="...">` XML
+- `StartTaskResponse` extracts `report_id` from the 202 response body
+- `Report` handles GMP's double-`<report>` nesting (outer = entity metadata, inner = scan details with result_count, severity, hosts)
+- `ScanResult.nvt` parses `oid` from XML attribute, name/family/cvss_base from child elements
+- `QodInfo` has `value: Option<u32>` + `type_: Option<String>`
+- All severity values stored as `String` (not f64) per design rules
 
 ### Phase 3: Security Info
 
@@ -460,3 +440,5 @@ impl<C: GvmConnection> GmpClient<C> {
 ---
 
 *This spec is a living document. Updated as phases complete and design evolves.*
+
+*Last updated: 2026-03-26 (Phase 2 complete)*
