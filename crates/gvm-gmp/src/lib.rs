@@ -10,6 +10,8 @@ pub mod commands;
 mod common;
 /// GMP enums and wire-format helpers.
 pub mod enums;
+/// Typed GMP response models.
+pub mod responses;
 /// Shared GMP identifier and version types.
 pub mod types;
 

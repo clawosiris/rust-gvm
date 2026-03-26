@@ -8,6 +8,7 @@ use std::str::FromStr;
 
 /// A validated GMP entity identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct EntityId(String);
 
 impl EntityId {
@@ -63,6 +64,7 @@ pub enum EntityIdError {
 
 /// GMP protocol version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GmpVersion(
     /// The major GMP version component.
     pub u16,

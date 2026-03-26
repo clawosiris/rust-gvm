@@ -9,9 +9,15 @@ repository.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[features]
+default = []
+serde = ["dep:serde"]
+
 [dependencies]
 gvm-protocol.workspace = true
 thiserror.workspace = true
+serde = { workspace = true, optional = true }
+quick-xml.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true
