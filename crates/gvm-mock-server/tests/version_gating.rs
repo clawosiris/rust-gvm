@@ -29,7 +29,10 @@ async fn stateful_server(version: GmpVersion) -> Option<MockGmpServer> {
         .await
     {
         Ok(server) => server,
-        Err(error) if error.to_string().contains("Permission denied") => {
+        Err(error)
+            if error.to_string().contains("Permission denied")
+                || error.to_string().contains("Operation not permitted") =>
+        {
             eprintln!("Skipping: sandbox restriction");
             return None;
         }
