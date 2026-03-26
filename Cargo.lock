@@ -1001,7 +1001,9 @@ dependencies = [
  "gvm-protocol",
  "pretty_assertions",
  "proptest",
+ "quick-xml",
  "rstest",
+ "serde",
  "thiserror 2.0.18",
 ]
 
