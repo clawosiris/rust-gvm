@@ -36,3 +36,17 @@ path = "fuzz_targets/fuzz_response_parser.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fuzz_xml_node_builder"
+path = "fuzz_targets/fuzz_xml_node_builder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_streaming_reader"
+path = "fuzz_targets/fuzz_streaming_reader.rs"
+test = false
+doc = false
+bench = false

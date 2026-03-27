@@ -21,19 +21,27 @@ rustup install nightly
 From the repository root:
 
 ```bash
-# Fuzz the low-level XML parser
+# P0: Fuzz the low-level XML parser
 cargo +nightly fuzz run fuzz_xml_parser
 
-# Fuzz the high-level response model parsers
+# P0: Fuzz the high-level response model parsers
 cargo +nightly fuzz run fuzz_response_parser
+
+# P1: Grammar-based fuzzing of parse_document()
+cargo +nightly fuzz run fuzz_xml_node_builder
+
+# P1: Chunked streaming reader fuzzing
+cargo +nightly fuzz run fuzz_streaming_reader
 ```
 
 ## Fuzz Targets
 
-| Target | Description |
-|--------|-------------|
-| `fuzz_xml_parser` | Tests `gvm-protocol::Response` construction from arbitrary bytes |
-| `fuzz_response_parser` | Tests typed response parsers in `gvm-gmp::responses` |
+| Target | Priority | Description |
+|--------|----------|-------------|
+| `fuzz_xml_parser` | P0 | Tests `gvm-protocol::Response` construction from arbitrary bytes |
+| `fuzz_response_parser` | P0 | Tests typed response parsers in `gvm-gmp::responses` |
+| `fuzz_xml_node_builder` | P1 | Grammar-based fuzzing of `parse_document()` with structured XML |
+| `fuzz_streaming_reader` | P1 | Tests `XmlReader` with chunked input delivery patterns |
 
 ## Corpus
 
