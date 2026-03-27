@@ -1,0 +1,38 @@
+[package]
+name = "gvm-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "AGPL-3.0-or-later"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+
+[dependencies.gvm-protocol]
+path = "../crates/gvm-protocol"
+
+[dependencies.gvm-gmp]
+path = "../crates/gvm-gmp"
+features = ["serde"]
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_xml_parser"
+path = "fuzz_targets/fuzz_xml_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_response_parser"
+path = "fuzz_targets/fuzz_response_parser.rs"
+test = false
+doc = false
+bench = false
