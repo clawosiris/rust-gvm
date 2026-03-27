@@ -263,8 +263,8 @@ fn regression_fuzz_crash_001() {
 - [ ] Add edge case seeds from GMP docs
 
 ### Phase 3: Enhanced Harnesses
-- [ ] Implement `fuzz_xml_node_builder` with grammar-based generation
-- [ ] Implement `fuzz_streaming_reader` for chunked input
+- [x] Implement `fuzz_xml_node_builder` with grammar-based generation
+- [x] Implement `fuzz_streaming_reader` for chunked input
 - [ ] Add coverage instrumentation analysis
 
 ### Phase 4: CI Integration

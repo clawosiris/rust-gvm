@@ -16,7 +16,7 @@ fuzz_target!(|data: &[u8]| {
         let response = gvm_protocol::Response::from(s);
         // Access data to ensure no panics
         let _ = response.data();
-        let _ = response.status();
+        let _ = response.status_code();
         let _ = response.status_text();
     }
 });
