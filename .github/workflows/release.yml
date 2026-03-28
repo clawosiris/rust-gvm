@@ -1,13 +1,13 @@
-name: Nightly
+name: Release
 
 on:
-  schedule:
-    # Run at 04:00 UTC every day
-    - cron: "0 4 * * *"
-  workflow_dispatch: # Allow manual trigger
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: write
+  packages: write
   id-token: write
   attestations: write
 
@@ -20,7 +20,7 @@ env:
   CROSS_VERSION: "v0.2.5"
 
 jobs:
-  # Full test suite including integration tests
+  # Run full test suite before building release artifacts
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -31,22 +31,57 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
-        with:
-          python-version: "3.12"
-      - run: pip install python-gvm
-
-      # Workspace tests
       - run: cargo test --workspace --all-features
 
-      # Python integration test
-      - run: cargo build -p gvm-mock-server
-      - run: python3 tests/integration/test_python_gvm.py
+  container:
+    name: Publish GHCR image
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      # Clippy (treat warnings as errors for nightly)
-      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
 
-  # Build nightly binaries for all platforms
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ghcr.io/clawosiris/gvm-mock-server
+          tags: |
+            type=raw,value=${{ github.ref_name }}
+          labels: |
+            org.opencontainers.image.title=gvm-mock-server
+            org.opencontainers.image.description=Programmable mock GMP server for testing
+            org.opencontainers.image.vendor=clawosiris
+            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: "{{defaultContext}}"
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  # Build binaries for each target platform
   build:
     name: Build (${{ matrix.target }})
     needs: test
@@ -84,24 +119,29 @@ jobs:
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
-          key: nightly-${{ matrix.target }}
+          key: ${{ matrix.target }}
 
+      # Install cross-compilation tools for Linux ARM64
       - name: Install cross
         if: matrix.cross
         run: cargo install cross --git https://github.com/cross-rs/cross --tag ${{ env.CROSS_VERSION }}
 
+      # Install musl tools for static Linux builds
       - name: Install musl-tools
         if: contains(matrix.target, 'musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
+      # Build with cross for cross-compiled targets
       - name: Build (cross)
         if: matrix.cross
         run: cross build --release --target ${{ matrix.target }} -p gvm-mock-server
 
+      # Build natively for same-arch targets
       - name: Build (native)
         if: "!matrix.cross"
         run: cargo build --release --target ${{ matrix.target }} -p gvm-mock-server
 
+      # Package the binary
       - name: Package
         shell: bash
         run: |
@@ -122,7 +162,6 @@ jobs:
           path: |
             ${{ matrix.artifact }}.tar.gz
             ${{ matrix.artifact }}.tar.gz.sha256
-          retention-days: 7
 
   # Generate SBOM (Software Bill of Materials) in CycloneDX format
   sbom:
@@ -136,8 +175,6 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        with:
-          key: nightly-sbom
 
       - uses: taiki-e/install-action@a164de717a0ee9284c2d9db1c6016a4c339cd333 # v2
         with:
@@ -212,11 +249,10 @@ jobs:
             rust-gvm-sbom.tar.gz
             rust-gvm-sbom.tar.gz.sha256
             sbomqs-results.json
-          retention-days: 7
 
-  # Update the rolling "nightly" pre-release
-  publish:
-    name: Publish Nightly
+  # Create GitHub Release with all platform binaries and SBOM
+  release:
+    name: Release
     needs: [build, sbom]
     runs-on: ubuntu-latest
     steps:
@@ -231,34 +267,17 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Delete existing nightly release
-        run: gh release delete nightly --yes --cleanup-tag 2>/dev/null || true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create nightly tag
-        run: |
-          git tag -f nightly
-          git push -f origin nightly
-
-      - name: Set date
-        id: date
-        run: echo "today=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
-
-      - name: Create nightly release
+      - name: Create Release
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
         with:
-          tag_name: nightly
-          name: "Nightly Build (${{ steps.date.outputs.today }})"
-          prerelease: true
+          generate_release_notes: true
           body: |
-            Automated nightly build from `main` branch.
-
-            **⚠️ This is a development build — not recommended for production.**
-
-            Built from commit: ${{ github.sha }}
-
             **🔐 Security:** All artifacts include Sigstore attestations for build provenance verification.
+
+            To verify an artifact:
+            ```bash
+            gh attestation verify <artifact>.tar.gz --owner clawosiris
+            ```
           files: |
             artifacts/*.tar.gz
             artifacts/*.sha256

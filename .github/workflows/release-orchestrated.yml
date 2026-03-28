@@ -1,4 +1,5 @@
 # Orchestrated Release — triggered by clawosiris/release-orchestrator
+# Do NOT trigger manually — use the orchestrator instead.
 
 name: Orchestrated Release
 
@@ -21,36 +22,51 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  BINARY_NAME: gvm-mock-server
 
 jobs:
-  prepare:
-    name: "Prepare v${{ inputs.version }}"
+  release:
+    name: "Release v${{ inputs.version }}"
     runs-on: ubuntu-latest
     steps:
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
-          persist-credentials: false
+          token: ${{ secrets.RELEASE_TOKEN }}
+
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - name: Create release
-        uses: greenbone/actions/release@v3
-        with:
-          github-user: ${{ vars.RELEASE_USER || 'clawosiris' }}
-          github-user-mail: ${{ vars.RELEASE_USER_MAIL || 'clawosiris@users.noreply.github.com' }}
-          github-user-token: ${{ secrets.RELEASE_TOKEN }}
-          release-type: ${{ inputs.release-type }}
-          release-version: ${{ inputs.version }}
-          versioning-scheme: semver
-          project-types: cargo
-          next-version: "false"
-          admin-bypass: "false"
+
+      - name: Set up Python and pontos
+        uses: greenbone/actions/setup-pontos@v3
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create release with pontos
+        env:
+          GITHUB_USER: ${{ vars.RELEASE_USER || 'clawosiris' }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          ARGS="--release-version ${{ inputs.version }}"
+          ARGS="$ARGS --versioning-scheme semver"
+          ARGS="$ARGS --project-types cargo"
+          ARGS="$ARGS --git-tag-prefix v"
+          ARGS="$ARGS --no-next-version"
+
+          if [[ "${{ inputs.version }}" == *"-"* ]]; then
+            ARGS="$ARGS --github-pre-release"
+          fi
+
+          pontos-release create $ARGS --repository ${{ github.repository }}
+
       - name: Regenerate Cargo.lock
         run: |
           cargo generate-lockfile
           if ! git diff --quiet Cargo.lock 2>/dev/null; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
             git add Cargo.lock
             git commit --amend --no-edit
             git push --force-with-lease
@@ -58,150 +74,25 @@ jobs:
             git tag -f "$TAG"
             git push origin "$TAG" --force
           fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
-  test:
-    name: Test
-    needs: prepare
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          ref: v${{ inputs.version }}
-      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - run: cargo test --workspace --all-features
-
-  build:
-    name: Build (${{ matrix.target }})
-    needs: test
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            artifact: gvm-mock-server-linux-amd64
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            artifact: gvm-mock-server-linux-arm64
-            cross: true
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
-            artifact: gvm-mock-server-linux-amd64-musl
-          - target: x86_64-apple-darwin
-            os: macos-latest
-            artifact: gvm-mock-server-macos-amd64
-          - target: aarch64-apple-darwin
-            os: macos-latest
-            artifact: gvm-mock-server-macos-arm64
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          ref: v${{ inputs.version }}
-      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-        with:
-          targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        with:
-          key: ${{ matrix.target }}
-      - name: Install cross
-        if: matrix.cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
-      - name: Install musl-tools
-        if: contains(matrix.target, 'musl')
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - name: Build (cross)
-        if: matrix.cross
-        run: cross build --release --target ${{ matrix.target }} -p gvm-mock-server
-      - name: Build (native)
-        if: "!matrix.cross"
-        run: cargo build --release --target ${{ matrix.target }} -p gvm-mock-server
-      - name: Package and upload to release
+      - name: Wait for release workflow
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd target/${{ matrix.target }}/release
-          tar czf ../../../${{ matrix.artifact }}.tar.gz ${{ env.BINARY_NAME }}
-          cd ../../..
-          sha256sum ${{ matrix.artifact }}.tar.gz > ${{ matrix.artifact }}.tar.gz.sha256
-          gh release upload "v${{ inputs.version }}" \
-            ${{ matrix.artifact }}.tar.gz \
-            ${{ matrix.artifact }}.tar.gz.sha256 \
-            --clobber
+          TAG="v${{ inputs.version }}"
+          echo "Tag $TAG created. Waiting for release.yml..."
+          sleep 15
 
-  container:
-    name: Publish GHCR image
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          ref: v${{ inputs.version }}
-      - uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
-      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-      - uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
-        with:
-          images: ghcr.io/clawosiris/gvm-mock-server
-          tags: type=raw,value=v${{ inputs.version }}
-      - name: Build and push image
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
-        with:
-          context: "{{defaultContext}}"
-          file: ./Dockerfile
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-
-  sbom:
-    name: Generate SBOM
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          ref: v${{ inputs.version }}
-      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - name: Install cargo-cyclonedx
-        run: cargo install cargo-cyclonedx
-      - name: Generate CycloneDX SBOM (JSON)
-        run: cargo cyclonedx --format json --all --spec-version 1.5
-      - name: Generate CycloneDX SBOM (XML)
-        run: cargo cyclonedx --format xml --all --spec-version 1.5
-      - name: Collect SBOMs
-        run: |
-          mkdir -p sbom-artifacts
-          find . -name '*.cdx.json' -not -path '*/target/*' -not -path '*/fixtures/*' -not -path '*/sbom-artifacts/*' -exec cp {} sbom-artifacts/ \;
-          find . -name '*.cdx.xml' -not -path '*/target/*' -not -path '*/fixtures/*' -not -path '*/sbom-artifacts/*' -exec cp {} sbom-artifacts/ \;
-      - name: Post-process CycloneDX JSON SBOMs
-        run: python3 scripts/sbom_postprocess.py --cargo-toml Cargo.toml sbom-artifacts/*.cdx.json
-      - name: Package and upload SBOMs to release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          cd sbom-artifacts
-          tar czf ../rust-gvm-sbom.tar.gz *.cdx.*
-          cd ..
-          sha256sum rust-gvm-sbom.tar.gz > rust-gvm-sbom.tar.gz.sha256
-          gh release upload "v${{ inputs.version }}" \
-            rust-gvm-sbom.tar.gz \
-            rust-gvm-sbom.tar.gz.sha256 \
-            --clobber
-
-  collect:
-    name: Release complete
-    needs: [build, container, sbom]
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "✅ All release artifacts published for v${{ inputs.version }}"
+          for i in $(seq 1 60); do
+            RUN_ID=$(gh run list --workflow=release.yml --limit=10 --json databaseId,headBranch --jq ".[] | select(.headBranch==\"$TAG\") | .databaseId" 2>/dev/null | head -1 || true)
+            if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
+              echo "Found release workflow run: $RUN_ID"
+              gh run watch "$RUN_ID" --exit-status || exit 1
+              echo "✅ Release workflow completed"
+              exit 0
+            fi
+            echo "Waiting... ($i/60)"
+            sleep 15
+          done
+          echo "::error::Release workflow did not trigger within timeout"
+          exit 1
