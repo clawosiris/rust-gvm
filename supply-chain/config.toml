@@ -288,7 +288,7 @@ criteria = "safe-to-deploy"
 
 [[exemptions.fastrand]]
 version = "2.3.0"
-criteria = "safe-to-run"
+criteria = "safe-to-deploy"
 
 [[exemptions.ff]]
 version = "0.13.1"
@@ -500,7 +500,7 @@ criteria = "safe-to-deploy"
 
 [[exemptions.linux-raw-sys]]
 version = "0.12.1"
-criteria = "safe-to-run"
+criteria = "safe-to-deploy"
 
 [[exemptions.lock_api]]
 version = "0.4.14"
@@ -744,7 +744,7 @@ criteria = "safe-to-deploy"
 
 [[exemptions.rustix]]
 version = "1.1.4"
-criteria = "safe-to-run"
+criteria = "safe-to-deploy"
 
 [[exemptions.rustls]]
 version = "0.23.37"
@@ -818,6 +818,10 @@ criteria = "safe-to-deploy"
 version = "0.11.0-rc.5"
 criteria = "safe-to-deploy"
 
+[[exemptions.sha1_smol]]
+version = "1.0.1"
+criteria = "safe-to-deploy"
+
 [[exemptions.sha2]]
 version = "0.10.9"
 criteria = "safe-to-deploy"
@@ -888,7 +892,7 @@ criteria = "safe-to-deploy"
 
 [[exemptions.tempfile]]
 version = "3.27.0"
-criteria = "safe-to-run"
+criteria = "safe-to-deploy"
 
 [[exemptions.thiserror]]
 version = "1.0.69"
