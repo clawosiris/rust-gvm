@@ -5,11 +5,13 @@
 
 use std::path::PathBuf;
 
+use tempfile::Builder;
+
 use crate::fault::{Fault, FaultEngine};
 use crate::fixtures::FixtureStore;
 use crate::response_gen::LargeReportConfig;
 use crate::scenario::{ScenarioMode, ScenarioStep};
-use crate::server::MockGmpServer;
+use crate::server::{MockGmpServer, UnixSocketBinding};
 use crate::store::ResourceStore;
 use crate::version::GmpVersion;
 use crate::ServerMode;
@@ -209,7 +211,10 @@ impl MockGmpServerBuilder {
         match transport {
             Transport::UnixSocket(path) => {
                 MockGmpServer::start_unix(
-                    path,
+                    UnixSocketBinding {
+                        path,
+                        temp_dir: None,
+                    },
                     mode,
                     version,
                     fixtures,
@@ -224,10 +229,14 @@ impl MockGmpServerBuilder {
                 use std::sync::atomic::{AtomicU64, Ordering};
                 static COUNTER: AtomicU64 = AtomicU64::new(0);
                 let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-                let dir = std::env::temp_dir();
-                let path = dir.join(format!("gvmd-test-{}-{id}.sock", std::process::id()));
+                // Keep the socket under /tmp so Unix domain path length stays well below SUN_LEN.
+                let dir = Builder::new().prefix("gvmd-test").tempdir_in("/tmp")?;
+                let path = dir.path().join(format!("{id}.sock"));
                 MockGmpServer::start_unix(
-                    path,
+                    UnixSocketBinding {
+                        path,
+                        temp_dir: Some(dir),
+                    },
                     mode,
                     version,
                     fixtures,

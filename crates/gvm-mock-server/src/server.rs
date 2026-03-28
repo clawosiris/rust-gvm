@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
+use tempfile::TempDir;
 use tokio::net::{TcpListener, UnixListener};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
@@ -23,10 +24,17 @@ use crate::store::ResourceStore;
 use crate::version::GmpVersion;
 use crate::ServerMode;
 
+pub(crate) struct UnixSocketBinding {
+    pub(crate) path: PathBuf,
+    pub(crate) temp_dir: Option<TempDir>,
+}
+
 /// A running mock GMP server.
 pub struct MockGmpServer {
     /// The Unix socket path (if using Unix transport).
     socket_path: Option<PathBuf>,
+    /// Keeps the auto-generated Unix socket directory alive for the server lifetime.
+    _socket_dir: Option<TempDir>,
     /// The TCP address (if using TCP transport).
     tcp_addr: Option<std::net::SocketAddr>,
     /// The SSH address (if using SSH transport).
@@ -51,7 +59,7 @@ impl MockGmpServer {
 
     /// Create and start a new mock server from components.
     pub(crate) async fn start_unix(
-        socket_path: PathBuf,
+        binding: UnixSocketBinding,
         mode: ServerMode,
         version: GmpVersion,
         fixtures: Option<FixtureStore>,
@@ -60,6 +68,11 @@ impl MockGmpServer {
         scenario_config: Option<(ScenarioMode, Vec<ScenarioStep>)>,
         large_report: Option<LargeReportConfig>,
     ) -> Result<Self, std::io::Error> {
+        let UnixSocketBinding {
+            path: socket_path,
+            temp_dir,
+        } = binding;
+
         // Remove existing socket if present
         if socket_path.exists() {
             std::fs::remove_file(&socket_path)?;
@@ -88,6 +101,7 @@ impl MockGmpServer {
 
         Ok(Self {
             socket_path: Some(socket_path),
+            _socket_dir: temp_dir,
             tcp_addr: None,
             #[cfg(feature = "ssh")]
             ssh_addr: None,
@@ -134,6 +148,7 @@ impl MockGmpServer {
 
         Ok(Self {
             socket_path: None,
+            _socket_dir: None,
             tcp_addr: Some(local_addr),
             #[cfg(feature = "ssh")]
             ssh_addr: None,
@@ -185,6 +200,7 @@ impl MockGmpServer {
 
         Ok(Self {
             socket_path: None,
+            _socket_dir: None,
             tcp_addr: None,
             ssh_addr: Some(local_addr),
             ssh_host_key_fingerprint: Some(fingerprint),

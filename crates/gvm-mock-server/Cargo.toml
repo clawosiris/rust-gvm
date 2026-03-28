@@ -26,7 +26,7 @@ quick-xml.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 uuid.workspace = true
-sha1.workspace = true
+tempfile.workspace = true
 clap.workspace = true
 
 # Feature-gated
@@ -39,7 +39,6 @@ russh = { workspace = true, optional = true }
 gvm-gmp.workspace = true
 pretty_assertions.workspace = true
 rstest.workspace = true
-tempfile.workspace = true
 tokio-test.workspace = true
 
 [package.metadata.cargo-machete]

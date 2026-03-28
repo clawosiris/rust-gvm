@@ -5,7 +5,6 @@
 
 use std::fmt::Write;
 
-use sha1::{Digest, Sha1};
 use uuid::Uuid;
 
 use crate::util::xml_escape_attr;
@@ -251,7 +250,7 @@ pub fn generate_large_report(report_id: Uuid, config: &LargeReportConfig) -> Str
     .expect("writing XML into String should not fail");
 
     for i in 0..config.result_count {
-        let result_id = uuid_v5(report_id, &(i as u64).to_le_bytes());
+        let result_id = Uuid::new_v5(&report_id, &(i as u64).to_le_bytes());
         let host_octet = (i % 254) + 1;
         let port = PORTS[i % PORTS.len()];
         let severity = SEVERITIES[i % SEVERITIES.len()];
@@ -308,19 +307,6 @@ fn threat_for_severity(severity: &str) -> &'static str {
         "5.0" | "6.5" => "Medium",
         _ => "High",
     }
-}
-
-fn uuid_v5(namespace: Uuid, name: &[u8]) -> Uuid {
-    let mut hasher = Sha1::new();
-    hasher.update(namespace.as_bytes());
-    hasher.update(name);
-
-    let mut bytes = [0_u8; 16];
-    bytes.copy_from_slice(&hasher.finalize()[..16]);
-    bytes[6] = (bytes[6] & 0x0f) | 0x50;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-
-    Uuid::from_bytes(bytes)
 }
 
 #[cfg(test)]
