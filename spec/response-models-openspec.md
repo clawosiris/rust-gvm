@@ -64,6 +64,8 @@ crates/gvm-gmp/src/
 │   ├── permission.rs       # Phase 4
 │   ├── host.rs             # Phase 4
 │   ├── tls_certificate.rs  # Phase 4
+│   ├── report_format.rs    # Phase 4
+│   ├── report_config.rs    # Phase 4
 │   └── system.rs           # Phase 4 (settings, trashcan, etc.)
 ├── enums.rs                # EXISTING (unchanged)
 ├── types.rs                # EXISTING (serde derives added)
