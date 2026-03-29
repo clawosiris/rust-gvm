@@ -43,52 +43,63 @@ rust-gvm provides everything needed to talk to [Greenbone Vulnerability Manager 
 
 ### Client — Connect to gvmd
 
-The high-level client handles version negotiation automatically:
+The high-level client handles version negotiation automatically and exposes typed convenience methods for every GMP domain:
 
 ```rust
-use gvm_client::{GmpClient, GmpVersioned, GvmError};
+use gvm_client::{GmpClient, GvmError};
 use gvm_connection::{UnixSocketConfig, UnixSocketConnection};
-use gvm_gmp::commands::{authentication, targets, tasks, version};
+use gvm_gmp::commands::targets::CreateTargetOpts;
+use gvm_gmp::commands::tasks::CreateTaskOpts;
 
 #[tokio::main]
 async fn main() -> Result<(), GvmError> {
-    // 1. Create a transport
-    let config = UnixSocketConfig::new("/run/gvmd/gvmd.sock");
-    let conn = UnixSocketConnection::new(config);
-
-    // 2. Connect — auto-negotiates GMP version (22.4–22.7+)
+    // 1. Create a transport and connect — auto-negotiates GMP version (22.4–22.7+)
+    let conn = UnixSocketConnection::new(UnixSocketConfig::new("/run/gvmd/gvmd.sock"));
     let mut client = GmpClient::connect(conn).await?;
     println!("Connected, GMP version: {}", client.version());
 
-    // 3. Authenticate
-    client.call(authentication::authenticate("admin", "admin")).await?;
+    // 2. Authenticate
+    client.authenticate("admin", "admin").await?;
 
-    // 4. Create a target
-    let response = client.call(targets::create_target("My Target", targets::CreateTargetOpts {
+    // 3. Create a target — typed response, no manual XML parsing
+    let target = client.create_target("My Target", CreateTargetOpts {
         hosts: vec!["192.168.1.0/24".to_string()],
         ..Default::default()
-    })).await?;
-    let target_id = response.id().expect("target id");
-    println!("Created target: {target_id}");
+    }).await?;
+    println!("Created target: {}", target.id);
+
+    // 4. List all targets
+    let targets = client.get_targets(Default::default()).await?;
+    for t in &targets.items {
+        println!("  {} — {}", t.meta.id, t.meta.name);
+    }
 
     // 5. Create and start a scan task
-    let response = client.call(tasks::create_task(
-        "My Scan",
-        &target_id.parse().unwrap(),
-        &"daba56c8-73ec-11df-a475-002264764cea".parse().unwrap(),  // Full and fast config
-        &"08b69003-5fc2-4037-a479-93b440211c73".parse().unwrap(),  // OpenVAS scanner
-        Default::default(),
-    )).await?;
-    let task_id = response.id().expect("task id");
-    println!("Created task: {task_id}");
-
-    // 6. List all tasks
-    let response = client.call(tasks::get_tasks(Default::default())).await?;
-    println!("Tasks response: {} bytes", response.data().len());
+    let config_id = "daba56c8-73ec-11df-a475-002264764cea".parse().unwrap();
+    let scanner_id = "08b69003-5fc2-4037-a479-93b440211c73".parse().unwrap();
+    let task = client.create_task(
+        "My Scan", &config_id, &target.id, &scanner_id,
+        CreateTaskOpts::default(),
+    ).await?;
+    client.start_task(&task.id).await?;
+    println!("Started task: {}", task.id);
 
     client.disconnect().await?;
     Ok(())
 }
+```
+
+#### Raw API (send/call)
+
+For full control you can use the underlying `send()` / `call()` methods directly with command builders from `gvm-gmp`:
+
+```rust
+use gvm_gmp::commands::{authentication, targets};
+
+// call() raises GvmError::Server on non-2xx; send() returns the raw Response
+client.call(authentication::authenticate("admin", "admin")).await?;
+let response = client.call(targets::get_targets(Default::default())).await?;
+println!("Raw XML: {} bytes", response.data().len());
 ```
 
 #### Version-aware client
