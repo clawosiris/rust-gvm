@@ -6,8 +6,8 @@
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, parse_document, parse_entity_id, parse_entity_meta, status_from_response,
-    ActionResponse, CountInfo, EntityMeta, ParseError,
+    count_info, parse_csv_list, parse_document, parse_entity_id, parse_entity_meta,
+    status_from_response, ActionResponse, CountInfo, EntityMeta, ParseError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,7 +15,7 @@ use crate::responses::common::{
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Group {
     pub meta: EntityMeta,
-    pub users: Option<String>,
+    pub users: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,7 +41,10 @@ impl Group {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
         Ok(Self {
             meta: parse_entity_meta(node)?,
-            users: node.optional_child_text("users"),
+            users: node
+                .optional_child_text("users")
+                .map(|value| parse_csv_list(&value))
+                .unwrap_or_default(),
         })
     }
 }
@@ -101,7 +104,7 @@ mod tests {
                     <modification_time>2026-01-02T00:00:00Z</modification_time>
                     <writable>1</writable>
                     <in_use>0</in_use>
-                    <users>alice, bob</users>
+                    <users>alice, bob, ,charlie</users>
                 </group>
                 <group id="g-2">
                     <name>Group Two</name>
@@ -118,7 +121,14 @@ mod tests {
         assert_eq!(parsed.counts.total, Some(2));
         assert_eq!(parsed.counts.filtered, Some(2));
         assert_eq!(parsed.counts.page, Some(1));
-        assert_eq!(parsed.items[0].users.as_deref(), Some("alice, bob"));
+        assert_eq!(
+            parsed.items[0].users,
+            vec![
+                "alice".to_string(),
+                "bob".to_string(),
+                "charlie".to_string()
+            ]
+        );
         assert_eq!(
             parsed.items[0].meta.owner.as_ref().map(|o| o.name.as_str()),
             Some("admin")
@@ -179,6 +189,6 @@ mod tests {
         let group = &parsed.items[0];
 
         assert_eq!(group.meta.comment, None);
-        assert_eq!(group.users, None);
+        assert!(group.users.is_empty());
     }
 }

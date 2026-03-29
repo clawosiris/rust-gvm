@@ -6,8 +6,9 @@
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, parse_bool, parse_document, parse_entity_id, parse_entity_meta, parse_named_entity,
-    status_from_response, ActionResponse, CountInfo, EntityMeta, NamedEntity, ParseError,
+    count_info, parse_bool, parse_csv_list, parse_document, parse_entity_id, parse_entity_meta,
+    parse_named_entity, status_from_response, ActionResponse, CountInfo, EntityMeta, NamedEntity,
+    ParseError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,7 +18,7 @@ pub struct Override {
     pub meta: EntityMeta,
     pub text: Option<String>,
     pub nvt_oid: Option<String>,
-    pub hosts: Option<String>,
+    pub hosts: Vec<String>,
     pub port: Option<String>,
     pub severity: Option<String>,
     pub new_severity: Option<String>,
@@ -55,7 +56,10 @@ impl Override {
                 .child("nvt")
                 .and_then(|n| n.attr("oid"))
                 .map(String::from),
-            hosts: node.optional_child_text("hosts"),
+            hosts: node
+                .optional_child_text("hosts")
+                .map(|value| parse_csv_list(&value))
+                .unwrap_or_default(),
             port: node.optional_child_text("port"),
             severity: node.optional_child_text("severity"),
             new_severity: node.optional_child_text("new_severity"),
@@ -128,7 +132,7 @@ mod tests {
                     <in_use>0</in_use>
                     <text>Override text</text>
                     <nvt oid="1.3.6.1.4.1.25623.1.0.12345"><name>Some NVT</name></nvt>
-                    <hosts>192.168.1.1</hosts>
+                    <hosts>192.168.1.1,192.168.1.2, </hosts>
                     <port>80/tcp</port>
                     <severity>5.0</severity>
                     <new_severity>2.0</new_severity>
@@ -159,6 +163,10 @@ mod tests {
             Some("1.3.6.1.4.1.25623.1.0.12345")
         );
         assert_eq!(parsed.items[0].new_severity.as_deref(), Some("2.0"));
+        assert_eq!(
+            parsed.items[0].hosts,
+            vec!["192.168.1.1".to_string(), "192.168.1.2".to_string()]
+        );
         assert_eq!(
             parsed.items[0].task.as_ref().map(|t| t.name.as_str()),
             Some("Task One")
@@ -222,6 +230,7 @@ mod tests {
         assert_eq!(ov.meta.comment, None);
         assert_eq!(ov.text, None);
         assert_eq!(ov.nvt_oid, None);
+        assert!(ov.hosts.is_empty());
         assert_eq!(ov.new_severity, None);
         assert_eq!(ov.task, None);
         assert!(!ov.active);

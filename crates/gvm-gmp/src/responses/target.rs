@@ -6,7 +6,7 @@
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, optional_u32, parse_document, parse_entity_id, parse_entity_meta,
+    count_info, optional_u32, parse_csv_list, parse_document, parse_entity_id, parse_entity_meta,
     parse_named_entity, status_from_response, ActionResponse, CountInfo, EntityMeta, NamedEntity,
     ParseError,
 };
@@ -16,8 +16,8 @@ use crate::responses::common::{
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Target {
     pub meta: EntityMeta,
-    pub hosts: Option<String>,
-    pub exclude_hosts: Option<String>,
+    pub hosts: Vec<String>,
+    pub exclude_hosts: Vec<String>,
     pub alive_tests: Option<String>,
     pub reverse_lookup_only: bool,
     pub reverse_lookup_unify: bool,
@@ -48,8 +48,14 @@ impl Target {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
         Ok(Self {
             meta: parse_entity_meta(node)?,
-            hosts: node.optional_child_text("hosts"),
-            exclude_hosts: node.optional_child_text("exclude_hosts"),
+            hosts: node
+                .optional_child_text("hosts")
+                .map(|value| parse_csv_list(&value))
+                .unwrap_or_default(),
+            exclude_hosts: node
+                .optional_child_text("exclude_hosts")
+                .map(|value| parse_csv_list(&value))
+                .unwrap_or_default(),
             alive_tests: node.optional_child_text("alive_tests"),
             reverse_lookup_only: node
                 .optional_child_text("reverse_lookup_only")
@@ -122,8 +128,8 @@ mod tests {
                     <modification_time>2026-01-02T00:00:00Z</modification_time>
                     <writable>1</writable>
                     <in_use>0</in_use>
-                    <hosts>192.168.1.0/24</hosts>
-                    <exclude_hosts>192.168.1.5</exclude_hosts>
+                    <hosts>192.168.1.0/24, 192.168.2.0/24, </hosts>
+                    <exclude_hosts>192.168.1.5, ,192.168.1.6</exclude_hosts>
                     <alive_tests>Scan Config Default</alive_tests>
                     <reverse_lookup_only>0</reverse_lookup_only>
                     <reverse_lookup_unify>1</reverse_lookup_unify>
@@ -159,6 +165,14 @@ mod tests {
                 .as_ref()
                 .map(|port_list| port_list.name.as_str()),
             Some("All TCP")
+        );
+        assert_eq!(
+            parsed.items[0].hosts,
+            vec!["192.168.1.0/24".to_string(), "192.168.2.0/24".to_string()]
+        );
+        assert_eq!(
+            parsed.items[0].exclude_hosts,
+            vec!["192.168.1.5".to_string(), "192.168.1.6".to_string()]
         );
         assert!(parsed.items[0].reverse_lookup_unify);
         assert!(parsed.items[1].meta.in_use);
@@ -217,7 +231,8 @@ mod tests {
         let target = &parsed.items[0];
 
         assert_eq!(target.meta.comment, None);
-        assert_eq!(target.hosts, None);
+        assert!(target.hosts.is_empty());
+        assert!(target.exclude_hosts.is_empty());
         assert_eq!(target.port_list, None);
         assert!(!target.meta.in_use);
         assert!(!target.meta.writable);
