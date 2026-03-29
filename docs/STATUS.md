@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-03-17
+Last updated: 2026-03-29
 
 ## Crate Status
 
@@ -10,9 +10,9 @@ Last updated: 2026-03-17
 | `gvm-mock-server` | ✅ Implemented | ~3,600 | 198 | Programmable mock GMP server |
 | `gvm-connection` | ✅ Unix + SSH done | ~640 | 20 | Async transport layer (Unix socket + SSH implemented) |
 | `gvm-gmp` | ✅ Implemented | ~4,430 | 480 | Typed GMP command builders (29 modules, 23 enums, full rustdoc) |
-| `gvm-client` | ✅ Implemented | ~390 | 7 | High-level async client with version negotiation |
+| `gvm-client` | ✅ Implemented | ~950 | 10 | High-level async client with version negotiation and typed methods |
 
-**Total: ~10,000 lines of Rust, 630+ tests**
+**Total: ~10,500 lines of Rust, 633+ tests**
 
 ---
 
@@ -319,9 +319,46 @@ High-level async `GmpClient<C>` and `GmpVersioned<C>` that combines `gvm-connect
 | `Connection(ConnectionError)` | Transport failure (preserves source chain) |
 | `Server { status, message }` | Non-2xx GMP response |
 | `XmlParse(String)` | Malformed version/response XML |
+| `Parse(ParseError)` | Typed response model parsing failure |
 | `UnsupportedVersion(major, minor)` | Server GMP version too old |
 | `Timeout(Duration)` | Operation timeout |
 | `InvalidState(String)` | Client state error |
+
+### Typed Client Methods
+
+Convenience methods on `GmpClient<C>` that combine `send()` + `XxxResponse::from_response()` into a single typed call. Implemented in `crates/gvm-client/src/typed.rs`.
+
+| Domain | Get | Create | Notes |
+|--------|-----|--------|-------|
+| version | ✅ | — | `get_version()` |
+| auth | — | — | `authenticate()` |
+| target | ✅ | ✅ | |
+| scan_config | ✅ | ✅ | |
+| scanner | ✅ | ✅ | |
+| port_list | ✅ | ✅ | |
+| task | ✅ | ✅ | Also: `start_task()` |
+| report | ✅ | — | |
+| result | ✅ | — | |
+| feed | ✅ | — | |
+| nvt | ✅ | — | Also: `get_nvt_families()` |
+| secinfo | ✅ | — | CVE, CPE, CERT-Bund, DFN-CERT |
+| alert | ✅ | ✅ | |
+| credential | ✅ | ✅ | |
+| filter | ✅ | ✅ | |
+| note | ✅ | ✅ | |
+| override | ✅ | ✅ | |
+| schedule | ✅ | ✅ | |
+| tag | ✅ | ✅ | |
+| ticket | ✅ | ✅ | |
+| user | ✅ | ✅ | |
+| group | ✅ | ✅ | |
+| role | ✅ | ✅ | |
+| permission | ✅ | ✅ | |
+| host | ✅ | ✅ | |
+| tls_certificate | ✅ | ✅ | |
+| report_format | ✅ | ✅ | |
+| report_config | ✅ | — | `get_report_configs_parsed()` |
+| system | ✅ | — | `get_settings()`, `get_help()`, `describe_auth()` |
 
 ### Features
 
@@ -330,6 +367,7 @@ High-level async `GmpClient<C>` and `GmpVersioned<C>` that combines `gvm-connect
 | Auto version negotiation | ✅ |
 | `GmpVersioned` enum (V224–VNext) | ✅ |
 | `GvmError` with server/connection/parse/timeout/unsupported | ✅ |
+| Typed convenience methods (50+ methods, all GMP domains) | ✅ |
 | Version parsing from XML | ✅ |
 | Full CRUD lifecycle tests | ✅ |
 | Disconnect + error path tests | ✅ |

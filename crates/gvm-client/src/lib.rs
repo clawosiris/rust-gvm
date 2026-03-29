@@ -10,6 +10,7 @@
 #![forbid(unsafe_code)]
 
 mod error;
+mod typed;
 mod version;
 
 use gvm_connection::GvmConnection;

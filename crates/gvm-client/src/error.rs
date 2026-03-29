@@ -6,6 +6,7 @@
 use std::time::Duration;
 
 use gvm_connection::ConnectionError;
+use gvm_gmp::responses::ParseError;
 use thiserror::Error;
 
 /// High-level client errors.
@@ -14,6 +15,10 @@ pub enum GvmError {
     /// Transport-level failure.
     #[error("connection error: {0}")]
     Connection(#[source] ConnectionError),
+
+    /// Response model parsing failure.
+    #[error("parse error: {0}")]
+    Parse(#[from] ParseError),
 
     /// Response or version XML could not be parsed.
     #[error("XML parse error: {0}")]

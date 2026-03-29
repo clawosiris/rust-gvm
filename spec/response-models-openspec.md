@@ -1,9 +1,9 @@
 # OpenSpec: Response Models for rust-gvm
 
-**Version:** 1.0  
-**Author:** Thoth  
-**Date:** 2026-03-26  
-**Status:** Implementation In Progress (Phases 1-3 complete)  
+**Version:** 1.1
+**Author:** Thoth
+**Date:** 2026-03-29
+**Status:** Implementation Complete (Phases 1-4 + Typed Client Methods done)
 **RFC:** [PR #65](https://github.com/clawosiris/rust-gvm/pull/65)  
 **Phase 1 PR:** [PR #67](https://github.com/clawosiris/rust-gvm/pull/67)
 
@@ -300,7 +300,7 @@ Key parsing helpers:
 - `tags: Option<String>` (pipe-separated key=value)
 - `solution_type: Option<String>`
 
-### Phase 4: Remaining Entities
+### Phase 4: Remaining Entities ✅ (Complete — PR #94)
 
 | Domain | Entity | Responses | Notes |
 |--------|--------|-----------|-------|
@@ -489,11 +489,29 @@ Each domain module includes these standard test categories:
 | `parses_multiple_dfn_cert_advisories` | 2 DFN-CERT advisories with `dfn_cert_adv_count` total |
 | `counts_default_when_missing_count_element` | Absent count element returns `CountInfo::default()` |
 
-### Planned Tests (Phase 4)
+#### Phase 4 Tests (150+ total across 17 modules)
 
-Domain-specific tests will be added for:
-- **alert**: Condition/event/method sub-structures
-- **schedule**: iCalendar data parsing
+Each Phase 4 domain module follows the same 5-test pattern (multi-item, empty, create, error, missing-optionals) plus domain-specific edge-case tests:
+
+| Module | Key Validated Fields |
+|--------|---------------------|
+| `alert.rs` | Event, condition, method enums; filter_id ref |
+| `credential.rs` | Type-specific fields (login, certificate, SNMP algorithms) |
+| `filter.rs` | Term expression, filter_type, sort_order |
+| `note.rs` | NVT OID, text, hosts (comma-separated), port, task/result refs |
+| `override_.rs` | NVT OID, new_severity, active flag |
+| `schedule.rs` | iCalendar data, timezone string |
+| `tag.rs` | Resource type/id, value, severity, active |
+| `ticket.rs` | Status enum, assigned_to, open/fixed/closed notes, result ref |
+| `user.rs` | Roles (Vec\<NamedEntity\>), groups, host_access |
+| `group.rs` | Users list (comma-separated) |
+| `role.rs` | Users list |
+| `permission.rs` | Subject type/id, resource type/id |
+| `host.rs` | IP, OS ref, severity_count |
+| `tls_certificate.rs` | Issuer, subject, activation/expiry dates, MD5/SHA256 |
+| `report_format.rs` | Content type, extension, trust, active |
+| `report_config.rs` | Report format ref, params |
+| `system.rs` | Settings list, help text, auth group/setting structures |
 
 ### Integration Testing
 
@@ -532,16 +550,25 @@ target/
 
 This is the eventual RFC v2 structure but requires a breaking change cycle.
 
-### 7.3 Typed Client Methods (v0.5+)
+### 7.3 Typed Client Methods ✅ (Implemented)
 
-Add convenience methods to `GmpClient`:
+Convenience methods on `GmpClient<C>` are implemented in `crates/gvm-client/src/typed.rs`. All GMP domains covered (50+ methods). The `GvmError` type was extended with a `Parse(ParseError)` variant so `from_response()` failures are surfaced consistently.
+
+Each method uses `self.send()` (not `self.call()`) so `from_response()` owns all response validation:
+
 ```rust
-impl<C: GvmConnection> GmpClient<C> {
-    pub async fn get_targets_typed(&mut self, opts: GetTargetsOpts) 
-        -> Result<GetTargetsResponse, ClientError> {
-        let response = self.call(get_targets(opts)).await?;
-        GetTargetsResponse::from_response(&response).map_err(ClientError::Parse)
-    }
+// In gvm-client/src/typed.rs
+pub async fn get_targets(&mut self, opts: GetTargetsOpts) -> Result<GetTargetsResponse, GvmError> {
+    let response = self.send(gvm_gmp::commands::targets::get_targets(opts)).await?;
+    GetTargetsResponse::from_response(&response).map_err(GvmError::Parse)
+}
+```
+
+Consumer usage:
+```rust
+let targets = client.get_targets(Default::default()).await?;
+for target in &targets.items {
+    println!("{}: {}", target.meta.id, target.meta.name);
 }
 ```
 
@@ -561,15 +588,16 @@ impl<C: GvmConnection> GmpClient<C> {
 
 ## 9. Success Criteria
 
-- [ ] All 4 phases implemented with full test coverage
-- [ ] Zero breaking changes to existing `commands::*` API
-- [ ] All consumers migrated to typed responses
-- [ ] `cargo clippy --all-features` clean
-- [ ] Documentation on public types
+- [x] All 4 phases implemented with full test coverage
+- [x] Zero breaking changes to existing `commands::*` API
+- [ ] All consumers migrated to typed responses (in progress)
+- [x] `cargo clippy --all-features` clean
+- [x] Documentation on public types
+- [x] Typed client methods (50+ methods on `GmpClient`) — `gvm-client/src/typed.rs`
 - [ ] Benchmark showing no regression from typed parsing vs. raw access
 
 ---
 
 *This spec is a living document. Updated as phases complete and design evolves.*
 
-*Last updated: 2026-03-26 (Phase 3 complete)*
+*Last updated: 2026-03-29 (Phase 4 complete; typed client methods added)*
