@@ -280,7 +280,7 @@ impl SshConnection {
                     .await
                     .map_err(|_| ConnectionError::Timeout(config.timeout))?
                     .map_err(Self::connect_error)?;
-                let public_key = tokio::time::timeout(config.timeout, agent.request_identities())
+                let identity = tokio::time::timeout(config.timeout, agent.request_identities())
                     .await
                     .map_err(|_| ConnectionError::Timeout(config.timeout))?
                     .map_err(Self::connect_error)?
@@ -289,6 +289,7 @@ impl SshConnection {
                     .ok_or_else(|| {
                         Self::connect_error("ssh-agent did not return any identities")
                     })?;
+                let public_key = identity.public_key().into_owned();
                 let hash_alg =
                     tokio::time::timeout(config.timeout, session.best_supported_rsa_hash())
                         .await
