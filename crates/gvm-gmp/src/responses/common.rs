@@ -235,6 +235,15 @@ pub(crate) fn parse_bool(value: &str, field: &str) -> Result<bool, ParseError> {
     }
 }
 
+pub(crate) fn parse_csv_list(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|segment| !segment.is_empty())
+        .map(ToString::to_string)
+        .collect()
+}
+
 pub(crate) fn parse_u16(value: &str, field: &str) -> Result<u16, ParseError> {
     value.parse::<u16>().map_err(|_| ParseError::InvalidValue {
         field: field.to_string(),
