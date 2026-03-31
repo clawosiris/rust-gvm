@@ -246,19 +246,17 @@ jobs:
         run: echo "today=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
       - name: Create nightly release
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
-        with:
-          tag_name: nightly
-          name: "Nightly Build (${{ steps.date.outputs.today }})"
-          prerelease: true
-          body: |
-            Automated nightly build from `main` branch.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "nightly" \
+            --title "Nightly Build (${{ steps.date.outputs.today }})" \
+            --prerelease \
+            --notes "Automated nightly build from `main` branch.
 
-            **⚠️ This is a development build — not recommended for production.**
+          **⚠️ This is a development build — not recommended for production.**
 
-            Built from commit: ${{ github.sha }}
+          Built from commit: ${{ github.sha }}
 
-            **🔐 Security:** All artifacts include Sigstore attestations for build provenance verification.
-          files: |
-            artifacts/*.tar.gz
-            artifacts/*.sha256
+          **🔐 Security:** All artifacts include Sigstore attestations for build provenance verification." \
+            artifacts/*.tar.gz artifacts/*.sha256
