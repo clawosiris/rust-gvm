@@ -330,3 +330,89 @@ mod tests {
         assert_eq!(parsed.counts, CountInfo::default());
     }
 }
+
+// === Additional SecInfo Response Types ===
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct OperatingSystem {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Vulnerability {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct GetOperatingSystemsResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub items: Vec<OperatingSystem>,
+    pub counts: CountInfo,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct GetVulnerabilitiesResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub items: Vec<Vulnerability>,
+    pub counts: CountInfo,
+}
+
+impl OperatingSystem {
+    fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
+        let (id, name) = parse_secinfo_item(node, "os")?;
+        Ok(Self { id, name })
+    }
+}
+
+impl Vulnerability {
+    fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
+        let (id, name) = parse_secinfo_item(node, "vuln")?;
+        Ok(Self { id, name })
+    }
+}
+
+impl GetOperatingSystemsResponse {
+    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+        let (status, status_text) = status_from_response(response)?;
+        let root = parse_document(response.data())?;
+        let items = root
+            .children_named("os")
+            .map(OperatingSystem::from_node)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            status,
+            status_text,
+            items,
+            counts: count_info(&root, "os_count")?,
+        })
+    }
+}
+
+impl GetVulnerabilitiesResponse {
+    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+        let (status, status_text) = status_from_response(response)?;
+        let root = parse_document(response.data())?;
+        let items = root
+            .children_named("vuln")
+            .map(Vulnerability::from_node)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            status,
+            status_text,
+            items,
+            counts: count_info(&root, "vuln_count")?,
+        })
+    }
+}
