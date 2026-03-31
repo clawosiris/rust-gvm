@@ -6,10 +6,12 @@
 #![allow(missing_docs)]
 #![allow(clippy::missing_errors_doc)]
 
+pub mod aggregates;
 pub mod alert;
 pub mod auth;
 pub mod common;
 pub mod credential;
+pub mod features;
 pub mod feed;
 pub mod filter;
 pub mod group;
@@ -22,6 +24,7 @@ pub mod port_list;
 pub mod report;
 pub mod report_config;
 pub mod report_format;
+pub mod resource_names;
 pub mod result;
 pub mod role;
 pub mod scan_config;
@@ -29,14 +32,20 @@ pub mod scanner;
 pub mod schedule;
 pub mod secinfo;
 pub mod system;
+pub mod system_reports;
 pub mod tag;
 pub mod target;
 pub mod task;
 pub mod ticket;
 pub mod tls_certificate;
+pub mod trashcan;
 pub mod user;
+pub mod user_settings;
 pub mod version;
 
+pub use aggregates::{
+    AggregateGroup, AggregateStats, AggregateSubgroup, GetAggregatesResponse,
+};
 pub use alert::{
     Alert, CreateAlertResponse, DeleteAlertResponse, GetAlertsResponse, ModifyAlertResponse,
 };
@@ -46,6 +55,7 @@ pub use credential::{
     CreateCredentialResponse, Credential, DeleteCredentialResponse, GetCredentialsResponse,
     ModifyCredentialResponse,
 };
+pub use features::{Feature, GetFeaturesResponse};
 pub use feed::{Feed, GetFeedsResponse};
 pub use filter::{
     CreateFilterResponse, DeleteFilterResponse, Filter, GetFiltersResponse, ModifyFilterResponse,
@@ -78,6 +88,7 @@ pub use report_format::{
     CreateReportFormatResponse, DeleteReportFormatResponse, GetReportFormatsResponse,
     ModifyReportFormatResponse, ReportFormat,
 };
+pub use resource_names::{GetResourceNamesResponse, ResourceName};
 pub use result::{GetResultsResponse, NvtRef, QodInfo, ScanResult};
 pub use role::{
     CreateRoleResponse, DeleteRoleResponse, GetRolesResponse, ModifyRoleResponse, Role,
@@ -90,11 +101,13 @@ pub use schedule::{
 };
 pub use secinfo::{
     CertBundAdvisory, Cpe, Cve, DfnCertAdvisory, GetCertBundAdvisoriesResponse, GetCpesResponse,
-    GetCvesResponse, GetDfnCertAdvisoriesResponse,
+    GetCvesResponse, GetDfnCertAdvisoriesResponse, GetOperatingSystemsResponse,
+    GetVulnerabilitiesResponse, OperatingSystem, Vulnerability,
 };
 pub use system::{
     AuthConfSetting, AuthGroup, DescribeAuthResponse, GetSettingsResponse, HelpResponse, Setting,
 };
+pub use system_reports::{GetSystemReportsResponse, SystemReport};
 pub use tag::{CreateTagResponse, DeleteTagResponse, GetTagsResponse, ModifyTagResponse, Tag};
 pub use target::{CreateTargetResponse, GetTargetsResponse, Target};
 pub use task::{
@@ -108,7 +121,9 @@ pub use tls_certificate::{
     CreateTlsCertificateResponse, DeleteTlsCertificateResponse, GetTlsCertificatesResponse,
     ModifyTlsCertificateResponse, TlsCertificate,
 };
+pub use trashcan::{EmptyTrashcanResponse, RestoreResponse};
 pub use user::{
     CreateUserResponse, DeleteUserResponse, GetUsersResponse, ModifyUserResponse, User,
 };
+pub use user_settings::{GetUserSettingsResponse, ModifyUserSettingResponse, UserSetting};
 pub use version::GetVersionResponse;
