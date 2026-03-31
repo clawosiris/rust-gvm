@@ -78,8 +78,7 @@ mod tests {
 
     #[test]
     fn parses_empty_features() {
-        let response =
-            Response::from(r#"<get_features_response status="200" status_text="OK"/>"#);
+        let response = Response::from(r#"<get_features_response status="200" status_text="OK"/>"#);
 
         let parsed = GetFeaturesResponse::from_response(&response).expect("parse");
 

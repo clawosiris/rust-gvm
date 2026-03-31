@@ -55,7 +55,9 @@ impl AggregateGroup {
             .child_text("count")
             .and_then(|text| text.parse().ok())
             .unwrap_or(0);
-        let c_count = node.child_text("c_count").and_then(|text| text.parse().ok());
+        let c_count = node
+            .child_text("c_count")
+            .and_then(|text| text.parse().ok());
         let text = node.optional_child_text("text");
 
         let subgroups = node
@@ -108,15 +110,15 @@ impl GetAggregatesResponse {
             })
             .unwrap_or_default();
 
-        let overall = aggregate.and_then(|agg| agg.child("overall")).map(|o| {
-            AggregateStats {
+        let overall = aggregate
+            .and_then(|agg| agg.child("overall"))
+            .map(|o| AggregateStats {
                 column: o.child_text("column").unwrap_or_default(),
                 min: o.child_text("min").and_then(|t| t.parse().ok()),
                 max: o.child_text("max").and_then(|t| t.parse().ok()),
                 mean: o.child_text("mean").and_then(|t| t.parse().ok()),
                 sum: o.child_text("sum").and_then(|t| t.parse().ok()),
-            }
-        });
+            });
 
         Ok(Self {
             status,

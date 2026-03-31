@@ -112,10 +112,7 @@ mod tests {
         assert_eq!(parsed.settings.len(), 2);
         assert_eq!(parsed.settings[0].name, "timezone");
         assert_eq!(parsed.settings[0].value.as_deref(), Some("UTC"));
-        assert_eq!(
-            parsed.settings[0].comment.as_deref(),
-            Some("User timezone")
-        );
+        assert_eq!(parsed.settings[0].comment.as_deref(), Some("User timezone"));
         assert!(parsed.settings[1].comment.is_none());
     }
 
@@ -132,8 +129,7 @@ mod tests {
 
     #[test]
     fn parses_empty_settings() {
-        let response =
-            Response::from(r#"<get_settings_response status="200" status_text="OK"/>"#);
+        let response = Response::from(r#"<get_settings_response status="200" status_text="OK"/>"#);
 
         let parsed = GetUserSettingsResponse::from_response(&response).expect("parse");
 

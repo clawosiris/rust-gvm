@@ -43,9 +43,7 @@ pub mod user;
 pub mod user_settings;
 pub mod version;
 
-pub use aggregates::{
-    AggregateGroup, AggregateStats, AggregateSubgroup, GetAggregatesResponse,
-};
+pub use aggregates::{AggregateGroup, AggregateStats, AggregateSubgroup, GetAggregatesResponse};
 pub use alert::{
     Alert, CreateAlertResponse, DeleteAlertResponse, GetAlertsResponse, ModifyAlertResponse,
 };
