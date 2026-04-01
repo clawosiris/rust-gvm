@@ -75,24 +75,5 @@ jobs:
             git push origin "$TAG" --force
           fi
 
-      - name: Wait for release workflow
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="v${{ inputs.version }}"
-          echo "Tag $TAG created. Waiting for release.yml..."
-          sleep 15
-
-          for i in $(seq 1 60); do
-            RUN_ID=$(gh run list --workflow=release.yml --limit=10 --json databaseId,headBranch --jq ".[] | select(.headBranch==\"$TAG\") | .databaseId" 2>/dev/null | head -1 || true)
-            if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
-              echo "Found release workflow run: $RUN_ID"
-              gh run watch "$RUN_ID" --exit-status || exit 1
-              echo "✅ Release workflow completed"
-              exit 0
-            fi
-            echo "Waiting... ($i/60)"
-            sleep 15
-          done
-          echo "::error::Release workflow did not trigger within timeout"
-          exit 1
+      # Note: rust-gvm is a library, no additional release artifacts needed.
+      # The pontos release step above creates the GitHub release with changelog.
