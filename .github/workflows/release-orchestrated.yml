@@ -82,28 +82,12 @@ jobs:
             git push origin "$TAG" --force
           fi
 
-      - name: Wait for release.yml to complete
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="v${{ inputs.version }}"
-          echo "Tag $TAG created. Waiting for release.yml to trigger..."
-
-          # Wait for the workflow to appear (tag push triggers it)
-          sleep 10
-          for i in $(seq 1 30); do
-            RUN_ID=$(gh run list --workflow=release.yml --limit=10 --json databaseId,headBranch,status \
-              --jq ".[] | select(.headBranch==\"$TAG\") | .databaseId" 2>/dev/null | head -1 || true)
-            if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
-              echo "✅ Found release.yml run: $RUN_ID"
-              echo "Watching for completion..."
-              gh run watch "$RUN_ID" --exit-status
-              echo "✅ release.yml completed successfully"
-              exit 0
-            fi
-            echo "Waiting for release.yml to trigger... ($i/30)"
-            sleep 10
-          done
-
-          echo "::error::release.yml did not trigger within 5 minutes"
-          exit 1
+      - name: Trigger release.yml and wait for completion
+        uses: greenbone/actions/trigger-workflow@v3
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+          repository: ${{ github.repository }}
+          workflow: release.yml
+          ref: v${{ inputs.version }}
+          wait-for-completion-timeout: "1800"
+          wait-for-completion-interval: "30"
