@@ -206,30 +206,24 @@ impl Response {
                         current_text.clear();
                     }
                 }
-                Ok(Event::Empty(ref e)) => {
-                    if root_depth == 1 {
-                        let qname = e.name();
-                        let Ok(name) = std::str::from_utf8(qname.as_ref()) else {
-                            return HashMap::new();
-                        };
-                        child_texts.entry(name.to_string()).or_default();
-                    }
+                Ok(Event::Empty(ref e)) if root_depth == 1 => {
+                    let qname = e.name();
+                    let Ok(name) = std::str::from_utf8(qname.as_ref()) else {
+                        return HashMap::new();
+                    };
+                    child_texts.entry(name.to_string()).or_default();
                 }
-                Ok(Event::Text(ref text)) => {
-                    if current_child_name.is_some() {
-                        let Ok(unescaped) = text.xml_content() else {
-                            return HashMap::new();
-                        };
-                        current_text.push_str(&unescaped);
-                    }
+                Ok(Event::Text(ref text)) if current_child_name.is_some() => {
+                    let Ok(unescaped) = text.xml_content() else {
+                        return HashMap::new();
+                    };
+                    current_text.push_str(&unescaped);
                 }
-                Ok(Event::CData(ref text)) => {
-                    if current_child_name.is_some() {
-                        let Ok(unescaped) = text.xml_content() else {
-                            return HashMap::new();
-                        };
-                        current_text.push_str(&unescaped);
-                    }
+                Ok(Event::CData(ref text)) if current_child_name.is_some() => {
+                    let Ok(unescaped) = text.xml_content() else {
+                        return HashMap::new();
+                    };
+                    current_text.push_str(&unescaped);
                 }
                 Ok(Event::End(_)) => {
                     if let Some(name) = current_child_name.as_ref() {
