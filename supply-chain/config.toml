@@ -1169,3 +1169,83 @@ criteria = "safe-to-deploy"
 [[exemptions.zmij]]
 version = "1.0.21"
 criteria = "safe-to-deploy"
+
+[[exemptions.aws-lc-sys]]
+version = "0.39.1"
+criteria = "safe-to-deploy"
+
+[[exemptions.cc]]
+version = "1.2.58"
+criteria = "safe-to-deploy"
+
+[[exemptions.cmake]]
+version = "0.1.58"
+criteria = "safe-to-deploy"
+
+[[exemptions.hybrid-array]]
+version = "0.2.3"
+criteria = "safe-to-deploy"
+
+[[exemptions.hybrid-array]]
+version = "0.4.10"
+criteria = "safe-to-deploy"
+
+[[exemptions.js-sys]]
+version = "0.3.94"
+criteria = "safe-to-deploy"
+
+[[exemptions.mio]]
+version = "1.2.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.sha3]]
+version = "0.10.9"
+criteria = "safe-to-deploy"
+
+[[exemptions.simd-adler32]]
+version = "0.3.9"
+criteria = "safe-to-deploy"
+
+[[exemptions.toml_datetime]]
+version = "1.1.1+spec-1.1.0"
+criteria = "safe-to-run"
+
+[[exemptions.toml_edit]]
+version = "0.25.9+spec-1.1.0"
+criteria = "safe-to-run"
+
+[[exemptions.toml_parser]]
+version = "1.1.1+spec-1.1.0"
+criteria = "safe-to-run"
+
+[[exemptions.wasm-bindgen]]
+version = "0.2.117"
+criteria = "safe-to-deploy"
+
+[[exemptions.wasm-bindgen-futures]]
+version = "0.4.67"
+criteria = "safe-to-deploy"
+
+[[exemptions.wasm-bindgen-macro]]
+version = "0.2.117"
+criteria = "safe-to-deploy"
+
+[[exemptions.wasm-bindgen-macro-support]]
+version = "0.2.117"
+criteria = "safe-to-deploy"
+
+[[exemptions.wasm-bindgen-shared]]
+version = "0.2.117"
+criteria = "safe-to-deploy"
+
+[[exemptions.winnow]]
+version = "1.0.1"
+criteria = "safe-to-run"
+
+[[exemptions.zerocopy]]
+version = "0.8.48"
+criteria = "safe-to-deploy"
+
+[[exemptions.zerocopy-derive]]
+version = "0.8.48"
+criteria = "safe-to-deploy"
