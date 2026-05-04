@@ -35,6 +35,7 @@ ignored = ["rustls", "rustls-pemfile", "tokio-rustls"]  # TLS feature-gated, not
 
 [dev-dependencies]
 pretty_assertions.workspace = true
+rand.workspace = true
 tempfile.workspace = true
 tokio-test.workspace = true
 gvm-gmp.workspace = true

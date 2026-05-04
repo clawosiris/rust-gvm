@@ -544,13 +544,10 @@ mod tests {
 
     #[test]
     fn test_accept_all_host_key_policy() {
-        let public_key = keys::PrivateKey::random(
-            &mut russh::keys::ssh_key::rand_core::OsRng,
-            keys::Algorithm::Ed25519,
-        )
-        .expect("host key")
-        .public_key()
-        .clone();
+        let public_key = keys::PrivateKey::random(&mut rand::rng(), keys::Algorithm::Ed25519)
+            .expect("host key")
+            .public_key()
+            .clone();
         let mut verifier = SshServerKeyVerifier::default();
 
         let accepted = tokio_test::block_on(verifier.check_server_key(&public_key)).expect("ok");
@@ -560,11 +557,8 @@ mod tests {
 
     #[test]
     fn test_fingerprint_host_key_policy() {
-        let private_key = keys::PrivateKey::random(
-            &mut russh::keys::ssh_key::rand_core::OsRng,
-            keys::Algorithm::Ed25519,
-        )
-        .expect("host key");
+        let private_key =
+            keys::PrivateKey::random(&mut rand::rng(), keys::Algorithm::Ed25519).expect("host key");
         let public_key = private_key.public_key().clone();
         let fingerprint = host_key_fingerprint(&public_key);
         let mut verifier =

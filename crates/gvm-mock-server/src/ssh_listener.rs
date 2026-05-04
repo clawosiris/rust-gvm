@@ -5,7 +5,6 @@
 
 use std::sync::Arc;
 
-use russh::keys::ssh_key::rand_core::OsRng;
 use russh::keys::ssh_key::HashAlg;
 use russh::server::{self, Auth, Server as _, Session};
 use russh::{Channel, ChannelMsg};
@@ -42,7 +41,7 @@ struct MockSshHandler {
 }
 
 pub(crate) fn generate_host_key() -> Result<russh::keys::PrivateKey, std::io::Error> {
-    russh::keys::PrivateKey::random(&mut OsRng, russh::keys::Algorithm::Ed25519)
+    russh::keys::PrivateKey::random(&mut rand::rng(), russh::keys::Algorithm::Ed25519)
         .map_err(std::io::Error::other)
 }
 
