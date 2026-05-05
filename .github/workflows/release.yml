@@ -1,0 +1,291 @@
+# Release workflow — builds and publishes release artifacts when a version tag is pushed.
+# Triggered automatically after release-orchestrated.yml creates a tag.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  attestations: write
+
+env:
+  CARGO_TERM_COLOR: always
+  BINARY_NAME: gvm-mock-server
+  # Pinned tool versions for reproducibility
+  CARGO_CYCLONEDX_VERSION: "0.5.9"
+  SBOMQS_VERSION: "v2.0.5"
+  CROSS_VERSION: "v0.2.5"
+
+jobs:
+  # Run full test suite before building release artifacts
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - run: cargo test --workspace --all-features
+
+  # Publish gvm-mock-server Docker image to GHCR
+  container:
+    name: Publish GHCR image
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ghcr.io/clawosiris/gvm-mock-server
+          tags: |
+            type=raw,value=${{ github.ref_name }}
+          labels: |
+            org.opencontainers.image.title=gvm-mock-server
+            org.opencontainers.image.description=Programmable mock GMP server for testing
+            org.opencontainers.image.vendor=clawosiris
+            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: "{{defaultContext}}"
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  # Build binaries for each target platform
+  build:
+    name: Build (${{ matrix.target }})
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: gvm-mock-server-linux-amd64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: gvm-mock-server-linux-arm64
+            cross: true
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            artifact: gvm-mock-server-linux-amd64-musl
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            artifact: gvm-mock-server-macos-amd64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            artifact: gvm-mock-server-macos-arm64
+    steps:
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        if: runner.os == 'Linux'
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          key: ${{ matrix.target }}
+
+      # Install cross-compilation tools for Linux ARM64
+      - name: Install cross
+        if: matrix.cross
+        run: cargo install cross --git https://github.com/cross-rs/cross --tag ${{ env.CROSS_VERSION }}
+
+      # Install musl tools for static Linux builds
+      - name: Install musl-tools
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      # Build with cross for cross-compiled targets
+      - name: Build (cross)
+        if: matrix.cross
+        run: cross build --release --target ${{ matrix.target }} -p gvm-mock-server
+
+      # Build natively for same-arch targets
+      - name: Build (native)
+        if: "!matrix.cross"
+        run: cargo build --release --target ${{ matrix.target }} -p gvm-mock-server
+
+      # Package the binary
+      - name: Package
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../${{ matrix.artifact }}.tar.gz ${{ env.BINARY_NAME }}
+          cd ../../..
+          sha256sum ${{ matrix.artifact }}.tar.gz > ${{ matrix.artifact }}.tar.gz.sha256
+
+      - name: Generate build provenance attestation
+        uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
+        with:
+          subject-path: '${{ matrix.artifact }}.tar.gz'
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.artifact }}.tar.gz
+            ${{ matrix.artifact }}.tar.gz.sha256
+
+  # Generate SBOM (Software Bill of Materials) in CycloneDX format
+  sbom:
+    name: Generate SBOM
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+
+      - uses: taiki-e/install-action@a164de717a0ee9284c2d9db1c6016a4c339cd333 # v2
+        with:
+          tool: cargo-cyclonedx@${{ env.CARGO_CYCLONEDX_VERSION }}
+
+      - name: Generate CycloneDX SBOM (JSON)
+        run: cargo cyclonedx --format json --all --spec-version 1.5
+
+      - name: Generate CycloneDX SBOM (XML)
+        run: cargo cyclonedx --format xml --all --spec-version 1.5
+
+      - name: Collect SBOMs
+        shell: bash
+        run: |
+          mkdir -p sbom-artifacts
+          find . -name '*.cdx.json' -not -path '*/target/*' -not -path '*/fixtures/*' -not -path '*/sbom-artifacts/*' -exec cp {} sbom-artifacts/ \;
+          find . -name '*.cdx.xml' -not -path '*/target/*' -not -path '*/fixtures/*' -not -path '*/sbom-artifacts/*' -exec cp {} sbom-artifacts/ \;
+          ls -la sbom-artifacts/
+
+      - name: Post-process CycloneDX JSON SBOMs
+        shell: bash
+        run: |
+          python3 scripts/sbom_postprocess.py --cargo-toml Cargo.toml sbom-artifacts/*.cdx.json
+
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
+        with:
+          go-version: stable
+
+      - name: Install sbomqs
+        run: |
+          go install github.com/interlynk-io/sbomqs@${{ env.SBOMQS_VERSION }}
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Score post-processed SBOMs
+        shell: bash
+        run: |
+          sbomqs score --json sbom-artifacts/*.cdx.json > sbomqs-results.json
+          python3 - sbomqs-results.json <<'PY'
+          import json
+          import sys
+
+          threshold = 7.0
+          with open(sys.argv[1], "r", encoding="utf-8") as handle:
+              data = json.load(handle)
+
+          failures = []
+          for entry in data.get("files", []):
+              score = float(entry.get("avg_score", 0.0))
+              path = entry.get("path") or entry.get("file") or entry.get("fileName") or "<unknown>"
+              print(f"{path}: {score:.2f}/10")
+              if score < threshold:
+                  failures.append((path, score))
+
+          if failures:
+              for path, score in failures:
+                  print(f"::error file={path}::SBOM quality score below {threshold:.1f}: {score:.2f}")
+              raise SystemExit(1)
+          PY
+
+      - name: Package SBOMs
+        run: |
+          cd sbom-artifacts
+          tar czf ../rust-gvm-sbom.tar.gz *.cdx.*
+          cd ..
+          sha256sum rust-gvm-sbom.tar.gz > rust-gvm-sbom.tar.gz.sha256
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        with:
+          name: sbom
+          path: |
+            rust-gvm-sbom.tar.gz
+            rust-gvm-sbom.tar.gz.sha256
+            sbomqs-results.json
+
+  # Upload artifacts to the GitHub Release created by pontos
+  upload-assets:
+    name: Upload release assets
+    needs: [build, sbom, container]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Upload assets to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Wait for release to exist (pontos creates it, may take a moment)
+          for i in $(seq 1 30); do
+            if gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" &>/dev/null; then
+              echo "✅ Release ${{ github.ref_name }} found"
+              break
+            fi
+            echo "Waiting for release... ($i/30)"
+            sleep 5
+          done
+
+          gh release upload "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --clobber \
+            artifacts/*.tar.gz artifacts/*.sha256
+          echo "✅ Assets uploaded to release ${{ github.ref_name }}"
