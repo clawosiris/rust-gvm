@@ -475,6 +475,7 @@ impl SessionHandler {
         let new_name = parse_element_text(raw_xml, "name");
         let new_text = parse_element_text(raw_xml, "text");
         let new_comment = parse_element_text(raw_xml, "comment");
+        let new_host = parse_element_text(raw_xml, "host");
         let new_hosts = parse_element_text(raw_xml, "hosts");
         let new_status = parse_element_text(raw_xml, "status");
         let new_nvt_oid = parse_element_text(raw_xml, "nvt_oid")
@@ -499,6 +500,9 @@ impl SessionHandler {
             }
             if let Some(ref comment) = new_comment {
                 r.comment.clone_from(comment);
+            }
+            if let Some(ref host) = new_host {
+                r.set_attr("host", host);
             }
             if let Some(ref hosts) = new_hosts {
                 r.set_attr("hosts", hosts);

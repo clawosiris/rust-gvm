@@ -7,6 +7,8 @@
 use gvm_client::{GmpClient, GmpVersioned, GvmError};
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::authentication::authenticate;
+use gvm_gmp::commands::scan_configs::ConfigOpts;
+use gvm_gmp::commands::scanners::ScannerOpts;
 use gvm_gmp::commands::targets::{
     create_target, delete_target, get_targets, CreateTargetOpts, GetTargetsOpts,
 };
@@ -21,9 +23,7 @@ fn socket_path() -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .expect("system time should be after epoch")
         .as_nanos();
-    std::env::current_dir()
-        .expect("current dir should resolve")
-        .join(format!("gvmc-{}-{unique}.sock", std::process::id()))
+    std::env::temp_dir().join(format!("gvmc-{}-{unique}.sock", std::process::id()))
 }
 
 async fn stateful_server() -> Option<MockGmpServer> {
@@ -319,6 +319,153 @@ async fn full_crud_lifecycle_succeeds() {
         .await
         .expect("delete_target should succeed");
     assert_eq!(delete_target_response.status_code(), Some(200));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_scan_config_and_scanner_helpers_cover_full_lifecycle() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let created_config = client
+        .create_scan_config(
+            "Typed Config",
+            None,
+            ConfigOpts {
+                comment: Some("created".into()),
+                usage_type: Some("scan".into()),
+            },
+        )
+        .await
+        .expect("create_scan_config should succeed");
+    let config_id = created_config.id;
+
+    let fetched_config = client
+        .get_scan_config(&config_id)
+        .await
+        .expect("get_scan_config should succeed");
+    assert_eq!(fetched_config.items.len(), 1);
+    assert_eq!(fetched_config.items[0].meta.id, config_id);
+    assert_eq!(fetched_config.items[0].meta.name, "Typed Config");
+
+    client
+        .modify_scan_config(
+            &config_id,
+            ConfigOpts {
+                comment: Some("updated".into()),
+                usage_type: Some("scan".into()),
+            },
+        )
+        .await
+        .expect("modify_scan_config should succeed");
+
+    let updated_config = client
+        .get_scan_config(&config_id)
+        .await
+        .expect("get_scan_config after modify should succeed");
+    assert_eq!(
+        updated_config.items[0].meta.comment.as_deref(),
+        Some("updated")
+    );
+
+    client
+        .sync_scan_config(&config_id)
+        .await
+        .expect("sync_scan_config should succeed");
+
+    let cloned_config = client
+        .clone_scan_config(&config_id)
+        .await
+        .expect("clone_scan_config should succeed");
+    let cloned_config_id = cloned_config.id;
+    let cloned_config_response = client
+        .get_scan_config(&cloned_config_id)
+        .await
+        .expect("get cloned config should succeed");
+    assert_eq!(cloned_config_response.items[0].meta.name, "Typed Config");
+
+    client
+        .delete_scan_config(&cloned_config_id, true)
+        .await
+        .expect("delete cloned config should succeed");
+    client
+        .delete_scan_config(&config_id, true)
+        .await
+        .expect("delete original config should succeed");
+
+    let created_scanner = client
+        .create_scanner("Typed Scanner", ScannerOpts::default())
+        .await
+        .expect("create_scanner should succeed");
+    let scanner_id = created_scanner.id;
+
+    let fetched_scanner = client
+        .get_scanner(&scanner_id)
+        .await
+        .expect("get_scanner should succeed");
+    assert_eq!(fetched_scanner.items.len(), 1);
+    assert_eq!(fetched_scanner.items[0].meta.id, scanner_id);
+    assert_eq!(fetched_scanner.items[0].meta.name, "Typed Scanner");
+
+    client
+        .modify_scanner(
+            &scanner_id,
+            ScannerOpts {
+                comment: Some("updated".into()),
+                host: Some("127.0.0.1".into()),
+                port: Some(9390),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("modify_scanner should succeed");
+
+    let updated_scanner = client
+        .get_scanner(&scanner_id)
+        .await
+        .expect("get_scanner after modify should succeed");
+    assert_eq!(
+        updated_scanner.items[0].meta.comment.as_deref(),
+        Some("updated")
+    );
+    assert_eq!(updated_scanner.items[0].host.as_deref(), Some("127.0.0.1"));
+    assert_eq!(updated_scanner.items[0].port, Some(9390));
+
+    client
+        .verify_scanner(&scanner_id)
+        .await
+        .expect("verify_scanner should succeed");
+
+    let cloned_scanner = client
+        .clone_scanner(&scanner_id)
+        .await
+        .expect("clone_scanner should succeed");
+    let cloned_scanner_id = cloned_scanner.id;
+    let cloned_scanner_response = client
+        .get_scanner(&cloned_scanner_id)
+        .await
+        .expect("get cloned scanner should succeed");
+    assert_eq!(cloned_scanner_response.items[0].meta.name, "Typed Scanner");
+
+    client
+        .delete_scanner(&cloned_scanner_id, true)
+        .await
+        .expect("delete cloned scanner should succeed");
+    client
+        .delete_scanner(&scanner_id, true)
+        .await
+        .expect("delete original scanner should succeed");
 
     server.shutdown().await;
 }

@@ -91,8 +91,14 @@ pub use result::{GetResultsResponse, NvtRef, QodInfo, ScanResult};
 pub use role::{
     CreateRoleResponse, DeleteRoleResponse, GetRolesResponse, ModifyRoleResponse, Role,
 };
-pub use scan_config::{CreateScanConfigResponse, GetScanConfigsResponse, ScanConfig};
-pub use scanner::{CreateScannerResponse, GetScannersResponse, Scanner};
+pub use scan_config::{
+    CreateScanConfigResponse, DeleteScanConfigResponse, GetScanConfigsResponse,
+    ModifyScanConfigResponse, ScanConfig, SyncConfigResponse,
+};
+pub use scanner::{
+    CreateScannerResponse, DeleteScannerResponse, GetScannersResponse, ModifyScannerResponse,
+    Scanner, VerifyScannerResponse,
+};
 pub use schedule::{
     CreateScheduleResponse, DeleteScheduleResponse, GetSchedulesResponse, ModifyScheduleResponse,
     Schedule,
