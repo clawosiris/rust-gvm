@@ -11,14 +11,9 @@ on:
       - 'LICENSE'
       - '.github/ISSUE_TEMPLATE/**'
   pull_request:
+    # Keep the workflow running for docs-only PRs so branch protection always
+    # receives the required `Security` status check.
     branches: [main]
-    paths-ignore:
-      - 'journal/**'
-      - 'docs/**'
-      - 'spec/**'
-      - '*.md'
-      - 'LICENSE'
-      - '.github/ISSUE_TEMPLATE/**'
   schedule:
     # Run weekly on Monday at 06:00 UTC
     - cron: "0 6 * * 1"
