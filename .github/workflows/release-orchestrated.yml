@@ -1,5 +1,12 @@
 # Orchestrated Release — triggered by clawosiris/release-orchestrator
 # Do NOT trigger manually — use the orchestrator instead.
+#
+# This workflow:
+# 1. Creates the release via pontos (changelog, tag, GitHub release)
+# 2. Waits for release.yml (triggered by tag push) to build and upload artifacts
+#
+# The orchestrator waits for this workflow to complete before proceeding to
+# downstream repos (rust-gvm-api, gvm-rools, etc.).
 
 name: Orchestrated Release
 
@@ -28,7 +35,7 @@ jobs:
     name: "Release v${{ inputs.version }}"
     runs-on: ubuntu-latest
     steps:
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
         with:
           egress-policy: audit
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -75,24 +82,12 @@ jobs:
             git push origin "$TAG" --force
           fi
 
-      - name: Wait for release workflow
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="v${{ inputs.version }}"
-          echo "Tag $TAG created. Waiting for release.yml..."
-          sleep 15
-
-          for i in $(seq 1 60); do
-            RUN_ID=$(gh run list --workflow=release.yml --limit=10 --json databaseId,headBranch --jq ".[] | select(.headBranch==\"$TAG\") | .databaseId" 2>/dev/null | head -1 || true)
-            if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
-              echo "Found release workflow run: $RUN_ID"
-              gh run watch "$RUN_ID" --exit-status || exit 1
-              echo "✅ Release workflow completed"
-              exit 0
-            fi
-            echo "Waiting... ($i/60)"
-            sleep 15
-          done
-          echo "::error::Release workflow did not trigger within timeout"
-          exit 1
+      - name: Trigger release.yml and wait for completion
+        uses: greenbone/actions/trigger-workflow@v3
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+          repository: ${{ github.repository }}
+          workflow: release.yml
+          ref: v${{ inputs.version }}
+          wait-for-completion-timeout: "1800"
+          wait-for-completion-interval: "30"
