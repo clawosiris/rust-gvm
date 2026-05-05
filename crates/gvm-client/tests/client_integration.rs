@@ -323,21 +323,7 @@ async fn full_crud_lifecycle_succeeds() {
     server.shutdown().await;
 }
 
-#[tokio::test]
-async fn typed_scan_config_and_scanner_helpers_cover_full_lifecycle() {
-    let Some(server) = stateful_server().await else {
-        return;
-    };
-    let connection = unix_connection(&server);
-    let mut client = GmpClient::connect(connection)
-        .await
-        .expect("client should connect");
-
-    client
-        .authenticate("admin", "admin")
-        .await
-        .expect("authenticate should succeed");
-
+async fn typed_scan_config_lifecycle(client: &mut GmpClient<UnixSocketConnection>) {
     let created_config = client
         .create_scan_config(
             "Typed Config",
@@ -403,7 +389,9 @@ async fn typed_scan_config_and_scanner_helpers_cover_full_lifecycle() {
         .delete_scan_config(&config_id, true)
         .await
         .expect("delete original config should succeed");
+}
 
+async fn typed_scanner_lifecycle(client: &mut GmpClient<UnixSocketConnection>) {
     let created_scanner = client
         .create_scanner("Typed Scanner", ScannerOpts::default())
         .await
@@ -466,6 +454,25 @@ async fn typed_scan_config_and_scanner_helpers_cover_full_lifecycle() {
         .delete_scanner(&scanner_id, true)
         .await
         .expect("delete original scanner should succeed");
+}
+
+#[tokio::test]
+async fn typed_scan_config_and_scanner_helpers_cover_full_lifecycle() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    typed_scan_config_lifecycle(&mut client).await;
+    typed_scanner_lifecycle(&mut client).await;
 
     server.shutdown().await;
 }
