@@ -1,4 +1,44 @@
 
 # cargo-vet audits file
 
-[audits]
+[[audits.clap]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "4.6.0 -> 4.6.1"
+notes = "Reviewed local diff: version metadata updates and clap_derive pin refresh only."
+
+[[audits.clap_derive]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "4.6.0 -> 4.6.1"
+notes = "Reviewed local diff: proc-macro changes are limited to package-name token handling and dependency bumps; no unsafe code added."
+
+[[audits.quick-xml]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "0.39.2 -> 0.39.3"
+notes = "Reviewed local diff: tiny DTD parser bugfix/comment cleanup only."
+
+[[audits.rustls]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "0.23.37 -> 0.23.40"
+notes = "Reviewed local diff: ALPN/EMS configuration fixes and provider-FIPS alignment; no suspicious capability expansion."
+
+[[audits.tokio]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "1.50.0 -> 1.52.2"
+notes = "Reviewed release delta and local diff sample: runtime scheduling fixes/reverts, WASI test gating, and stable feature additions without apparent security-sensitive expansion."
+
+[[audits.tokio-macros]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "2.6.1 -> 2.7.0"
+notes = "Reviewed local diff: macro docs/runtime-name support and local-runtime stabilization path; proc-macro surface remains expected."
+
+[[audits.uuid]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "1.23.0 -> 1.23.1"
+notes = "Reviewed local diff: wasm dependency metadata cleanup and version bump only."
