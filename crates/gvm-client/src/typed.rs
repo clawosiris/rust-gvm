@@ -41,9 +41,13 @@ use gvm_gmp::commands::reports::{get_reports, GetReportsOpts};
 use gvm_gmp::commands::results::{get_results, GetResultsOpts};
 use gvm_gmp::commands::roles::{create_role, get_roles, GetRolesOpts, RoleOpts};
 use gvm_gmp::commands::scan_configs::{
-    create_scan_config, get_scan_configs, ConfigOpts, GetScanConfigsOpts,
+    clone_scan_config, create_scan_config, delete_scan_config, get_scan_config, get_scan_configs,
+    modify_scan_config, sync_config, ConfigOpts, GetScanConfigsOpts,
 };
-use gvm_gmp::commands::scanners::{create_scanner, get_scanners, GetScannersOpts, ScannerOpts};
+use gvm_gmp::commands::scanners::{
+    clone_scanner, create_scanner, delete_scanner, get_scanner, get_scanners, modify_scanner,
+    verify_scanner, GetScannersOpts, ScannerOpts,
+};
 use gvm_gmp::commands::schedules::{
     create_schedule, get_schedules, GetSchedulesOpts, ScheduleOpts,
 };
@@ -66,16 +70,17 @@ use gvm_gmp::responses::{
     CreatePermissionResponse, CreatePortListResponse, CreateReportFormatResponse,
     CreateRoleResponse, CreateScanConfigResponse, CreateScannerResponse, CreateScheduleResponse,
     CreateTagResponse, CreateTargetResponse, CreateTaskResponse, CreateTicketResponse,
-    CreateTlsCertificateResponse, CreateUserResponse, DescribeAuthResponse, GetAlertsResponse,
-    GetCertBundAdvisoriesResponse, GetCpesResponse, GetCredentialsResponse, GetCvesResponse,
-    GetDfnCertAdvisoriesResponse, GetFeedsResponse, GetFiltersResponse, GetGroupsResponse,
-    GetHostsResponse, GetNotesResponse, GetNvtFamiliesResponse, GetNvtsResponse,
-    GetOverridesResponse, GetPermissionsResponse, GetPortListsResponse, GetReportConfigsResponse,
-    GetReportFormatsResponse, GetReportsResponse, GetResultsResponse, GetRolesResponse,
-    GetScanConfigsResponse, GetScannersResponse, GetSchedulesResponse, GetSettingsResponse,
-    GetTagsResponse, GetTargetsResponse, GetTasksResponse, GetTicketsResponse,
-    GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse, HelpResponse,
-    StartTaskResponse,
+    CreateTlsCertificateResponse, CreateUserResponse, DeleteScanConfigResponse,
+    DeleteScannerResponse, DescribeAuthResponse, GetAlertsResponse, GetCertBundAdvisoriesResponse,
+    GetCpesResponse, GetCredentialsResponse, GetCvesResponse, GetDfnCertAdvisoriesResponse,
+    GetFeedsResponse, GetFiltersResponse, GetGroupsResponse, GetHostsResponse, GetNotesResponse,
+    GetNvtFamiliesResponse, GetNvtsResponse, GetOverridesResponse, GetPermissionsResponse,
+    GetPortListsResponse, GetReportConfigsResponse, GetReportFormatsResponse, GetReportsResponse,
+    GetResultsResponse, GetRolesResponse, GetScanConfigsResponse, GetScannersResponse,
+    GetSchedulesResponse, GetSettingsResponse, GetTagsResponse, GetTargetsResponse,
+    GetTasksResponse, GetTicketsResponse, GetTlsCertificatesResponse, GetUsersResponse,
+    GetVersionResponse, HelpResponse, ModifyScanConfigResponse, ModifyScannerResponse,
+    StartTaskResponse, SyncConfigResponse, VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
 
@@ -161,6 +166,68 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         CreateScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
+    /// Send a `get_scan_config` request and return a typed [`GetScanConfigsResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_scan_config(
+        &mut self,
+        config_id: &EntityId,
+    ) -> Result<GetScanConfigsResponse, GvmError> {
+        let response = self.send(get_scan_config(config_id)).await?;
+        GetScanConfigsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `modify_scan_config` request and return a typed [`ModifyScanConfigResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_scan_config(
+        &mut self,
+        config_id: &EntityId,
+        opts: ConfigOpts,
+    ) -> Result<ModifyScanConfigResponse, GvmError> {
+        let response = self.send(modify_scan_config(config_id, opts)).await?;
+        ModifyScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `delete_scan_config` request and return a typed [`DeleteScanConfigResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn delete_scan_config(
+        &mut self,
+        config_id: &EntityId,
+        ultimate: bool,
+    ) -> Result<DeleteScanConfigResponse, GvmError> {
+        let response = self.send(delete_scan_config(config_id, ultimate)).await?;
+        DeleteScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `clone_scan_config` request and return a typed [`CreateScanConfigResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn clone_scan_config(
+        &mut self,
+        config_id: &EntityId,
+    ) -> Result<CreateScanConfigResponse, GvmError> {
+        let response = self.send(clone_scan_config(config_id)).await?;
+        CreateScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `sync_config` request and return a typed [`SyncConfigResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn sync_scan_config(
+        &mut self,
+        config_id: &EntityId,
+    ) -> Result<SyncConfigResponse, GvmError> {
+        let response = self.send(sync_config(config_id)).await?;
+        SyncConfigResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
     // ── Scanners ──────────────────────────────────────────────────────────────
 
     /// Send a `get_scanners` request and return a typed [`GetScannersResponse`].
@@ -185,6 +252,68 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         opts: ScannerOpts,
     ) -> Result<CreateScannerResponse, GvmError> {
         let response = self.send(create_scanner(name, opts)).await?;
+        CreateScannerResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `get_scanner` request and return a typed [`GetScannersResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_scanner(
+        &mut self,
+        scanner_id: &EntityId,
+    ) -> Result<GetScannersResponse, GvmError> {
+        let response = self.send(get_scanner(scanner_id)).await?;
+        GetScannersResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `modify_scanner` request and return a typed [`ModifyScannerResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_scanner(
+        &mut self,
+        scanner_id: &EntityId,
+        opts: ScannerOpts,
+    ) -> Result<ModifyScannerResponse, GvmError> {
+        let response = self.send(modify_scanner(scanner_id, opts)).await?;
+        ModifyScannerResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `delete_scanner` request and return a typed [`DeleteScannerResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn delete_scanner(
+        &mut self,
+        scanner_id: &EntityId,
+        ultimate: bool,
+    ) -> Result<DeleteScannerResponse, GvmError> {
+        let response = self.send(delete_scanner(scanner_id, ultimate)).await?;
+        DeleteScannerResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `verify_scanner` request and return a typed [`VerifyScannerResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn verify_scanner(
+        &mut self,
+        scanner_id: &EntityId,
+    ) -> Result<VerifyScannerResponse, GvmError> {
+        let response = self.send(verify_scanner(scanner_id)).await?;
+        VerifyScannerResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `clone_scanner` request and return a typed [`CreateScannerResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn clone_scanner(
+        &mut self,
+        scanner_id: &EntityId,
+    ) -> Result<CreateScannerResponse, GvmError> {
+        let response = self.send(clone_scanner(scanner_id)).await?;
         CreateScannerResponse::from_response(&response).map_err(GvmError::Parse)
     }
 

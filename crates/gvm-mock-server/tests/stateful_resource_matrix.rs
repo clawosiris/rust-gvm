@@ -155,7 +155,82 @@ async fn matrix_configs_create_get_list() {
 }
 
 #[tokio::test]
-async fn matrix_scanners_create_delete_ultimate() {
+async fn matrix_configs_full_lifecycle_helpers() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let config_id = create_and_get_id(
+        &mut stream,
+        b"<create_config><name>Matrix Config</name><comment>cfg</comment></create_config>",
+        "create_config",
+    )
+    .await;
+
+    let modify_resp = send_recv(
+        &mut stream,
+        format!(
+            "<modify_config config_id=\"{config_id}\"><comment>updated</comment><usage_type>scan</usage_type></modify_config>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(modify_resp.status_code(), Some(200));
+
+    let get_resp = send_recv(
+        &mut stream,
+        format!("<get_configs config_id=\"{config_id}\" details=\"1\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(get_resp.status_code(), Some(200));
+    let get_text = get_resp.as_str().expect("valid utf8");
+    assert!(get_text.contains("<comment>updated</comment>"));
+    assert!(get_text.contains("<usage_type>scan</usage_type>"));
+
+    let sync_resp = send_recv(
+        &mut stream,
+        format!("<sync_config config_id=\"{config_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(sync_resp.status_code(), Some(200));
+
+    let cloned_config_id = create_and_get_id(
+        &mut stream,
+        format!("<create_config><copy>{config_id}</copy></create_config>").as_bytes(),
+        "create_config",
+    )
+    .await;
+
+    let cloned_get_resp = send_recv(
+        &mut stream,
+        format!("<get_configs config_id=\"{cloned_config_id}\" details=\"1\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(cloned_get_resp.status_code(), Some(200));
+    let cloned_get_text = cloned_get_resp.as_str().expect("valid utf8");
+    assert!(cloned_get_text.contains("Matrix Config"));
+
+    let delete_resp = send_recv(
+        &mut stream,
+        format!("<delete_config config_id=\"{config_id}\" ultimate=\"1\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(delete_resp.status_code(), Some(200));
+
+    let deleted_get_resp = send_recv(
+        &mut stream,
+        format!("<get_configs config_id=\"{config_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(deleted_get_resp.status_code(), Some(404));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn matrix_scanners_full_lifecycle_helpers() {
     let Some(server) = stateful_server().await else {
         return;
     };
@@ -168,6 +243,60 @@ async fn matrix_scanners_create_delete_ultimate() {
         "create_scanner",
     )
     .await;
+
+    let get_resp = send_recv(
+        &mut stream,
+        format!("<get_scanners scanner_id=\"{scanner_id}\" details=\"1\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(get_resp.status_code(), Some(200));
+    let get_text = get_resp.as_str().expect("valid utf8");
+    assert!(get_text.contains(&scanner_id));
+    assert!(get_text.contains("Matrix Scanner"));
+
+    let modify_resp = send_recv(
+        &mut stream,
+        format!(
+            "<modify_scanner scanner_id=\"{scanner_id}\"><comment>updated</comment><host>127.0.0.1</host><port>9390</port></modify_scanner>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(modify_resp.status_code(), Some(200));
+
+    let updated_get_resp = send_recv(
+        &mut stream,
+        format!("<get_scanners scanner_id=\"{scanner_id}\" details=\"1\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(updated_get_resp.status_code(), Some(200));
+    let updated_get_text = updated_get_resp.as_str().expect("valid utf8");
+    assert!(updated_get_text.contains("<comment>updated</comment>"));
+    assert!(updated_get_text.contains("<host>127.0.0.1</host>"));
+    assert!(updated_get_text.contains("<port>9390</port>"));
+
+    let verify_resp = send_recv(
+        &mut stream,
+        format!("<verify_scanner scanner_id=\"{scanner_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(verify_resp.status_code(), Some(200));
+
+    let cloned_scanner_id = create_and_get_id(
+        &mut stream,
+        format!("<create_scanner><copy>{scanner_id}</copy></create_scanner>").as_bytes(),
+        "create_scanner",
+    )
+    .await;
+
+    let cloned_get_resp = send_recv(
+        &mut stream,
+        format!("<get_scanners scanner_id=\"{cloned_scanner_id}\" details=\"1\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(cloned_get_resp.status_code(), Some(200));
+    let cloned_get_text = cloned_get_resp.as_str().expect("valid utf8");
+    assert!(cloned_get_text.contains("Matrix Scanner"));
 
     let delete_resp = send_recv(
         &mut stream,
