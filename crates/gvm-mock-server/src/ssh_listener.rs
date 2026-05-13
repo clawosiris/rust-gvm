@@ -5,7 +5,6 @@
 
 use std::sync::Arc;
 
-use russh::keys::ssh_key::rand_core::OsRng;
 use russh::keys::ssh_key::HashAlg;
 use russh::server::{self, Auth, Server as _, Session};
 use russh::{Channel, ChannelMsg};
@@ -41,9 +40,16 @@ struct MockSshHandler {
     state: Arc<ListenerState>,
 }
 
+const MOCK_SSH_HOST_KEY: &str = "-----BEGIN OPENSSH PRIVATE KEY-----\n\
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\n\
+QyNTUxOQAAACB+EWzefhzyL1bDRSqFJDlV9VRKftUdIGsJkrqLXQpLbQAAAJBJybdYScm3\n\
+WAAAAAtzc2gtZWQyNTUxOQAAACB+EWzefhzyL1bDRSqFJDlV9VRKftUdIGsJkrqLXQpLbQ\n\
+AAAEC/4pfoI4ZEIvhDhIbpLkC8cYWWqcbaJN3wswrd/T1KVX4RbN5+HPIvVsNFKoUkOVX1\n\
+VEp+1R0gawmSuotdCkttAAAADW5vZGVAb3BlbmNsYXc=\n\
+-----END OPENSSH PRIVATE KEY-----\n";
+
 pub(crate) fn generate_host_key() -> Result<russh::keys::PrivateKey, std::io::Error> {
-    russh::keys::PrivateKey::random(&mut OsRng, russh::keys::Algorithm::Ed25519)
-        .map_err(std::io::Error::other)
+    russh::keys::PrivateKey::from_openssh(MOCK_SSH_HOST_KEY).map_err(std::io::Error::other)
 }
 
 pub(crate) fn host_key_fingerprint(host_key: &russh::keys::PrivateKey) -> String {
