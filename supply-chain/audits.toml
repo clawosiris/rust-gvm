@@ -19,6 +19,12 @@ criteria = "safe-to-deploy"
 delta = "0.39.2 -> 0.39.3"
 notes = "Reviewed local diff: tiny DTD parser bugfix/comment cleanup only."
 
+[[audits.quick-xml]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "0.39.3 -> 0.39.4"
+notes = "Reviewed local diff: DTD parser guards avoid buffer overrun/panic paths when unknown markup exceeds the fixed lookahead window; no new capability or unsafe surface added."
+
 [[audits.rustls]]
 who = "Thoth"
 criteria = "safe-to-deploy"
@@ -30,6 +36,12 @@ who = "Thoth"
 criteria = "safe-to-deploy"
 delta = "1.50.0 -> 1.52.2"
 notes = "Reviewed release delta and local diff sample: runtime scheduling fixes/reverts, WASI test gating, and stable feature additions without apparent security-sensitive expansion."
+
+[[audits.tokio]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "1.52.2 -> 1.52.3"
+notes = "Reviewed upstream changelog and local diff: bugfix-only changes in mpsc bookkeeping and RwLock guard behavior, plus targeted regression tests; no new APIs or privilege-expanding behavior."
 
 [[audits.tokio-macros]]
 who = "Thoth"
