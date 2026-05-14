@@ -4,15 +4,17 @@
 #![cfg(feature = "unix-socket-tests")]
 #![allow(missing_docs)]
 
-use gvm_client::{GmpClient, GmpVersioned, GvmError};
+use gvm_client::{GmpClient, GmpNextCommands, GmpVersioned, GvmError};
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::authentication::authenticate;
+use gvm_gmp::commands::reports::get_report_hosts;
 use gvm_gmp::commands::scan_configs::ConfigOpts;
 use gvm_gmp::commands::scanners::ScannerOpts;
 use gvm_gmp::commands::targets::{
     create_target, delete_target, get_targets, CreateTargetOpts, GetTargetsOpts,
 };
 use gvm_gmp::commands::tasks::{create_task, delete_task, get_task, start_task, stop_task};
+use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 use std::path::PathBuf;
@@ -91,6 +93,7 @@ async fn connect_negotiates_supported_versions() {
         (MockVersion::V22_5, GmpVersion(22, 5), 225_u16),
         (MockVersion::V22_6, GmpVersion(22, 6), 226_u16),
         (MockVersion::V22_7, GmpVersion(22, 7), 227_u16),
+        (MockVersion::V22_8, GmpVersion(22, 8), 228_u16),
     ] {
         let Some(server) = stateful_server_with_version(mock_version).await else {
             return;
@@ -105,7 +108,8 @@ async fn connect_negotiates_supported_versions() {
             (224, GmpVersioned::V224(_))
             | (225, GmpVersioned::V225(_))
             | (226, GmpVersioned::V226(_))
-            | (227, GmpVersioned::V227(_)) => {}
+            | (227, GmpVersioned::V227(_))
+            | (228, GmpVersioned::Next(_)) => {}
             (_, other) => panic!("unexpected versioned client: {other:?}"),
         }
 
@@ -235,6 +239,101 @@ async fn versioned_enum_returns_v225_for_default_mock_server() {
 
     assert!(matches!(client, GmpVersioned::V225(_)));
     assert_eq!(client.version(), GmpVersion(22, 5));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn unsupported_next_command_rejected_before_send() {
+    let Some(server) = stateful_server_with_version(MockVersion::V22_7).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .call(authenticate("admin", "admin"))
+        .await
+        .expect("authenticate should succeed");
+
+    let error = client
+        .call(get_report_hosts(
+            &EntityId::new("report-1").expect("valid id"),
+            Default::default(),
+        ))
+        .await
+        .expect_err("22.7 should reject next-only command");
+
+    match error {
+        GvmError::UnsupportedCommand {
+            command,
+            version,
+            required,
+        } => {
+            assert_eq!(command, "get_report_hosts");
+            assert_eq!(version, GmpVersion(22, 7));
+            assert_eq!(required, "22.8");
+        }
+        other => panic!("expected unsupported command error, got {other:?}"),
+    }
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn next_commands_work_on_v22_8() {
+    let Some(server) = stateful_server_with_version(MockVersion::V22_8).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpVersioned::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .call(authenticate("admin", "admin"))
+        .await
+        .expect("authenticate should succeed");
+
+    let mut client = match client {
+        GmpVersioned::Next(client) => client,
+        other => panic!("expected Next client, got {other:?}"),
+    };
+
+    let integration_config_id =
+        EntityId::new("00000000-0000-0000-0000-000000000100").expect("valid id");
+    let get_response = client
+        .get_integration_config(&integration_config_id, Some(true))
+        .await
+        .expect("get_integration_config should succeed");
+    assert_eq!(get_response.status_code(), Some(200));
+
+    let list_response = client
+        .get_integration_configs(Default::default())
+        .await
+        .expect("get_integration_configs should succeed");
+    assert_eq!(list_response.status_code(), Some(200));
+
+    let modify_response = client
+        .modify_integration_config(
+            &integration_config_id,
+            gvm_client::ModifyIntegrationConfigOpts {
+                service_url: Some("https://updated.example".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("modify_integration_config should succeed");
+    assert_eq!(modify_response.status_code(), Some(200));
+
+    let report_id = EntityId::new("00000000-0000-0000-0000-000000000200").expect("valid id");
+    let helper_error = client
+        .get_report_hosts(&report_id, Default::default())
+        .await
+        .expect_err("missing report should return server error");
+    assert!(matches!(helper_error, GvmError::Server { status: 404, .. }));
 
     server.shutdown().await;
 }

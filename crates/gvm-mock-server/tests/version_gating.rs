@@ -12,7 +12,11 @@
 
 use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::features::get_features;
+use gvm_gmp::commands::integration_configs::{
+    get_integration_config, get_integration_configs, modify_integration_config,
+};
 use gvm_gmp::commands::report_configs::{create_report_config, get_report_configs};
+use gvm_gmp::commands::reports::{get_report_cves, get_report_hosts};
 use gvm_gmp::commands::targets::{create_target, CreateTargetOpts};
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
 use gvm_protocol::{Request, Response};
@@ -155,6 +159,7 @@ async fn base_commands_work_on_all_versions() {
         GmpVersion::V22_5,
         GmpVersion::V22_6,
         GmpVersion::V22_7,
+        GmpVersion::V22_8,
     ] {
         let Some(server) = stateful_server(version).await else {
             return;
@@ -177,4 +182,85 @@ async fn base_commands_work_on_all_versions() {
 
         server.shutdown().await;
     }
+}
+
+#[tokio::test]
+async fn version_22_7_rejects_next_commands() {
+    let Some(server) = stateful_server(GmpVersion::V22_7).await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    authenticate_admin(&mut stream).await;
+
+    let response = send_recv(&mut stream, get_integration_configs(Default::default())).await;
+    assert_eq!(response.status_code(), Some(400));
+    assert!(response
+        .status_text()
+        .unwrap()
+        .contains("get_integration_configs"));
+
+    let response = send_recv(
+        &mut stream,
+        get_report_hosts(
+            &id("00000000-0000-0000-0000-000000000200"),
+            Default::default(),
+        ),
+    )
+    .await;
+    assert_eq!(response.status_code(), Some(400));
+    assert!(response.status_text().unwrap().contains("get_report_hosts"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn version_22_8_accepts_next_commands() {
+    let Some(server) = stateful_server(GmpVersion::V22_8).await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    authenticate_admin(&mut stream).await;
+
+    let get_response = send_recv(
+        &mut stream,
+        get_integration_config(&id("00000000-0000-0000-0000-000000000100"), Some(true)),
+    )
+    .await;
+    assert_eq!(get_response.status_code(), Some(200));
+
+    let list_response = send_recv(&mut stream, get_integration_configs(Default::default())).await;
+    assert_eq!(list_response.status_code(), Some(200));
+    assert!(list_response
+        .as_str()
+        .expect("utf8")
+        .contains("Default Integration Config"));
+
+    let modify_response = send_recv(
+        &mut stream,
+        modify_integration_config(
+            &id("00000000-0000-0000-0000-000000000100"),
+            gvm_gmp::commands::integration_configs::ModifyIntegrationConfigOpts {
+                service_url: Some("https://updated.example".into()),
+                ..Default::default()
+            },
+        ),
+    )
+    .await;
+    assert_eq!(modify_response.status_code(), Some(200));
+
+    let report_helper = send_recv(
+        &mut stream,
+        get_report_cves(
+            &id("00000000-0000-0000-0000-000000000200"),
+            Default::default(),
+        ),
+    )
+    .await;
+    assert_eq!(report_helper.status_code(), Some(404));
+
+    server.shutdown().await;
+}
+
+fn id(value: &str) -> gvm_gmp::EntityId {
+    gvm_gmp::EntityId::new(value).expect("valid id")
 }

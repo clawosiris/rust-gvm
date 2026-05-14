@@ -35,6 +35,19 @@ pub struct GetReportsOpts {
     pub no_report: Option<bool>,
 }
 
+/// Shared options for `get_report_*` helper requests.
+#[derive(Debug, Clone, Default)]
+pub struct GetReportDetailsOpts {
+    /// Optional inline filter expression.
+    pub filter_string: Option<String>,
+    /// Optional saved filter identifier.
+    pub filter_id: Option<EntityId>,
+    /// Whether pagination should be ignored.
+    pub ignore_pagination: Option<bool>,
+    /// Whether to request detailed output. Defaults to true when omitted.
+    pub details: Option<bool>,
+}
+
 /// Build a `create_report` request.
 #[must_use]
 pub fn create_report(task_id: &EntityId, opts: CreateReportOpts) -> impl Request {
@@ -99,6 +112,55 @@ pub fn delete_audit_report(report_id: &EntityId) -> impl Request {
     delete_report(report_id, false)
 }
 
+fn get_report_detail_command(
+    command_name: &str,
+    report_id: &EntityId,
+    opts: GetReportDetailsOpts,
+) -> XmlCommand {
+    let mut cmd = XmlCommand::new(command_name).attribute("report_id", report_id.as_str());
+    add_filter_attrs(
+        &mut cmd,
+        opts.filter_string.as_deref(),
+        opts.filter_id.as_ref(),
+    );
+    set_optional_bool_attr(&mut cmd, "ignore_pagination", opts.ignore_pagination);
+    set_optional_bool_attr(&mut cmd, "details", Some(opts.details.unwrap_or(true)));
+    cmd
+}
+
+/// Build a `get_report_hosts` request.
+#[must_use]
+pub fn get_report_hosts(report_id: &EntityId, opts: GetReportDetailsOpts) -> impl Request {
+    get_report_detail_command("get_report_hosts", report_id, opts)
+}
+
+/// Build a `get_report_ports` request.
+#[must_use]
+pub fn get_report_ports(report_id: &EntityId, opts: GetReportDetailsOpts) -> impl Request {
+    get_report_detail_command("get_report_ports", report_id, opts)
+}
+
+/// Build a `get_report_applications` request.
+#[must_use]
+pub fn get_report_applications(report_id: &EntityId, opts: GetReportDetailsOpts) -> impl Request {
+    get_report_detail_command("get_report_applications", report_id, opts)
+}
+
+/// Build a `get_report_operating_systems` request.
+#[must_use]
+pub fn get_report_operating_systems(
+    report_id: &EntityId,
+    opts: GetReportDetailsOpts,
+) -> impl Request {
+    get_report_detail_command("get_report_operating_systems", report_id, opts)
+}
+
+/// Build a `get_report_cves` request.
+#[must_use]
+pub fn get_report_cves(report_id: &EntityId, opts: GetReportDetailsOpts) -> impl Request {
+    get_report_detail_command("get_report_cves", report_id, opts)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -149,6 +211,42 @@ mod tests {
         assert_eq!(
             xml(delete_audit_report(&id("r1"))),
             "<delete_report report_id=\"r1\" ultimate=\"0\"/>"
+        );
+    }
+
+    #[test]
+    fn report_helper_commands_build_xml() {
+        let opts = GetReportDetailsOpts {
+            filter_string: Some("severity>5".into()),
+            filter_id: Some(id("f1")),
+            ignore_pagination: Some(true),
+            details: Some(false),
+        };
+        assert_eq!(
+            xml(get_report_hosts(&id("r1"), opts.clone())),
+            "<get_report_hosts details=\"0\" filt_id=\"f1\" filter=\"severity&gt;5\" ignore_pagination=\"1\" report_id=\"r1\"/>"
+        );
+        assert_eq!(
+            xml(get_report_ports(&id("r1"), GetReportDetailsOpts::default())),
+            "<get_report_ports details=\"1\" report_id=\"r1\"/>"
+        );
+        assert_eq!(
+            xml(get_report_applications(
+                &id("r1"),
+                GetReportDetailsOpts::default()
+            )),
+            "<get_report_applications details=\"1\" report_id=\"r1\"/>"
+        );
+        assert_eq!(
+            xml(get_report_operating_systems(
+                &id("r1"),
+                GetReportDetailsOpts::default()
+            )),
+            "<get_report_operating_systems details=\"1\" report_id=\"r1\"/>"
+        );
+        assert_eq!(
+            xml(get_report_cves(&id("r1"), GetReportDetailsOpts::default())),
+            "<get_report_cves details=\"1\" report_id=\"r1\"/>"
         );
     }
 }

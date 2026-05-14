@@ -57,7 +57,7 @@ use gvm_gmp::commands::tasks::CreateTaskOpts;
 
 #[tokio::main]
 async fn main() -> Result<(), GvmError> {
-    // 1. Create a transport and connect — auto-negotiates GMP version (22.4–22.7+)
+    // 1. Create a transport and connect — auto-negotiates GMP version (22.4–22.8+)
     let conn = UnixSocketConnection::new(UnixSocketConfig::new("/run/gvmd/gvmd.sock"));
     let mut client = GmpClient::connect(conn).await?;
     println!("Connected, GMP version: {}", client.version());

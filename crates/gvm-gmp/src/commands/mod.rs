@@ -23,6 +23,8 @@ pub mod groups;
 pub mod help;
 /// Host command builders.
 pub mod hosts;
+/// Integration configuration command builders.
+pub mod integration_configs;
 /// Note command builders.
 pub mod notes;
 /// NVT command builders.

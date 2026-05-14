@@ -163,6 +163,19 @@ fn default_resources() -> HashMap<Uuid, Resource> {
     rows_per_page.set_attr("value", "100");
     resources.insert(rows_per_page.id, rows_per_page);
 
+    let mut integration_config = Resource::with_id(
+        "integration_config",
+        "Default Integration Config",
+        Uuid::parse_str("00000000-0000-0000-0000-000000000100").expect("valid uuid"),
+    );
+    integration_config.comment = "Mock integration config".to_string();
+    integration_config.set_attr("service_url", "https://service.example.invalid");
+    integration_config.set_attr("service_cacert", "MOCK-CA-CERT");
+    integration_config.set_attr("oidc_provider_url", "https://oidc.example.invalid");
+    integration_config.set_attr("oidc_provider_client_id", "mock-client-id");
+    integration_config.set_attr("oidc_provider_client_secret", "mock-client-secret");
+    resources.insert(integration_config.id, integration_config);
+
     resources
 }
 
