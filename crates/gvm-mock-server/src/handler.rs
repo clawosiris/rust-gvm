@@ -469,14 +469,17 @@ impl SessionHandler {
         let resource_type = cmd.name.strip_prefix("modify_").unwrap_or("unknown");
         let id_attr = format!("{resource_type}_id");
 
-        let Some(id_str) = cmd.attr(&id_attr).or_else(|| {
-            if cmd.name == "modify_integration_config" {
-                cmd.attr("uuid")
-            } else {
-                None
-            }
-        }) else {
-            return error_response(&cmd.name, 400, "Missing required attribute: id");
+        let id_str = if cmd.name == "modify_integration_config" {
+            let Some(id) = cmd.attr("uuid") else {
+                return error_response(&cmd.name, 400, "Missing required attribute: uuid");
+            };
+            id
+        } else {
+            let Some(id) = cmd.attr(&id_attr) else {
+                let message = format!("Missing required attribute: {id_attr}");
+                return error_response(&cmd.name, 400, &message);
+            };
+            id
         };
 
         let Ok(uuid) = Uuid::parse_str(id_str) else {
@@ -500,11 +503,23 @@ impl SessionHandler {
         let new_active = parse_element_text(raw_xml, "active");
         let new_usage_type = parse_element_text(raw_xml, "usage_type");
         let new_value = parse_element_text(raw_xml, "value");
-        let new_service_url = parse_element_text(raw_xml, "url");
-        let new_service_cacert = parse_element_text(raw_xml, "cacert");
-        let new_oidc_provider_url = parse_element_text(raw_xml, "oidc_provider_url");
-        let new_oidc_client_id = parse_element_text(raw_xml, "id");
-        let new_oidc_client_secret = parse_element_text(raw_xml, "secret");
+        let (
+            new_service_url,
+            new_service_cacert,
+            new_oidc_provider_url,
+            new_oidc_client_id,
+            new_oidc_client_secret,
+        ) = if resource_type == "integration_config" {
+            (
+                nested_child_text(cmd, &["service", "url"]),
+                nested_child_text(cmd, &["service", "cacert"]),
+                nested_child_text(cmd, &["oidc", "oidc_provider_url"]),
+                nested_child_text(cmd, &["oidc", "client", "id"]),
+                nested_child_text(cmd, &["oidc", "client", "secret"]),
+            )
+        } else {
+            (None, None, None, None, None)
+        };
 
         let modified = store.modify(&uuid, |r| {
             if matches!(resource_type, "note" | "override") {
@@ -969,6 +984,15 @@ fn render_secinfo_response(cmd: &ParsedCommand) -> Vec<u8> {
         "<get_info_response status=\"200\" status_text=\"OK\">{items}<{element}_count>2<filtered>2</filtered></{element}_count></get_info_response>"
     )
     .into_bytes()
+}
+
+fn nested_child_text(cmd: &ParsedCommand, path: &[&str]) -> Option<String> {
+    let (first, rest) = path.split_first()?;
+    let mut element = cmd.children.iter().find(|child| child.name == *first)?;
+    for name in rest {
+        element = element.children.iter().find(|child| child.name == **name)?;
+    }
+    Some(element.text.clone().unwrap_or_default())
 }
 
 fn singularize_resource_type(plural: &str) -> &str {

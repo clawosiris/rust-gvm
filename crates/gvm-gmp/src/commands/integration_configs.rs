@@ -65,35 +65,34 @@ pub fn modify_integration_config(
     let mut cmd = XmlCommand::new("modify_integration_config")
         .attribute("uuid", integration_config_id.as_str());
 
-    let service = cmd.add_element("service");
-    if let Some(service_url) = opts.service_url.as_deref() {
-        service.add_child_with_text("url", service_url);
-    } else {
-        service.add_child("url");
-    }
-    if let Some(service_cacert) = opts.service_cacert.as_deref() {
-        service.add_child_with_text("cacert", service_cacert);
-    } else {
-        service.add_child("cacert");
+    if opts.service_url.is_some() || opts.service_cacert.is_some() {
+        let service = cmd.add_element("service");
+        if let Some(service_url) = opts.service_url.as_deref() {
+            service.add_child_with_text("url", service_url);
+        }
+        if let Some(service_cacert) = opts.service_cacert.as_deref() {
+            service.add_child_with_text("cacert", service_cacert);
+        }
     }
 
-    let oidc = cmd.add_element("oidc");
-    if let Some(oidc_provider_url) = opts.oidc_provider_url.as_deref() {
-        oidc.add_child_with_text("oidc_provider_url", oidc_provider_url);
-    } else {
-        oidc.add_child("oidc_provider_url");
-    }
+    if opts.oidc_provider_url.is_some()
+        || opts.oidc_provider_client_id.is_some()
+        || opts.oidc_provider_client_secret.is_some()
+    {
+        let oidc = cmd.add_element("oidc");
+        if let Some(oidc_provider_url) = opts.oidc_provider_url.as_deref() {
+            oidc.add_child_with_text("oidc_provider_url", oidc_provider_url);
+        }
 
-    let client = oidc.add_child("client");
-    if let Some(client_id) = opts.oidc_provider_client_id.as_deref() {
-        client.add_child_with_text("id", client_id);
-    } else {
-        client.add_child("id");
-    }
-    if let Some(client_secret) = opts.oidc_provider_client_secret.as_deref() {
-        client.add_child_with_text("secret", client_secret);
-    } else {
-        client.add_child("secret");
+        if opts.oidc_provider_client_id.is_some() || opts.oidc_provider_client_secret.is_some() {
+            let client = oidc.add_child("client");
+            if let Some(client_id) = opts.oidc_provider_client_id.as_deref() {
+                client.add_child_with_text("id", client_id);
+            }
+            if let Some(client_secret) = opts.oidc_provider_client_secret.as_deref() {
+                client.add_child_with_text("secret", client_secret);
+            }
+        }
     }
 
     cmd
@@ -140,7 +139,7 @@ mod tests {
         );
         assert_eq!(
             xml(modify_integration_config(&id("ic1"), Default::default())),
-            "<modify_integration_config uuid=\"ic1\"><service><url/><cacert/></service><oidc><oidc_provider_url/><client><id/><secret/></client></oidc></modify_integration_config>"
+            "<modify_integration_config uuid=\"ic1\"/>"
         );
     }
 }

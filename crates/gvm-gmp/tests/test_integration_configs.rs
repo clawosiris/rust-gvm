@@ -31,7 +31,7 @@ fn test_get_integration_configs_variants() {
 fn test_modify_integration_config_variants() {
     assert_eq!(
         xml(modify_integration_config(&id("ic1"), Default::default())),
-        "<modify_integration_config uuid=\"ic1\"><service><url/><cacert/></service><oidc><oidc_provider_url/><client><id/><secret/></client></oidc></modify_integration_config>"
+        "<modify_integration_config uuid=\"ic1\"/>"
     );
     assert_eq!(
         xml(modify_integration_config(
@@ -42,6 +42,6 @@ fn test_modify_integration_config_variants() {
                 ..Default::default()
             },
         )),
-        "<modify_integration_config uuid=\"ic1\"><service><url>https://service.example</url><cacert/></service><oidc><oidc_provider_url/><client><id>client-id</id><secret/></client></oidc></modify_integration_config>"
+        "<modify_integration_config uuid=\"ic1\"><service><url>https://service.example</url></service><oidc><client><id>client-id</id></client></oidc></modify_integration_config>"
     );
 }

@@ -19,7 +19,7 @@ use gvm_gmp::commands::report_configs::{create_report_config, get_report_configs
 use gvm_gmp::commands::reports::{get_report_cves, get_report_hosts};
 use gvm_gmp::commands::targets::{create_target, CreateTargetOpts};
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
-use gvm_protocol::{Request, Response};
+use gvm_protocol::{Request, Response, XmlCommand};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
@@ -247,6 +247,26 @@ async fn version_22_8_accepts_next_commands() {
     )
     .await;
     assert_eq!(modify_response.status_code(), Some(200));
+
+    let modified_get_response = send_recv(
+        &mut stream,
+        get_integration_config(&id("00000000-0000-0000-0000-000000000100"), Some(true)),
+    )
+    .await;
+    let modified_xml = modified_get_response.as_str().expect("utf8");
+    assert!(modified_xml.contains("<service_url>https://updated.example</service_url>"));
+    assert!(modified_xml.contains("<service_cacert>MOCK-CA-CERT</service_cacert>"));
+    assert!(
+        modified_xml.contains("<oidc_provider_client_id>mock-client-id</oidc_provider_client_id>")
+    );
+
+    let missing_uuid_response =
+        send_recv(&mut stream, XmlCommand::new("modify_integration_config")).await;
+    assert_eq!(missing_uuid_response.status_code(), Some(400));
+    assert!(missing_uuid_response
+        .status_text()
+        .expect("status text")
+        .contains("uuid"));
 
     let report_helper = send_recv(
         &mut stream,
