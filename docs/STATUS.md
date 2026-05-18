@@ -71,7 +71,7 @@ Last updated: 2026-03-29
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Mode selection | ✅ | `.mode(ServerMode::Stateful)` |
-| Version configuration | ✅ | `.version(GmpVersion::V22_5)` — supports 22.4–22.7 |
+| Version configuration | ✅ | `.version(GmpVersion::V22_5)` — supports 22.4–22.8 |
 | Unix socket (path) | ✅ | `.unix_socket("/tmp/gvmd.sock")` |
 | Unix socket (auto temp) | ✅ | `.unix_socket_auto()` |
 | TCP listener | ✅ | `.tcp("127.0.0.1:9390")` |

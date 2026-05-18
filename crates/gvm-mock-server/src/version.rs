@@ -15,6 +15,8 @@ pub enum GmpVersion {
     V22_6,
     /// GMP 22.7
     V22_7,
+    /// GMP 22.8
+    V22_8,
 }
 
 impl GmpVersion {
@@ -25,6 +27,7 @@ impl GmpVersion {
             Self::V22_5 => "22.5",
             Self::V22_6 => "22.6",
             Self::V22_7 => "22.7",
+            Self::V22_8 => "22.8",
         }
     }
 }
@@ -44,11 +47,28 @@ const GMP_22_6_COMMANDS: &[&str] = &[
     "get_features",
 ];
 
+/// Commands only available in GMP 22.8+ / GMP Next.
+const GMP_22_8_COMMANDS: &[&str] = &[
+    "get_integration_configs",
+    "modify_integration_config",
+    "get_report_hosts",
+    "get_report_ports",
+    "get_report_applications",
+    "get_report_operating_systems",
+    "get_report_cves",
+];
+
 /// Check if a command is available in the given GMP version.
 #[must_use]
 pub fn command_available(command_name: &str, version: GmpVersion) -> bool {
+    if GMP_22_8_COMMANDS.contains(&command_name) {
+        return matches!(version, GmpVersion::V22_8);
+    }
     if GMP_22_6_COMMANDS.contains(&command_name) {
-        return matches!(version, GmpVersion::V22_6 | GmpVersion::V22_7);
+        return matches!(
+            version,
+            GmpVersion::V22_6 | GmpVersion::V22_7 | GmpVersion::V22_8
+        );
     }
     true
 }
@@ -63,6 +83,7 @@ mod tests {
         assert_eq!(GmpVersion::V22_5.as_str(), "22.5");
         assert_eq!(GmpVersion::V22_6.as_str(), "22.6");
         assert_eq!(GmpVersion::V22_7.as_str(), "22.7");
+        assert_eq!(GmpVersion::V22_8.as_str(), "22.8");
     }
 
     #[test]
@@ -71,6 +92,7 @@ mod tests {
         assert_eq!(format!("{}", GmpVersion::V22_5), "22.5");
         assert_eq!(format!("{}", GmpVersion::V22_6), "22.6");
         assert_eq!(format!("{}", GmpVersion::V22_7), "22.7");
+        assert_eq!(format!("{}", GmpVersion::V22_8), "22.8");
     }
 
     #[test]
@@ -110,6 +132,7 @@ mod tests {
         ));
         assert!(command_available("create_report_config", GmpVersion::V22_6));
         assert!(command_available("create_report_config", GmpVersion::V22_7));
+        assert!(command_available("create_report_config", GmpVersion::V22_8));
         assert!(!command_available(
             "delete_report_config",
             GmpVersion::V22_4
@@ -122,5 +145,20 @@ mod tests {
         assert!(!command_available("get_features", GmpVersion::V22_5));
         assert!(command_available("get_features", GmpVersion::V22_6));
         assert!(command_available("get_features", GmpVersion::V22_7));
+        assert!(command_available("get_features", GmpVersion::V22_8));
+    }
+
+    #[test]
+    fn test_command_available_for_next_commands() {
+        assert!(!command_available(
+            "get_integration_configs",
+            GmpVersion::V22_7
+        ));
+        assert!(command_available(
+            "get_integration_configs",
+            GmpVersion::V22_8
+        ));
+        assert!(!command_available("get_report_hosts", GmpVersion::V22_6));
+        assert!(command_available("get_report_hosts", GmpVersion::V22_8));
     }
 }
