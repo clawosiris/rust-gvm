@@ -15,16 +15,30 @@ mod version;
 
 use gvm_connection::GvmConnection;
 use gvm_gmp::commands::features::get_features;
+use gvm_gmp::commands::integration_configs::{
+    get_integration_config, get_integration_configs, modify_integration_config,
+};
 use gvm_gmp::commands::report_configs::{
     create_report_config, delete_report_config, get_report_configs, modify_report_config,
 };
+use gvm_gmp::commands::reports::{
+    get_report_applications, get_report_cves, get_report_hosts, get_report_operating_systems,
+    get_report_ports,
+};
 use gvm_gmp::commands::version::get_version;
-use gvm_gmp::types::GmpVersion;
+use gvm_gmp::types::{EntityId, GmpVersion};
 use gvm_protocol::{Request, Response};
 
 pub use error::GvmError;
+pub use gvm_gmp::commands::integration_configs::{
+    GetIntegrationConfigsOpts, ModifyIntegrationConfigOpts,
+};
 pub use gvm_gmp::commands::report_configs::ModifyReportConfigOpts;
-pub use version::{map_supported_version, parse_version_text};
+pub use gvm_gmp::commands::reports::GetReportDetailsOpts;
+pub use version::{
+    command_supported, map_supported_version, minimum_version_for_command, parse_version_text,
+    required_version_label,
+};
 
 /// High-level async GMP client over an abstract transport.
 #[derive(Debug)]
@@ -66,7 +80,9 @@ impl<C: GvmConnection> GmpClient<C> {
     /// # Errors
     /// Returns an error if request transmission or response parsing fails.
     pub async fn send<R: Request>(&mut self, request: R) -> Result<Response, GvmError> {
-        Self::send_on(&mut self.connection, request).await
+        let request_bytes = request.to_bytes();
+        self.ensure_command_supported(&request_bytes)?;
+        Self::send_on_bytes(&mut self.connection, request_bytes).await
     }
 
     /// Send a request and raise a server error on non-2xx responses.
@@ -107,9 +123,141 @@ impl<C: GvmConnection> GmpClient<C> {
     }
 
     async fn send_on<R: Request>(connection: &mut C, request: R) -> Result<Response, GvmError> {
-        connection.send(&request.to_bytes()).await?;
+        Self::send_on_bytes(connection, request.to_bytes()).await
+    }
+
+    async fn send_on_bytes(
+        connection: &mut C,
+        request_bytes: Vec<u8>,
+    ) -> Result<Response, GvmError> {
+        connection.send(&request_bytes).await?;
         let bytes = connection.read().await?;
         Ok(Response::new(bytes))
+    }
+
+    fn ensure_command_supported(&self, request_bytes: &[u8]) -> Result<(), GvmError> {
+        let Some(command_name) = request_command_name(request_bytes) else {
+            return Ok(());
+        };
+
+        if version::command_supported(command_name, self.version) {
+            return Ok(());
+        }
+
+        let required =
+            version::required_version_label(command_name).unwrap_or("a newer GMP version");
+
+        Err(GvmError::UnsupportedCommand {
+            command: command_name.to_string(),
+            version: self.version,
+            required,
+        })
+    }
+
+    /// Get a single integration configuration.
+    ///
+    /// # Errors
+    /// Returns an error if the server does not support the command, the transport fails,
+    /// parsing fails, or the server returns a non-success status.
+    pub async fn get_integration_config(
+        &mut self,
+        integration_config_id: &EntityId,
+        details: Option<bool>,
+    ) -> Result<Response, GvmError> {
+        self.call(get_integration_config(integration_config_id, details))
+            .await
+    }
+
+    /// List integration configurations.
+    ///
+    /// # Errors
+    /// Returns an error if the server does not support the command, the transport fails,
+    /// parsing fails, or the server returns a non-success status.
+    pub async fn get_integration_configs(
+        &mut self,
+        opts: GetIntegrationConfigsOpts,
+    ) -> Result<Response, GvmError> {
+        self.call(get_integration_configs(opts)).await
+    }
+
+    /// Modify an integration configuration.
+    ///
+    /// # Errors
+    /// Returns an error if the server does not support the command, the transport fails,
+    /// parsing fails, or the server returns a non-success status.
+    pub async fn modify_integration_config(
+        &mut self,
+        integration_config_id: &EntityId,
+        opts: ModifyIntegrationConfigOpts,
+    ) -> Result<Response, GvmError> {
+        self.call(modify_integration_config(integration_config_id, opts))
+            .await
+    }
+
+    /// Get host summaries for a report.
+    ///
+    /// # Errors
+    /// Returns an error if the server does not support the command, the transport fails,
+    /// parsing fails, or the server returns a non-success status.
+    pub async fn get_report_hosts(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError> {
+        self.call(get_report_hosts(report_id, opts)).await
+    }
+
+    /// Get port summaries for a report.
+    ///
+    /// # Errors
+    /// Returns an error if the server does not support the command, the transport fails,
+    /// parsing fails, or the server returns a non-success status.
+    pub async fn get_report_ports(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError> {
+        self.call(get_report_ports(report_id, opts)).await
+    }
+
+    /// Get application summaries for a report.
+    ///
+    /// # Errors
+    /// Returns an error if the server does not support the command, the transport fails,
+    /// parsing fails, or the server returns a non-success status.
+    pub async fn get_report_applications(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError> {
+        self.call(get_report_applications(report_id, opts)).await
+    }
+
+    /// Get operating system summaries for a report.
+    ///
+    /// # Errors
+    /// Returns an error if the server does not support the command, the transport fails,
+    /// parsing fails, or the server returns a non-success status.
+    pub async fn get_report_operating_systems(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError> {
+        self.call(get_report_operating_systems(report_id, opts))
+            .await
+    }
+
+    /// Get CVE summaries for a report.
+    ///
+    /// # Errors
+    /// Returns an error if the server does not support the command, the transport fails,
+    /// parsing fails, or the server returns a non-success status.
+    pub async fn get_report_cves(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError> {
+        self.call(get_report_cves(report_id, opts)).await
     }
 
     fn raise_for_status(response: Response) -> Result<Response, GvmError> {
@@ -171,6 +319,65 @@ pub trait Gmp226Commands {
 
     /// Send a `delete_report_config` request.
     async fn delete_report_config(&mut self, id: &str) -> Result<Response, GvmError>;
+}
+
+/// Commands available only in GMP 22.8 and later.
+#[async_trait::async_trait]
+pub trait GmpNextCommands {
+    /// Get a single integration configuration.
+    async fn get_integration_config(
+        &mut self,
+        integration_config_id: &EntityId,
+        details: Option<bool>,
+    ) -> Result<Response, GvmError>;
+
+    /// List integration configurations.
+    async fn get_integration_configs(
+        &mut self,
+        opts: GetIntegrationConfigsOpts,
+    ) -> Result<Response, GvmError>;
+
+    /// Modify an integration configuration.
+    async fn modify_integration_config(
+        &mut self,
+        integration_config_id: &EntityId,
+        opts: ModifyIntegrationConfigOpts,
+    ) -> Result<Response, GvmError>;
+
+    /// Get report host summaries.
+    async fn get_report_hosts(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError>;
+
+    /// Get report port summaries.
+    async fn get_report_ports(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError>;
+
+    /// Get report application summaries.
+    async fn get_report_applications(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError>;
+
+    /// Get report operating system summaries.
+    async fn get_report_operating_systems(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError>;
+
+    /// Get report CVE summaries.
+    async fn get_report_cves(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError>;
 }
 
 macro_rules! impl_gmp226_commands {
@@ -296,3 +503,82 @@ impl<C: GvmConnection> GmpVersioned<C> {
 impl_gmp226_commands!(Gmp226);
 impl_gmp226_commands!(Gmp227);
 impl_gmp226_commands!(GmpNext);
+
+#[async_trait::async_trait]
+impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
+    async fn get_integration_config(
+        &mut self,
+        integration_config_id: &EntityId,
+        details: Option<bool>,
+    ) -> Result<Response, GvmError> {
+        self.0
+            .get_integration_config(integration_config_id, details)
+            .await
+    }
+
+    async fn get_integration_configs(
+        &mut self,
+        opts: GetIntegrationConfigsOpts,
+    ) -> Result<Response, GvmError> {
+        self.0.get_integration_configs(opts).await
+    }
+
+    async fn modify_integration_config(
+        &mut self,
+        integration_config_id: &EntityId,
+        opts: ModifyIntegrationConfigOpts,
+    ) -> Result<Response, GvmError> {
+        self.0
+            .modify_integration_config(integration_config_id, opts)
+            .await
+    }
+
+    async fn get_report_hosts(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError> {
+        self.0.get_report_hosts(report_id, opts).await
+    }
+
+    async fn get_report_ports(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError> {
+        self.0.get_report_ports(report_id, opts).await
+    }
+
+    async fn get_report_applications(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError> {
+        self.0.get_report_applications(report_id, opts).await
+    }
+
+    async fn get_report_operating_systems(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError> {
+        self.0.get_report_operating_systems(report_id, opts).await
+    }
+
+    async fn get_report_cves(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError> {
+        self.0.get_report_cves(report_id, opts).await
+    }
+}
+
+fn request_command_name(request_bytes: &[u8]) -> Option<&str> {
+    let request = std::str::from_utf8(request_bytes).ok()?.trim_start();
+    let request = request.strip_prefix('<')?;
+    let end = request
+        .find(|ch: char| ch == '>' || ch == '/' || ch.is_whitespace())
+        .unwrap_or(request.len());
+    Some(&request[..end])
+}

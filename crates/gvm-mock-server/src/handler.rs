@@ -394,6 +394,11 @@ impl SessionHandler {
             "get_aggregates" => return render_aggregates_response(cmd),
             "get_system_reports" => return render_system_reports_response(),
             "get_info" => return render_secinfo_response(cmd),
+            "get_report_hosts"
+            | "get_report_ports"
+            | "get_report_applications"
+            | "get_report_operating_systems"
+            | "get_report_cves" => return self.render_report_detail_response(cmd, store),
             _ => {}
         }
 
@@ -464,8 +469,17 @@ impl SessionHandler {
         let resource_type = cmd.name.strip_prefix("modify_").unwrap_or("unknown");
         let id_attr = format!("{resource_type}_id");
 
-        let Some(id_str) = cmd.attr(&id_attr) else {
-            return error_response(&cmd.name, 400, "Missing required attribute: id");
+        let id_str = if cmd.name == "modify_integration_config" {
+            let Some(id) = cmd.attr("uuid") else {
+                return error_response(&cmd.name, 400, "Missing required attribute: uuid");
+            };
+            id
+        } else {
+            let Some(id) = cmd.attr(&id_attr) else {
+                let message = format!("Missing required attribute: {id_attr}");
+                return error_response(&cmd.name, 400, &message);
+            };
+            id
         };
 
         let Ok(uuid) = Uuid::parse_str(id_str) else {
@@ -489,6 +503,23 @@ impl SessionHandler {
         let new_active = parse_element_text(raw_xml, "active");
         let new_usage_type = parse_element_text(raw_xml, "usage_type");
         let new_value = parse_element_text(raw_xml, "value");
+        let (
+            new_service_url,
+            new_service_cacert,
+            new_oidc_provider_url,
+            new_oidc_client_id,
+            new_oidc_client_secret,
+        ) = if resource_type == "integration_config" {
+            (
+                nested_child_text(cmd, &["service", "url"]),
+                nested_child_text(cmd, &["service", "cacert"]),
+                nested_child_text(cmd, &["oidc", "oidc_provider_url"]),
+                nested_child_text(cmd, &["oidc", "client", "id"]),
+                nested_child_text(cmd, &["oidc", "client", "secret"]),
+            )
+        } else {
+            (None, None, None, None, None)
+        };
 
         let modified = store.modify(&uuid, |r| {
             if matches!(resource_type, "note" | "override") {
@@ -533,6 +564,21 @@ impl SessionHandler {
             }
             if let Some(ref value) = new_value {
                 r.set_attr("value", value);
+            }
+            if let Some(ref service_url) = new_service_url {
+                r.set_attr("service_url", service_url);
+            }
+            if let Some(ref service_cacert) = new_service_cacert {
+                r.set_attr("service_cacert", service_cacert);
+            }
+            if let Some(ref oidc_provider_url) = new_oidc_provider_url {
+                r.set_attr("oidc_provider_url", oidc_provider_url);
+            }
+            if let Some(ref oidc_client_id) = new_oidc_client_id {
+                r.set_attr("oidc_provider_client_id", oidc_client_id);
+            }
+            if let Some(ref oidc_client_secret) = new_oidc_client_secret {
+                r.set_attr("oidc_provider_client_secret", oidc_client_secret);
             }
             if resource_type == "ticket" {
                 if let Some(ref status) = new_status {
@@ -734,6 +780,77 @@ impl SessionHandler {
         )
         .into_bytes()
     }
+
+    fn render_report_detail_response(&self, cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
+        let Some(report_id) = cmd.attr("report_id") else {
+            return error_response(&cmd.name, 400, "Missing required attribute: report_id");
+        };
+
+        let Ok(report_uuid) = Uuid::parse_str(report_id) else {
+            return error_response(&cmd.name, 400, "Invalid UUID");
+        };
+
+        if store.get(&report_uuid).is_none() {
+            return error_response(&cmd.name, 404, "Resource not found");
+        }
+
+        let (element_name, items) = match cmd.name.as_str() {
+            "get_report_hosts" => (
+                "host",
+                vec![
+                    "<host id=\"host-1\"><name>192.0.2.10</name><severity>7.5</severity></host>"
+                        .to_string(),
+                    "<host id=\"host-2\"><name>192.0.2.20</name><severity>5.0</severity></host>"
+                        .to_string(),
+                ],
+            ),
+            "get_report_ports" => (
+                "port",
+                vec![
+                    "<port id=\"port-1\"><name>22/tcp</name><severity>6.5</severity></port>"
+                        .to_string(),
+                    "<port id=\"port-2\"><name>443/tcp</name><severity>4.2</severity></port>"
+                        .to_string(),
+                ],
+            ),
+            "get_report_applications" => (
+                "application",
+                vec![
+                    "<application id=\"app-1\"><name>OpenSSH</name><severity>6.5</severity></application>"
+                        .to_string(),
+                    "<application id=\"app-2\"><name>nginx</name><severity>4.0</severity></application>"
+                        .to_string(),
+                ],
+            ),
+            "get_report_operating_systems" => (
+                "operating_system",
+                vec![
+                    "<operating_system id=\"os-1\"><name>Debian</name><severity>5.5</severity></operating_system>"
+                        .to_string(),
+                    "<operating_system id=\"os-2\"><name>Ubuntu</name><severity>3.1</severity></operating_system>"
+                        .to_string(),
+                ],
+            ),
+            "get_report_cves" => (
+                "cve",
+                vec![
+                    "<cve id=\"cve-1\"><name>CVE-2026-0001</name><severity>8.0</severity></cve>"
+                        .to_string(),
+                    "<cve id=\"cve-2\"><name>CVE-2026-0002</name><severity>6.0</severity></cve>"
+                        .to_string(),
+                ],
+            ),
+            _ => return error_response(&cmd.name, 400, "Unsupported report detail command"),
+        };
+
+        let count = items.len();
+        let items = items.join("");
+        format!(
+            "<{name}_response status=\"200\" status_text=\"OK\">{items}<{element_name}_count>{count}<filtered>{count}</filtered></{element_name}_count></{name}_response>",
+            name = cmd.name,
+        )
+        .into_bytes()
+    }
 }
 
 fn render_report_result_xml(result: &Resource) -> String {
@@ -867,6 +984,15 @@ fn render_secinfo_response(cmd: &ParsedCommand) -> Vec<u8> {
         "<get_info_response status=\"200\" status_text=\"OK\">{items}<{element}_count>2<filtered>2</filtered></{element}_count></get_info_response>"
     )
     .into_bytes()
+}
+
+fn nested_child_text(cmd: &ParsedCommand, path: &[&str]) -> Option<String> {
+    let (first, rest) = path.split_first()?;
+    let mut element = cmd.children.iter().find(|child| child.name == *first)?;
+    for name in rest {
+        element = element.children.iter().find(|child| child.name == **name)?;
+    }
+    Some(element.text.clone().unwrap_or_default())
 }
 
 fn singularize_resource_type(plural: &str) -> &str {

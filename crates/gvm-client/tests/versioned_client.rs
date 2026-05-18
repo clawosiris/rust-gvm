@@ -4,7 +4,7 @@
 #![cfg(feature = "unix-socket-tests")]
 #![allow(clippy::print_stderr, missing_docs)]
 
-use gvm_client::{Gmp226Commands, GmpVersioned};
+use gvm_client::{Gmp226Commands, GmpNextCommands, GmpVersioned};
 use gvm_connection::UnixSocketConnection;
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 
@@ -42,6 +42,7 @@ async fn versioned_client_resolves_correct_variant() {
         (MockVersion::V22_5, 225_u16),
         (MockVersion::V22_6, 226_u16),
         (MockVersion::V22_7, 227_u16),
+        (MockVersion::V22_8, 228_u16),
     ] {
         let Some(server) = stateful_server(version).await else {
             return;
@@ -55,12 +56,44 @@ async fn versioned_client_resolves_correct_variant() {
             (224, GmpVersioned::V224(_))
             | (225, GmpVersioned::V225(_))
             | (226, GmpVersioned::V226(_))
-            | (227, GmpVersioned::V227(_)) => {}
+            | (227, GmpVersioned::V227(_))
+            | (228, GmpVersioned::Next(_)) => {}
             (_, other) => panic!("unexpected versioned client: {other:?}"),
         }
 
         server.shutdown().await;
     }
+}
+
+#[tokio::test]
+async fn next_client_exposes_next_trait_methods() {
+    let Some(server) = stateful_server(MockVersion::V22_8).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpVersioned::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .call(gvm_gmp::commands::authentication::authenticate(
+            "admin", "admin",
+        ))
+        .await
+        .expect("authenticate should succeed");
+
+    let mut client = match client {
+        GmpVersioned::Next(client) => client,
+        other => panic!("expected Next client, got {other:?}"),
+    };
+
+    let response = client
+        .get_integration_configs(Default::default())
+        .await
+        .expect("next-only command should succeed");
+    assert_eq!(response.status_code(), Some(200));
+
+    server.shutdown().await;
 }
 
 #[tokio::test]

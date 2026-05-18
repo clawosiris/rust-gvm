@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use gvm_connection::ConnectionError;
 use gvm_gmp::responses::ParseError;
+use gvm_gmp::types::GmpVersion;
 use thiserror::Error;
 
 /// High-level client errors.
@@ -40,6 +41,17 @@ pub enum GvmError {
     /// Server advertised an unsupported GMP version.
     #[error("unsupported GMP version: {0}.{1}")]
     UnsupportedVersion(u16, u16),
+
+    /// Command is known but not supported by the negotiated GMP version.
+    #[error("command '{command}' requires GMP >= {required}; server reports {version}")]
+    UnsupportedCommand {
+        /// Command name.
+        command: String,
+        /// Negotiated GMP version.
+        version: GmpVersion,
+        /// Minimum required GMP version or version family.
+        required: &'static str,
+    },
 
     /// Operation timed out.
     #[error("timeout after {0:?}")]

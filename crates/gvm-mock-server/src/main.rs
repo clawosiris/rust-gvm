@@ -49,8 +49,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "22.5" => GmpVersion::V22_5,
         "22.6" => GmpVersion::V22_6,
         "22.7" => GmpVersion::V22_7,
+        "22.8" => GmpVersion::V22_8,
         other => {
-            eprintln!("Unknown version: {other}. Use 22.4, 22.5, 22.6, or 22.7.");
+            eprintln!("Unknown version: {other}. Use 22.4, 22.5, 22.6, 22.7, or 22.8.");
             std::process::exit(1);
         }
     };
