@@ -122,6 +122,42 @@ async fn fixture_get_reports() {
 }
 
 #[tokio::test]
+async fn fixture_get_report_drill_downs() {
+    for (command, marker) in [
+        ("get_report_vulns", "<vuln "),
+        ("get_report_tls_certificates", "<tls_certificate "),
+        ("get_report_errors", "<error "),
+        ("get_report_closed_cves", "<closed_cve "),
+    ] {
+        let Some((server, mut s)) = server().await else {
+            return;
+        };
+        let request = format!("<{command} report_id=\"report-1\"/>");
+        let r = send_recv(&mut s, request.as_bytes()).await;
+        assert!(r.is_success(), "{command} should succeed");
+        assert!(r.as_str().expect("utf8").contains(marker));
+        server.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn fixture_get_timezones_and_credential_stores() {
+    let Some((server, mut s)) = server().await else {
+        return;
+    };
+
+    let r = send_recv(&mut s, b"<get_timezones/>").await;
+    assert!(r.is_success());
+    assert!(r.as_str().expect("utf8").contains("UTC"));
+
+    let r = send_recv(&mut s, b"<get_credential_stores/>").await;
+    assert!(r.is_success());
+    assert!(r.as_str().expect("utf8").contains("Local credential store"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn fixture_get_schedules() {
     let Some((server, mut s)) = server().await else {
         return;

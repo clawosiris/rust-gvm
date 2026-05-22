@@ -15,7 +15,7 @@ use gvm_connection::GvmConnection;
 use gvm_gmp::commands::alerts::{create_alert, get_alerts, AlertOpts, GetAlertsOpts};
 use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::credentials::{
-    create_credential, get_credentials, CredentialOpts, GetCredentialsOpts,
+    create_credential, get_credential_stores, get_credentials, CredentialOpts, GetCredentialsOpts,
 };
 use gvm_gmp::commands::feed::get_feeds;
 use gvm_gmp::commands::filters::{create_filter, get_filters, FilterOpts, GetFiltersOpts};
@@ -37,7 +37,10 @@ use gvm_gmp::commands::report_configs::{get_report_configs_opts, GetReportConfig
 use gvm_gmp::commands::report_formats::{
     create_report_format, get_report_formats, GetReportFormatsOpts, ReportFormatOpts,
 };
-use gvm_gmp::commands::reports::{get_reports, GetReportsOpts};
+use gvm_gmp::commands::reports::{
+    get_report_closed_cves, get_report_errors, get_report_tls_certificates, get_report_vulns,
+    get_reports, GetReportDetailsOpts, GetReportsOpts,
+};
 use gvm_gmp::commands::results::{get_results, GetResultsOpts};
 use gvm_gmp::commands::roles::{create_role, get_roles, GetRolesOpts, RoleOpts};
 use gvm_gmp::commands::scan_configs::{
@@ -54,7 +57,7 @@ use gvm_gmp::commands::schedules::{
 use gvm_gmp::commands::secinfo::{
     get_cert_bund_advisories, get_cpes, get_cves, get_dfn_cert_advisories, GetSecInfoOpts,
 };
-use gvm_gmp::commands::system::{describe_auth, get_settings, FilteredGetOpts};
+use gvm_gmp::commands::system::{describe_auth, get_settings, get_timezones, FilteredGetOpts};
 use gvm_gmp::commands::tags::{create_tag, get_tags, GetTagsOpts, TagOpts};
 use gvm_gmp::commands::targets::{create_target, get_targets, CreateTargetOpts, GetTargetsOpts};
 use gvm_gmp::commands::tasks::{create_task, get_tasks, start_task, CreateTaskOpts, GetTasksOpts};
@@ -72,15 +75,18 @@ use gvm_gmp::responses::{
     CreateTagResponse, CreateTargetResponse, CreateTaskResponse, CreateTicketResponse,
     CreateTlsCertificateResponse, CreateUserResponse, DeleteScanConfigResponse,
     DeleteScannerResponse, DescribeAuthResponse, GetAlertsResponse, GetCertBundAdvisoriesResponse,
-    GetCpesResponse, GetCredentialsResponse, GetCvesResponse, GetDfnCertAdvisoriesResponse,
-    GetFeedsResponse, GetFiltersResponse, GetGroupsResponse, GetHostsResponse, GetNotesResponse,
-    GetNvtFamiliesResponse, GetNvtsResponse, GetOverridesResponse, GetPermissionsResponse,
-    GetPortListsResponse, GetReportConfigsResponse, GetReportFormatsResponse, GetReportsResponse,
-    GetResultsResponse, GetRolesResponse, GetScanConfigsResponse, GetScannersResponse,
-    GetSchedulesResponse, GetSettingsResponse, GetTagsResponse, GetTargetsResponse,
-    GetTasksResponse, GetTicketsResponse, GetTlsCertificatesResponse, GetUsersResponse,
-    GetVersionResponse, HelpResponse, ModifyScanConfigResponse, ModifyScannerResponse,
-    StartTaskResponse, SyncConfigResponse, VerifyScannerResponse,
+    GetCpesResponse, GetCredentialStoresResponse, GetCredentialsResponse, GetCvesResponse,
+    GetDfnCertAdvisoriesResponse, GetFeedsResponse, GetFiltersResponse, GetGroupsResponse,
+    GetHostsResponse, GetNotesResponse, GetNvtFamiliesResponse, GetNvtsResponse,
+    GetOverridesResponse, GetPermissionsResponse, GetPortListsResponse,
+    GetReportClosedCvesResponse, GetReportConfigsResponse, GetReportErrorsResponse,
+    GetReportFormatsResponse, GetReportTlsCertificatesResponse, GetReportVulnsResponse,
+    GetReportsResponse, GetResultsResponse, GetRolesResponse, GetScanConfigsResponse,
+    GetScannersResponse, GetSchedulesResponse, GetSettingsResponse, GetTagsResponse,
+    GetTargetsResponse, GetTasksResponse, GetTicketsResponse, GetTimezonesResponse,
+    GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse, HelpResponse,
+    ModifyScanConfigResponse, ModifyScannerResponse, StartTaskResponse, SyncConfigResponse,
+    VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
 
@@ -396,6 +402,60 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         GetReportsResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
+    /// Send a `get_report_vulns` request and return a typed [`GetReportVulnsResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_report_vulns(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<GetReportVulnsResponse, GvmError> {
+        let response = self.send(get_report_vulns(report_id, opts)).await?;
+        GetReportVulnsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `get_report_tls_certificates` request and return a typed [`GetReportTlsCertificatesResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_report_tls_certificates(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<GetReportTlsCertificatesResponse, GvmError> {
+        let response = self
+            .send(get_report_tls_certificates(report_id, opts))
+            .await?;
+        GetReportTlsCertificatesResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `get_report_errors` request and return a typed [`GetReportErrorsResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_report_errors(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<GetReportErrorsResponse, GvmError> {
+        let response = self.send(get_report_errors(report_id, opts)).await?;
+        GetReportErrorsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `get_report_closed_cves` request and return a typed [`GetReportClosedCvesResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_report_closed_cves(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<GetReportClosedCvesResponse, GvmError> {
+        let response = self.send(get_report_closed_cves(report_id, opts)).await?;
+        GetReportClosedCvesResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
     // ── Results ───────────────────────────────────────────────────────────────
 
     /// Send a `get_results` request and return a typed [`GetResultsResponse`].
@@ -419,6 +479,24 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     pub async fn get_feeds(&mut self) -> Result<GetFeedsResponse, GvmError> {
         let response = self.send(get_feeds()).await?;
         GetFeedsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `get_timezones` request and return a typed [`GetTimezonesResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_timezones(&mut self) -> Result<GetTimezonesResponse, GvmError> {
+        let response = self.send(get_timezones()).await?;
+        GetTimezonesResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `get_credential_stores` request and return a typed [`GetCredentialStoresResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_credential_stores(&mut self) -> Result<GetCredentialStoresResponse, GvmError> {
+        let response = self.send(get_credential_stores()).await?;
+        GetCredentialStoresResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     // ── NVTs ──────────────────────────────────────────────────────────────────

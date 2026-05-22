@@ -266,6 +266,16 @@ impl FixtureStore {
                 .to_string(),
         );
 
+        // get_credential_stores
+        self.fixtures.insert(
+            "get_credential_stores".to_string(),
+            "<get_credential_stores_response status=\"200\" status_text=\"OK\">\
+             <credential_store id=\"local\"><name>Local credential store</name><type>local</type></credential_store>\
+             <credential_store_count>1<filtered>1</filtered></credential_store_count>\
+             </get_credential_stores_response>"
+                .to_string(),
+        );
+
         // create_credential
         self.fixtures.insert(
             "create_credential".to_string(),
@@ -349,6 +359,49 @@ impl FixtureStore {
              </report>\
              <report_count>1<filtered>1</filtered></report_count>\
              </get_reports_response>"
+                .to_string(),
+        );
+
+        // report drill-down helpers
+        self.fixtures.insert(
+            "get_report_vulns".to_string(),
+            "<get_report_vulns_response status=\"200\" status_text=\"OK\">\
+             <vuln id=\"vuln-1\"><name>OpenSSL Vulnerability</name><host>192.0.2.10</host><port>443/tcp</port><threat>High</threat><severity>8.2</severity><family>General</family><cve>CVE-2026-0001</cve></vuln>\
+             <vuln_count>1<filtered>1</filtered></vuln_count>\
+             </get_report_vulns_response>"
+                .to_string(),
+        );
+        self.fixtures.insert(
+            "get_report_tls_certificates".to_string(),
+            "<get_report_tls_certificates_response status=\"200\" status_text=\"OK\">\
+             <tls_certificate id=\"tls-1\"><name>example.com</name><host>192.0.2.10</host><port>443/tcp</port><subject>CN=example.com</subject><issuer>CN=Example CA</issuer><serial>01</serial><expiration_time>2027-01-01T00:00:00Z</expiration_time></tls_certificate>\
+             <tls_certificate_count>1<filtered>1</filtered></tls_certificate_count>\
+             </get_report_tls_certificates_response>"
+                .to_string(),
+        );
+        self.fixtures.insert(
+            "get_report_errors".to_string(),
+            "<get_report_errors_response status=\"200\" status_text=\"OK\">\
+             <error id=\"err-1\"><name>Host dead</name><host>192.0.2.20</host><port>general/tcp</port><description>Could not reach host.</description><nvt><name>Ping Host</name></nvt></error>\
+             <error_count>1<filtered>1</filtered></error_count>\
+             </get_report_errors_response>"
+                .to_string(),
+        );
+        self.fixtures.insert(
+            "get_report_closed_cves".to_string(),
+            "<get_report_closed_cves_response status=\"200\" status_text=\"OK\">\
+             <closed_cve id=\"closed-1\"><name>CVE-2025-9999</name><host>192.0.2.30</host><severity>5.0</severity></closed_cve>\
+             <closed_cve_count>1<filtered>1</filtered></closed_cve_count>\
+             </get_report_closed_cves_response>"
+                .to_string(),
+        );
+
+        // get_timezones
+        self.fixtures.insert(
+            "get_timezones".to_string(),
+            "<get_timezones_response status=\"200\" status_text=\"OK\">\
+             <timezone>UTC</timezone><timezone><name>Europe/Berlin</name><offset>+01:00</offset></timezone>\
+             </get_timezones_response>"
                 .to_string(),
         );
 

@@ -10,6 +10,7 @@ use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::reports::get_report_hosts;
 use gvm_gmp::commands::scan_configs::ConfigOpts;
 use gvm_gmp::commands::scanners::ScannerOpts;
+use gvm_gmp::commands::system::get_timezones;
 use gvm_gmp::commands::targets::{
     create_target, delete_target, get_targets, CreateTargetOpts, GetTargetsOpts,
 };
@@ -56,6 +57,20 @@ async fn fixture_server_with_version_response(version_xml: &str) -> Option<MockG
                 "<get_version_response status=\"200\" status_text=\"OK\"><version>{version_xml}</version></get_version_response>"
             ),
         )
+        .build()
+        .await
+    {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("server should start: {error}"),
+    }
+}
+
+async fn fixture_server(version: MockVersion) -> Option<MockGmpServer> {
+    match MockGmpServer::builder()
+        .mode(ServerMode::Fixture)
+        .version(version)
+        .unix_socket(socket_path())
         .build()
         .await
     {
@@ -279,6 +294,19 @@ async fn unsupported_next_command_rejected_before_send() {
         other => panic!("expected unsupported command error, got {other:?}"),
     }
 
+    let error = client
+        .call(get_timezones())
+        .await
+        .expect_err("22.7 should reject get_timezones");
+    assert!(matches!(
+        error,
+        GvmError::UnsupportedCommand {
+            command,
+            version: GmpVersion(22, 7),
+            required: "22.8"
+        } if command == "get_timezones"
+    ));
+
     server.shutdown().await;
 }
 
@@ -334,6 +362,61 @@ async fn next_commands_work_on_v22_8() {
         .await
         .expect_err("missing report should return server error");
     assert!(matches!(helper_error, GvmError::Server { status: 404, .. }));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_rest_support_gap_helpers_parse_fixture_responses() {
+    let Some(server) = fixture_server(MockVersion::V22_8).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    let report_id = EntityId::new("report-1").expect("valid id");
+
+    let vulns = client
+        .get_report_vulns(&report_id, Default::default())
+        .await
+        .expect("report vulns should parse");
+    assert_eq!(vulns.items.len(), 1);
+    assert_eq!(vulns.items[0].severity.as_deref(), Some("8.2"));
+
+    let tls = client
+        .get_report_tls_certificates(&report_id, Default::default())
+        .await
+        .expect("report tls certs should parse");
+    assert_eq!(tls.items[0].issuer.as_deref(), Some("CN=Example CA"));
+
+    let errors = client
+        .get_report_errors(&report_id, Default::default())
+        .await
+        .expect("report errors should parse");
+    assert_eq!(errors.items[0].nvt_name.as_deref(), Some("Ping Host"));
+
+    let closed_cves = client
+        .get_report_closed_cves(&report_id, Default::default())
+        .await
+        .expect("closed cves should parse");
+    assert_eq!(closed_cves.items[0].cve.as_deref(), Some("CVE-2025-9999"));
+
+    let timezones = client
+        .get_timezones()
+        .await
+        .expect("timezones should parse");
+    assert!(timezones
+        .items
+        .iter()
+        .any(|timezone| timezone.name == "UTC"));
+
+    let stores = client
+        .get_credential_stores()
+        .await
+        .expect("credential stores should parse");
+    assert_eq!(stores.items[0].name, "Local credential store");
 
     server.shutdown().await;
 }

@@ -398,7 +398,17 @@ impl SessionHandler {
             | "get_report_ports"
             | "get_report_applications"
             | "get_report_operating_systems"
-            | "get_report_cves" => return self.render_report_detail_response(cmd, store),
+            | "get_report_cves"
+            | "get_report_vulns"
+            | "get_report_tls_certificates"
+            | "get_report_errors"
+            | "get_report_closed_cves" => return self.render_report_detail_response(cmd, store),
+            "get_timezones" => {
+                return "<get_timezones_response status=\"200\" status_text=\"OK\"><timezone>UTC</timezone><timezone><name>Europe/Berlin</name><offset>+01:00</offset></timezone></get_timezones_response>".as_bytes().to_vec();
+            }
+            "get_credential_stores" => {
+                return "<get_credential_stores_response status=\"200\" status_text=\"OK\"><credential_store id=\"local\"><name>Local credential store</name><type>local</type></credential_store><credential_store_count>1<filtered>1</filtered></credential_store_count></get_credential_stores_response>".as_bytes().to_vec();
+            }
             _ => {}
         }
 
@@ -837,6 +847,34 @@ impl SessionHandler {
                     "<cve id=\"cve-1\"><name>CVE-2026-0001</name><severity>8.0</severity></cve>"
                         .to_string(),
                     "<cve id=\"cve-2\"><name>CVE-2026-0002</name><severity>6.0</severity></cve>"
+                        .to_string(),
+                ],
+            ),
+            "get_report_vulns" => (
+                "vuln",
+                vec![
+                    "<vuln id=\"vuln-1\"><name>OpenSSL Vulnerability</name><host>192.0.2.10</host><port>443/tcp</port><threat>High</threat><severity>8.2</severity><family>General</family><cve>CVE-2026-0001</cve></vuln>"
+                        .to_string(),
+                ],
+            ),
+            "get_report_tls_certificates" => (
+                "tls_certificate",
+                vec![
+                    "<tls_certificate id=\"tls-1\"><name>example.com</name><host>192.0.2.10</host><port>443/tcp</port><subject>CN=example.com</subject><issuer>CN=Example CA</issuer><serial>01</serial><expiration_time>2027-01-01T00:00:00Z</expiration_time></tls_certificate>"
+                        .to_string(),
+                ],
+            ),
+            "get_report_errors" => (
+                "error",
+                vec![
+                    "<error id=\"err-1\"><name>Host dead</name><host>192.0.2.20</host><port>general/tcp</port><description>Could not reach host.</description><nvt><name>Ping Host</name></nvt></error>"
+                        .to_string(),
+                ],
+            ),
+            "get_report_closed_cves" => (
+                "closed_cve",
+                vec![
+                    "<closed_cve id=\"closed-1\"><name>CVE-2025-9999</name><host>192.0.2.30</host><severity>5.0</severity></closed_cve>"
                         .to_string(),
                 ],
             ),

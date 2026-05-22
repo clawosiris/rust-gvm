@@ -409,7 +409,7 @@ The following commands map 1:1 from GMP 22.5 (base = v22.4, extended by later ve
 | 22.5 | `ResourceNames` adds `ResourceType` enum with expanded types |
 | 22.6 | Adds `ReportConfigs` (create/get/modify/delete), `AuditReports`, modified `Filters` and `Reports` |
 | 22.7 | Modified `Scanners` |
-| next (22.8+) | Adds `Agents`, `AgentGroups`, `AgentInstallers`, `CredentialStores`, `OciImageTargets`, modified `Tasks`/`Credentials` |
+| next (22.8+) | Adds `Agents`, `AgentGroups`, `AgentInstallers`, `CredentialStores`, `OciImageTargets`, report drill-down helpers (`get_report_vulns`, `get_report_tls_certificates`, `get_report_errors`, `get_report_closed_cves`), `get_timezones`, modified `Tasks`/`Credentials` |
 
 ---
 

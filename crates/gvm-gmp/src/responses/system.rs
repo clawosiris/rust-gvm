@@ -30,6 +30,23 @@ pub struct GetSettingsResponse {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Timezone {
+    pub name: String,
+    pub offset: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct GetTimezonesResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub items: Vec<Timezone>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HelpResponse {
     pub status: u16,
     pub status_text: String,
@@ -83,6 +100,39 @@ impl GetSettingsResponse {
         let items = root
             .children_named("setting")
             .map(Setting::from_node)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            status,
+            status_text,
+            items,
+        })
+    }
+}
+
+impl Timezone {
+    fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
+        let name = node
+            .optional_child_text("name")
+            .or_else(|| node.attr("name").map(ToString::to_string))
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| node.text.clone());
+        if name.is_empty() {
+            return Err(ParseError::MissingElement("timezone.name".to_string()));
+        }
+        Ok(Self {
+            name,
+            offset: node.optional_child_text("offset"),
+        })
+    }
+}
+
+impl GetTimezonesResponse {
+    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+        let (status, status_text) = status_from_response(response)?;
+        let root = parse_document(response.data())?;
+        let items = root
+            .children_named("timezone")
+            .map(Timezone::from_node)
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             status,
@@ -172,6 +222,22 @@ mod tests {
         let parsed = GetSettingsResponse::from_response(&response).expect("settings parse");
 
         assert!(parsed.items.is_empty());
+    }
+
+    #[test]
+    fn parses_timezones() {
+        let response = Response::from(
+            r#"<get_timezones_response status="200" status_text="OK">
+                <timezone>UTC</timezone>
+                <timezone><name>Europe/Berlin</name><offset>+01:00</offset></timezone>
+            </get_timezones_response>"#,
+        );
+
+        let parsed = GetTimezonesResponse::from_response(&response).expect("timezones parse");
+
+        assert_eq!(parsed.items.len(), 2);
+        assert_eq!(parsed.items[0].name, "UTC");
+        assert_eq!(parsed.items[1].offset.as_deref(), Some("+01:00"));
     }
 
     #[test]

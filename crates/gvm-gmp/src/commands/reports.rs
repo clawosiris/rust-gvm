@@ -161,6 +161,33 @@ pub fn get_report_cves(report_id: &EntityId, opts: GetReportDetailsOpts) -> impl
     get_report_detail_command("get_report_cves", report_id, opts)
 }
 
+/// Build a `get_report_vulns` request.
+#[must_use]
+pub fn get_report_vulns(report_id: &EntityId, opts: GetReportDetailsOpts) -> impl Request {
+    get_report_detail_command("get_report_vulns", report_id, opts)
+}
+
+/// Build a `get_report_tls_certificates` request.
+#[must_use]
+pub fn get_report_tls_certificates(
+    report_id: &EntityId,
+    opts: GetReportDetailsOpts,
+) -> impl Request {
+    get_report_detail_command("get_report_tls_certificates", report_id, opts)
+}
+
+/// Build a `get_report_errors` request.
+#[must_use]
+pub fn get_report_errors(report_id: &EntityId, opts: GetReportDetailsOpts) -> impl Request {
+    get_report_detail_command("get_report_errors", report_id, opts)
+}
+
+/// Build a `get_report_closed_cves` request.
+#[must_use]
+pub fn get_report_closed_cves(report_id: &EntityId, opts: GetReportDetailsOpts) -> impl Request {
+    get_report_detail_command("get_report_closed_cves", report_id, opts)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -247,6 +274,31 @@ mod tests {
         assert_eq!(
             xml(get_report_cves(&id("r1"), GetReportDetailsOpts::default())),
             "<get_report_cves details=\"1\" report_id=\"r1\"/>"
+        );
+        assert_eq!(
+            xml(get_report_vulns(&id("r1"), GetReportDetailsOpts::default())),
+            "<get_report_vulns details=\"1\" report_id=\"r1\"/>"
+        );
+        assert_eq!(
+            xml(get_report_tls_certificates(
+                &id("r1"),
+                GetReportDetailsOpts::default()
+            )),
+            "<get_report_tls_certificates details=\"1\" report_id=\"r1\"/>"
+        );
+        assert_eq!(
+            xml(get_report_errors(
+                &id("r1"),
+                GetReportDetailsOpts::default()
+            )),
+            "<get_report_errors details=\"1\" report_id=\"r1\"/>"
+        );
+        assert_eq!(
+            xml(get_report_closed_cves(
+                &id("r1"),
+                GetReportDetailsOpts::default()
+            )),
+            "<get_report_closed_cves details=\"1\" report_id=\"r1\"/>"
         );
     }
 }
