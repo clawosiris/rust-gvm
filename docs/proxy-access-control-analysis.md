@@ -508,6 +508,7 @@ Strict tenant isolation through policy engine. Customer A cannot see Customer B'
 | Component | Complexity | Notes |
 |-----------|-----------|-------|
 | REST API layer (axum) | Medium | Endpoint-scoped routes, OpenAPI |
+| MCP adapter layer | Medium | Tool/resource exposure with parity to the canonical operation catalog |
 | Auth layer (OIDC + API keys) | Medium | Tower middleware |
 | Policy engine (RBAC) | Medium | Config-driven, evaluate per request |
 | Connection pool | Medium | Per-endpoint, async pool with health checks |
@@ -522,12 +523,13 @@ Strict tenant isolation through policy engine. Customer A cannot see Customer B'
 
 **Phase 1: Single-endpoint gateway with auth + audit**
 - REST API (axum + OpenAPI)
+- MCP adapter for the same operation set
 - Single gvmd endpoint
 - API key authentication
 - Operation-level RBAC
 - Audit logging
 - Connection pooling
-- *Delivers: REST access, auth, audit trail*
+- *Delivers: REST + MCP access, auth, audit trail*
 
 **Phase 2: Multi-endpoint with routing**
 - Endpoint registry (multiple gvmd)
@@ -541,9 +543,10 @@ Strict tenant isolation through policy engine. Customer A cannot see Customer B'
 - OIDC/LDAP integration
 - Cross-endpoint aggregation queries
 - gRPC interface with streaming
+- surface conformance testing across REST/gRPC/MCP
 - Vault integration for credentials
 - SIEM export (syslog, OTEL)
-- *Delivers: enterprise/MSP readiness*
+- *Delivers: enterprise/MSP readiness with tri-surface parity*
 
 ---
 
@@ -555,7 +558,7 @@ GSA is Greenbone's web UI. It talks GMP to gvmd via an intermediary daemon (`gsa
 
 ### openvas-mcp-server
 
-The MCP server currently needs to implement its own GMP connection handling. With the gateway, it would be a simple REST client — dramatically simpler integration.
+The MCP server currently needs to implement its own GMP connection handling. With the gateway, MCP should become one of the gateway's native public surfaces, not merely a REST client layered on top. That keeps agent-facing capability at parity with REST and gRPC while still reusing the same auth, policy, routing, and audit core.
 
 ### gvm-tools / gvm-rools
 

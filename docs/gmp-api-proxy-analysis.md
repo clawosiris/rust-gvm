@@ -23,14 +23,14 @@ That makes a proxy attractive for consumers that want:
 Rather than waiting for Greenbone to change gvmd itself, we can build a gateway on top of `rust-gvm` that:
 
 - talks GMP over Unix socket, SSH, or TLS to gvmd on the backend
-- exposes REST and gRPC on the frontend
+- exposes REST, gRPC, and MCP on the frontend
 
 ```text
-┌──────────────┐       REST / gRPC        ┌──────────────────┐      GMP/XML       ┌────────┐
+┌──────────────┐   REST / gRPC / MCP      ┌──────────────────┐      GMP/XML       ┌────────┐
 │ Web UI       │◄────────────────────────►│ gvm-gateway      │◄──────────────────►│ gvmd   │
-│ Scripts      │   HTTP/JSON or Protobuf  │ (rust-gvm based) │   Unix socket      │        │
-│ Automation   │                          │                  │   or SSH/TLS       │        │
-│ MCP Server   │                          │                  │                    │        │
+│ Scripts      │ HTTP/JSON, Protobuf,     │ (rust-gvm based) │   Unix socket      │        │
+│ Automation   │ and MCP tools/resources  │                  │   or SSH/TLS       │        │
+│ Agents       │                          │                  │                    │        │
 └──────────────┘                          └──────────────────┘                    └────────┘
 ```
 
@@ -43,13 +43,13 @@ Rather than waiting for Greenbone to change gvmd itself, we can build a gateway 
 - `gvm-gmp`: typed GMP command builders
 - `gvm-protocol`: response parsing and XML extraction
 
-A proxy service can stay relatively thin:
+A gateway service can stay relatively thin if the public surfaces share one execution core:
 
-1. Accept REST or gRPC requests.
+1. Accept REST, gRPC, or MCP requests.
 2. Map them to `gvm-gmp` command builders.
 3. Send them via `gvm-client` and `gvm-connection` to gvmd.
 4. Parse the XML response.
-5. Return structured JSON or Protobuf to the caller.
+5. Return structured JSON, Protobuf, or MCP tool/resource payloads to the caller.
 
 ## 4. API Frontend Options
 
@@ -125,32 +125,37 @@ Weaknesses:
 - harder to inspect manually than REST
 - consumers need Protobuf and gRPC tooling
 
-### Option C: Hybrid REST + gRPC
+### Option C: Hybrid REST + gRPC + MCP
 
 Expose both from one service:
 
 - `REST` as the initial and most accessible interface for scripts, `curl`, Postman, and lightweight automation
 - `gRPC` as a later addition for full-featured clients, large report retrieval, and service-to-service use
+- `MCP` as a first-class agent-facing interface for tool-driven integrations
 - a shared backend built on `gvm-client -> gvmd`
 
-This is the preferred long-term model because it avoids forcing one style onto every consumer while allowing the project to start with the simpler interface first.
+This is the preferred long-term model because it avoids forcing one style onto every consumer while allowing the project to preserve one core execution model across human, service, and agent-facing integrations.
 
 ## 5. Recommended Hybrid Architecture
 
-The gateway should have four layers:
+The gateway should have five layers:
 
 1. REST adapter for simple integrations
 2. gRPC adapter for full integrations
-3. shared application core for session bootstrap, request validation, mapping, error normalization, and auditing
-4. pooled gvmd session manager backed by `rust-gvm`
+3. MCP adapter for agent and tool-driven integrations
+4. shared application core for session bootstrap, request validation, mapping, error normalization, and auditing
+5. pooled gvmd session manager backed by `rust-gvm`
 
 In practice:
 
-- start with REST as the first public surface and cover the highest-value operations for scripts and human-operated tooling
+- start with a shared command catalog so every public surface maps to the same core operations
+- cover the highest-value operations through REST and MCP first if that is the fastest path to usable human and agent integrations
 - require clients to create a proxy session by submitting gvmd credentials to the proxy once
 - return a session token that the client includes on every subsequent API call
-- add gRPC later for complete GMP coverage, typed contracts, and streaming-heavy workflows
+- add gRPC for complete GMP coverage, typed contracts, and streaming-heavy workflows
 - route both through the same execution core so command mapping and gvmd behavior stay consistent
+
+See [MCP Gateway Surface Analysis](mcp-gateway-surface-analysis.md) for the adapter-level model and parity requirements.
 
 ## 6. Connection Pooling and Session Management
 
@@ -295,7 +300,7 @@ Default deployment should prefer the gvmd Unix socket. SSH and TLS backends can 
 
 | Consumer | Current | With proxy |
 |----------|---------|------------|
-| `openvas-mcp-server` | Talks GMP/XML directly | Create a proxy session once, then reuse the session token; prefer gRPC for fuller integration |
+| `openvas-mcp-server` | Talks GMP/XML directly | Either consume the gateway's native MCP surface or reuse the shared gateway session model through MCP tools |
 | `gvm-tools` / CLI automation | Talks GMP/XML directly | Start a session with gvmd credentials, then use REST with the returned token |
 | GSA or other web UIs | Talks GMP/XML through existing components | Browser-facing flows can use REST if the proxy handles secure session bootstrap carefully |
 | Custom services | Need GMP expertise or a GMP client library | Use session bootstrap plus REST or gRPC with a stable token-based contract |
@@ -305,12 +310,13 @@ Default deployment should prefer the gvmd Unix socket. SSH and TLS backends can 
 
 Adopt the hybrid model in phases:
 
-- start with `REST` because it is the fastest path to a usable public interface for scripts, `curl`, and low-friction automation
+- treat `REST`, `gRPC`, and `MCP` as peer adapters over one shared execution core
+- enforce capability parity so MCP does not lag behind the other gateway surfaces
 - make `POST /api/v1/sessions` the mandatory entry point so the proxy can authenticate to gvmd, validate credentials, and bind a live connection to a returned token
 - define the shared execution core so the gateway is ready to support multiple frontends from the beginning
-- add `gRPC` later for complete command coverage, typed clients, and streaming-heavy use cases such as large reports
+- add or expand `gRPC` for complete command coverage, typed clients, and streaming-heavy use cases such as large reports
 
-This gives the project a pragmatic path forward: immediate value through REST, a concrete session model that matches gvmd's stateful behavior, and a clear upgrade path to a richer gRPC interface without changing gvmd itself.
+This gives the project a pragmatic path forward: immediate value through low-friction public surfaces, a concrete session model that matches gvmd's stateful behavior, and a coherent contract for browser, service, and agent-facing integrations without changing gvmd itself.
 
 ## 10. Gateway Extension
 
