@@ -117,6 +117,7 @@ The customer-facing rule is:
 - `gRPC = REST = MCP`
 - the surface syntax changes
 - the reachable capability set does not
+- adding a new endpoint, RPC method, or tool on any shipped surface must trigger the equivalent exposure work for the others unless an exception is documented up front
 
 | Canonical operation | REST surface | gRPC surface | MCP surface | Customer-visible outcome |
 | --- | --- | --- | --- | --- |
@@ -390,6 +391,7 @@ For each canonical operation in the catalog:
 - verify REST exposure if marked enabled
 - verify gRPC exposure if marked enabled
 - verify MCP exposure if marked enabled
+- verify new surface additions do not appear on one shipped surface without matching catalog metadata and parity bindings for the others
 
 ### 11.2 Contract drift checks
 
@@ -450,6 +452,7 @@ Concretely:
 - design the gateway around a canonical operation catalog
 - generate or derive surface bindings from that catalog
 - require endpoint parity across REST, gRPC, and MCP
+- treat every new endpoint, RPC method, or MCP tool as a cross-surface change, not an adapter-local change
 - centralize auth, policy, routing, errors, and audit below the adapters
 - allow each surface to express the same capability using interaction patterns natural to that surface
 

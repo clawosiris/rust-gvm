@@ -29,6 +29,7 @@ The contract to preserve throughout implementation is:
 - customers can reach the same capability set through `REST`, `gRPC`, or `MCP`
 - transport-specific syntax may differ
 - missing parity must be treated as a defect unless the exception is explicitly documented
+- opening a new endpoint, RPC method, or MCP tool creates a rollout obligation for the other shipped surfaces in the same capability area
 
 | Canonical operation | REST endpoint | gRPC method | MCP tool | Required in first shipped slice |
 | --- | --- | --- | --- | --- |
@@ -94,6 +95,7 @@ Decisions to lock:
 - initial auth pattern: explicit session bootstrap remains the default
 - initial MCP model: tools required, resources optional
 - initial surface sequence: `REST + MCP` first, `gRPC` after core stabilization
+- new surface exposure rule: no new capability lands on one shipped surface without the matching exposure plan for the others
 
 Exit criteria:
 
@@ -261,6 +263,7 @@ Minimum CI gates:
 - if an operation is marked gRPC-enabled but missing from gRPC bindings, fail
 - if an operation is marked MCP-enabled but missing from MCP tools, fail
 - if a parity-required operation exists on one shipped surface but not the other, fail
+- if a new endpoint, RPC method, or tool is added without a matching canonical operation entry and explicit surface metadata, fail
 
 Recommended test layers:
 
