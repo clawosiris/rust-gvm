@@ -1,0 +1,52 @@
+name: Journal PR Automation
+
+on:
+  pull_request_target:
+    branches: [journal-main]
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  journal-auto-merge-gate:
+    name: Journal Auto-Merge Gate
+    if: >-
+      github.event.pull_request.draft == false &&
+      startsWith(github.head_ref, 'journal/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate changed files are journal entries only
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+            if (!files.length) {
+              core.setFailed('PR has no changed files');
+              return;
+            }
+            const invalid = files.filter(file => !/^journal\/\d{4}-\d{2}-\d{2}\.md$/.test(file.filename));
+            if (invalid.length) {
+              core.setFailed(`Non-journal files present: ${invalid.map(file => file.filename).join(', ')}`);
+              return;
+            }
+      - name: Enable squash auto-merge
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            await github.graphql(
+              `mutation($pullRequestId:ID!) {
+                enablePullRequestAutoMerge(input: {pullRequestId: $pullRequestId, mergeMethod: SQUASH}) {
+                  pullRequest { number autoMergeRequest { enabledAt } }
+                }
+              }`,
+              { pullRequestId: pr.node_id },
+            );
