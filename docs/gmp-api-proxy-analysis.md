@@ -156,6 +156,7 @@ In practice:
 - route both through the same execution core so command mapping and gvmd behavior stay consistent
 
 See [MCP Gateway Surface Analysis](mcp-gateway-surface-analysis.md) for the adapter-level model and parity requirements.
+See [MCP Implementation Roadmap](mcp-implementation-roadmap.md) for the recommended build order and first implementation slice.
 
 ## 6. Connection Pooling and Session Management
 
