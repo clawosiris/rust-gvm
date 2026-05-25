@@ -22,6 +22,30 @@ The safest path is not "build an MCP server quickly." The safe path is:
 
 That sequencing avoids the failure mode where `MCP` starts as a sidecar and later has to be pulled back into the real gateway architecture.
 
+### 2.1 Customer-facing parity table
+
+The contract to preserve throughout implementation is:
+
+- customers can reach the same capability set through `REST`, `gRPC`, or `MCP`
+- transport-specific syntax may differ
+- missing parity must be treated as a defect unless the exception is explicitly documented
+
+| Canonical operation | REST endpoint | gRPC method | MCP tool | Required in first shipped slice |
+| --- | --- | --- | --- | --- |
+| `sessions.create` | `POST /api/v1/sessions` | `CreateSession` | `sessions.create` | yes |
+| `sessions.delete` | `DELETE /api/v1/sessions/{token}` | `DeleteSession` | `sessions.delete` | yes |
+| `system.get_version` | `GET /api/v1/system/version` | `GetVersion` | `system.get_version` | yes |
+| `targets.list` | `GET /api/v1/targets` | `ListTargets` | `targets.list` | phase 4 |
+| `targets.create` | `POST /api/v1/targets` | `CreateTarget` | `targets.create` | phase 4 |
+| `tasks.list` | `GET /api/v1/tasks` | `ListTasks` | `tasks.list` | phase 4 |
+| `tasks.create` | `POST /api/v1/tasks` | `CreateTask` | `tasks.create` | phase 4 |
+| `tasks.start` | `POST /api/v1/tasks/{id}/start` | `StartTask` | `tasks.start` | phase 4 |
+| `tasks.stop` | `POST /api/v1/tasks/{id}/stop` | `StopTask` | `tasks.stop` | phase 4 |
+| `reports.list` | `GET /api/v1/reports` | `ListReports` | `reports.list` | phase 4 |
+| `reports.get` | `GET /api/v1/reports/{id}` | `GetReport` | `reports.get` | phase 4 |
+
+`gRPC` can land after the first `REST + MCP` slice, but the table remains the target shape from day one. The point is sequencing, not relaxing parity.
+
 ## 3. Recommended Implementation Shape
 
 For the first implementation, keep the work inside the `rust-gvm` workspace rather than splitting immediately into a new standalone repo.
@@ -167,6 +191,14 @@ MCP first-slice tools:
 - `sessions.delete`
 - `system.get_version`
 
+First-slice comparison table:
+
+| Capability | REST endpoint | MCP tool | Same core operation required |
+| --- | --- | --- | --- |
+| create session | `POST /api/v1/sessions` | `sessions.create` | `sessions.create` |
+| delete session | `DELETE /api/v1/sessions/{token}` | `sessions.delete` | `sessions.delete` |
+| get version | `GET /api/v1/system/version` | `system.get_version` | `system.get_version` |
+
 Recommended MCP rule:
 
 - do not expose raw GMP passthrough
@@ -226,6 +258,7 @@ Deliverables:
 Minimum CI gates:
 
 - if an operation is marked REST-enabled but missing from REST bindings, fail
+- if an operation is marked gRPC-enabled but missing from gRPC bindings, fail
 - if an operation is marked MCP-enabled but missing from MCP tools, fail
 - if a parity-required operation exists on one shipped surface but not the other, fail
 

@@ -110,6 +110,30 @@ All three invoke the same core operation:
 
 The surface adapter translates into the canonical operation, not directly into GMP.
 
+### 4.2 Surface comparison table
+
+The customer-facing rule is:
+
+- `gRPC = REST = MCP`
+- the surface syntax changes
+- the reachable capability set does not
+
+| Canonical operation | REST surface | gRPC surface | MCP surface | Customer-visible outcome |
+| --- | --- | --- | --- | --- |
+| `sessions.create` | `POST /api/v1/sessions` | `CreateSession(CreateSessionRequest)` | tool `sessions.create` | create an authenticated gateway session |
+| `sessions.delete` | `DELETE /api/v1/sessions/{token}` | `DeleteSession(DeleteSessionRequest)` | tool `sessions.delete` | revoke an authenticated gateway session |
+| `system.get_version` | `GET /api/v1/system/version` | `GetVersion(GetVersionRequest)` | tool `system.get_version` | read gateway/backend version and capability metadata |
+| `targets.list` | `GET /api/v1/targets` | `ListTargets(ListTargetsRequest)` | tool `targets.list` | enumerate targets with the same filters/pagination semantics |
+| `targets.create` | `POST /api/v1/targets` | `CreateTarget(CreateTargetRequest)` | tool `targets.create` | create a target with the same validation and auth rules |
+| `tasks.list` | `GET /api/v1/tasks` | `ListTasks(ListTasksRequest)` | tool `tasks.list` | enumerate tasks with the same visibility and filtering rules |
+| `tasks.create` | `POST /api/v1/tasks` | `CreateTask(CreateTaskRequest)` | tool `tasks.create` | create a task through the same core workflow |
+| `tasks.start` | `POST /api/v1/tasks/{id}/start` | `StartTask(StartTaskRequest)` | tool `tasks.start` | start the same task with the same authorization/audit behavior |
+| `tasks.stop` | `POST /api/v1/tasks/{id}/stop` | `StopTask(StopTaskRequest)` | tool `tasks.stop` | stop the same task with the same authorization/audit behavior |
+| `reports.list` | `GET /api/v1/reports` | `ListReports(ListReportsRequest)` | tool `reports.list` | enumerate reports with the same filters and visibility |
+| `reports.get` | `GET /api/v1/reports/{id}` | `GetReport(GetReportRequest)` | tool `reports.get` | fetch the same report payload, subject to surface-specific presentation rules |
+
+This table is not just documentation. It should be derivable from the canonical operation catalog and enforced by CI so parity drift is impossible to miss.
+
 ## 5. Canonical Operation Catalog
 
 The cleanest way to preserve parity is to define a canonical command catalog inside the gateway core.
@@ -177,6 +201,21 @@ Examples:
 - `assets.list`
 
 This keeps MCP consistent with the gateway's typed surface rather than turning it into a raw transport wrapper.
+
+### 6.1.1 Endpoint versus toolset model
+
+The gateway should expose one capability inventory and let each adapter render it in its own idiom:
+
+| Concern | REST | gRPC | MCP |
+| --- | --- | --- | --- |
+| Discovery unit | endpoint | RPC method | tool |
+| Grouping model | resource/path-oriented | service/method-oriented | domain/tool-oriented |
+| Input contract | JSON request/route params/query params | protobuf request message | tool input schema |
+| Output contract | JSON response + status | protobuf response + status/details | tool result payload + structured error |
+| Long-running work | request + polling/resource follow-up | RPC + optional stream/status methods | task-oriented tools and follow-up tools/resources |
+| Customer expectation | call an endpoint | call a method | call a tool |
+
+Different interface shapes are acceptable. Different reachable capability sets are not.
 
 ### 6.2 Tool grouping
 
