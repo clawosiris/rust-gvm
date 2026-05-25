@@ -398,6 +398,8 @@ Why:
 - richer event streams
 - conformance automation for every exposed domain
 
+See [MCP Implementation Roadmap](mcp-implementation-roadmap.md) for the concrete phase sequencing, crate split recommendation, first vertical slice, and CI gates.
+
 ## 13. Recommendation
 
 Adopt the following architecture rule:
