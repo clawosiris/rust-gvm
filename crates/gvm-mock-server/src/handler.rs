@@ -403,11 +403,11 @@ impl SessionHandler {
             | "get_report_tls_certificates"
             | "get_report_errors"
             | "get_report_closed_cves" => return self.render_report_detail_response(cmd, store),
-            "get_timezones" => {
-                return "<get_timezones_response status=\"200\" status_text=\"OK\"><timezone>UTC</timezone><timezone><name>Europe/Berlin</name><offset>+01:00</offset></timezone></get_timezones_response>".as_bytes().to_vec();
-            }
-            "get_credential_stores" => {
-                return "<get_credential_stores_response status=\"200\" status_text=\"OK\"><credential_store id=\"local\"><name>Local credential store</name><type>local</type></credential_store><credential_store_count>1<filtered>1</filtered></credential_store_count></get_credential_stores_response>".as_bytes().to_vec();
+            "get_timezones" | "get_credential_stores" => {
+                return FixtureStore::new(self.version)
+                    .get(&cmd.name)
+                    .expect("built-in fixture present")
+                    .into_bytes();
             }
             _ => {}
         }

@@ -25,10 +25,14 @@ async fn send_recv(stream: &mut UnixStream, xml: &[u8]) -> Response {
 }
 
 async fn server() -> Option<(MockGmpServer, UnixStream)> {
+    server_with_version(GmpVersion::V22_5).await
+}
+
+async fn server_with_version(version: GmpVersion) -> Option<(MockGmpServer, UnixStream)> {
     let s = build_server(
         MockGmpServer::builder()
             .mode(ServerMode::Fixture)
-            .version(GmpVersion::V22_5)
+            .version(version)
             .unix_socket_auto(),
     )
     .await?;
@@ -129,7 +133,7 @@ async fn fixture_get_report_drill_downs() {
         ("get_report_errors", "<error "),
         ("get_report_closed_cves", "<closed_cve "),
     ] {
-        let Some((server, mut s)) = server().await else {
+        let Some((server, mut s)) = server_with_version(GmpVersion::V22_8).await else {
             return;
         };
         let request = format!("<{command} report_id=\"report-1\"/>");
@@ -142,7 +146,7 @@ async fn fixture_get_report_drill_downs() {
 
 #[tokio::test]
 async fn fixture_get_timezones_and_credential_stores() {
-    let Some((server, mut s)) = server().await else {
+    let Some((server, mut s)) = server_with_version(GmpVersion::V22_8).await else {
         return;
     };
 
