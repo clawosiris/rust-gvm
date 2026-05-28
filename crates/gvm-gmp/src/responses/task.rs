@@ -319,4 +319,43 @@ mod tests {
         assert!(!task.meta.in_use);
         assert!(!task.meta.writable);
     }
+
+    #[test]
+    fn treats_empty_schedule_id_as_absent() {
+        let response = Response::from(
+            r#"<get_tasks_response status="200" status_text="OK">
+                <task id="38ea4c04-fc59-4d58-9a89-3acd40587ce5">
+                    <name>Discovery task</name>
+                    <status>New</status>
+                    <schedule id=""><name></name></schedule>
+                </task>
+                <task_count>1<filtered>1</filtered></task_count>
+            </get_tasks_response>"#,
+        );
+
+        let parsed = GetTasksResponse::from_response(&response).expect("tasks parse");
+
+        assert_eq!(parsed.items.len(), 1);
+        assert_eq!(parsed.items[0].schedule, None);
+    }
+
+    #[test]
+    fn rejects_invalid_non_empty_schedule_id() {
+        let response = Response::from(
+            r#"<get_tasks_response status="200" status_text="OK">
+                <task id="task-1">
+                    <name>Discovery task</name>
+                    <schedule id="not valid"><name>Weekly</name></schedule>
+                </task>
+            </get_tasks_response>"#,
+        );
+
+        let error = GetTasksResponse::from_response(&response).expect_err("error expected");
+
+        assert!(matches!(
+            error,
+            ParseError::InvalidValue { field, value }
+                if field == "schedule.id" && value == "not valid"
+        ));
+    }
 }
