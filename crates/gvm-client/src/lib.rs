@@ -9,6 +9,7 @@
 
 #![forbid(unsafe_code)]
 
+mod capabilities;
 mod error;
 mod typed;
 mod version;
@@ -26,19 +27,22 @@ use gvm_gmp::commands::reports::{
     get_report_ports,
 };
 use gvm_gmp::commands::version::get_version;
+use gvm_gmp::responses::features::GetFeaturesResponse;
 use gvm_gmp::types::{EntityId, GmpVersion};
 use gvm_protocol::{Request, Response};
 
+pub use capabilities::{
+    capability_snapshot_for_version, command_supported, minimum_version_for_command,
+    required_version_label, CapabilityEvidence, CapabilitySupport, CommandKind,
+    GvmdBackendDescriptor, GvmdCapability, GvmdCapabilitySnapshot, SemanticKind, SupportState,
+};
 pub use error::GvmError;
 pub use gvm_gmp::commands::integration_configs::{
     GetIntegrationConfigsOpts, ModifyIntegrationConfigOpts,
 };
 pub use gvm_gmp::commands::report_configs::ModifyReportConfigOpts;
 pub use gvm_gmp::commands::reports::GetReportDetailsOpts;
-pub use version::{
-    command_supported, map_supported_version, minimum_version_for_command, parse_version_text,
-    required_version_label,
-};
+pub use version::{map_supported_version, parse_version_text};
 
 /// High-level async GMP client over an abstract transport.
 #[derive(Debug)]
@@ -73,6 +77,86 @@ impl<C: GvmConnection> GmpClient<C> {
     #[must_use]
     pub fn version(&self) -> GmpVersion {
         self.version
+    }
+
+    /// Discover a reusable backend capability snapshot.
+    ///
+    /// The returned snapshot always includes version-table facts derived from
+    /// the negotiated GMP version. When the backend is new enough to expose
+    /// `get_features`, the client also attempts a live probe and records the
+    /// evidence source explicitly.
+    ///
+    /// # Errors
+    /// Returns an error if transport fails or a successful probe response
+    /// cannot be parsed.
+    pub async fn discover_capabilities(&mut self) -> Result<GvmdCapabilitySnapshot, GvmError> {
+        let mut snapshot = capability_snapshot_for_version(self.version);
+
+        if !command_supported("get_features", self.version) {
+            return Ok(snapshot);
+        }
+
+        let response = self.send(get_features()).await?;
+        let status = response.status_code().unwrap_or(0);
+        match status {
+            200..=299 => {
+                snapshot.capabilities.insert(
+                    GvmdCapability::Command(CommandKind::GetFeatures),
+                    CapabilitySupport::new(
+                        SupportState::Supported,
+                        CapabilityEvidence::ExplicitProbe,
+                    )
+                    .with_detail("get_features probe succeeded"),
+                );
+
+                let parsed = GetFeaturesResponse::from_response(&response)?;
+                for feature in parsed.features {
+                    let state = if feature.enabled {
+                        SupportState::Supported
+                    } else {
+                        SupportState::Unsupported
+                    };
+                    snapshot.capabilities.insert(
+                        GvmdCapability::Semantic(SemanticKind::BackendFeature(feature.name)),
+                        CapabilitySupport::new(state, CapabilityEvidence::FeatureCommand),
+                    );
+                }
+            }
+            400 if response
+                .status_text()
+                .as_deref()
+                .is_some_and(|text| text.contains("get_features")) =>
+            {
+                snapshot.capabilities.insert(
+                    GvmdCapability::Command(CommandKind::GetFeatures),
+                    CapabilitySupport::new(
+                        SupportState::Unsupported,
+                        CapabilityEvidence::ExplicitProbe,
+                    )
+                    .with_detail(
+                        response
+                            .status_text()
+                            .unwrap_or_else(|| "get_features probe rejected".to_string()),
+                    ),
+                );
+            }
+            _ => {
+                snapshot.capabilities.insert(
+                    GvmdCapability::Command(CommandKind::GetFeatures),
+                    CapabilitySupport::new(
+                        SupportState::Unknown,
+                        CapabilityEvidence::ExplicitProbe,
+                    )
+                    .with_detail(
+                        response
+                            .status_text()
+                            .unwrap_or_else(|| format!("probe returned status {status}")),
+                    ),
+                );
+            }
+        }
+
+        Ok(snapshot)
     }
 
     /// Send a request and return the raw parsed response.
@@ -140,12 +224,11 @@ impl<C: GvmConnection> GmpClient<C> {
             return Ok(());
         };
 
-        if version::command_supported(command_name, self.version) {
+        if command_supported(command_name, self.version) {
             return Ok(());
         }
 
-        let required =
-            version::required_version_label(command_name).unwrap_or("a newer GMP version");
+        let required = required_version_label(command_name).unwrap_or("a newer GMP version");
 
         Err(GvmError::UnsupportedCommand {
             command: command_name.to_string(),
@@ -472,6 +555,15 @@ impl<C: GvmConnection> GmpVersioned<C> {
     #[must_use]
     pub fn version(&self) -> GmpVersion {
         self.inner().version()
+    }
+
+    /// Discover a reusable backend capability snapshot.
+    ///
+    /// # Errors
+    /// Returns an error if transport fails or a successful probe response
+    /// cannot be parsed.
+    pub async fn discover_capabilities(&mut self) -> Result<GvmdCapabilitySnapshot, GvmError> {
+        self.inner_mut().discover_capabilities().await
     }
 
     /// Send a request and return the raw parsed response.

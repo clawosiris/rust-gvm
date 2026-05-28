@@ -7,42 +7,6 @@ use gvm_gmp::types::GmpVersion;
 
 use crate::GvmError;
 
-/// Minimum GMP version required for a command, when version-gated.
-#[must_use]
-pub fn minimum_version_for_command(command_name: &str) -> Option<GmpVersion> {
-    match command_name {
-        "create_report_config"
-        | "delete_report_config"
-        | "get_report_configs"
-        | "modify_report_config"
-        | "get_features" => Some(GmpVersion(22, 6)),
-        "get_integration_configs"
-        | "modify_integration_config"
-        | "get_report_hosts"
-        | "get_report_ports"
-        | "get_report_applications"
-        | "get_report_operating_systems"
-        | "get_report_cves" => Some(GmpVersion(22, 8)),
-        _ => None,
-    }
-}
-
-/// Return whether a command is supported by the negotiated version.
-#[must_use]
-pub fn command_supported(command_name: &str, version: GmpVersion) -> bool {
-    minimum_version_for_command(command_name).map_or(true, |minimum| version >= minimum)
-}
-
-/// Human-readable minimum version label for a version-gated command.
-#[must_use]
-pub fn required_version_label(command_name: &str) -> Option<&'static str> {
-    match minimum_version_for_command(command_name) {
-        Some(GmpVersion(22, 6)) => Some("22.6"),
-        Some(GmpVersion(22, 8)) => Some("22.8"),
-        Some(_) | None => None,
-    }
-}
-
 /// Parse a GMP version string into a major/minor pair.
 ///
 /// Accepts `major.minor` and optional `major.minor.patch` strings.
@@ -94,6 +58,7 @@ pub fn map_supported_version(version: GmpVersion) -> Result<GmpVersion, GvmError
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::capabilities;
 
     #[test]
     fn parses_major_minor() {
@@ -169,13 +134,28 @@ mod tests {
 
     #[test]
     fn command_support_respects_version_gates() {
-        assert!(command_supported("get_tasks", GmpVersion(22, 4)));
-        assert!(!command_supported("get_features", GmpVersion(22, 5)));
-        assert!(command_supported("get_features", GmpVersion(22, 6)));
-        assert!(!command_supported("get_report_hosts", GmpVersion(22, 7)));
-        assert!(command_supported("get_report_hosts", GmpVersion(22, 8)));
+        assert!(capabilities::command_supported(
+            "get_tasks",
+            GmpVersion(22, 4)
+        ));
+        assert!(!capabilities::command_supported(
+            "get_features",
+            GmpVersion(22, 5)
+        ));
+        assert!(capabilities::command_supported(
+            "get_features",
+            GmpVersion(22, 6)
+        ));
+        assert!(!capabilities::command_supported(
+            "get_report_hosts",
+            GmpVersion(22, 7)
+        ));
+        assert!(capabilities::command_supported(
+            "get_report_hosts",
+            GmpVersion(22, 8)
+        ));
         assert_eq!(
-            minimum_version_for_command("get_report_cves"),
+            capabilities::minimum_version_for_command("get_report_cves"),
             Some(GmpVersion(22, 8))
         );
     }

@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
+//! Integration tests for the high-level GMP client.
+
 #![cfg(feature = "unix-socket-tests")]
 #![allow(missing_docs)]
 
-use gvm_client::{GmpClient, GmpNextCommands, GmpVersioned, GvmError};
+use gvm_client::{
+    CapabilityEvidence, CommandKind, GmpClient, GmpNextCommands, GmpVersioned, GvmError,
+    GvmdCapability, SemanticKind, SupportState,
+};
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::reports::get_report_hosts;
@@ -56,6 +61,29 @@ async fn fixture_server_with_version_response(version_xml: &str) -> Option<MockG
                 "<get_version_response status=\"200\" status_text=\"OK\"><version>{version_xml}</version></get_version_response>"
             ),
         )
+        .build()
+        .await
+    {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("server should start: {error}"),
+    }
+}
+
+async fn fixture_server_with_features(
+    version_xml: &str,
+    features_xml: &str,
+) -> Option<MockGmpServer> {
+    match MockGmpServer::builder()
+        .mode(ServerMode::Fixture)
+        .unix_socket(socket_path())
+        .override_response(
+            "get_version",
+            &format!(
+                "<get_version_response status=\"200\" status_text=\"OK\"><version>{version_xml}</version></get_version_response>"
+            ),
+        )
+        .override_response("get_features", features_xml)
         .build()
         .await
     {
@@ -152,6 +180,94 @@ async fn authenticate_succeeds() {
         response.root_element_name().as_deref(),
         Some("authenticate_response")
     );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn discover_capabilities_uses_version_fallback_for_older_backends() {
+    let Some(server) = stateful_server_with_version(MockVersion::V22_5).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    let snapshot = client
+        .discover_capabilities()
+        .await
+        .expect("capability discovery should succeed");
+
+    let get_features = snapshot
+        .capabilities
+        .get(&GvmdCapability::Command(CommandKind::GetFeatures))
+        .expect("get_features capability");
+    assert_eq!(get_features.state, SupportState::Unsupported);
+    assert_eq!(get_features.source, CapabilityEvidence::VersionTable);
+    assert!(!snapshot
+        .capabilities
+        .contains_key(&GvmdCapability::Semantic(SemanticKind::BackendFeature(
+            "SCAP".to_string()
+        ))));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn discover_capabilities_records_probe_and_feature_evidence() {
+    let Some(server) = fixture_server_with_features(
+        "22.8",
+        r#"<get_features_response status="200" status_text="OK">
+            <feature><name>SCAP</name><_enabled>1</_enabled></feature>
+            <feature><name>ENTERPRISE</name><_enabled>0</_enabled></feature>
+        </get_features_response>"#,
+    )
+    .await
+    else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    let snapshot = client
+        .discover_capabilities()
+        .await
+        .expect("capability discovery should succeed");
+
+    let get_features = snapshot
+        .capabilities
+        .get(&GvmdCapability::Command(CommandKind::GetFeatures))
+        .expect("get_features capability");
+    assert_eq!(get_features.state, SupportState::Supported);
+    assert_eq!(get_features.source, CapabilityEvidence::ExplicitProbe);
+
+    let get_report_hosts = snapshot
+        .capabilities
+        .get(&GvmdCapability::Command(CommandKind::GetReportHosts))
+        .expect("get_report_hosts capability");
+    assert_eq!(get_report_hosts.state, SupportState::Supported);
+    assert_eq!(get_report_hosts.source, CapabilityEvidence::VersionTable);
+
+    let scap = snapshot
+        .capabilities
+        .get(&GvmdCapability::Semantic(SemanticKind::BackendFeature(
+            "SCAP".to_string(),
+        )))
+        .expect("SCAP feature");
+    assert_eq!(scap.state, SupportState::Supported);
+    assert_eq!(scap.source, CapabilityEvidence::FeatureCommand);
+
+    let enterprise = snapshot
+        .capabilities
+        .get(&GvmdCapability::Semantic(SemanticKind::BackendFeature(
+            "ENTERPRISE".to_string(),
+        )))
+        .expect("ENTERPRISE feature");
+    assert_eq!(enterprise.state, SupportState::Unsupported);
+    assert_eq!(enterprise.source, CapabilityEvidence::FeatureCommand);
 
     server.shutdown().await;
 }
