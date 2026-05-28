@@ -313,16 +313,18 @@ pub(crate) fn parse_named_entity(
 ) -> Result<Option<NamedEntity>, ParseError> {
     node.child(field)
         .map(|child| {
-            let id = parse_entity_id(
-                child
-                    .attr("id")
-                    .ok_or_else(|| ParseError::MissingElement(format!("{field}.id")))?,
-                &format!("{field}.id"),
-            )?;
+            let Some(raw_id) = child.attr("id") else {
+                return Err(ParseError::MissingElement(format!("{field}.id")));
+            };
+            if raw_id.is_empty() {
+                return Ok(None);
+            }
+            let id = parse_entity_id(raw_id, &format!("{field}.id"))?;
             let name = child.required_child_text("name")?;
-            Ok(NamedEntity { id, name })
+            Ok(Some(NamedEntity { id, name }))
         })
         .transpose()
+        .map(Option::flatten)
 }
 
 pub(crate) fn parse_entity_meta(node: &XmlNode) -> Result<EntityMeta, ParseError> {
@@ -348,4 +350,59 @@ pub(crate) fn parse_entity_meta(node: &XmlNode) -> Result<EntityMeta, ParseError
             .transpose()?
             .unwrap_or(false),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entity_node(id: Option<&str>, name: &str) -> XmlNode {
+        let mut attributes = HashMap::new();
+        if let Some(id) = id {
+            attributes.insert("id".to_string(), id.to_string());
+        }
+        XmlNode {
+            name: "schedule".to_string(),
+            attributes,
+            text: String::new(),
+            children: vec![XmlNode {
+                name: "name".to_string(),
+                attributes: HashMap::new(),
+                text: name.to_string(),
+                children: Vec::new(),
+            }],
+        }
+    }
+
+    #[test]
+    fn parse_named_entity_treats_empty_id_as_absent() {
+        let root = XmlNode {
+            name: "task".to_string(),
+            attributes: HashMap::new(),
+            text: String::new(),
+            children: vec![entity_node(Some(""), "")],
+        };
+
+        let parsed = parse_named_entity(&root, "schedule").expect("empty id parses");
+
+        assert_eq!(parsed, None);
+    }
+
+    #[test]
+    fn parse_named_entity_rejects_invalid_non_empty_id() {
+        let root = XmlNode {
+            name: "task".to_string(),
+            attributes: HashMap::new(),
+            text: String::new(),
+            children: vec![entity_node(Some("not valid"), "Weekly")],
+        };
+
+        let error = parse_named_entity(&root, "schedule").expect_err("invalid id should fail");
+
+        assert!(matches!(
+            error,
+            ParseError::InvalidValue { field, value }
+                if field == "schedule.id" && value == "not valid"
+        ));
+    }
 }
