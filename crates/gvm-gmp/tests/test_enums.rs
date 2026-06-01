@@ -35,6 +35,10 @@ fn test_alertevent_updatedsecinfo_from_str() {
         AlertEvent::from_str("updated_secinfo").unwrap(),
         AlertEvent::UpdatedSecInfo
     );
+    assert_eq!(
+        AlertEvent::from_str("Updated SecInfo arrived").unwrap(),
+        AlertEvent::UpdatedSecInfo
+    );
 }
 #[test]
 fn test_alertevent_newsecinfo_as_gmp_str() {
@@ -44,6 +48,10 @@ fn test_alertevent_newsecinfo_as_gmp_str() {
 fn test_alertevent_newsecinfo_from_str() {
     assert_eq!(
         AlertEvent::from_str("new_secinfo").unwrap(),
+        AlertEvent::NewSecInfo
+    );
+    assert_eq!(
+        AlertEvent::from_str("New SecInfo arrived").unwrap(),
         AlertEvent::NewSecInfo
     );
 }
@@ -165,6 +173,10 @@ fn test_alertmethod_sendemail_from_str() {
         AlertMethod::from_str("send_email").unwrap(),
         AlertMethod::SendEmail
     );
+    assert_eq!(
+        AlertMethod::from_str("Send").unwrap(),
+        AlertMethod::SendEmail
+    );
 }
 #[test]
 fn test_alertmethod_smb_as_gmp_str() {
@@ -236,6 +248,10 @@ fn test_alertmethod_tippingpoint_from_str() {
         AlertMethod::from_str("tippingpoint").unwrap(),
         AlertMethod::TippingPoint
     );
+    assert_eq!(
+        AlertMethod::from_str("TippingPoint SMS").unwrap(),
+        AlertMethod::TippingPoint
+    );
 }
 #[test]
 fn test_alertmethod_verinicece_as_gmp_str() {
@@ -245,6 +261,10 @@ fn test_alertmethod_verinicece_as_gmp_str() {
 fn test_alertmethod_verinicece_from_str() {
     assert_eq!(
         AlertMethod::from_str("verinice_ce").unwrap(),
+        AlertMethod::VeriniceCe
+    );
+    assert_eq!(
+        AlertMethod::from_str("verinice Connector").unwrap(),
         AlertMethod::VeriniceCe
     );
 }
@@ -267,6 +287,10 @@ fn test_alertmethod_alemba_as_gmp_str() {
 fn test_alertmethod_alemba_from_str() {
     assert_eq!(
         AlertMethod::from_str("alemba").unwrap(),
+        AlertMethod::Alemba
+    );
+    assert_eq!(
+        AlertMethod::from_str("Alemba vFire").unwrap(),
         AlertMethod::Alemba
     );
 }

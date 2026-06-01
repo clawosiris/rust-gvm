@@ -76,8 +76,8 @@ impl AlertEvent {
     pub const fn as_alert_name(self) -> &'static str {
         match self {
             Self::TaskRunStatusChanged => "Task run status changed",
-            Self::UpdatedSecInfo => "Updated SecInfo",
-            Self::NewSecInfo => "New SecInfo",
+            Self::UpdatedSecInfo => "Updated SecInfo arrived",
+            Self::NewSecInfo => "New SecInfo arrived",
         }
     }
 }
@@ -88,8 +88,16 @@ impl FromStr for AlertEvent {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "task_run_status_changed" | "Task run status changed" => Ok(Self::TaskRunStatusChanged),
-            "updated_secinfo" | "Updated SecInfo" | "Updated Secinfo" => Ok(Self::UpdatedSecInfo),
-            "new_secinfo" | "New SecInfo" | "New Secinfo" => Ok(Self::NewSecInfo),
+            "updated_secinfo"
+            | "Updated SecInfo arrived"
+            | "Updated Secinfo arrived"
+            | "Updated SecInfo"
+            | "Updated Secinfo" => Ok(Self::UpdatedSecInfo),
+            "new_secinfo"
+            | "New SecInfo arrived"
+            | "New Secinfo arrived"
+            | "New SecInfo"
+            | "New Secinfo" => Ok(Self::NewSecInfo),
             _ => Err(EnumParseError {
                 enum_name: "AlertEvent",
                 value: s.to_string(),
@@ -218,16 +226,16 @@ impl AlertMethod {
             Self::Email => "Email",
             Self::HttpGet => "HTTP Get",
             Self::Scp => "SCP",
-            Self::SendEmail => "Send Email",
+            Self::SendEmail => "Send",
             Self::Smb => "SMB",
             Self::Snmp => "SNMP",
             Self::SourcefireConnector => "Sourcefire Connector",
             Self::StartTask => "Start Task",
-            Self::SysLog => "SysLog",
-            Self::TippingPoint => "TippingPoint",
-            Self::VeriniceCe => "Verinice CE",
-            Self::VeriniceNet => "Verinice Net",
-            Self::Alemba => "Alemba",
+            Self::SysLog => "Syslog",
+            Self::TippingPoint => "TippingPoint SMS",
+            Self::VeriniceCe => "verinice Connector",
+            Self::VeriniceNet => "verinice Connector",
+            Self::Alemba => "Alemba vFire",
         }
     }
 }
@@ -240,16 +248,17 @@ impl FromStr for AlertMethod {
             "email" | "Email" => Ok(Self::Email),
             "http_get" | "HTTP Get" | "Http Get" => Ok(Self::HttpGet),
             "scp" | "SCP" => Ok(Self::Scp),
-            "send_email" | "Send Email" | "SendEmail" => Ok(Self::SendEmail),
+            "send_email" | "Send" | "Send Email" | "SendEmail" => Ok(Self::SendEmail),
             "smb" | "SMB" => Ok(Self::Smb),
             "snmp" | "SNMP" => Ok(Self::Snmp),
             "sourcefire_connector" | "Sourcefire Connector" => Ok(Self::SourcefireConnector),
             "start_task" | "Start Task" => Ok(Self::StartTask),
             "syslog" | "SysLog" | "Syslog" => Ok(Self::SysLog),
-            "tippingpoint" | "TippingPoint" => Ok(Self::TippingPoint),
-            "verinice_ce" | "Verinice CE" => Ok(Self::VeriniceCe),
+            "tippingpoint" | "TippingPoint" | "TippingPoint SMS" => Ok(Self::TippingPoint),
+            // gvmd collapses the legacy Verinice variants into one display name.
+            "verinice_ce" | "verinice Connector" | "Verinice CE" => Ok(Self::VeriniceCe),
             "verinice_net" | "Verinice Net" => Ok(Self::VeriniceNet),
-            "alemba" | "Alemba" => Ok(Self::Alemba),
+            "alemba" | "Alemba" | "Alemba vFire" => Ok(Self::Alemba),
             _ => Err(EnumParseError {
                 enum_name: "AlertMethod",
                 value: s.to_string(),

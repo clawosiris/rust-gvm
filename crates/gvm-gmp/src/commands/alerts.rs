@@ -165,7 +165,7 @@ mod tests {
         ));
         assert_eq!(
             rendered,
-            "<modify_alert alert_id=\"a1\"><comment>updated</comment><method>SysLog</method></modify_alert>"
+            "<modify_alert alert_id=\"a1\"><comment>updated</comment><method>Syslog</method></modify_alert>"
         );
         assert_eq!(
             xml(delete_alert(&id("a1"), false)),

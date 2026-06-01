@@ -54,7 +54,7 @@ fn test_alert_get_modify_delete_and_test() {
                 ..Default::default()
             }
         )),
-        "<modify_alert alert_id=\"a1\"><event>Task run status changed</event><condition>Always</condition><method>SysLog</method></modify_alert>"
+        "<modify_alert alert_id=\"a1\"><event>Task run status changed</event><condition>Always</condition><method>Syslog</method></modify_alert>"
     );
     assert_eq!(
         xml(delete_alert(&id("a1"), false)),
