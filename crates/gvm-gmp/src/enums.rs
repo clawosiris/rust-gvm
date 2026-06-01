@@ -9,6 +9,7 @@ macro_rules! gmp_enum {
     ($name:ident { $($variant:ident => $value:literal),+ $(,)? }) => {
         #[doc = concat!("GMP enum values for `", stringify!($name), "`.")]
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         pub enum $name {
             $(#[doc = concat!("Maps to the GMP wire value `", $value, "`.")] $variant),+
         }
@@ -47,33 +48,216 @@ pub struct EnumParseError {
     value: String,
 }
 
-gmp_enum!(AlertEvent {
-    TaskRunStatusChanged => "task_run_status_changed",
-    UpdatedSecInfo => "updated_secinfo",
-    NewSecInfo => "new_secinfo"
-});
-gmp_enum!(AlertCondition {
-    Always => "always",
-    FilterCountAtLeast => "filter_count_at_least",
-    FilterCountChanged => "filter_count_changed",
-    SeverityAtLeast => "severity_at_least",
-    SeverityChanged => "severity_changed"
-});
-gmp_enum!(AlertMethod {
-    Email => "email",
-    HttpGet => "http_get",
-    Scp => "scp",
-    SendEmail => "send_email",
-    Smb => "smb",
-    Snmp => "snmp",
-    SourcefireConnector => "sourcefire_connector",
-    StartTask => "start_task",
-    SysLog => "syslog",
-    TippingPoint => "tippingpoint",
-    VeriniceCe => "verinice_ce",
-    VeriniceNet => "verinice_net",
-    Alemba => "alemba"
-});
+/// Stable alert event values plus gvmd-compatible display-name aliases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum AlertEvent {
+    /// Alert on task run status changes.
+    TaskRunStatusChanged,
+    /// Alert on updated security information.
+    UpdatedSecInfo,
+    /// Alert on new security information.
+    NewSecInfo,
+}
+
+impl AlertEvent {
+    /// Returns the stable GMP-facing value used by downstream consumers.
+    #[must_use]
+    pub const fn as_gmp_str(self) -> &'static str {
+        match self {
+            Self::TaskRunStatusChanged => "task_run_status_changed",
+            Self::UpdatedSecInfo => "updated_secinfo",
+            Self::NewSecInfo => "new_secinfo",
+        }
+    }
+
+    /// Returns the gvmd-compatible display name accepted by alert create/modify.
+    #[must_use]
+    pub const fn as_alert_name(self) -> &'static str {
+        match self {
+            Self::TaskRunStatusChanged => "Task run status changed",
+            Self::UpdatedSecInfo => "Updated SecInfo",
+            Self::NewSecInfo => "New SecInfo",
+        }
+    }
+}
+
+impl FromStr for AlertEvent {
+    type Err = EnumParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "task_run_status_changed" | "Task run status changed" => Ok(Self::TaskRunStatusChanged),
+            "updated_secinfo" | "Updated SecInfo" | "Updated Secinfo" => Ok(Self::UpdatedSecInfo),
+            "new_secinfo" | "New SecInfo" | "New Secinfo" => Ok(Self::NewSecInfo),
+            _ => Err(EnumParseError {
+                enum_name: "AlertEvent",
+                value: s.to_string(),
+            }),
+        }
+    }
+}
+
+/// Stable alert condition values plus gvmd-compatible display-name aliases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum AlertCondition {
+    /// Trigger the alert unconditionally.
+    Always,
+    /// Trigger when the filter count reaches at least a threshold.
+    FilterCountAtLeast,
+    /// Trigger when the filter count changes.
+    FilterCountChanged,
+    /// Trigger when severity reaches at least a threshold.
+    SeverityAtLeast,
+    /// Trigger when severity changes.
+    SeverityChanged,
+}
+
+impl AlertCondition {
+    /// Returns the stable GMP-facing value used by downstream consumers.
+    #[must_use]
+    pub const fn as_gmp_str(self) -> &'static str {
+        match self {
+            Self::Always => "always",
+            Self::FilterCountAtLeast => "filter_count_at_least",
+            Self::FilterCountChanged => "filter_count_changed",
+            Self::SeverityAtLeast => "severity_at_least",
+            Self::SeverityChanged => "severity_changed",
+        }
+    }
+
+    /// Returns the gvmd-compatible display name accepted by alert create/modify.
+    #[must_use]
+    pub const fn as_alert_name(self) -> &'static str {
+        match self {
+            Self::Always => "Always",
+            Self::FilterCountAtLeast => "Filter count at least",
+            Self::FilterCountChanged => "Filter count changed",
+            Self::SeverityAtLeast => "Severity at least",
+            Self::SeverityChanged => "Severity changed",
+        }
+    }
+}
+
+impl FromStr for AlertCondition {
+    type Err = EnumParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "always" | "Always" => Ok(Self::Always),
+            "filter_count_at_least" | "Filter count at least" => Ok(Self::FilterCountAtLeast),
+            "filter_count_changed" | "Filter count changed" => Ok(Self::FilterCountChanged),
+            "severity_at_least" | "Severity at least" => Ok(Self::SeverityAtLeast),
+            "severity_changed" | "Severity changed" => Ok(Self::SeverityChanged),
+            _ => Err(EnumParseError {
+                enum_name: "AlertCondition",
+                value: s.to_string(),
+            }),
+        }
+    }
+}
+
+/// Stable alert method values plus gvmd-compatible display-name aliases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum AlertMethod {
+    /// Deliver the alert by email.
+    Email,
+    /// Deliver the alert with an HTTP GET request.
+    HttpGet,
+    /// Deliver the alert over SCP.
+    Scp,
+    /// Deliver the alert with the gvmd Send Email method.
+    SendEmail,
+    /// Deliver the alert over SMB.
+    Smb,
+    /// Deliver the alert over SNMP.
+    Snmp,
+    /// Deliver the alert to a Sourcefire connector.
+    SourcefireConnector,
+    /// Trigger a task start action.
+    StartTask,
+    /// Deliver the alert to Syslog.
+    SysLog,
+    /// Deliver the alert to TippingPoint.
+    TippingPoint,
+    /// Deliver the alert to Verinice CE.
+    VeriniceCe,
+    /// Deliver the alert to Verinice Net.
+    VeriniceNet,
+    /// Deliver the alert to Alemba.
+    Alemba,
+}
+
+impl AlertMethod {
+    /// Returns the stable GMP-facing value used by downstream consumers.
+    #[must_use]
+    pub const fn as_gmp_str(self) -> &'static str {
+        match self {
+            Self::Email => "email",
+            Self::HttpGet => "http_get",
+            Self::Scp => "scp",
+            Self::SendEmail => "send_email",
+            Self::Smb => "smb",
+            Self::Snmp => "snmp",
+            Self::SourcefireConnector => "sourcefire_connector",
+            Self::StartTask => "start_task",
+            Self::SysLog => "syslog",
+            Self::TippingPoint => "tippingpoint",
+            Self::VeriniceCe => "verinice_ce",
+            Self::VeriniceNet => "verinice_net",
+            Self::Alemba => "alemba",
+        }
+    }
+
+    /// Returns the gvmd-compatible display name accepted by alert create/modify.
+    #[must_use]
+    pub const fn as_alert_name(self) -> &'static str {
+        match self {
+            Self::Email => "Email",
+            Self::HttpGet => "HTTP Get",
+            Self::Scp => "SCP",
+            Self::SendEmail => "Send Email",
+            Self::Smb => "SMB",
+            Self::Snmp => "SNMP",
+            Self::SourcefireConnector => "Sourcefire Connector",
+            Self::StartTask => "Start Task",
+            Self::SysLog => "SysLog",
+            Self::TippingPoint => "TippingPoint",
+            Self::VeriniceCe => "Verinice CE",
+            Self::VeriniceNet => "Verinice Net",
+            Self::Alemba => "Alemba",
+        }
+    }
+}
+
+impl FromStr for AlertMethod {
+    type Err = EnumParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "email" | "Email" => Ok(Self::Email),
+            "http_get" | "HTTP Get" | "Http Get" => Ok(Self::HttpGet),
+            "scp" | "SCP" => Ok(Self::Scp),
+            "send_email" | "Send Email" | "SendEmail" => Ok(Self::SendEmail),
+            "smb" | "SMB" => Ok(Self::Smb),
+            "snmp" | "SNMP" => Ok(Self::Snmp),
+            "sourcefire_connector" | "Sourcefire Connector" => Ok(Self::SourcefireConnector),
+            "start_task" | "Start Task" => Ok(Self::StartTask),
+            "syslog" | "SysLog" | "Syslog" => Ok(Self::SysLog),
+            "tippingpoint" | "TippingPoint" => Ok(Self::TippingPoint),
+            "verinice_ce" | "Verinice CE" => Ok(Self::VeriniceCe),
+            "verinice_net" | "Verinice Net" => Ok(Self::VeriniceNet),
+            "alemba" | "Alemba" => Ok(Self::Alemba),
+            _ => Err(EnumParseError {
+                enum_name: "AlertMethod",
+                value: s.to_string(),
+            }),
+        }
+    }
+}
+
 gmp_enum!(AliveTest {
     ScanConfigDefault => "Scan Config Default",
     IcmpPing => "ICMP Ping",

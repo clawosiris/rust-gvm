@@ -30,7 +30,7 @@ fn test_create_alert_with_all_optionals() {
                 filter_id: Some(id("f1")),
             }
         )),
-        "<create_alert><name>a</name><comment>c</comment><event>task_run_status_changed</event><condition>always</condition><method>email</method><filter id=\"f1\"/></create_alert>"
+        "<create_alert><name>a</name><comment>c</comment><event>Task run status changed</event><condition>Always</condition><method>Email</method><filter id=\"f1\"/></create_alert>"
     );
 }
 
@@ -43,6 +43,18 @@ fn test_alert_get_modify_delete_and_test() {
     assert_eq!(
         xml(get_alert(&id("a1"))),
         "<get_alerts alert_id=\"a1\" details=\"1\"/>"
+    );
+    assert_eq!(
+        xml(modify_alert(
+            &id("a1"),
+            AlertOpts {
+                event: Some(AlertEvent::TaskRunStatusChanged),
+                condition: Some(AlertCondition::Always),
+                method: Some(AlertMethod::SysLog),
+                ..Default::default()
+            }
+        )),
+        "<modify_alert alert_id=\"a1\"><event>Task run status changed</event><condition>Always</condition><method>SysLog</method></modify_alert>"
     );
     assert_eq!(
         xml(delete_alert(&id("a1"), false)),

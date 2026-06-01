@@ -99,13 +99,13 @@ pub fn test_alert(alert_id: &EntityId) -> impl Request {
 fn add_alert_body(cmd: &mut XmlCommand, opts: &AlertOpts) {
     add_text_element(cmd, "comment", opts.comment.as_deref());
     if let Some(event) = opts.event {
-        cmd.add_element_with_text("event", event.as_gmp_str());
+        cmd.add_element_with_text("event", event.as_alert_name());
     }
     if let Some(condition) = opts.condition {
-        cmd.add_element_with_text("condition", condition.as_gmp_str());
+        cmd.add_element_with_text("condition", condition.as_alert_name());
     }
     if let Some(method) = opts.method {
-        cmd.add_element_with_text("method", method.as_gmp_str());
+        cmd.add_element_with_text("method", method.as_alert_name());
     }
     if let Some(filter_id) = opts.filter_id.as_ref() {
         cmd.add_element("filter")
@@ -134,7 +134,9 @@ mod tests {
                 ..Default::default()
             },
         ));
-        assert!(rendered.contains("<event>task_run_status_changed</event>"));
+        assert!(rendered.contains("<event>Task run status changed</event>"));
+        assert!(rendered.contains("<condition>Always</condition>"));
+        assert!(rendered.contains("<method>Email</method>"));
         assert!(rendered.contains("<filter id=\"f1\"/>"));
         assert_eq!(
             xml(clone_alert(&id("a1"))),
@@ -157,12 +159,13 @@ mod tests {
             &id("a1"),
             AlertOpts {
                 comment: Some("updated".into()),
+                method: Some(AlertMethod::SysLog),
                 ..Default::default()
             },
         ));
         assert_eq!(
             rendered,
-            "<modify_alert alert_id=\"a1\"><comment>updated</comment></modify_alert>"
+            "<modify_alert alert_id=\"a1\"><comment>updated</comment><method>SysLog</method></modify_alert>"
         );
         assert_eq!(
             xml(delete_alert(&id("a1"), false)),

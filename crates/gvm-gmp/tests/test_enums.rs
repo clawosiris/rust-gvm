@@ -20,6 +20,10 @@ fn test_alertevent_taskrunstatuschanged_from_str() {
         AlertEvent::from_str("task_run_status_changed").unwrap(),
         AlertEvent::TaskRunStatusChanged
     );
+    assert_eq!(
+        AlertEvent::from_str("Task run status changed").unwrap(),
+        AlertEvent::TaskRunStatusChanged
+    );
 }
 #[test]
 fn test_alertevent_updatedsecinfo_as_gmp_str() {
@@ -56,6 +60,10 @@ fn test_alertcondition_always_as_gmp_str() {
 fn test_alertcondition_always_from_str() {
     assert_eq!(
         AlertCondition::from_str("always").unwrap(),
+        AlertCondition::Always
+    );
+    assert_eq!(
+        AlertCondition::from_str("Always").unwrap(),
         AlertCondition::Always
     );
 }
@@ -207,6 +215,14 @@ fn test_alertmethod_syslog_as_gmp_str() {
 fn test_alertmethod_syslog_from_str() {
     assert_eq!(
         AlertMethod::from_str("syslog").unwrap(),
+        AlertMethod::SysLog
+    );
+    assert_eq!(
+        AlertMethod::from_str("SysLog").unwrap(),
+        AlertMethod::SysLog
+    );
+    assert_eq!(
+        AlertMethod::from_str("Syslog").unwrap(),
         AlertMethod::SysLog
     );
 }
