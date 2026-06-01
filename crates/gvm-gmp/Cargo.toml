@@ -18,6 +18,7 @@ gvm-protocol.workspace = true
 thiserror.workspace = true
 serde = { workspace = true, optional = true }
 quick-xml.workspace = true
+base64.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true

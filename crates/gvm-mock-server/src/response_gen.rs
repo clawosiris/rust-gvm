@@ -10,10 +10,17 @@ use uuid::Uuid;
 use crate::util::xml_escape_attr;
 
 const LARGE_REPORT_FORMAT_ID: Uuid = Uuid::from_u128(0xc402cc3e_b531_11e1_9163_406186ea4fc5);
+/// Well-known report-format UUID that returns a binary export payload in the mock server.
+pub const REPORT_EXPORT_BINARY_FORMAT_ID: Uuid =
+    Uuid::from_u128(0xaaaaaaaa_aaaa_aaaa_aaaa_aaaaaaaaaaaa);
+/// Well-known report-format UUID that returns a nested-XML export payload in the mock server.
+pub const REPORT_EXPORT_XML_FORMAT_ID: Uuid =
+    Uuid::from_u128(0xbbbbbbbb_bbbb_bbbb_bbbb_bbbbbbbbbbbb);
 const PORTS: [u16; 5] = [22, 80, 443, 8080, 8443];
 const SEVERITIES: [&str; 7] = ["2.1", "4.3", "5.0", "6.5", "7.5", "8.1", "9.8"];
 const DESCRIPTION_SENTENCE: &str =
     "Synthetic result payload generated for large-response integration testing. ";
+const REPORT_EXPORT_BINARY_BODY: &str = "SGVsbG8gUERG";
 
 /// Configuration for synthetic large report generation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -288,6 +295,28 @@ pub fn generate_large_report(report_id: Uuid, config: &LargeReportConfig) -> Str
     xml
 }
 
+/// Generate a deterministic base64-backed report export response.
+#[must_use]
+pub fn generate_binary_report_export(report_id: Uuid, format_id: Uuid) -> String {
+    format!(
+        "<get_reports_response status=\"200\" status_text=\"OK\">\
+         <report id=\"{report_id}\" format_id=\"{format_id}\" extension=\"pdf\" content_type=\"application/pdf\">{REPORT_EXPORT_BINARY_BODY}</report>\
+         </get_reports_response>"
+    )
+}
+
+/// Generate a deterministic nested-XML report export response.
+#[must_use]
+pub fn generate_xml_report_export(report_id: Uuid, format_id: Uuid) -> String {
+    format!(
+        "<get_reports_response status=\"200\" status_text=\"OK\">\
+         <report id=\"{report_id}\" format_id=\"{format_id}\" extension=\"xml\" content_type=\"text/xml\">\
+         <report id=\"{report_id}\"><results><result id=\"result-1\"/></results></report>\
+         </report>\
+         </get_reports_response>"
+    )
+}
+
 fn build_description_payload(target_bytes: usize) -> String {
     let mut description = String::with_capacity(target_bytes);
     while description.len() < target_bytes {
@@ -457,5 +486,27 @@ mod tests {
             (lower_bound..=upper_bound).contains(&total_description_bytes),
             "description payload bytes {total_description_bytes} not within 10% of {expected}"
         );
+    }
+
+    #[test]
+    fn generate_binary_report_export_contains_metadata() {
+        let report_id =
+            Uuid::parse_str("44444444-4444-4444-4444-444444444444").expect("valid uuid");
+        let xml = generate_binary_report_export(report_id, REPORT_EXPORT_BINARY_FORMAT_ID);
+
+        assert!(xml.contains("content_type=\"application/pdf\""));
+        assert!(xml.contains("extension=\"pdf\""));
+        assert!(xml.contains(REPORT_EXPORT_BINARY_BODY));
+    }
+
+    #[test]
+    fn generate_xml_report_export_contains_nested_report() {
+        let report_id =
+            Uuid::parse_str("55555555-5555-5555-5555-555555555555").expect("valid uuid");
+        let xml = generate_xml_report_export(report_id, REPORT_EXPORT_XML_FORMAT_ID);
+
+        assert!(xml.contains("content_type=\"text/xml\""));
+        assert!(xml.contains("extension=\"xml\""));
+        assert!(xml.contains(r#"<report id="55555555-5555-5555-5555-555555555555"><results>"#));
     }
 }

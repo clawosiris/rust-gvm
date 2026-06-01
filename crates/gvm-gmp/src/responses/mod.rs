@@ -80,7 +80,8 @@ pub use port_list::{CreatePortListResponse, GetPortListsResponse, PortList};
 pub use report::{
     DeleteReportResponse, GetReportClosedCvesResponse, GetReportErrorsResponse,
     GetReportTlsCertificatesResponse, GetReportVulnsResponse, GetReportsResponse, Report,
-    ReportClosedCve, ReportError, ReportTlsCertificate, ReportVulnerability, ResultCount, Severity,
+    ReportClosedCve, ReportError, ReportExport, ReportTlsCertificate, ReportVulnerability,
+    ResultCount, Severity,
 };
 pub use report_config::{
     CreateReportConfigResponse, DeleteReportConfigResponse, GetReportConfigsResponse,

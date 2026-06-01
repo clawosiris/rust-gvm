@@ -92,6 +92,16 @@ pub fn get_report(report_id: &EntityId) -> impl Request {
         .attribute("details", "1")
 }
 
+/// Build a `get_reports` export request for a specific report format.
+#[must_use]
+pub fn get_report_export(report_id: &EntityId, report_format_id: &EntityId) -> impl Request {
+    XmlCommand::new("get_reports")
+        .attribute("report_id", report_id.as_str())
+        .attribute("format_id", report_format_id.as_str())
+        .attribute("details", "1")
+        .attribute("ignore_pagination", "1")
+}
+
 /// Build a `delete_report` request.
 #[must_use]
 pub fn delete_report(report_id: &EntityId, ultimate: bool) -> impl Request {
@@ -212,6 +222,10 @@ mod tests {
         assert_eq!(
             xml(get_report(&id("r1"))),
             "<get_reports details=\"1\" report_id=\"r1\"/>"
+        );
+        assert_eq!(
+            xml(get_report_export(&id("r1"), &id("rf1"))),
+            "<get_reports details=\"1\" format_id=\"rf1\" ignore_pagination=\"1\" report_id=\"r1\"/>"
         );
     }
 
