@@ -180,7 +180,7 @@ pub enum AlertMethod {
     StartTask,
     /// Deliver the alert to Syslog.
     SysLog,
-    /// Deliver the alert to TippingPoint.
+    /// Deliver the alert to `TippingPoint`.
     TippingPoint,
     /// Deliver the alert to Verinice CE.
     VeriniceCe,
