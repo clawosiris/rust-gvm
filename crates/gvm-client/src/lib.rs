@@ -14,6 +14,7 @@ mod typed;
 mod version;
 
 use gvm_connection::GvmConnection;
+use gvm_gmp::commands::credentials::get_credential_stores;
 use gvm_gmp::commands::features::get_features;
 use gvm_gmp::commands::integration_configs::{
     get_integration_config, get_integration_configs, modify_integration_config,
@@ -22,9 +23,11 @@ use gvm_gmp::commands::report_configs::{
     create_report_config, delete_report_config, get_report_configs, modify_report_config,
 };
 use gvm_gmp::commands::reports::{
-    get_report_applications, get_report_cves, get_report_hosts, get_report_operating_systems,
-    get_report_ports,
+    get_report_applications, get_report_closed_cves, get_report_cves, get_report_errors,
+    get_report_hosts, get_report_operating_systems, get_report_ports, get_report_tls_certificates,
+    get_report_vulns,
 };
+use gvm_gmp::commands::system::get_timezones;
 use gvm_gmp::commands::version::get_version;
 use gvm_gmp::types::{EntityId, GmpVersion};
 use gvm_protocol::{Request, Response};
@@ -378,6 +381,40 @@ pub trait GmpNextCommands {
         report_id: &EntityId,
         opts: GetReportDetailsOpts,
     ) -> Result<Response, GvmError>;
+
+    /// Get report vulnerability summaries.
+    async fn get_report_vulns(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError>;
+
+    /// Get report TLS certificate summaries.
+    async fn get_report_tls_certificates(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError>;
+
+    /// Get report error summaries.
+    async fn get_report_errors(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError>;
+
+    /// Get report closed CVE summaries.
+    async fn get_report_closed_cves(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError>;
+
+    /// List timezones.
+    async fn get_timezones(&mut self) -> Result<Response, GvmError>;
+
+    /// List credential stores.
+    async fn get_credential_stores(&mut self) -> Result<Response, GvmError>;
 }
 
 macro_rules! impl_gmp226_commands {
@@ -571,6 +608,48 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
         opts: GetReportDetailsOpts,
     ) -> Result<Response, GvmError> {
         self.0.get_report_cves(report_id, opts).await
+    }
+
+    async fn get_report_vulns(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError> {
+        self.0.call(get_report_vulns(report_id, opts)).await
+    }
+
+    async fn get_report_tls_certificates(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError> {
+        self.0
+            .call(get_report_tls_certificates(report_id, opts))
+            .await
+    }
+
+    async fn get_report_errors(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError> {
+        self.0.call(get_report_errors(report_id, opts)).await
+    }
+
+    async fn get_report_closed_cves(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError> {
+        self.0.call(get_report_closed_cves(report_id, opts)).await
+    }
+
+    async fn get_timezones(&mut self) -> Result<Response, GvmError> {
+        self.0.call(get_timezones()).await
+    }
+
+    async fn get_credential_stores(&mut self) -> Result<Response, GvmError> {
+        self.0.call(get_credential_stores()).await
     }
 }
 

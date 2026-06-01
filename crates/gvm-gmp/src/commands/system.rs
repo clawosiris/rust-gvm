@@ -102,6 +102,12 @@ pub fn get_settings(opts: FilteredGetOpts) -> impl Request {
     cmd
 }
 
+/// Build a `get_timezones` request.
+#[must_use]
+pub fn get_timezones() -> impl Request {
+    XmlCommand::new("get_timezones")
+}
+
 /// Build a `get_aggregates` request.
 #[must_use]
 pub fn get_aggregates(opts: GetAggregatesOpts) -> impl Request {
@@ -273,6 +279,7 @@ mod tests {
         assert!(rendered.contains("statistic=\"count\""));
         assert_eq!(xml(get_license()), "<get_license/>");
         assert_eq!(xml(describe_auth()), "<describe_auth/>");
+        assert_eq!(xml(get_timezones()), "<get_timezones/>");
     }
 
     #[test]

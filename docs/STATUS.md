@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-03-29
+Last updated: 2026-05-25
 
 ## Crate Status
 
@@ -153,14 +153,14 @@ Last updated: 2026-03-29
 
 | Category | Commands Covered |
 |----------|-----------------|
-| System | get_version, authenticate, help |
+| System | get_version, authenticate, help, get_timezones |
 | Tasks | get_tasks, create_task, modify_task, delete_task, start_task, stop_task |
 | Targets | get_targets |
-| Reports | get_reports (with nested results) |
+| Reports | get_reports (with nested results), get_report_vulns, get_report_tls_certificates, get_report_errors, get_report_closed_cves |
 | Configs | get_scan_configs |
 | Scanners | get_scanners |
 | Alerts | get_alerts |
-| Credentials | get_credentials |
+| Credentials | get_credentials, get_credential_stores |
 | Filters | get_filters |
 | Notes | get_notes |
 | Overrides | get_overrides |
@@ -179,6 +179,7 @@ Last updated: 2026-03-29
 | Version-specific command rejection | ✅ | Returns 400 for commands unavailable in configured version |
 | `report_config` commands (22.5+) | ✅ | create, get, modify, delete |
 | `features` command (22.6+) | ✅ | get_features |
+| REST-support GMP helpers (22.8+) | ✅ | report drill-downs, get_timezones, get_credential_stores |
 | Version range metadata in responses | ✅ | Status text includes version requirement |
 
 ### CLI (Standalone Binary)
@@ -337,13 +338,13 @@ Convenience methods on `GmpClient<C>` that combine `send()` + `XxxResponse::from
 | scanner | ✅ | ✅ | Also: `get_scanner()`, `modify_scanner()`, `delete_scanner()`, `verify_scanner()`, `clone_scanner()` |
 | port_list | ✅ | ✅ | |
 | task | ✅ | ✅ | Also: `start_task()` |
-| report | ✅ | — | |
+| report | ✅ | — | Also: typed report drill-down helpers for vulns, TLS certificates, errors, closed CVEs |
 | result | ✅ | — | |
 | feed | ✅ | — | |
 | nvt | ✅ | — | Also: `get_nvt_families()` |
 | secinfo | ✅ | — | CVE, CPE, CERT-Bund, DFN-CERT |
 | alert | ✅ | ✅ | |
-| credential | ✅ | ✅ | |
+| credential | ✅ | ✅ | Also: `get_credential_stores()` |
 | filter | ✅ | ✅ | |
 | note | ✅ | ✅ | |
 | override | ✅ | ✅ | |
@@ -358,7 +359,7 @@ Convenience methods on `GmpClient<C>` that combine `send()` + `XxxResponse::from
 | tls_certificate | ✅ | ✅ | |
 | report_format | ✅ | ✅ | |
 | report_config | ✅ | — | `get_report_configs_parsed()` |
-| system | ✅ | — | `get_settings()`, `get_help()`, `describe_auth()` |
+| system | ✅ | — | `get_settings()`, `get_help()`, `describe_auth()`, `get_timezones()` |
 
 ### Features
 

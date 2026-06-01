@@ -22,7 +22,13 @@ pub fn minimum_version_for_command(command_name: &str) -> Option<GmpVersion> {
         | "get_report_ports"
         | "get_report_applications"
         | "get_report_operating_systems"
-        | "get_report_cves" => Some(GmpVersion(22, 8)),
+        | "get_report_cves"
+        | "get_report_vulns"
+        | "get_report_tls_certificates"
+        | "get_report_errors"
+        | "get_report_closed_cves"
+        | "get_timezones"
+        | "get_credential_stores" => Some(GmpVersion(22, 8)),
         _ => None,
     }
 }
@@ -176,6 +182,16 @@ mod tests {
         assert!(command_supported("get_report_hosts", GmpVersion(22, 8)));
         assert_eq!(
             minimum_version_for_command("get_report_cves"),
+            Some(GmpVersion(22, 8))
+        );
+        assert!(!command_supported("get_timezones", GmpVersion(22, 7)));
+        assert!(command_supported("get_timezones", GmpVersion(22, 8)));
+        assert_eq!(
+            minimum_version_for_command("get_report_vulns"),
+            Some(GmpVersion(22, 8))
+        );
+        assert_eq!(
+            minimum_version_for_command("get_credential_stores"),
             Some(GmpVersion(22, 8))
         );
     }

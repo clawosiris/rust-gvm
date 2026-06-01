@@ -50,8 +50,8 @@ pub use alert::{
 pub use auth::AuthenticateResponse;
 pub use common::{ActionResponse, CountInfo, EntityMeta, NamedEntity, Owner, ParseError};
 pub use credential::{
-    CreateCredentialResponse, Credential, DeleteCredentialResponse, GetCredentialsResponse,
-    ModifyCredentialResponse,
+    CreateCredentialResponse, Credential, CredentialStore, DeleteCredentialResponse,
+    GetCredentialStoresResponse, GetCredentialsResponse, ModifyCredentialResponse,
 };
 pub use features::{Feature, GetFeaturesResponse};
 pub use feed::{Feed, GetFeedsResponse};
@@ -77,7 +77,11 @@ pub use permission::{
     ModifyPermissionResponse, Permission,
 };
 pub use port_list::{CreatePortListResponse, GetPortListsResponse, PortList};
-pub use report::{DeleteReportResponse, GetReportsResponse, Report, ResultCount, Severity};
+pub use report::{
+    DeleteReportResponse, GetReportClosedCvesResponse, GetReportErrorsResponse,
+    GetReportTlsCertificatesResponse, GetReportVulnsResponse, GetReportsResponse, Report,
+    ReportClosedCve, ReportError, ReportTlsCertificate, ReportVulnerability, ResultCount, Severity,
+};
 pub use report_config::{
     CreateReportConfigResponse, DeleteReportConfigResponse, GetReportConfigsResponse,
     ModifyReportConfigResponse, ReportConfig,
@@ -109,7 +113,8 @@ pub use secinfo::{
     GetVulnerabilitiesResponse, OperatingSystem, Vulnerability,
 };
 pub use system::{
-    AuthConfSetting, AuthGroup, DescribeAuthResponse, GetSettingsResponse, HelpResponse, Setting,
+    AuthConfSetting, AuthGroup, DescribeAuthResponse, GetSettingsResponse, GetTimezonesResponse,
+    HelpResponse, Setting, Timezone,
 };
 pub use system_reports::{GetSystemReportsResponse, SystemReport};
 pub use tag::{CreateTagResponse, DeleteTagResponse, GetTagsResponse, ModifyTagResponse, Tag};

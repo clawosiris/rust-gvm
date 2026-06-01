@@ -34,6 +34,25 @@ pub struct GetCredentialsResponse {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct CredentialStore {
+    pub id: Option<String>,
+    pub name: String,
+    pub type_: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct GetCredentialStoresResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub items: Vec<CredentialStore>,
+    pub counts: CountInfo,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CreateCredentialResponse {
     pub status: u16,
     pub status_text: String,
@@ -69,6 +88,33 @@ impl GetCredentialsResponse {
             status_text,
             items,
             counts: count_info(&root, "credential_count")?,
+        })
+    }
+}
+
+impl CredentialStore {
+    fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
+        Ok(Self {
+            id: node.attr("id").map(ToString::to_string),
+            name: node.required_child_text("name")?,
+            type_: node.optional_child_text("type"),
+        })
+    }
+}
+
+impl GetCredentialStoresResponse {
+    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+        let (status, status_text) = status_from_response(response)?;
+        let root = parse_document(response.data())?;
+        let items = root
+            .children_named("credential_store")
+            .map(CredentialStore::from_node)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            status,
+            status_text,
+            items,
+            counts: count_info(&root, "credential_store_count")?,
         })
     }
 }
@@ -153,6 +199,24 @@ mod tests {
 
         assert!(parsed.items.is_empty());
         assert_eq!(parsed.counts.total, Some(0));
+    }
+
+    #[test]
+    fn parses_credential_stores() {
+        let response = Response::from(
+            r#"<get_credential_stores_response status="200" status_text="OK">
+                <credential_store id="store-1"><name>Default store</name><type>local</type></credential_store>
+                <credential_store_count>1<filtered>1</filtered></credential_store_count>
+            </get_credential_stores_response>"#,
+        );
+
+        let parsed =
+            GetCredentialStoresResponse::from_response(&response).expect("credential stores parse");
+
+        assert_eq!(parsed.items.len(), 1);
+        assert_eq!(parsed.items[0].name, "Default store");
+        assert_eq!(parsed.items[0].type_.as_deref(), Some("local"));
+        assert_eq!(parsed.counts.total, Some(1));
     }
 
     #[test]

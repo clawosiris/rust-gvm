@@ -56,6 +56,12 @@ const GMP_22_8_COMMANDS: &[&str] = &[
     "get_report_applications",
     "get_report_operating_systems",
     "get_report_cves",
+    "get_report_vulns",
+    "get_report_tls_certificates",
+    "get_report_errors",
+    "get_report_closed_cves",
+    "get_timezones",
+    "get_credential_stores",
 ];
 
 /// Check if a command is available in the given GMP version.
@@ -160,5 +166,11 @@ mod tests {
         ));
         assert!(!command_available("get_report_hosts", GmpVersion::V22_6));
         assert!(command_available("get_report_hosts", GmpVersion::V22_8));
+        assert!(!command_available("get_report_vulns", GmpVersion::V22_7));
+        assert!(command_available("get_report_vulns", GmpVersion::V22_8));
+        assert!(command_available(
+            "get_credential_stores",
+            GmpVersion::V22_8
+        ));
     }
 }
