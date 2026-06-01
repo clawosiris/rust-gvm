@@ -38,8 +38,8 @@ use gvm_gmp::commands::report_formats::{
     create_report_format, get_report_formats, GetReportFormatsOpts, ReportFormatOpts,
 };
 use gvm_gmp::commands::reports::{
-    get_report_closed_cves, get_report_errors, get_report_tls_certificates, get_report_vulns,
-    get_reports, GetReportDetailsOpts, GetReportsOpts,
+    get_report_closed_cves, get_report_errors, get_report_export, get_report_tls_certificates,
+    get_report_vulns, get_reports, GetReportDetailsOpts, GetReportsOpts,
 };
 use gvm_gmp::commands::results::{get_results, GetResultsOpts};
 use gvm_gmp::commands::roles::{create_role, get_roles, GetRolesOpts, RoleOpts};
@@ -85,8 +85,8 @@ use gvm_gmp::responses::{
     GetScannersResponse, GetSchedulesResponse, GetSettingsResponse, GetTagsResponse,
     GetTargetsResponse, GetTasksResponse, GetTicketsResponse, GetTimezonesResponse,
     GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse, HelpResponse,
-    ModifyScanConfigResponse, ModifyScannerResponse, StartTaskResponse, SyncConfigResponse,
-    VerifyScannerResponse,
+    ModifyScanConfigResponse, ModifyScannerResponse, ReportExport, StartTaskResponse,
+    SyncConfigResponse, VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
 
@@ -454,6 +454,21 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ) -> Result<GetReportClosedCvesResponse, GvmError> {
         let response = self.send(get_report_closed_cves(report_id, opts)).await?;
         GetReportClosedCvesResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `get_reports` export request and return a typed [`ReportExport`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_report_export(
+        &mut self,
+        report_id: &EntityId,
+        report_format_id: &EntityId,
+    ) -> Result<ReportExport, GvmError> {
+        let response = self
+            .send(get_report_export(report_id, report_format_id))
+            .await?;
+        ReportExport::from_response(&response).map_err(GvmError::Parse)
     }
 
     // ── Results ───────────────────────────────────────────────────────────────

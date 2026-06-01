@@ -3,7 +3,10 @@
 
 //! Report response models.
 
+use base64::Engine as _;
 use gvm_protocol::Response;
+use quick_xml::events::Event;
+use quick_xml::Writer;
 
 use crate::responses::common::{
     count_info, optional_u32, parse_document, parse_entity_meta, parse_named_entity,
@@ -139,6 +142,15 @@ pub struct GetReportClosedCvesResponse {
     pub status_text: String,
     pub items: Vec<ReportClosedCve>,
     pub counts: CountInfo,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ReportExport {
+    pub bytes: Vec<u8>,
+    pub content_type: Option<String>,
+    pub extension: Option<String>,
 }
 
 impl Report {
@@ -306,6 +318,142 @@ impl_report_detail_response!(
     ["closed_cve", "cve"],
     "closed_cve_count"
 );
+
+impl ReportExport {
+    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+        let text = std::str::from_utf8(response.data())?;
+        let mut reader = quick_xml::Reader::from_str(text);
+        reader.config_mut().trim_text(false);
+
+        let mut saw_report = false;
+        let mut nested_depth = 0usize;
+        let mut nested_xml = Vec::new();
+        let mut base64_body = String::new();
+        let mut content_type = None;
+        let mut extension = None;
+
+        loop {
+            match reader.read_event()? {
+                Event::Start(event) if event.name().as_ref() == b"get_reports_response" => {
+                    let status = parse_status_attr(&event, "status")?
+                        .ok_or_else(|| ParseError::MissingElement("status".to_string()))?;
+                    let status_text = parse_string_attr(&event, "status_text")
+                        .ok_or_else(|| ParseError::MissingElement("status_text".to_string()))?;
+                    if !(200..300).contains(&status) {
+                        return Err(ParseError::ServerError {
+                            status,
+                            message: status_text,
+                        });
+                    }
+                }
+                Event::Start(event) if event.name().as_ref() == b"report" && !saw_report => {
+                    saw_report = true;
+                    content_type = parse_string_attr(&event, "content_type");
+                    extension = parse_string_attr(&event, "extension");
+                }
+                Event::Start(event) if saw_report => {
+                    nested_depth += 1;
+                    serialize_event(&mut nested_xml, Event::Start(event.into_owned()))?;
+                }
+                Event::Empty(event) if saw_report => {
+                    serialize_event(&mut nested_xml, Event::Empty(event.into_owned()))?;
+                }
+                Event::End(event) if saw_report => {
+                    if event.name().as_ref() == b"report" && nested_depth == 0 {
+                        break;
+                    }
+                    serialize_event(&mut nested_xml, Event::End(event.into_owned()))?;
+                    nested_depth = nested_depth.saturating_sub(1);
+                }
+                Event::Text(event) if saw_report => {
+                    if nested_depth == 0 && nested_xml.is_empty() {
+                        let chunk = event.decode().map_err(quick_xml::Error::from)?;
+                        if !chunk.trim().is_empty() {
+                            base64_body.push_str(&chunk);
+                        }
+                    } else {
+                        serialize_event(&mut nested_xml, Event::Text(event.into_owned()))?;
+                    }
+                }
+                Event::CData(event) if saw_report => {
+                    if nested_depth == 0 && nested_xml.is_empty() {
+                        base64_body.push_str(&String::from_utf8_lossy(event.as_ref()));
+                    } else {
+                        serialize_event(&mut nested_xml, Event::CData(event.into_owned()))?;
+                    }
+                }
+                Event::Eof => break,
+                Event::Decl(_)
+                | Event::PI(_)
+                | Event::DocType(_)
+                | Event::Comment(_)
+                | Event::GeneralRef(_) => {}
+                _ => {}
+            }
+        }
+
+        if !saw_report {
+            return Err(ParseError::MissingElement("report".to_string()));
+        }
+
+        let bytes = if nested_xml.is_empty() {
+            base64::engine::general_purpose::STANDARD
+                .decode(strip_ascii_whitespace(&base64_body))
+                .map_err(|_| ParseError::InvalidValue {
+                    field: "report export".to_string(),
+                    value: base64_body,
+                })?
+        } else {
+            nested_xml
+        };
+
+        Ok(Self {
+            bytes,
+            content_type,
+            extension,
+        })
+    }
+}
+
+fn parse_status_attr(
+    event: &quick_xml::events::BytesStart<'_>,
+    name: &str,
+) -> Result<Option<u16>, ParseError> {
+    parse_string_attr(event, name)
+        .map(|value| {
+            value.parse::<u16>().map_err(|_| ParseError::InvalidValue {
+                field: name.to_string(),
+                value,
+            })
+        })
+        .transpose()
+}
+
+fn parse_string_attr(event: &quick_xml::events::BytesStart<'_>, name: &str) -> Option<String> {
+    event
+        .attributes()
+        .flatten()
+        .find(|attribute| attribute.key.as_ref() == name.as_bytes())
+        .map(|attribute| String::from_utf8_lossy(attribute.value.as_ref()).into_owned())
+}
+
+fn serialize_event(buffer: &mut Vec<u8>, event: Event<'_>) -> Result<(), ParseError> {
+    let mut writer = Writer::new(buffer);
+    writer
+        .write_event(event)
+        .map_err(|error| ParseError::InvalidValue {
+            field: "report export xml".to_string(),
+            value: error.to_string(),
+        })?;
+    Ok(())
+}
+
+fn strip_ascii_whitespace(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| !ch.is_ascii_whitespace())
+        .collect()
+}
 
 pub type DeleteReportResponse = ActionResponse;
 
@@ -550,5 +698,53 @@ mod tests {
         assert_eq!(parsed.items.len(), 1);
         assert_eq!(parsed.items[0].cve.as_deref(), Some("CVE-2025-9999"));
         assert_eq!(parsed.items[0].severity.as_deref(), Some("5.0"));
+    }
+
+    #[test]
+    fn parses_base64_report_export() {
+        let response = Response::from(
+            r#"<get_reports_response status="200" status_text="OK">
+                <report id="report-1" format_id="format-1" extension="pdf" content_type="application/pdf">SGVsbG8gUERG</report>
+            </get_reports_response>"#,
+        );
+
+        let export = ReportExport::from_response(&response).expect("export parse");
+
+        assert_eq!(export.bytes, b"Hello PDF");
+        assert_eq!(export.content_type.as_deref(), Some("application/pdf"));
+        assert_eq!(export.extension.as_deref(), Some("pdf"));
+    }
+
+    #[test]
+    fn parses_nested_xml_report_export() {
+        let response = Response::from(
+            r#"<get_reports_response status="200" status_text="OK">
+                <report id="report-1" format_id="format-xml" extension="xml" content_type="text/xml"><report id="report-1"><results><result id="r1"/></results></report></report>
+            </get_reports_response>"#,
+        );
+
+        let export = ReportExport::from_response(&response).expect("export parse");
+        let xml = String::from_utf8(export.bytes).expect("utf8 xml");
+
+        assert_eq!(export.content_type.as_deref(), Some("text/xml"));
+        assert_eq!(export.extension.as_deref(), Some("xml"));
+        assert!(xml.contains(r#"<report id="report-1">"#));
+        assert!(xml.contains(r#"<result id="r1"/>"#));
+    }
+
+    #[test]
+    fn rejects_invalid_base64_report_export() {
+        let response = Response::from(
+            r#"<get_reports_response status="200" status_text="OK">
+                <report id="report-1">not-base64***</report>
+            </get_reports_response>"#,
+        );
+
+        let error = ReportExport::from_response(&response).expect_err("invalid base64");
+
+        assert!(matches!(
+            error,
+            ParseError::InvalidValue { field, .. } if field == "report export"
+        ));
     }
 }

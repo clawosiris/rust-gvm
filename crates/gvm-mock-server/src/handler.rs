@@ -14,7 +14,8 @@ use crate::fault::{FaultAction, FaultEngine};
 use crate::fixtures::FixtureStore;
 use crate::history::CommandHistory;
 use crate::response_gen::{
-    echo_response, error_response, generate_large_report, LargeReportConfig,
+    echo_response, error_response, generate_binary_report_export, generate_large_report,
+    generate_xml_report_export, LargeReportConfig, REPORT_EXPORT_XML_FORMAT_ID,
 };
 use crate::scenario::{ScenarioEngine, ScenarioMode, ScenarioOutcome, ScenarioStep};
 use crate::store::{Resource, ResourceStore, TaskStatus};
@@ -753,6 +754,15 @@ impl SessionHandler {
         report: &Resource,
         store: &ResourceStore,
     ) -> Vec<u8> {
+        if let Some(format_id) = cmd.attr("format_id") {
+            let format_uuid = Uuid::parse_str(format_id)
+                .unwrap_or(crate::response_gen::REPORT_EXPORT_BINARY_FORMAT_ID);
+            if format_uuid == REPORT_EXPORT_XML_FORMAT_ID {
+                return generate_xml_report_export(report.id, format_uuid).into_bytes();
+            }
+            return generate_binary_report_export(report.id, format_uuid).into_bytes();
+        }
+
         if let Some(config) = self.large_report {
             if report.attr("task_id").is_some() {
                 return generate_large_report(report.id, &config).into_bytes();
