@@ -54,7 +54,7 @@ pub fn create_scanner(name: &str, opts: ScannerOpts) -> impl Request {
         cmd.add_element_with_text("port", &port.to_string());
     }
     if let Some(scanner_type) = opts.scanner_type {
-        cmd.add_element_with_text("type", scanner_type.as_gmp_str());
+        cmd.add_element_with_text("type", scanner_type.as_scanner_type());
     }
     if let Some(credential_id) = opts.credential_id.as_ref() {
         cmd.add_element("credential")
@@ -133,7 +133,7 @@ mod tests {
                 ..Default::default()
             },
         ));
-        assert!(rendered.contains("<type>OpenVAS</type>"));
+        assert!(rendered.contains("<type>2</type>"));
         assert!(rendered.contains("<credential id=\"cred1\"/>"));
         assert_eq!(
             xml(clone_scanner(&id("s1"))),

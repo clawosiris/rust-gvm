@@ -258,18 +258,87 @@ impl FromStr for AlertMethod {
     }
 }
 
-gmp_enum!(AliveTest {
-    ScanConfigDefault => "Scan Config Default",
-    IcmpPing => "ICMP Ping",
-    TcpAckServicePing => "TCP-ACK Service Ping",
-    TcpSynServicePing => "TCP-SYN Service Ping",
-    ArpPing => "ARP Ping",
-    IcmpAndTcpAckServicePing => "ICMP, TCP-ACK Service Ping",
-    IcmpAndArpPing => "ICMP, ARP Ping",
-    TcpAckServiceAndArpPing => "TCP-ACK Service, ARP Ping",
-    IcmpTcpAckServiceAndArpPing => "ICMP, TCP-ACK Service, ARP Ping",
-    ConsiderAlive => "Consider Alive"
-});
+/// Stable alive-test values plus gvmd/python-gvm 22.7 aliases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(missing_docs)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum AliveTest {
+    ScanConfigDefault,
+    IcmpPing,
+    TcpAckServicePing,
+    TcpSynServicePing,
+    ArpPing,
+    IcmpAndTcpAckServicePing,
+    IcmpAndArpPing,
+    TcpAckServiceAndArpPing,
+    IcmpTcpAckServiceAndArpPing,
+    ConsiderAlive,
+}
+
+impl AliveTest {
+    /// Returns the stable consumer-facing value retained for backward compatibility.
+    #[must_use]
+    pub const fn as_gmp_str(self) -> &'static str {
+        match self {
+            Self::ScanConfigDefault => "Scan Config Default",
+            Self::IcmpPing => "ICMP Ping",
+            Self::TcpAckServicePing => "TCP-ACK Service Ping",
+            Self::TcpSynServicePing => "TCP-SYN Service Ping",
+            Self::ArpPing => "ARP Ping",
+            Self::IcmpAndTcpAckServicePing => "ICMP, TCP-ACK Service Ping",
+            Self::IcmpAndArpPing => "ICMP, ARP Ping",
+            Self::TcpAckServiceAndArpPing => "TCP-ACK Service, ARP Ping",
+            Self::IcmpTcpAckServiceAndArpPing => "ICMP, TCP-ACK Service, ARP Ping",
+            Self::ConsiderAlive => "Consider Alive",
+        }
+    }
+
+    /// Returns the gvmd/python-gvm 22.7 value accepted by target create/modify.
+    #[must_use]
+    pub const fn as_target_name(self) -> &'static str {
+        match self {
+            Self::ScanConfigDefault => "Scan Config Default",
+            Self::IcmpPing => "ICMP Ping",
+            Self::TcpAckServicePing => "TCP-ACK Service Ping",
+            Self::TcpSynServicePing => "TCP-SYN Service Ping",
+            Self::ArpPing => "ARP Ping",
+            Self::IcmpAndTcpAckServicePing => "ICMP & TCP-ACK Service Ping",
+            Self::IcmpAndArpPing => "ICMP & ARP Ping",
+            Self::TcpAckServiceAndArpPing => "TCP-ACK Service & ARP Ping",
+            Self::IcmpTcpAckServiceAndArpPing => "ICMP, TCP-ACK Service & ARP Ping",
+            Self::ConsiderAlive => "Consider Alive",
+        }
+    }
+}
+
+impl FromStr for AliveTest {
+    type Err = EnumParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Scan Config Default" => Ok(Self::ScanConfigDefault),
+            "ICMP Ping" => Ok(Self::IcmpPing),
+            "TCP-ACK Service Ping" => Ok(Self::TcpAckServicePing),
+            "TCP-SYN Service Ping" => Ok(Self::TcpSynServicePing),
+            "ARP Ping" => Ok(Self::ArpPing),
+            "ICMP, TCP-ACK Service Ping" | "ICMP & TCP-ACK Service Ping" => {
+                Ok(Self::IcmpAndTcpAckServicePing)
+            }
+            "ICMP, ARP Ping" | "ICMP & ARP Ping" => Ok(Self::IcmpAndArpPing),
+            "TCP-ACK Service, ARP Ping" | "TCP-ACK Service & ARP Ping" => {
+                Ok(Self::TcpAckServiceAndArpPing)
+            }
+            "ICMP, TCP-ACK Service, ARP Ping" | "ICMP, TCP-ACK Service & ARP Ping" => {
+                Ok(Self::IcmpTcpAckServiceAndArpPing)
+            }
+            "Consider Alive" => Ok(Self::ConsiderAlive),
+            _ => Err(EnumParseError {
+                enum_name: "AliveTest",
+                value: s.to_string(),
+            }),
+        }
+    }
+}
 gmp_enum!(AggregateStatistic {
     Count => "count",
     CMax => "c_max",
@@ -389,10 +458,49 @@ gmp_enum!(PermissionSubjectType {
     Role => "role",
     User => "user"
 });
-gmp_enum!(PortRangeType {
-    Tcp => "tcp",
-    Udp => "udp"
-});
+/// Stable port-range values plus gvmd/python-gvm 22.7 aliases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(missing_docs)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum PortRangeType {
+    Tcp,
+    Udp,
+}
+
+impl PortRangeType {
+    /// Returns the stable consumer-facing value retained for backward compatibility.
+    #[must_use]
+    pub const fn as_gmp_str(self) -> &'static str {
+        match self {
+            Self::Tcp => "tcp",
+            Self::Udp => "udp",
+        }
+    }
+
+    /// Returns the gvmd/python-gvm 22.7 value accepted by `create_port_range`.
+    #[must_use]
+    pub const fn as_port_range_type(self) -> &'static str {
+        match self {
+            Self::Tcp => "TCP",
+            Self::Udp => "UDP",
+        }
+    }
+}
+
+impl FromStr for PortRangeType {
+    type Err = EnumParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "tcp" | "TCP" => Ok(Self::Tcp),
+            "udp" | "UDP" => Ok(Self::Udp),
+            _ => Err(EnumParseError {
+                enum_name: "PortRangeType",
+                value: s.to_string(),
+            }),
+        }
+    }
+}
 gmp_enum!(ReportFormatType {
     Anonymous => "anonymous",
     Csv => "csv",
@@ -405,11 +513,57 @@ gmp_enum!(ReportFormatType {
     Verinice => "verinice",
     Xml => "xml"
 });
-gmp_enum!(ScannerType {
-    OpenVasScanner => "OpenVAS",
-    CveScannerType => "CVE",
-    GreenBoneSensorType => "OSP"
-});
+/// Stable scanner-type values plus gvmd/python-gvm 22.7 aliases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(missing_docs)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum ScannerType {
+    OpenVasScanner,
+    CveScannerType,
+    GreenBoneSensorType,
+    OpenVasdScannerType,
+}
+
+impl ScannerType {
+    /// Returns the stable consumer-facing value retained for backward compatibility.
+    #[must_use]
+    pub const fn as_gmp_str(self) -> &'static str {
+        match self {
+            Self::OpenVasScanner => "OpenVAS",
+            Self::CveScannerType => "CVE",
+            Self::GreenBoneSensorType => "OSP",
+            Self::OpenVasdScannerType => "6",
+        }
+    }
+
+    /// Returns the gvmd/python-gvm 22.7 value accepted by scanner create/modify.
+    #[must_use]
+    pub const fn as_scanner_type(self) -> &'static str {
+        match self {
+            Self::OpenVasScanner => "2",
+            Self::CveScannerType => "3",
+            Self::GreenBoneSensorType => "5",
+            Self::OpenVasdScannerType => "6",
+        }
+    }
+}
+
+impl FromStr for ScannerType {
+    type Err = EnumParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "OpenVAS" | "2" => Ok(Self::OpenVasScanner),
+            "CVE" | "3" => Ok(Self::CveScannerType),
+            "OSP" | "5" => Ok(Self::GreenBoneSensorType),
+            "6" => Ok(Self::OpenVasdScannerType),
+            _ => Err(EnumParseError {
+                enum_name: "ScannerType",
+                value: s.to_string(),
+            }),
+        }
+    }
+}
 gmp_enum!(SnmpAuthAlgorithm {
     Md5 => "md5",
     Sha1 => "sha1"
@@ -429,11 +583,53 @@ gmp_enum!(SeverityLevel {
     Log => "log",
     Alarm => "alarm"
 });
-gmp_enum!(TicketStatus {
-    Open => "open",
-    Fixed => "fixed",
-    Closed => "closed"
-});
+/// Stable ticket-status values plus gvmd/python-gvm 22.7 aliases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(missing_docs)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum TicketStatus {
+    Open,
+    Fixed,
+    Closed,
+}
+
+impl TicketStatus {
+    /// Returns the stable consumer-facing value retained for backward compatibility.
+    #[must_use]
+    pub const fn as_gmp_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Fixed => "fixed",
+            Self::Closed => "closed",
+        }
+    }
+
+    /// Returns the gvmd/python-gvm 22.7 value accepted by ticket create/modify.
+    #[must_use]
+    pub const fn as_ticket_status(self) -> &'static str {
+        match self {
+            Self::Open => "Open",
+            Self::Fixed => "Fixed",
+            Self::Closed => "Closed",
+        }
+    }
+}
+
+impl FromStr for TicketStatus {
+    type Err = EnumParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "open" | "Open" => Ok(Self::Open),
+            "fixed" | "Fixed" => Ok(Self::Fixed),
+            "closed" | "Closed" => Ok(Self::Closed),
+            _ => Err(EnumParseError {
+                enum_name: "TicketStatus",
+                value: s.to_string(),
+            }),
+        }
+    }
+}
 gmp_enum!(UserAuthType {
     File => "file",
     LdapConnect => "ldap_connect",

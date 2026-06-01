@@ -349,6 +349,10 @@ fn test_alivetest_icmpandtcpackserviceping_from_str() {
         AliveTest::from_str("ICMP, TCP-ACK Service Ping").unwrap(),
         AliveTest::IcmpAndTcpAckServicePing
     );
+    assert_eq!(
+        AliveTest::from_str("ICMP & TCP-ACK Service Ping").unwrap(),
+        AliveTest::IcmpAndTcpAckServicePing
+    );
 }
 #[test]
 fn test_alivetest_icmpandarpping_as_gmp_str() {
@@ -358,6 +362,10 @@ fn test_alivetest_icmpandarpping_as_gmp_str() {
 fn test_alivetest_icmpandarpping_from_str() {
     assert_eq!(
         AliveTest::from_str("ICMP, ARP Ping").unwrap(),
+        AliveTest::IcmpAndArpPing
+    );
+    assert_eq!(
+        AliveTest::from_str("ICMP & ARP Ping").unwrap(),
         AliveTest::IcmpAndArpPing
     );
 }
@@ -374,6 +382,10 @@ fn test_alivetest_tcpackserviceandarpping_from_str() {
         AliveTest::from_str("TCP-ACK Service, ARP Ping").unwrap(),
         AliveTest::TcpAckServiceAndArpPing
     );
+    assert_eq!(
+        AliveTest::from_str("TCP-ACK Service & ARP Ping").unwrap(),
+        AliveTest::TcpAckServiceAndArpPing
+    );
 }
 #[test]
 fn test_alivetest_icmptcpackserviceandarpping_as_gmp_str() {
@@ -386,6 +398,10 @@ fn test_alivetest_icmptcpackserviceandarpping_as_gmp_str() {
 fn test_alivetest_icmptcpackserviceandarpping_from_str() {
     assert_eq!(
         AliveTest::from_str("ICMP, TCP-ACK Service, ARP Ping").unwrap(),
+        AliveTest::IcmpTcpAckServiceAndArpPing
+    );
+    assert_eq!(
+        AliveTest::from_str("ICMP, TCP-ACK Service & ARP Ping").unwrap(),
         AliveTest::IcmpTcpAckServiceAndArpPing
     );
 }
@@ -1414,6 +1430,7 @@ fn test_portrangetype_tcp_as_gmp_str() {
 #[test]
 fn test_portrangetype_tcp_from_str() {
     assert_eq!(PortRangeType::from_str("tcp").unwrap(), PortRangeType::Tcp);
+    assert_eq!(PortRangeType::from_str("TCP").unwrap(), PortRangeType::Tcp);
 }
 #[test]
 fn test_portrangetype_udp_as_gmp_str() {
@@ -1422,6 +1439,7 @@ fn test_portrangetype_udp_as_gmp_str() {
 #[test]
 fn test_portrangetype_udp_from_str() {
     assert_eq!(PortRangeType::from_str("udp").unwrap(), PortRangeType::Udp);
+    assert_eq!(PortRangeType::from_str("UDP").unwrap(), PortRangeType::Udp);
 }
 #[test]
 fn test_portrangetype_invalid_string_returns_error() {
@@ -1553,6 +1571,10 @@ fn test_scannertype_openvasscanner_from_str() {
         ScannerType::from_str("OpenVAS").unwrap(),
         ScannerType::OpenVasScanner
     );
+    assert_eq!(
+        ScannerType::from_str("2").unwrap(),
+        ScannerType::OpenVasScanner
+    );
 }
 #[test]
 fn test_scannertype_cvescannertype_as_gmp_str() {
@@ -1562,6 +1584,10 @@ fn test_scannertype_cvescannertype_as_gmp_str() {
 fn test_scannertype_cvescannertype_from_str() {
     assert_eq!(
         ScannerType::from_str("CVE").unwrap(),
+        ScannerType::CveScannerType
+    );
+    assert_eq!(
+        ScannerType::from_str("3").unwrap(),
         ScannerType::CveScannerType
     );
 }
@@ -1574,6 +1600,21 @@ fn test_scannertype_greenbonesensortype_from_str() {
     assert_eq!(
         ScannerType::from_str("OSP").unwrap(),
         ScannerType::GreenBoneSensorType
+    );
+    assert_eq!(
+        ScannerType::from_str("5").unwrap(),
+        ScannerType::GreenBoneSensorType
+    );
+}
+#[test]
+fn test_scannertype_openvasdscannertype_as_gmp_str() {
+    assert_eq!(ScannerType::OpenVasdScannerType.as_gmp_str(), "6");
+}
+#[test]
+fn test_scannertype_openvasdscannertype_from_str() {
+    assert_eq!(
+        ScannerType::from_str("6").unwrap(),
+        ScannerType::OpenVasdScannerType
     );
 }
 #[test]
@@ -1723,6 +1764,7 @@ fn test_ticketstatus_open_as_gmp_str() {
 #[test]
 fn test_ticketstatus_open_from_str() {
     assert_eq!(TicketStatus::from_str("open").unwrap(), TicketStatus::Open);
+    assert_eq!(TicketStatus::from_str("Open").unwrap(), TicketStatus::Open);
 }
 #[test]
 fn test_ticketstatus_fixed_as_gmp_str() {
@@ -1734,6 +1776,10 @@ fn test_ticketstatus_fixed_from_str() {
         TicketStatus::from_str("fixed").unwrap(),
         TicketStatus::Fixed
     );
+    assert_eq!(
+        TicketStatus::from_str("Fixed").unwrap(),
+        TicketStatus::Fixed
+    );
 }
 #[test]
 fn test_ticketstatus_closed_as_gmp_str() {
@@ -1743,6 +1789,10 @@ fn test_ticketstatus_closed_as_gmp_str() {
 fn test_ticketstatus_closed_from_str() {
     assert_eq!(
         TicketStatus::from_str("closed").unwrap(),
+        TicketStatus::Closed
+    );
+    assert_eq!(
+        TicketStatus::from_str("Closed").unwrap(),
         TicketStatus::Closed
     );
 }

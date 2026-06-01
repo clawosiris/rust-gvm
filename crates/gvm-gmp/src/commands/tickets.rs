@@ -97,7 +97,7 @@ fn add_ticket_body(cmd: &mut XmlCommand, opts: &TicketOpts) {
     add_text_element(cmd, "assigned_to", opts.assigned_to.as_deref());
     add_text_element(cmd, "comment", opts.comment.as_deref());
     if let Some(status) = opts.status {
-        cmd.add_element_with_text("status", status.as_gmp_str());
+        cmd.add_element_with_text("status", status.as_ticket_status());
     }
     add_text_element(cmd, "open_note", opts.open_note.as_deref());
     add_text_element(cmd, "fixed_note", opts.fixed_note.as_deref());
@@ -124,7 +124,7 @@ mod tests {
             },
         ));
         assert!(rendered.contains("<result id=\"r1\"/>"));
-        assert!(rendered.contains("<status>open</status>"));
+        assert!(rendered.contains("<status>Open</status>"));
         assert_eq!(
             xml(clone_ticket(&id("tick1"))),
             "<create_ticket><copy>tick1</copy></create_ticket>"

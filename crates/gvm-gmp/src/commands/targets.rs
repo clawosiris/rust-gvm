@@ -79,7 +79,7 @@ pub fn create_target(name: &str, opts: CreateTargetOpts) -> impl Request {
         cmd.add_element_with_text("exclude_hosts", &opts.exclude_hosts.join(","));
     }
     if let Some(alive_test) = opts.alive_test {
-        cmd.add_element_with_text("alive_test", alive_test.as_gmp_str());
+        cmd.add_element_with_text("alive_test", alive_test.as_target_name());
     }
     add_optional_id_element(&mut cmd, "port_list", opts.port_list_id.as_ref());
     if let Some(value) = opts.reverse_lookup_only {
@@ -126,7 +126,7 @@ pub fn modify_target(target_id: &EntityId, opts: ModifyTargetOpts) -> impl Reque
         cmd.add_element_with_text("exclude_hosts", &opts.exclude_hosts.join(","));
     }
     if let Some(alive_test) = opts.alive_test {
-        cmd.add_element_with_text("alive_test", alive_test.as_gmp_str());
+        cmd.add_element_with_text("alive_test", alive_test.as_target_name());
     }
     add_optional_id_element(&mut cmd, "port_list", opts.port_list_id.as_ref());
     cmd
@@ -191,12 +191,13 @@ mod tests {
             &id("t1"),
             ModifyTargetOpts {
                 name: Some("n".into()),
+                alive_test: Some(AliveTest::IcmpAndArpPing),
                 ..Default::default()
             },
         ));
         assert_eq!(
             rendered,
-            "<modify_target target_id=\"t1\"><name>n</name></modify_target>"
+            "<modify_target target_id=\"t1\"><name>n</name><alive_test>ICMP &amp; ARP Ping</alive_test></modify_target>"
         );
         assert_eq!(
             xml(delete_target(&id("t1"), false)),

@@ -57,7 +57,7 @@ pub fn create_port_range(
 ) -> impl Request {
     XmlCommand::new("create_port_range")
         .attribute("port_list_id", port_list_id.as_str())
-        .attribute("type", range_type.as_gmp_str())
+        .attribute("type", range_type.as_port_range_type())
         .attribute("start", &start.to_string())
         .attribute("end", &end.to_string())
 }
@@ -137,7 +137,7 @@ mod tests {
         );
         assert_eq!(
             xml(create_port_range(&id("pl1"), PortRangeType::Tcp, 1, 5)),
-            "<create_port_range end=\"5\" port_list_id=\"pl1\" start=\"1\" type=\"tcp\"/>"
+            "<create_port_range end=\"5\" port_list_id=\"pl1\" start=\"1\" type=\"TCP\"/>"
         );
     }
 
