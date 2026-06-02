@@ -39,6 +39,7 @@ tempfile.workspace = true
 tokio-test.workspace = true
 gvm-gmp.workspace = true
 gvm-mock-server.workspace = true
+getrandom.workspace = true
 
 [lints]
 workspace = true

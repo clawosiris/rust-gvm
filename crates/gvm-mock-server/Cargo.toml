@@ -34,6 +34,7 @@ tokio-rustls = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
 rustls-pemfile = { workspace = true, optional = true }
 russh = { workspace = true, optional = true }
+getrandom.workspace = true
 
 [dev-dependencies]
 gvm-gmp.workspace = true
