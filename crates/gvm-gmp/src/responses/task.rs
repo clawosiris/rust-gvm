@@ -69,6 +69,15 @@ pub struct StartTaskResponse {
     pub report_id: Option<EntityId>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ResumeTaskResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub report_id: Option<EntityId>,
+}
+
 impl Task {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
         Ok(Self {
@@ -159,12 +168,7 @@ impl CreateTaskResponse {
 
 impl StartTaskResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
-        let (status, status_text) = status_from_response(response)?;
-        let root = parse_document(response.data())?;
-        let report_id = root
-            .optional_child_text("report_id")
-            .map(|value| parse_entity_id(&value, "report_id"))
-            .transpose()?;
+        let (status, status_text, report_id) = parse_task_action_response(response)?;
         Ok(Self {
             status,
             status_text,
@@ -173,8 +177,30 @@ impl StartTaskResponse {
     }
 }
 
+impl ResumeTaskResponse {
+    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+        let (status, status_text, report_id) = parse_task_action_response(response)?;
+        Ok(Self {
+            status,
+            status_text,
+            report_id,
+        })
+    }
+}
+
+fn parse_task_action_response(
+    response: &Response,
+) -> Result<(u16, String, Option<EntityId>), ParseError> {
+    let (status, status_text) = status_from_response(response)?;
+    let root = parse_document(response.data())?;
+    let report_id = root
+        .optional_child_text("report_id")
+        .map(|value| parse_entity_id(&value, "report_id"))
+        .transpose()?;
+    Ok((status, status_text, report_id))
+}
+
 pub type StopTaskResponse = ActionResponse;
-pub type ResumeTaskResponse = ActionResponse;
 pub type ModifyTaskResponse = ActionResponse;
 pub type DeleteTaskResponse = ActionResponse;
 pub type MoveTaskResponse = ActionResponse;
@@ -278,6 +304,21 @@ mod tests {
         assert_eq!(
             parsed.report_id.as_ref().map(EntityId::as_str),
             Some("rpt-new-1")
+        );
+    }
+
+    #[test]
+    fn parses_resume_task_response() {
+        let response = Response::from(
+            r#"<resume_task_response status="202" status_text="OK, request submitted"><report_id>rpt-new-2</report_id></resume_task_response>"#,
+        );
+
+        let parsed = ResumeTaskResponse::from_response(&response).expect("resume parses");
+
+        assert_eq!(parsed.status, 202);
+        assert_eq!(
+            parsed.report_id.as_ref().map(EntityId::as_str),
+            Some("rpt-new-2")
         );
     }
 
