@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use russh::keys::ssh_key::rand_core::OsRng;
+use russh::keys::ssh_key::rand_core::{TryCryptoRng, TryRng, UnwrapErr};
 use russh::keys::ssh_key::HashAlg;
 use russh::server::{self, Auth, Server as _, Session};
 use russh::{Channel, ChannelMsg};
@@ -41,8 +41,37 @@ struct MockSshHandler {
     state: Arc<ListenerState>,
 }
 
+struct SystemRng;
+
+fn map_getrandom_error(_: getrandom::Error) -> std::io::Error {
+    std::io::Error::from(std::io::ErrorKind::Other)
+}
+
+impl TryRng for SystemRng {
+    type Error = std::io::Error;
+
+    fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+        let mut bytes = [0_u8; 4];
+        getrandom::getrandom(&mut bytes).map_err(map_getrandom_error)?;
+        Ok(u32::from_le_bytes(bytes))
+    }
+
+    fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+        let mut bytes = [0_u8; 8];
+        getrandom::getrandom(&mut bytes).map_err(map_getrandom_error)?;
+        Ok(u64::from_le_bytes(bytes))
+    }
+
+    fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
+        getrandom::getrandom(dst).map_err(map_getrandom_error)
+    }
+}
+
+impl TryCryptoRng for SystemRng {}
+
 pub(crate) fn generate_host_key() -> Result<russh::keys::PrivateKey, std::io::Error> {
-    russh::keys::PrivateKey::random(&mut OsRng, russh::keys::Algorithm::Ed25519)
+    let mut rng = UnwrapErr(SystemRng);
+    russh::keys::PrivateKey::random(&mut rng, russh::keys::Algorithm::Ed25519)
         .map_err(std::io::Error::other)
 }
 

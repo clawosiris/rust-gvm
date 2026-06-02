@@ -480,6 +480,35 @@ impl GvmConnection for SshConnection {
 mod tests {
     use super::*;
     use russh::client::Handler;
+    use russh::keys::ssh_key::rand_core::{TryCryptoRng, TryRng, UnwrapErr};
+
+    struct SystemRng;
+
+    fn map_getrandom_error(_: getrandom::Error) -> std::io::Error {
+        std::io::Error::from(std::io::ErrorKind::Other)
+    }
+
+    impl TryRng for SystemRng {
+        type Error = std::io::Error;
+
+        fn try_next_u32(&mut self) -> std::result::Result<u32, Self::Error> {
+            let mut bytes = [0_u8; 4];
+            getrandom::getrandom(&mut bytes).map_err(map_getrandom_error)?;
+            Ok(u32::from_le_bytes(bytes))
+        }
+
+        fn try_next_u64(&mut self) -> std::result::Result<u64, Self::Error> {
+            let mut bytes = [0_u8; 8];
+            getrandom::getrandom(&mut bytes).map_err(map_getrandom_error)?;
+            Ok(u64::from_le_bytes(bytes))
+        }
+
+        fn try_fill_bytes(&mut self, dst: &mut [u8]) -> std::result::Result<(), Self::Error> {
+            getrandom::getrandom(dst).map_err(map_getrandom_error)
+        }
+    }
+
+    impl TryCryptoRng for SystemRng {}
 
     #[test]
     fn test_default_config() {
@@ -544,13 +573,11 @@ mod tests {
 
     #[test]
     fn test_accept_all_host_key_policy() {
-        let public_key = keys::PrivateKey::random(
-            &mut russh::keys::ssh_key::rand_core::OsRng,
-            keys::Algorithm::Ed25519,
-        )
-        .expect("host key")
-        .public_key()
-        .clone();
+        let mut rng = UnwrapErr(SystemRng);
+        let public_key = keys::PrivateKey::random(&mut rng, keys::Algorithm::Ed25519)
+            .expect("host key")
+            .public_key()
+            .clone();
         let mut verifier = SshServerKeyVerifier::default();
 
         let accepted = tokio_test::block_on(verifier.check_server_key(&public_key)).expect("ok");
@@ -560,11 +587,9 @@ mod tests {
 
     #[test]
     fn test_fingerprint_host_key_policy() {
-        let private_key = keys::PrivateKey::random(
-            &mut russh::keys::ssh_key::rand_core::OsRng,
-            keys::Algorithm::Ed25519,
-        )
-        .expect("host key");
+        let mut rng = UnwrapErr(SystemRng);
+        let private_key =
+            keys::PrivateKey::random(&mut rng, keys::Algorithm::Ed25519).expect("host key");
         let public_key = private_key.public_key().clone();
         let fingerprint = host_key_fingerprint(&public_key);
         let mut verifier =

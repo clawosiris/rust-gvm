@@ -974,6 +974,7 @@ name = "gvm-connection"
 version = "0.4.0-alpha.1"
 dependencies = [
  "async-trait",
+ "getrandom 0.2.17",
  "gvm-gmp",
  "gvm-mock-server",
  "gvm-protocol",
@@ -1008,6 +1009,7 @@ name = "gvm-mock-server"
 version = "0.4.0-alpha.1"
 dependencies = [
  "clap",
+ "getrandom 0.2.17",
  "gvm-gmp",
  "gvm-protocol",
  "pretty_assertions",
