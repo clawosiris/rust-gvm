@@ -505,6 +505,83 @@ async fn full_crud_lifecycle_succeeds() {
     server.shutdown().await;
 }
 
+#[tokio::test]
+async fn typed_resume_task_returns_report_id() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let target_response = client
+        .create_target(
+            "Typed Resume Target",
+            CreateTargetOpts {
+                hosts: vec!["127.0.0.1".to_string()],
+                ..CreateTargetOpts::default()
+            },
+        )
+        .await
+        .expect("create_target should succeed");
+    let target_id = target_response.id;
+
+    let config_id = "550e8400-e29b-41d4-a716-446655440001"
+        .parse()
+        .expect("entity id");
+    let scanner_id = "550e8400-e29b-41d4-a716-446655440002"
+        .parse()
+        .expect("entity id");
+
+    let task_response = client
+        .create_task(
+            "Typed Resume Task",
+            &config_id,
+            &target_id,
+            &scanner_id,
+            Default::default(),
+        )
+        .await
+        .expect("create_task should succeed");
+    let task_id = task_response.id;
+
+    let start_response = client
+        .start_task(&task_id)
+        .await
+        .expect("start_task should succeed");
+    assert_eq!(start_response.status, 202);
+    assert!(start_response.report_id.is_some());
+
+    client
+        .call(stop_task(&task_id))
+        .await
+        .expect("stop_task should succeed");
+
+    let resume_response = client
+        .resume_task(&task_id)
+        .await
+        .expect("resume_task should succeed");
+    assert_eq!(resume_response.status, 202);
+    assert!(resume_response.report_id.is_some());
+
+    client
+        .call(delete_task(&task_id, true))
+        .await
+        .expect("delete_task should succeed");
+    client
+        .call(delete_target(&target_id, true))
+        .await
+        .expect("delete_target should succeed");
+
+    server.shutdown().await;
+}
+
 async fn typed_scan_config_lifecycle(client: &mut GmpClient<UnixSocketConnection>) {
     let created_config = client
         .create_scan_config(

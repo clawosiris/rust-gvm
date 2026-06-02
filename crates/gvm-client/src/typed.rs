@@ -60,7 +60,9 @@ use gvm_gmp::commands::secinfo::{
 use gvm_gmp::commands::system::{describe_auth, get_settings, get_timezones, FilteredGetOpts};
 use gvm_gmp::commands::tags::{create_tag, get_tags, GetTagsOpts, TagOpts};
 use gvm_gmp::commands::targets::{create_target, get_targets, CreateTargetOpts, GetTargetsOpts};
-use gvm_gmp::commands::tasks::{create_task, get_tasks, start_task, CreateTaskOpts, GetTasksOpts};
+use gvm_gmp::commands::tasks::{
+    create_task, get_tasks, resume_task, start_task, CreateTaskOpts, GetTasksOpts,
+};
 use gvm_gmp::commands::tickets::{create_ticket, get_tickets, GetTicketsOpts, TicketOpts};
 use gvm_gmp::commands::tls_certificates::{
     create_tls_certificate, get_tls_certificates, GetTlsCertificatesOpts, TlsCertificateOpts,
@@ -85,8 +87,8 @@ use gvm_gmp::responses::{
     GetScannersResponse, GetSchedulesResponse, GetSettingsResponse, GetTagsResponse,
     GetTargetsResponse, GetTasksResponse, GetTicketsResponse, GetTimezonesResponse,
     GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse, HelpResponse,
-    ModifyScanConfigResponse, ModifyScannerResponse, ReportExport, StartTaskResponse,
-    SyncConfigResponse, VerifyScannerResponse,
+    ModifyScanConfigResponse, ModifyScannerResponse, ReportExport, ResumeTaskResponse,
+    StartTaskResponse, SyncConfigResponse, VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
 
@@ -386,6 +388,18 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     pub async fn start_task(&mut self, task_id: &EntityId) -> Result<StartTaskResponse, GvmError> {
         let response = self.send(start_task(task_id)).await?;
         StartTaskResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `resume_task` request and return a typed [`ResumeTaskResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn resume_task(
+        &mut self,
+        task_id: &EntityId,
+    ) -> Result<ResumeTaskResponse, GvmError> {
+        let response = self.send(resume_task(task_id)).await?;
+        ResumeTaskResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     // ── Reports ───────────────────────────────────────────────────────────────
