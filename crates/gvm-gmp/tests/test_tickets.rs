@@ -31,7 +31,7 @@ fn test_create_ticket_with_optionals() {
                 closed_note: Some("cl".into()),
             }
         )),
-        "<create_ticket><result id=\"r1\"/><assigned_to>alice</assigned_to><comment>c</comment><status>open</status><open_note>o</open_note><fixed_note>f</fixed_note><closed_note>cl</closed_note></create_ticket>"
+        "<create_ticket><result id=\"r1\"/><assigned_to>alice</assigned_to><comment>c</comment><status>Open</status><open_note>o</open_note><fixed_note>f</fixed_note><closed_note>cl</closed_note></create_ticket>"
     );
 }
 

@@ -30,7 +30,7 @@ fn test_create_scanner_with_optionals() {
                 credential_id: Some(id("cred1")),
             }
         )),
-        "<create_scanner><name>scanner</name><comment>c</comment><host>127.0.0.1</host><port>9390</port><type>OpenVAS</type><credential id=\"cred1\"/></create_scanner>"
+        "<create_scanner><name>scanner</name><comment>c</comment><host>127.0.0.1</host><port>9390</port><type>2</type><credential id=\"cred1\"/></create_scanner>"
     );
 }
 

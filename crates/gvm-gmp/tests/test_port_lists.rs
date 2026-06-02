@@ -25,7 +25,7 @@ fn test_create_port_list_and_range_with_options() {
     );
     assert_eq!(
         xml(create_port_range(&id("pl1"), PortRangeType::Tcp, 1, 5)),
-        "<create_port_range end=\"5\" port_list_id=\"pl1\" start=\"1\" type=\"tcp\"/>"
+        "<create_port_range end=\"5\" port_list_id=\"pl1\" start=\"1\" type=\"TCP\"/>"
     );
 }
 

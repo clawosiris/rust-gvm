@@ -3,12 +3,15 @@
 
 //! Alert response models.
 
+use std::str::FromStr;
+
 use gvm_protocol::Response;
 
 use crate::responses::common::{
     count_info, parse_bool, parse_document, parse_entity_id, parse_entity_meta, parse_named_entity,
     status_from_response, ActionResponse, CountInfo, EntityMeta, NamedEntity, ParseError,
 };
+use crate::{AlertCondition, AlertEvent, AlertMethod};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -45,9 +48,13 @@ impl Alert {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
         Ok(Self {
             meta: parse_entity_meta(node)?,
-            event: node.optional_child_text("event"),
-            condition: node.optional_child_text("condition"),
-            method: node.optional_child_text("method"),
+            event: node.optional_child_text("event").map(normalize_alert_event),
+            condition: node
+                .optional_child_text("condition")
+                .map(normalize_alert_condition),
+            method: node
+                .optional_child_text("method")
+                .map(normalize_alert_method),
             filter: parse_named_entity(node, "filter")?,
             active: node
                 .optional_child_text("active")
@@ -94,6 +101,27 @@ impl CreateAlertResponse {
 
 pub type ModifyAlertResponse = ActionResponse;
 pub type DeleteAlertResponse = ActionResponse;
+
+fn normalize_alert_event(value: String) -> String {
+    AlertEvent::from_str(&value)
+        .map(AlertEvent::as_gmp_str)
+        .unwrap_or(value.as_str())
+        .to_string()
+}
+
+fn normalize_alert_condition(value: String) -> String {
+    AlertCondition::from_str(&value)
+        .map(AlertCondition::as_gmp_str)
+        .unwrap_or(value.as_str())
+        .to_string()
+}
+
+fn normalize_alert_method(value: String) -> String {
+    AlertMethod::from_str(&value)
+        .map(AlertMethod::as_gmp_str)
+        .unwrap_or(value.as_str())
+        .to_string()
+}
 
 #[cfg(test)]
 mod tests {
@@ -148,6 +176,34 @@ mod tests {
         assert!(parsed.items[0].active);
         assert!(!parsed.items[1].active);
         assert!(parsed.items[1].meta.in_use);
+    }
+
+    #[test]
+    fn normalizes_gvmd_alert_display_names_to_stable_values() {
+        let response = Response::from(
+            r#"<get_alerts_response status="200" status_text="OK">
+                <alert id="a-1">
+                    <name>Display Name Alert</name>
+                    <event>Task run status changed</event>
+                    <condition>Always</condition>
+                    <method>SysLog</method>
+                </alert>
+                <alert id="a-2">
+                    <name>Alternate Method Casing</name>
+                    <method>Syslog</method>
+                </alert>
+            </get_alerts_response>"#,
+        );
+
+        let parsed = GetAlertsResponse::from_response(&response).expect("alerts parse");
+
+        assert_eq!(
+            parsed.items[0].event.as_deref(),
+            Some("task_run_status_changed")
+        );
+        assert_eq!(parsed.items[0].condition.as_deref(), Some("always"));
+        assert_eq!(parsed.items[0].method.as_deref(), Some("syslog"));
+        assert_eq!(parsed.items[1].method.as_deref(), Some("syslog"));
     }
 
     #[test]

@@ -26,13 +26,13 @@ fn test_create_target_with_optionals() {
                 comment: Some("c".into()),
                 hosts: vec!["1.1.1.1".into(), "2.2.2.2".into()],
                 exclude_hosts: vec!["3.3.3.3".into()],
-                alive_test: Some(AliveTest::IcmpPing),
+                alive_test: Some(AliveTest::IcmpAndArpPing),
                 port_list_id: Some(id("pl1")),
                 reverse_lookup_only: Some(true),
                 reverse_lookup_unify: Some(false),
             }
         )),
-        "<create_target><name>target</name><comment>c</comment><hosts>1.1.1.1,2.2.2.2</hosts><exclude_hosts>3.3.3.3</exclude_hosts><alive_test>ICMP Ping</alive_test><port_list id=\"pl1\"/><reverse_lookup_only>1</reverse_lookup_only><reverse_lookup_unify>0</reverse_lookup_unify></create_target>"
+        "<create_target><name>target</name><comment>c</comment><hosts>1.1.1.1,2.2.2.2</hosts><exclude_hosts>3.3.3.3</exclude_hosts><alive_test>ICMP &amp; ARP Ping</alive_test><port_list id=\"pl1\"/><reverse_lookup_only>1</reverse_lookup_only><reverse_lookup_unify>0</reverse_lookup_unify></create_target>"
     );
 }
 
