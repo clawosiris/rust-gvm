@@ -346,6 +346,18 @@ impl ReportExport {
                         });
                     }
                 }
+                Event::Empty(event) if event.name().as_ref() == b"get_reports_response" => {
+                    let status = parse_status_attr(&event, "status")?
+                        .ok_or_else(|| ParseError::MissingElement("status".to_string()))?;
+                    let status_text = parse_string_attr(&event, "status_text")
+                        .ok_or_else(|| ParseError::MissingElement("status_text".to_string()))?;
+                    if !(200..300).contains(&status) {
+                        return Err(ParseError::ServerError {
+                            status,
+                            message: status_text,
+                        });
+                    }
+                }
                 Event::Start(event) if event.name().as_ref() == b"report" && !saw_report => {
                     saw_report = true;
                     content_type = parse_string_attr(&event, "content_type");
@@ -745,6 +757,40 @@ mod tests {
         assert!(matches!(
             error,
             ParseError::InvalidValue { field, .. } if field == "report export"
+        ));
+    }
+
+    #[test]
+    fn rejects_self_closing_permission_denied_report_export() {
+        let response = Response::from(
+            r#"<get_reports_response status="400" status_text="Permission denied"/>"#,
+        );
+
+        let error = ReportExport::from_response(&response).expect_err("server error expected");
+
+        assert!(matches!(
+            error,
+            ParseError::ServerError {
+                status: 400,
+                message
+            } if message == "Permission denied"
+        ));
+    }
+
+    #[test]
+    fn rejects_self_closing_unauthorized_report_export() {
+        let response = Response::from(
+            r#"<get_reports_response status="401" status_text="Authentication required"/>"#,
+        );
+
+        let error = ReportExport::from_response(&response).expect_err("server error expected");
+
+        assert!(matches!(
+            error,
+            ParseError::ServerError {
+                status: 401,
+                message
+            } if message == "Authentication required"
         ));
     }
 }
