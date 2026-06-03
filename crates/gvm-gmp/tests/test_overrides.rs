@@ -50,4 +50,12 @@ fn test_override_get_modify_delete() {
         xml(delete_override(&id("o1"), false)),
         "<delete_override override_id=\"o1\" ultimate=\"0\"/>"
     );
+    assert_eq!(
+        xml(get_overrides(GetOverridesOpts {
+            details: Some(true),
+            result: Some(true),
+            ..Default::default()
+        })),
+        "<get_overrides details=\"1\" result=\"1\"/>"
+    );
 }
