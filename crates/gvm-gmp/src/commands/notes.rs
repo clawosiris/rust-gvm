@@ -40,6 +40,8 @@ pub struct GetNotesOpts {
     pub trash: Option<bool>,
     /// Whether to request detailed output.
     pub details: Option<bool>,
+    /// Whether to include associated result references in the response.
+    pub result: Option<bool>,
 }
 
 /// Build a clone request for an existing note.
@@ -68,6 +70,7 @@ pub fn get_notes(opts: GetNotesOpts) -> impl Request {
     );
     set_optional_bool_attr(&mut cmd, "trash", opts.trash);
     set_optional_bool_attr(&mut cmd, "details", opts.details);
+    set_optional_bool_attr(&mut cmd, "result", opts.result);
     cmd
 }
 
@@ -156,9 +159,12 @@ mod tests {
         let rendered = xml(get_notes(GetNotesOpts {
             filter_string: Some("name=foo".into()),
             details: Some(true),
+            result: Some(true),
             ..Default::default()
         }));
         assert!(rendered.contains("filter=\"name=foo\""));
+        assert!(rendered.contains("details=\"1\""));
+        assert!(rendered.contains("result=\"1\""));
         let rendered = xml(modify_note(
             &id("n1"),
             NoteOpts {

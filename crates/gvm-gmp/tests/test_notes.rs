@@ -50,4 +50,12 @@ fn test_note_get_modify_delete() {
         xml(delete_note(&id("n1"), true)),
         "<delete_note note_id=\"n1\" ultimate=\"1\"/>"
     );
+    assert_eq!(
+        xml(get_notes(GetNotesOpts {
+            details: Some(true),
+            result: Some(true),
+            ..Default::default()
+        })),
+        "<get_notes details=\"1\" result=\"1\"/>"
+    );
 }
