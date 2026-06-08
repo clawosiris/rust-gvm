@@ -258,6 +258,10 @@ pub(crate) fn parse_u32(value: &str, field: &str) -> Result<u32, ParseError> {
     })
 }
 
+pub(crate) fn parse_score(value: &str) -> Option<f64> {
+    value.parse::<f64>().ok()
+}
+
 pub(crate) fn optional_u16(
     node: &XmlNode,
     name: &str,

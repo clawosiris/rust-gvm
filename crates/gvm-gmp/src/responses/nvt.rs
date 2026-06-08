@@ -6,7 +6,8 @@
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, optional_u32, parse_document, status_from_response, CountInfo, ParseError,
+    count_info, optional_u32, parse_document, parse_score, status_from_response, CountInfo,
+    ParseError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,6 +52,16 @@ pub struct GetNvtFamiliesResponse {
 }
 
 impl Nvt {
+    /// Returns `cvss_base` parsed as a numeric score when present and valid.
+    pub fn cvss_base_score(&self) -> Option<f64> {
+        self.cvss_base.as_deref().and_then(parse_score)
+    }
+
+    /// Returns `severity` parsed as a numeric score when present and valid.
+    pub fn severity_score(&self) -> Option<f64> {
+        self.severity.as_deref().and_then(parse_score)
+    }
+
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
         Ok(Self {
             oid: node
@@ -219,6 +230,48 @@ mod tests {
         assert_eq!(nvt.severity, None);
         assert_eq!(nvt.tags, None);
         assert_eq!(nvt.solution_type, None);
+        assert_eq!(nvt.cvss_base_score(), None);
+        assert_eq!(nvt.severity_score(), None);
+    }
+
+    #[test]
+    fn parses_typed_nvt_scores() {
+        let response = Response::from(
+            r#"<get_nvts_response status="200" status_text="OK">
+                <nvt oid="1.3.6.1.4.1.25623.1.0.100001">
+                    <name>HTTP Detection</name>
+                    <cvss_base>7.5</cvss_base>
+                    <severity>9.8</severity>
+                </nvt>
+            </get_nvts_response>"#,
+        );
+
+        let parsed = GetNvtsResponse::from_response(&response).expect("nvts parse");
+        let nvt = &parsed.items[0];
+
+        assert_eq!(nvt.cvss_base_score(), Some(7.5));
+        assert_eq!(nvt.severity_score(), Some(9.8));
+    }
+
+    #[test]
+    fn malformed_typed_nvt_scores_degrade_to_none() {
+        let response = Response::from(
+            r#"<get_nvts_response status="200" status_text="OK">
+                <nvt oid="1.3.6.1.4.1.25623.1.0.100001">
+                    <name>HTTP Detection</name>
+                    <cvss_base>unknown</cvss_base>
+                    <severity>n/a</severity>
+                </nvt>
+            </get_nvts_response>"#,
+        );
+
+        let parsed = GetNvtsResponse::from_response(&response).expect("nvts parse");
+        let nvt = &parsed.items[0];
+
+        assert_eq!(nvt.cvss_base.as_deref(), Some("unknown"));
+        assert_eq!(nvt.severity.as_deref(), Some("n/a"));
+        assert_eq!(nvt.cvss_base_score(), None);
+        assert_eq!(nvt.severity_score(), None);
     }
 
     #[test]
