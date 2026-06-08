@@ -42,7 +42,9 @@ pub fn create_host(opts: HostOpts) -> impl Request {
 /// Build a `get_hosts` request.
 #[must_use]
 pub fn get_hosts(opts: GetHostsOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("get_assets").attribute("asset_type", "host");
+    let mut cmd = XmlCommand::new("get_assets")
+        .attribute("asset_type", "host")
+        .attribute("type", "host");
     add_filter_attrs(
         &mut cmd,
         opts.filter_string.as_deref(),
@@ -59,6 +61,7 @@ pub fn get_host(host_id: &EntityId) -> impl Request {
     XmlCommand::new("get_assets")
         .attribute("asset_id", host_id.as_str())
         .attribute("asset_type", "host")
+        .attribute("type", "host")
         .attribute("details", "1")
 }
 
@@ -102,7 +105,7 @@ mod tests {
         assert!(rendered.contains("<value>1.1.1.1</value>"));
         assert_eq!(
             xml(get_host(&id("h1"))),
-            "<get_assets asset_id=\"h1\" asset_type=\"host\" details=\"1\"/>"
+            "<get_assets asset_id=\"h1\" asset_type=\"host\" type=\"host\" details=\"1\"/>"
         );
     }
 
@@ -113,6 +116,7 @@ mod tests {
             ..Default::default()
         }));
         assert!(rendered.contains("asset_type=\"host\""));
+        assert!(rendered.contains("type=\"host\""));
         let rendered = xml(modify_host(
             &id("h1"),
             HostOpts {
