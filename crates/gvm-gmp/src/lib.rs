@@ -10,6 +10,8 @@ pub mod commands;
 mod common;
 /// GMP enums and wire-format helpers.
 pub mod enums;
+/// Shared gvmd filter composition helpers.
+pub mod filtering;
 /// Typed GMP response models.
 pub mod responses;
 /// Shared GMP identifier and version types.
@@ -17,5 +19,7 @@ pub mod types;
 
 /// Re-exported GMP enums.
 pub use enums::*;
+/// Re-exported gvmd filter helpers.
+pub use filtering::{PaginatedFilter, Pagination};
 /// Re-exported shared GMP types.
 pub use types::{EntityId, EntityIdError, GmpVersion};
