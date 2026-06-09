@@ -32,6 +32,19 @@ pub struct Report {
 pub struct ResultCount {
     pub full: Option<u32>,
     pub filtered: Option<u32>,
+    pub high: Option<SeverityCount>,
+    pub medium: Option<SeverityCount>,
+    pub low: Option<SeverityCount>,
+    pub log: Option<SeverityCount>,
+    pub false_positive: Option<SeverityCount>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct SeverityCount {
+    pub full: Option<u32>,
+    pub filtered: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -175,6 +188,11 @@ impl Report {
                             })
                             .transpose()?,
                         filtered: optional_u32(count, "filtered", "result_count.filtered")?,
+                        high: parse_severity_count(count, &["high", "hole"])?,
+                        medium: parse_severity_count(count, &["medium", "warning"])?,
+                        low: parse_severity_count(count, &["low", "info"])?,
+                        log: parse_severity_count(count, &["log"])?,
+                        false_positive: parse_severity_count(count, &["false_positive"])?,
                     })
                 })
                 .transpose()?,
@@ -191,6 +209,28 @@ impl Report {
                 .flatten(),
         })
     }
+}
+
+fn parse_severity_count(
+    node: &crate::responses::common::XmlNode,
+    field_names: &[&str],
+) -> Result<Option<SeverityCount>, ParseError> {
+    let Some(bucket) = field_names.iter().find_map(|name| node.child(name)) else {
+        return Ok(None);
+    };
+
+    Ok(Some(SeverityCount {
+        full: bucket
+            .optional_child_text("full")
+            .map(|value| {
+                value.parse::<u32>().map_err(|_| ParseError::InvalidValue {
+                    field: format!("{}.full", field_names[0]),
+                    value,
+                })
+            })
+            .transpose()?,
+        filtered: optional_u32(bucket, "filtered", &format!("{}.filtered", field_names[0]))?,
+    }))
 }
 
 impl GetReportsResponse {
@@ -574,6 +614,48 @@ mod tests {
             Some("9.8")
         );
         assert_eq!(report.host_count, Some(2));
+    }
+
+    #[test]
+    fn parses_report_result_count_severity_buckets() {
+        let response = Response::from(
+            r#"<get_reports_response status="200" status_text="OK">
+                <report id="rpt-1">
+                    <name>Bucketed Report</name>
+                    <report id="rpt-1">
+                        <result_count>
+                            <full>11</full>
+                            <filtered>8</filtered>
+                            <hole><full>2</full><filtered>1</filtered></hole>
+                            <warning><full>3</full><filtered>2</filtered></warning>
+                            <info><full>4</full><filtered>3</filtered></info>
+                            <log><full>1</full><filtered>1</filtered></log>
+                            <false_positive><full>1</full><filtered>1</filtered></false_positive>
+                        </result_count>
+                    </report>
+                </report>
+            </get_reports_response>"#,
+        );
+
+        let parsed = GetReportsResponse::from_response(&response).expect("reports parse");
+        let count = parsed.items[0].result_count.as_ref().expect("result count");
+
+        assert_eq!(count.full, Some(11));
+        assert_eq!(count.filtered, Some(8));
+        assert_eq!(count.high.as_ref().and_then(|bucket| bucket.full), Some(2));
+        assert_eq!(
+            count.medium.as_ref().and_then(|bucket| bucket.filtered),
+            Some(2)
+        );
+        assert_eq!(count.low.as_ref().and_then(|bucket| bucket.full), Some(4));
+        assert_eq!(count.log.as_ref().and_then(|bucket| bucket.full), Some(1));
+        assert_eq!(
+            count
+                .false_positive
+                .as_ref()
+                .and_then(|bucket| bucket.filtered),
+            Some(1)
+        );
     }
 
     #[test]

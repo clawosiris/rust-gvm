@@ -16,6 +16,8 @@ use crate::responses::common::{
 pub struct PortList {
     pub meta: EntityMeta,
     pub port_count: Option<u32>,
+    pub tcp_count: Option<u32>,
+    pub udp_count: Option<u32>,
     pub port_range: Option<String>,
 }
 
@@ -43,6 +45,8 @@ impl PortList {
         Ok(Self {
             meta: parse_entity_meta(node)?,
             port_count: optional_u32(node, "port_count", "port_count")?,
+            tcp_count: optional_u32(node, "tcp_count", "tcp_count")?,
+            udp_count: optional_u32(node, "udp_count", "udp_count")?,
             port_range: node.optional_child_text("port_range"),
         })
     }
@@ -104,6 +108,8 @@ mod tests {
                     <writable>1</writable>
                     <in_use>0</in_use>
                     <port_count>65535</port_count>
+                    <tcp_count>65535</tcp_count>
+                    <udp_count>0</udp_count>
                     <port_range>T:1-65535</port_range>
                 </port_list>
                 <port_list id="pl-2">
@@ -118,6 +124,8 @@ mod tests {
         assert_eq!(parsed.items.len(), 2);
         assert_eq!(parsed.counts.page, Some(1));
         assert_eq!(parsed.items[0].port_count, Some(65535));
+        assert_eq!(parsed.items[0].tcp_count, Some(65535));
+        assert_eq!(parsed.items[0].udp_count, Some(0));
         assert_eq!(parsed.items[0].port_range.as_deref(), Some("T:1-65535"));
     }
 
@@ -175,6 +183,8 @@ mod tests {
 
         assert_eq!(port_list.meta.comment, None);
         assert_eq!(port_list.port_count, None);
+        assert_eq!(port_list.tcp_count, None);
+        assert_eq!(port_list.udp_count, None);
         assert_eq!(port_list.port_range, None);
     }
 }
