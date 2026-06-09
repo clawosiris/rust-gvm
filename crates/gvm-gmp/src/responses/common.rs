@@ -259,7 +259,7 @@ pub(crate) fn parse_u32(value: &str, field: &str) -> Result<u32, ParseError> {
 }
 
 pub(crate) fn parse_score(value: &str) -> Option<f64> {
-    value.parse::<f64>().ok()
+    value.parse::<f64>().ok().filter(|score| score.is_finite())
 }
 
 pub(crate) fn optional_u16(
@@ -408,5 +408,13 @@ mod tests {
             ParseError::InvalidValue { field, value }
                 if field == "schedule.id" && value == "not valid"
         ));
+    }
+
+    #[test]
+    fn parse_score_rejects_non_finite_values() {
+        assert_eq!(parse_score("7.5"), Some(7.5));
+        assert_eq!(parse_score("NaN"), None);
+        assert_eq!(parse_score("inf"), None);
+        assert_eq!(parse_score("-inf"), None);
     }
 }

@@ -28,7 +28,7 @@ fn test_create_host_with_value_and_comment() {
 fn test_host_get_modify_delete() {
     assert_eq!(
         xml(get_host(&id("h1"))),
-        "<get_assets asset_id=\"h1\" asset_type=\"host\" details=\"1\"/>"
+        "<get_assets asset_id=\"h1\" asset_type=\"host\" details=\"1\" type=\"host\"/>"
     );
     assert_eq!(
         xml(delete_host(&id("h1"), false)),
