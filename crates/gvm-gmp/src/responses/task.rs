@@ -7,9 +7,9 @@ use gvm_protocol::Response;
 
 use crate::{
     responses::common::{
-        count_info, optional_u32, parse_document, parse_entity_id, parse_entity_meta,
+        count_info, optional_u32, parse_bool, parse_document, parse_entity_id, parse_entity_meta,
         parse_named_entity, status_from_response, ActionResponse, CountInfo, EntityMeta,
-        NamedEntity, ParseError,
+        NamedEntity, ParseError, XmlNode,
     },
     EntityId,
 };
@@ -21,13 +21,17 @@ pub struct Task {
     pub meta: EntityMeta,
     pub status: Option<String>,
     pub progress: Option<i32>,
+    pub alterable: Option<bool>,
     pub target: Option<NamedEntity>,
     pub config: Option<NamedEntity>,
     pub scanner: Option<NamedEntity>,
     pub schedule: Option<NamedEntity>,
     pub alerts: Vec<NamedEntity>,
+    pub observers: Option<TaskObservers>,
+    pub current_report: Option<CurrentReport>,
     pub last_report: Option<LastReport>,
     pub report_count: Option<u32>,
+    pub schedule_periods: Option<u32>,
     pub trend: Option<String>,
     pub usage_type: Option<String>,
     pub hosts_ordering: Option<String>,
@@ -39,6 +43,28 @@ pub struct Task {
 pub struct LastReport {
     pub id: EntityId,
     pub timestamp: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct CurrentReport {
+    pub id: EntityId,
+    pub timestamp: Option<String>,
+}
+
+struct TaskReportReference {
+    id: EntityId,
+    timestamp: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct TaskObservers {
+    pub users: Vec<String>,
+    pub groups: Vec<NamedEntity>,
+    pub roles: Vec<NamedEntity>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -92,6 +118,10 @@ impl Task {
                     })
                 })
                 .transpose()?,
+            alterable: node
+                .optional_child_text("alterable")
+                .map(|value| parse_bool(&value, "alterable"))
+                .transpose()?,
             target: parse_named_entity(node, "target")?,
             config: parse_named_entity(node, "config")?,
             scanner: parse_named_entity(node, "scanner")?,
@@ -109,22 +139,11 @@ impl Task {
                     Ok(NamedEntity { id, name })
                 })
                 .collect::<Result<Vec<_>, _>>()?,
-            last_report: node
-                .child("last_report")
-                .and_then(|last_report| last_report.child("report"))
-                .map(|report| -> Result<LastReport, ParseError> {
-                    Ok(LastReport {
-                        id: parse_entity_id(
-                            report.attr("id").ok_or_else(|| {
-                                ParseError::MissingElement("last_report.report.id".to_string())
-                            })?,
-                            "last_report.report.id",
-                        )?,
-                        timestamp: report.optional_child_text("timestamp"),
-                    })
-                })
-                .transpose()?,
+            observers: parse_observers(node)?,
+            current_report: parse_current_report(node)?,
+            last_report: parse_last_report(node)?,
             report_count: optional_u32(node, "report_count", "report_count")?,
+            schedule_periods: optional_u32(node, "schedule_periods", "schedule_periods")?,
             trend: node.optional_child_text("trend"),
             usage_type: node.optional_child_text("usage_type"),
             hosts_ordering: node.optional_child_text("hosts_ordering"),
@@ -200,6 +219,87 @@ fn parse_task_action_response(
     Ok((status, status_text, report_id))
 }
 
+fn parse_current_report(node: &XmlNode) -> Result<Option<CurrentReport>, ParseError> {
+    parse_report_reference(node, "current_report").map(|report| {
+        report.map(|report| CurrentReport {
+            id: report.id,
+            timestamp: report.timestamp,
+        })
+    })
+}
+
+fn parse_last_report(node: &XmlNode) -> Result<Option<LastReport>, ParseError> {
+    parse_report_reference(node, "last_report").map(|report| {
+        report.map(|report| LastReport {
+            id: report.id,
+            timestamp: report.timestamp,
+        })
+    })
+}
+
+fn parse_report_reference(
+    node: &XmlNode,
+    field: &str,
+) -> Result<Option<TaskReportReference>, ParseError> {
+    node.child(field)
+        .and_then(|report_wrapper| report_wrapper.child("report"))
+        .map(|report| -> Result<TaskReportReference, ParseError> {
+            Ok(TaskReportReference {
+                id: parse_entity_id(
+                    report
+                        .attr("id")
+                        .ok_or_else(|| ParseError::MissingElement(format!("{field}.report.id")))?,
+                    &format!("{field}.report.id"),
+                )?,
+                timestamp: report.optional_child_text("timestamp"),
+            })
+        })
+        .transpose()
+}
+
+fn parse_observers(node: &XmlNode) -> Result<Option<TaskObservers>, ParseError> {
+    node.child("observers")
+        .map(|observers| {
+            Ok(TaskObservers {
+                users: parse_user_list(&observers.text),
+                groups: parse_named_children(observers, "group", "observers.group")?,
+                roles: parse_named_children(observers, "role", "observers.role")?,
+            })
+        })
+        .transpose()
+}
+
+fn parse_user_list(value: &str) -> Vec<String> {
+    value
+        .split(|separator: char| separator.is_whitespace() || separator == ',')
+        .filter_map(non_empty_text)
+        .collect()
+}
+
+fn non_empty_text(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
+fn parse_named_children(
+    node: &XmlNode,
+    child_name: &str,
+    field: &str,
+) -> Result<Vec<NamedEntity>, ParseError> {
+    node.children_named(child_name)
+        .map(|child| -> Result<NamedEntity, ParseError> {
+            let id = parse_entity_id(
+                child
+                    .attr("id")
+                    .ok_or_else(|| ParseError::MissingElement(format!("{field}.id")))?,
+                &format!("{field}.id"),
+            )?;
+            let name = child.required_child_text("name")?;
+            Ok(NamedEntity { id, name })
+        })
+        .collect()
+}
+
 pub type StopTaskResponse = ActionResponse;
 pub type ModifyTaskResponse = ActionResponse;
 pub type DeleteTaskResponse = ActionResponse;
@@ -225,18 +325,30 @@ mod tests {
                     <in_use>1</in_use>
                     <status>Done</status>
                     <progress>100</progress>
+                    <alterable>1</alterable>
                     <target id="t-1"><name>Local Net</name></target>
                     <config id="cfg-1"><name>Full and fast</name></config>
                     <scanner id="sc-1"><name>Default</name></scanner>
                     <schedule id="sched-1"><name>Weekly</name></schedule>
                     <alert id="alert-1"><name>Email</name></alert>
                     <alert id="alert-2"><name>Ticket</name></alert>
+                    <observers>
+                        alice bob carol
+                        <group id="grp-1"><name>Auditors</name></group>
+                        <role id="role-1"><name>Observer</name></role>
+                    </observers>
+                    <current_report>
+                        <report id="rpt-current-1">
+                            <timestamp>2026-01-15T10:00:00Z</timestamp>
+                        </report>
+                    </current_report>
                     <last_report>
                         <report id="rpt-1">
                             <timestamp>2026-01-15T10:30:00Z</timestamp>
                         </report>
                     </last_report>
                     <report_count>5</report_count>
+                    <schedule_periods>3</schedule_periods>
                     <trend>up</trend>
                     <usage_type>scan</usage_type>
                     <hosts_ordering>sequential</hosts_ordering>
@@ -258,7 +370,26 @@ mod tests {
         assert_eq!(parsed.counts.page, Some(1));
         assert_eq!(parsed.items[0].status.as_deref(), Some("Done"));
         assert_eq!(parsed.items[0].progress, Some(100));
+        assert_eq!(parsed.items[0].alterable, Some(true));
         assert_eq!(parsed.items[0].alerts.len(), 2);
+        let observers = parsed.items[0].observers.as_ref().expect("observers parse");
+        assert_eq!(
+            observers
+                .users
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            vec!["alice", "bob", "carol"]
+        );
+        assert_eq!(observers.groups[0].id.as_str(), "grp-1");
+        assert_eq!(observers.roles[0].id.as_str(), "role-1");
+        assert_eq!(
+            parsed.items[0]
+                .current_report
+                .as_ref()
+                .map(|report| report.id.as_str()),
+            Some("rpt-current-1")
+        );
         assert_eq!(
             parsed.items[0]
                 .last_report
@@ -266,6 +397,7 @@ mod tests {
                 .map(|report| report.id.as_str()),
             Some("rpt-1")
         );
+        assert_eq!(parsed.items[0].schedule_periods, Some(3));
         assert_eq!(parsed.items[1].progress, Some(42));
     }
 
@@ -354,9 +486,13 @@ mod tests {
         assert_eq!(task.meta.comment, None);
         assert_eq!(task.status, None);
         assert_eq!(task.progress, None);
+        assert_eq!(task.alterable, None);
         assert!(task.alerts.is_empty());
+        assert_eq!(task.observers, None);
+        assert_eq!(task.current_report, None);
         assert_eq!(task.last_report, None);
         assert_eq!(task.report_count, None);
+        assert_eq!(task.schedule_periods, None);
         assert!(!task.meta.in_use);
         assert!(!task.meta.writable);
     }
