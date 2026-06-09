@@ -6,8 +6,8 @@
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, optional_u32, parse_document, parse_entity_meta, status_from_response, CountInfo,
-    EntityMeta, ParseError,
+    count_info, optional_u32, parse_document, parse_entity_meta, parse_score, status_from_response,
+    CountInfo, EntityMeta, ParseError,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -53,6 +53,11 @@ pub struct GetResultsResponse {
 }
 
 impl ScanResult {
+    /// Returns `severity` parsed as a numeric score when present and valid.
+    pub fn severity_score(&self) -> Option<f64> {
+        self.severity.as_deref().and_then(parse_score)
+    }
+
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
         Ok(Self {
             meta: parse_entity_meta(node)?,
@@ -85,6 +90,13 @@ impl ScanResult {
                 .transpose()?,
             description: node.optional_child_text("description"),
         })
+    }
+}
+
+impl NvtRef {
+    /// Returns `cvss_base` parsed as a numeric score when present and valid.
+    pub fn cvss_base_score(&self) -> Option<f64> {
+        self.cvss_base.as_deref().and_then(parse_score)
     }
 }
 
@@ -155,6 +167,14 @@ mod tests {
         assert_eq!(
             parsed.items[0].qod.as_ref().and_then(|qod| qod.value),
             Some(80)
+        );
+        assert_eq!(parsed.items[0].severity_score(), Some(0.0));
+        assert_eq!(
+            parsed.items[0]
+                .nvt
+                .as_ref()
+                .and_then(NvtRef::cvss_base_score),
+            Some(0.0)
         );
         assert_eq!(parsed.items[1].port, None);
     }
@@ -231,5 +251,32 @@ mod tests {
         assert_eq!(result.nvt, None);
         assert_eq!(result.qod, None);
         assert_eq!(result.description, None);
+        assert_eq!(result.severity_score(), None);
+    }
+
+    #[test]
+    fn malformed_typed_result_scores_degrade_to_none() {
+        let response = Response::from(
+            r#"<get_results_response status="200" status_text="OK">
+                <result id="res-1">
+                    <name>Malformed Scores</name>
+                    <nvt oid="1.3.6.1.4.1.25623.1.0.100315">
+                        <cvss_base>unknown</cvss_base>
+                    </nvt>
+                    <severity>n/a</severity>
+                </result>
+            </get_results_response>"#,
+        );
+
+        let parsed = GetResultsResponse::from_response(&response).expect("results parse");
+        let result = &parsed.items[0];
+
+        assert_eq!(result.severity.as_deref(), Some("n/a"));
+        assert_eq!(result.severity_score(), None);
+        assert_eq!(
+            result.nvt.as_ref().and_then(|nvt| nvt.cvss_base.as_deref()),
+            Some("unknown")
+        );
+        assert_eq!(result.nvt.as_ref().and_then(NvtRef::cvss_base_score), None);
     }
 }
