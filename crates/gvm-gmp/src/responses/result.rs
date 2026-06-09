@@ -6,7 +6,7 @@
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, optional_u32, parse_document, parse_entity_meta, parse_named_entity, parse_score,
+    count_info, optional_u32, parse_document, parse_entity_meta, parse_entity_ref, parse_score,
     status_from_response, CountInfo, EntityMeta, NamedEntity, ParseError,
 };
 
@@ -67,8 +67,8 @@ impl ScanResult {
             meta: parse_entity_meta(node)?,
             host: node.optional_child_text("host"),
             port: node.optional_child_text("port"),
-            task: parse_named_entity(node, "task")?,
-            report: parse_named_entity(node, "report")?,
+            task: parse_entity_ref(node, "task")?,
+            report: parse_entity_ref(node, "report")?,
             nvt: node
                 .child("nvt")
                 .map(|nvt| -> Result<NvtRef, ParseError> {

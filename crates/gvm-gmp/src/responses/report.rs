@@ -36,6 +36,7 @@ pub struct ResultCount {
     pub medium: Option<SeverityCount>,
     pub low: Option<SeverityCount>,
     pub log: Option<SeverityCount>,
+    pub debug: Option<SeverityCount>,
     pub false_positive: Option<SeverityCount>,
 }
 
@@ -192,6 +193,7 @@ impl Report {
                         medium: parse_severity_count(count, &["medium", "warning"])?,
                         low: parse_severity_count(count, &["low", "info"])?,
                         log: parse_severity_count(count, &["log"])?,
+                        debug: parse_severity_count(count, &["debug"])?,
                         false_positive: parse_severity_count(count, &["false_positive"])?,
                     })
                 })
@@ -630,6 +632,7 @@ mod tests {
                             <warning><full>3</full><filtered>2</filtered></warning>
                             <info><full>4</full><filtered>3</filtered></info>
                             <log><full>1</full><filtered>1</filtered></log>
+                            <debug><full>5</full><filtered>4</filtered></debug>
                             <false_positive><full>1</full><filtered>1</filtered></false_positive>
                         </result_count>
                     </report>
@@ -649,6 +652,10 @@ mod tests {
         );
         assert_eq!(count.low.as_ref().and_then(|bucket| bucket.full), Some(4));
         assert_eq!(count.log.as_ref().and_then(|bucket| bucket.full), Some(1));
+        assert_eq!(
+            count.debug.as_ref().and_then(|bucket| bucket.filtered),
+            Some(4)
+        );
         assert_eq!(
             count
                 .false_positive
