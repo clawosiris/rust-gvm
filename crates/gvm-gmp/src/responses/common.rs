@@ -331,6 +331,26 @@ pub(crate) fn parse_named_entity(
         .map(Option::flatten)
 }
 
+pub(crate) fn parse_entity_ref(
+    node: &XmlNode,
+    field: &str,
+) -> Result<Option<NamedEntity>, ParseError> {
+    node.child(field)
+        .map(|child| {
+            let Some(raw_id) = child.attr("id") else {
+                return Err(ParseError::MissingElement(format!("{field}.id")));
+            };
+            if raw_id.is_empty() {
+                return Ok(None);
+            }
+            let id = parse_entity_id(raw_id, &format!("{field}.id"))?;
+            let name = child.optional_child_text("name").unwrap_or_default();
+            Ok(Some(NamedEntity { id, name }))
+        })
+        .transpose()
+        .map(Option::flatten)
+}
+
 pub(crate) fn parse_entity_meta(node: &XmlNode) -> Result<EntityMeta, ParseError> {
     Ok(EntityMeta {
         id: parse_entity_id(

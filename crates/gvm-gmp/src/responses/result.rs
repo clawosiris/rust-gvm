@@ -6,8 +6,8 @@
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, optional_u32, parse_document, parse_entity_meta, parse_score, status_from_response,
-    CountInfo, EntityMeta, ParseError,
+    count_info, optional_u32, parse_document, parse_entity_meta, parse_entity_ref, parse_score,
+    status_from_response, CountInfo, EntityMeta, NamedEntity, ParseError,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -17,6 +17,8 @@ pub struct ScanResult {
     pub meta: EntityMeta,
     pub host: Option<String>,
     pub port: Option<String>,
+    pub task: Option<NamedEntity>,
+    pub report: Option<NamedEntity>,
     pub nvt: Option<NvtRef>,
     pub threat: Option<String>,
     pub severity: Option<String>,
@@ -32,6 +34,8 @@ pub struct NvtRef {
     pub name: Option<String>,
     pub family: Option<String>,
     pub cvss_base: Option<String>,
+    pub cves: Vec<String>,
+    pub tags: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,6 +67,8 @@ impl ScanResult {
             meta: parse_entity_meta(node)?,
             host: node.optional_child_text("host"),
             port: node.optional_child_text("port"),
+            task: parse_entity_ref(node, "task")?,
+            report: parse_entity_ref(node, "report")?,
             nvt: node
                 .child("nvt")
                 .map(|nvt| -> Result<NvtRef, ParseError> {
@@ -74,6 +80,8 @@ impl ScanResult {
                         name: nvt.optional_child_text("name"),
                         family: nvt.optional_child_text("family"),
                         cvss_base: nvt.optional_child_text("cvss_base"),
+                        cves: parse_nvt_cves(nvt),
+                        tags: nvt.optional_child_text("tags"),
                     })
                 })
                 .transpose()?,
@@ -98,6 +106,29 @@ impl NvtRef {
     pub fn cvss_base_score(&self) -> Option<f64> {
         self.cvss_base.as_deref().and_then(parse_score)
     }
+}
+
+fn parse_nvt_cves(node: &crate::responses::common::XmlNode) -> Vec<String> {
+    let mut cves = node
+        .children_named("cve")
+        .map(|cve| cve.text.clone())
+        .filter(|cve| !cve.is_empty())
+        .collect::<Vec<_>>();
+
+    if let Some(refs) = node.child("refs") {
+        cves.extend(
+            refs.children_named("ref")
+                .filter(|reference| reference.attr("type") == Some("cve"))
+                .filter_map(|reference| {
+                    reference
+                        .attr("id")
+                        .map(ToString::to_string)
+                        .or_else(|| (!reference.text.is_empty()).then(|| reference.text.clone()))
+                }),
+        );
+    }
+
+    cves
 }
 
 impl GetResultsResponse {
@@ -136,10 +167,15 @@ mod tests {
                     <in_use>0</in_use>
                     <host>192.168.1.1</host>
                     <port>80/tcp</port>
+                    <task id="task-1"><name>Discovery Scan</name></task>
+                    <report id="report-1"><name>Daily Report</name></report>
                     <nvt oid="1.3.6.1.4.1.25623.1.0.100315">
                         <name>HTTP Server Detection</name>
                         <family>Service detection</family>
                         <cvss_base>0.0</cvss_base>
+                        <cve>CVE-2026-0001</cve>
+                        <refs><ref type="cve" id="CVE-2026-0002"/></refs>
+                        <tags>summary=Detects HTTP server</tags>
                     </nvt>
                     <threat>Log</threat>
                     <severity>0.0</severity>
@@ -161,8 +197,34 @@ mod tests {
         assert_eq!(parsed.counts.page, Some(1));
         assert_eq!(parsed.items[0].host.as_deref(), Some("192.168.1.1"));
         assert_eq!(
+            parsed.items[0].task.as_ref().map(|task| task.name.as_str()),
+            Some("Discovery Scan")
+        );
+        assert_eq!(
+            parsed.items[0]
+                .report
+                .as_ref()
+                .map(|report| report.name.as_str()),
+            Some("Daily Report")
+        );
+        assert_eq!(
             parsed.items[0].nvt.as_ref().map(|nvt| nvt.oid.as_str()),
             Some("1.3.6.1.4.1.25623.1.0.100315")
+        );
+        assert_eq!(
+            parsed.items[0]
+                .nvt
+                .as_ref()
+                .map(|nvt| nvt.cves.clone())
+                .unwrap_or_default(),
+            vec!["CVE-2026-0001".to_string(), "CVE-2026-0002".to_string()]
+        );
+        assert_eq!(
+            parsed.items[0]
+                .nvt
+                .as_ref()
+                .and_then(|nvt| nvt.tags.as_deref()),
+            Some("summary=Detects HTTP server")
         );
         assert_eq!(
             parsed.items[0].qod.as_ref().and_then(|qod| qod.value),
@@ -248,6 +310,8 @@ mod tests {
 
         assert_eq!(result.meta.comment, None);
         assert_eq!(result.host, None);
+        assert_eq!(result.task, None);
+        assert_eq!(result.report, None);
         assert_eq!(result.nvt, None);
         assert_eq!(result.qod, None);
         assert_eq!(result.description, None);

@@ -16,6 +16,8 @@ use crate::responses::common::{
 pub struct PortList {
     pub meta: EntityMeta,
     pub port_count: Option<u32>,
+    pub tcp_count: Option<u32>,
+    pub udp_count: Option<u32>,
     pub port_range: Option<String>,
 }
 
@@ -40,11 +42,43 @@ pub struct CreatePortListResponse {
 
 impl PortList {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
+        let port_count_node = node.child("port_count");
         Ok(Self {
             meta: parse_entity_meta(node)?,
-            port_count: optional_u32(node, "port_count", "port_count")?,
+            port_count: port_count_node
+                .map(parse_total_port_count)
+                .transpose()?
+                .flatten(),
+            tcp_count: port_count_node
+                .map(|count| optional_u32(count, "tcp", "port_count.tcp"))
+                .transpose()?
+                .flatten(),
+            udp_count: port_count_node
+                .map(|count| optional_u32(count, "udp", "port_count.udp"))
+                .transpose()?
+                .flatten(),
             port_range: node.optional_child_text("port_range"),
         })
+    }
+}
+
+fn parse_total_port_count(
+    node: &crate::responses::common::XmlNode,
+) -> Result<Option<u32>, ParseError> {
+    if let Some(total) = optional_u32(node, "all", "port_count.all")? {
+        return Ok(Some(total));
+    }
+
+    if node.text.is_empty() {
+        Ok(None)
+    } else {
+        node.text
+            .parse::<u32>()
+            .map(Some)
+            .map_err(|_| ParseError::InvalidValue {
+                field: "port_count".to_string(),
+                value: node.text.clone(),
+            })
     }
 }
 
@@ -103,7 +137,11 @@ mod tests {
                     <modification_time>2026-01-02T00:00:00Z</modification_time>
                     <writable>1</writable>
                     <in_use>0</in_use>
-                    <port_count>65535</port_count>
+                    <port_count>
+                        <all>65535</all>
+                        <tcp>65535</tcp>
+                        <udp>0</udp>
+                    </port_count>
                     <port_range>T:1-65535</port_range>
                 </port_list>
                 <port_list id="pl-2">
@@ -118,7 +156,28 @@ mod tests {
         assert_eq!(parsed.items.len(), 2);
         assert_eq!(parsed.counts.page, Some(1));
         assert_eq!(parsed.items[0].port_count, Some(65535));
+        assert_eq!(parsed.items[0].tcp_count, Some(65535));
+        assert_eq!(parsed.items[0].udp_count, Some(0));
         assert_eq!(parsed.items[0].port_range.as_deref(), Some("T:1-65535"));
+    }
+
+    #[test]
+    fn parses_flat_total_port_count_without_protocol_breakdown() {
+        let response = Response::from(
+            r#"<get_port_lists_response status="200" status_text="OK">
+                <port_list id="pl-1">
+                    <name>Legacy Port Count</name>
+                    <port_count>3</port_count>
+                </port_list>
+            </get_port_lists_response>"#,
+        );
+
+        let parsed = GetPortListsResponse::from_response(&response).expect("port lists parse");
+        let port_list = &parsed.items[0];
+
+        assert_eq!(port_list.port_count, Some(3));
+        assert_eq!(port_list.tcp_count, None);
+        assert_eq!(port_list.udp_count, None);
     }
 
     #[test]
@@ -175,6 +234,8 @@ mod tests {
 
         assert_eq!(port_list.meta.comment, None);
         assert_eq!(port_list.port_count, None);
+        assert_eq!(port_list.tcp_count, None);
+        assert_eq!(port_list.udp_count, None);
         assert_eq!(port_list.port_range, None);
     }
 }
