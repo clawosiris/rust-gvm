@@ -105,7 +105,7 @@ mod tests {
         assert!(rendered.contains("<value>1.1.1.1</value>"));
         assert_eq!(
             xml(get_host(&id("h1"))),
-            "<get_assets asset_id=\"h1\" asset_type=\"host\" type=\"host\" details=\"1\"/>"
+            "<get_assets asset_id=\"h1\" asset_type=\"host\" details=\"1\" type=\"host\"/>"
         );
     }
 
