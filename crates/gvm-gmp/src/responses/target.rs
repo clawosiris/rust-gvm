@@ -22,6 +22,10 @@ pub struct Target {
     pub reverse_lookup_only: bool,
     pub reverse_lookup_unify: bool,
     pub port_list: Option<NamedEntity>,
+    pub ssh_credential: Option<NamedEntity>,
+    pub smb_credential: Option<NamedEntity>,
+    pub esxi_credential: Option<NamedEntity>,
+    pub snmp_credential: Option<NamedEntity>,
     pub max_hosts: Option<u32>,
 }
 
@@ -68,6 +72,10 @@ impl Target {
                 .transpose()?
                 .unwrap_or(false),
             port_list: parse_named_entity(node, "port_list")?,
+            ssh_credential: parse_named_entity(node, "ssh_credential")?,
+            smb_credential: parse_named_entity(node, "smb_credential")?,
+            esxi_credential: parse_named_entity(node, "esxi_credential")?,
+            snmp_credential: parse_named_entity(node, "snmp_credential")?,
             max_hosts: optional_u32(node, "max_hosts", "max_hosts")?,
         })
     }
@@ -134,6 +142,10 @@ mod tests {
                     <reverse_lookup_only>0</reverse_lookup_only>
                     <reverse_lookup_unify>1</reverse_lookup_unify>
                     <port_list id="pl-1"><name>All TCP</name></port_list>
+                    <ssh_credential id="cred-ssh"><name>SSH Cred</name></ssh_credential>
+                    <smb_credential id="cred-smb"><name>SMB Cred</name></smb_credential>
+                    <esxi_credential id="cred-esxi"><name>ESXi Cred</name></esxi_credential>
+                    <snmp_credential id="cred-snmp"><name>SNMP Cred</name></snmp_credential>
                     <max_hosts>4096</max_hosts>
                 </target>
                 <target id="t-2">
@@ -165,6 +177,34 @@ mod tests {
                 .as_ref()
                 .map(|port_list| port_list.name.as_str()),
             Some("All TCP")
+        );
+        assert_eq!(
+            parsed.items[0]
+                .ssh_credential
+                .as_ref()
+                .map(|credential| credential.name.as_str()),
+            Some("SSH Cred")
+        );
+        assert_eq!(
+            parsed.items[0]
+                .smb_credential
+                .as_ref()
+                .map(|credential| credential.name.as_str()),
+            Some("SMB Cred")
+        );
+        assert_eq!(
+            parsed.items[0]
+                .esxi_credential
+                .as_ref()
+                .map(|credential| credential.name.as_str()),
+            Some("ESXi Cred")
+        );
+        assert_eq!(
+            parsed.items[0]
+                .snmp_credential
+                .as_ref()
+                .map(|credential| credential.name.as_str()),
+            Some("SNMP Cred")
         );
         assert_eq!(
             parsed.items[0].hosts,
@@ -234,6 +274,10 @@ mod tests {
         assert!(target.hosts.is_empty());
         assert!(target.exclude_hosts.is_empty());
         assert_eq!(target.port_list, None);
+        assert_eq!(target.ssh_credential, None);
+        assert_eq!(target.smb_credential, None);
+        assert_eq!(target.esxi_credential, None);
+        assert_eq!(target.snmp_credential, None);
         assert!(!target.meta.in_use);
         assert!(!target.meta.writable);
     }
