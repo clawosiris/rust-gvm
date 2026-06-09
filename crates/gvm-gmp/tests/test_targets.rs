@@ -30,6 +30,7 @@ fn test_create_target_with_optionals() {
                 port_list_id: Some(id("pl1")),
                 reverse_lookup_only: Some(true),
                 reverse_lookup_unify: Some(false),
+                ..Default::default()
             }
         )),
         "<create_target><name>target</name><comment>c</comment><hosts>1.1.1.1,2.2.2.2</hosts><exclude_hosts>3.3.3.3</exclude_hosts><alive_test>ICMP &amp; ARP Ping</alive_test><port_list id=\"pl1\"/><reverse_lookup_only>1</reverse_lookup_only><reverse_lookup_unify>0</reverse_lookup_unify></create_target>"

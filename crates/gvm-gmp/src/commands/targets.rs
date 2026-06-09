@@ -24,6 +24,14 @@ pub struct CreateTargetOpts {
     pub alive_test: Option<AliveTest>,
     /// Optional port-list identifier.
     pub port_list_id: Option<EntityId>,
+    /// Optional SSH credential identifier.
+    pub ssh_credential_id: Option<EntityId>,
+    /// Optional SMB credential identifier.
+    pub smb_credential_id: Option<EntityId>,
+    /// Optional `ESXi` credential identifier.
+    pub esxi_credential_id: Option<EntityId>,
+    /// Optional SNMP credential identifier.
+    pub snmp_credential_id: Option<EntityId>,
     /// Whether reverse lookup only should be enabled.
     pub reverse_lookup_only: Option<bool>,
     /// Whether reverse-lookup unification should be enabled.
@@ -58,6 +66,14 @@ pub struct ModifyTargetOpts {
     pub alive_test: Option<AliveTest>,
     /// Optional port-list identifier.
     pub port_list_id: Option<EntityId>,
+    /// Optional SSH credential identifier.
+    pub ssh_credential_id: Option<EntityId>,
+    /// Optional SMB credential identifier.
+    pub smb_credential_id: Option<EntityId>,
+    /// Optional `ESXi` credential identifier.
+    pub esxi_credential_id: Option<EntityId>,
+    /// Optional SNMP credential identifier.
+    pub snmp_credential_id: Option<EntityId>,
 }
 
 /// Build a clone request for an existing target.
@@ -82,6 +98,7 @@ pub fn create_target(name: &str, opts: CreateTargetOpts) -> impl Request {
         cmd.add_element_with_text("alive_test", alive_test.as_target_name());
     }
     add_optional_id_element(&mut cmd, "port_list", opts.port_list_id.as_ref());
+    add_target_credentials(&mut cmd, &opts);
     if let Some(value) = opts.reverse_lookup_only {
         cmd.add_element_with_text("reverse_lookup_only", bool_str(value));
     }
@@ -129,6 +146,7 @@ pub fn modify_target(target_id: &EntityId, opts: ModifyTargetOpts) -> impl Reque
         cmd.add_element_with_text("alive_test", alive_test.as_target_name());
     }
     add_optional_id_element(&mut cmd, "port_list", opts.port_list_id.as_ref());
+    add_target_credentials(&mut cmd, &opts);
     cmd
 }
 
@@ -138,6 +156,56 @@ pub fn delete_target(target_id: &EntityId, ultimate: bool) -> impl Request {
     XmlCommand::new("delete_target")
         .attribute("target_id", target_id.as_str())
         .attribute("ultimate", bool_str(ultimate))
+}
+
+trait TargetCredentialOpts {
+    fn ssh_credential_id(&self) -> Option<&EntityId>;
+    fn smb_credential_id(&self) -> Option<&EntityId>;
+    fn esxi_credential_id(&self) -> Option<&EntityId>;
+    fn snmp_credential_id(&self) -> Option<&EntityId>;
+}
+
+impl TargetCredentialOpts for CreateTargetOpts {
+    fn ssh_credential_id(&self) -> Option<&EntityId> {
+        self.ssh_credential_id.as_ref()
+    }
+
+    fn smb_credential_id(&self) -> Option<&EntityId> {
+        self.smb_credential_id.as_ref()
+    }
+
+    fn esxi_credential_id(&self) -> Option<&EntityId> {
+        self.esxi_credential_id.as_ref()
+    }
+
+    fn snmp_credential_id(&self) -> Option<&EntityId> {
+        self.snmp_credential_id.as_ref()
+    }
+}
+
+impl TargetCredentialOpts for ModifyTargetOpts {
+    fn ssh_credential_id(&self) -> Option<&EntityId> {
+        self.ssh_credential_id.as_ref()
+    }
+
+    fn smb_credential_id(&self) -> Option<&EntityId> {
+        self.smb_credential_id.as_ref()
+    }
+
+    fn esxi_credential_id(&self) -> Option<&EntityId> {
+        self.esxi_credential_id.as_ref()
+    }
+
+    fn snmp_credential_id(&self) -> Option<&EntityId> {
+        self.snmp_credential_id.as_ref()
+    }
+}
+
+fn add_target_credentials(cmd: &mut XmlCommand, opts: &impl TargetCredentialOpts) {
+    add_optional_id_element(cmd, "ssh_credential", opts.ssh_credential_id());
+    add_optional_id_element(cmd, "smb_credential", opts.smb_credential_id());
+    add_optional_id_element(cmd, "esxi_credential", opts.esxi_credential_id());
+    add_optional_id_element(cmd, "snmp_credential", opts.snmp_credential_id());
 }
 
 #[cfg(test)]
@@ -159,6 +227,10 @@ mod tests {
                 exclude_hosts: vec!["2.2.2.2".into()],
                 alive_test: Some(AliveTest::IcmpPing),
                 port_list_id: Some(id("pl1")),
+                ssh_credential_id: Some(id("ssh1")),
+                smb_credential_id: Some(id("smb1")),
+                esxi_credential_id: Some(id("esxi1")),
+                snmp_credential_id: Some(id("snmp1")),
                 reverse_lookup_only: Some(true),
                 reverse_lookup_unify: Some(false),
             },
@@ -167,6 +239,10 @@ mod tests {
         assert!(rendered.contains("<hosts>1.1.1.1</hosts>"));
         assert!(rendered.contains("<alive_test>ICMP Ping</alive_test>"));
         assert!(rendered.contains("<port_list id=\"pl1\"/>"));
+        assert!(rendered.contains("<ssh_credential id=\"ssh1\"/>"));
+        assert!(rendered.contains("<smb_credential id=\"smb1\"/>"));
+        assert!(rendered.contains("<esxi_credential id=\"esxi1\"/>"));
+        assert!(rendered.contains("<snmp_credential id=\"snmp1\"/>"));
         assert_eq!(
             xml(clone_target(&id("t1"))),
             "<create_target><copy>t1</copy></create_target>"
@@ -192,13 +268,19 @@ mod tests {
             ModifyTargetOpts {
                 name: Some("n".into()),
                 alive_test: Some(AliveTest::IcmpAndArpPing),
+                ssh_credential_id: Some(id("ssh1")),
+                smb_credential_id: Some(id("smb1")),
+                esxi_credential_id: Some(id("esxi1")),
+                snmp_credential_id: Some(id("snmp1")),
                 ..Default::default()
             },
         ));
-        assert_eq!(
-            rendered,
-            "<modify_target target_id=\"t1\"><name>n</name><alive_test>ICMP &amp; ARP Ping</alive_test></modify_target>"
-        );
+        assert!(rendered.contains("<name>n</name>"));
+        assert!(rendered.contains("<alive_test>ICMP &amp; ARP Ping</alive_test>"));
+        assert!(rendered.contains("<ssh_credential id=\"ssh1\"/>"));
+        assert!(rendered.contains("<smb_credential id=\"smb1\"/>"));
+        assert!(rendered.contains("<esxi_credential id=\"esxi1\"/>"));
+        assert!(rendered.contains("<snmp_credential id=\"snmp1\"/>"));
         assert_eq!(
             xml(delete_target(&id("t1"), false)),
             "<delete_target target_id=\"t1\" ultimate=\"0\"/>"
