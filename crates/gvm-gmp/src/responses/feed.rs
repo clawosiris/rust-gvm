@@ -15,7 +15,7 @@ use crate::responses::common::{
 pub struct Feed {
     pub type_: String,
     pub name: String,
-    pub version: Option<String>,
+    pub version: String,
     pub status: Option<String>,
     pub description: Option<String>,
     pub currently_syncing: Option<String>,
@@ -36,7 +36,7 @@ impl Feed {
         Ok(Self {
             type_: node.required_child_text("type")?,
             name: node.required_child_text("name")?,
-            version: node.optional_child_text("version"),
+            version: node.required_child_text("version")?,
             status: node.optional_child_text("status"),
             description: node.optional_child_text("description"),
             currently_syncing: node.optional_child_text("currently_syncing"),
@@ -130,12 +130,13 @@ mod tests {
     }
 
     #[test]
-    fn parses_missing_optional_feed_fields() {
+    fn parses_missing_optional_non_version_feed_fields() {
         let response = Response::from(
             r#"<get_feeds_response status="200" status_text="OK">
                 <feed>
                     <type>CERT</type>
                     <name>CERT Feed</name>
+                    <version>202603260800</version>
                 </feed>
             </get_feeds_response>"#,
         );
@@ -143,7 +144,7 @@ mod tests {
         let parsed = GetFeedsResponse::from_response(&response).expect("feeds parse");
         let feed = &parsed.items[0];
 
-        assert_eq!(feed.version, None);
+        assert_eq!(feed.version, "202603260800");
         assert_eq!(feed.status, None);
         assert_eq!(feed.description, None);
         assert_eq!(feed.currently_syncing, None);
@@ -161,6 +162,11 @@ mod tests {
                 <feed><type>NVT</type></feed>
             </get_feeds_response>"#,
         );
+        let missing_version = Response::from(
+            r#"<get_feeds_response status="200" status_text="OK">
+                <feed><type>NVT</type><name>NVT Feed</name></feed>
+            </get_feeds_response>"#,
+        );
 
         assert!(matches!(
             GetFeedsResponse::from_response(&missing_type),
@@ -169,6 +175,10 @@ mod tests {
         assert!(matches!(
             GetFeedsResponse::from_response(&missing_name),
             Err(ParseError::MissingElement(field)) if field == "name"
+        ));
+        assert!(matches!(
+            GetFeedsResponse::from_response(&missing_version),
+            Err(ParseError::MissingElement(field)) if field == "version"
         ));
     }
 }
