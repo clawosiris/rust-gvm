@@ -7,7 +7,7 @@ use gvm_protocol::Response;
 
 use crate::responses::common::{
     count_info, parse_bool, parse_csv_list, parse_document, parse_entity_id,
-    parse_entity_meta_optional_name, parse_named_entity, status_from_response, ActionResponse,
+    parse_entity_meta_optional_name, parse_entity_ref, status_from_response, ActionResponse,
     CountInfo, EntityMeta, NamedEntity, ParseError,
 };
 
@@ -63,8 +63,8 @@ impl Override {
             port: node.optional_child_text("port"),
             severity: node.optional_child_text("severity"),
             new_severity: node.optional_child_text("new_severity"),
-            task: parse_named_entity(node, "task")?,
-            result: parse_named_entity(node, "result")?,
+            task: parse_entity_ref(node, "task")?,
+            result: parse_entity_ref(node, "result")?,
             active: node
                 .optional_child_text("active")
                 .map(|value| parse_bool(&value, "active"))
@@ -293,5 +293,29 @@ mod tests {
         assert_eq!(ov.new_severity.as_deref(), Some("0"));
         assert_eq!(ov.task, None);
         assert_eq!(ov.result, None);
+    }
+
+    #[test]
+    fn parses_override_with_id_only_task_and_result_refs() {
+        let response = Response::from(
+            r#"<get_overrides_response status="200" status_text="OK">
+                <override id="o-1">
+                    <name>Override One</name>
+                    <task id="t-1"/>
+                    <result id="r-1"/>
+                </override>
+            </get_overrides_response>"#,
+        );
+
+        let parsed = GetOverridesResponse::from_response(&response).expect("override parses");
+        let ov = &parsed.items[0];
+
+        let task = ov.task.as_ref().expect("task ref");
+        assert_eq!(task.id.as_str(), "t-1");
+        assert_eq!(task.name, "");
+
+        let result = ov.result.as_ref().expect("result ref");
+        assert_eq!(result.id.as_str(), "r-1");
+        assert_eq!(result.name, "");
     }
 }
