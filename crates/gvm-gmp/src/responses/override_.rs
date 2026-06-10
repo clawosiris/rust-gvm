@@ -6,9 +6,9 @@
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, parse_bool, parse_csv_list, parse_document, parse_entity_id, parse_entity_meta,
-    parse_named_entity, status_from_response, ActionResponse, CountInfo, EntityMeta, NamedEntity,
-    ParseError,
+    count_info, parse_bool, parse_csv_list, parse_document, parse_entity_id,
+    parse_entity_meta_optional_name, parse_named_entity, status_from_response, ActionResponse,
+    CountInfo, EntityMeta, NamedEntity, ParseError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,7 +50,7 @@ pub struct CreateOverrideResponse {
 impl Override {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
         Ok(Self {
-            meta: parse_entity_meta(node)?,
+            meta: parse_entity_meta_optional_name(node)?,
             text: node.optional_child_text("text"),
             nvt_oid: node
                 .child("nvt")
@@ -234,5 +234,64 @@ mod tests {
         assert_eq!(ov.new_severity, None);
         assert_eq!(ov.task, None);
         assert!(!ov.active);
+    }
+
+    #[test]
+    fn parses_gvmd_override_without_top_level_name() {
+        let response = Response::from(
+            r#"<get_overrides_response status="200" status_text="OK">
+                <override id="6a9710b1-7ac3-4140-a212-25a0aa504979">
+                    <permissions><permission><name>Everything</name></permission></permissions>
+                    <owner><name>admin</name></owner>
+                    <nvt oid="1.3.6.1.4.1.25623.1.0.12288"><name>Global variable settings</name><type>nvt</type></nvt>
+                    <creation_time>2026-06-10T12:42:24Z</creation_time>
+                    <modification_time>2026-06-10T12:42:24Z</modification_time>
+                    <writable>1</writable>
+                    <in_use>0</in_use>
+                    <active>1</active>
+                    <end_time>2026-06-11T12:42:24Z</end_time>
+                    <text>raw gmp override parser repro</text>
+                    <hosts></hosts>
+                    <port></port>
+                    <threat></threat>
+                    <severity></severity>
+                    <new_threat>Log</new_threat>
+                    <new_severity>0</new_severity>
+                    <task id=""><name></name><trash>0</trash></task>
+                    <orphan>0</orphan>
+                    <result id=""/>
+                </override>
+            </get_overrides_response>"#,
+        );
+
+        let parsed = GetOverridesResponse::from_response(&response).expect("override parses");
+        let ov = &parsed.items[0];
+
+        assert_eq!(ov.meta.id.as_str(), "6a9710b1-7ac3-4140-a212-25a0aa504979");
+        assert_eq!(ov.meta.name, "");
+        assert_eq!(
+            ov.meta.owner.as_ref().map(|owner| owner.name.as_str()),
+            Some("admin")
+        );
+        assert_eq!(
+            ov.meta.creation_time.as_deref(),
+            Some("2026-06-10T12:42:24Z")
+        );
+        assert_eq!(
+            ov.meta.modification_time.as_deref(),
+            Some("2026-06-10T12:42:24Z")
+        );
+        assert!(ov.meta.writable);
+        assert!(!ov.meta.in_use);
+        assert!(ov.active);
+        assert_eq!(ov.end_time.as_deref(), Some("2026-06-11T12:42:24Z"));
+        assert_eq!(ov.text.as_deref(), Some("raw gmp override parser repro"));
+        assert_eq!(ov.nvt_oid.as_deref(), Some("1.3.6.1.4.1.25623.1.0.12288"));
+        assert!(ov.hosts.is_empty());
+        assert_eq!(ov.port, None);
+        assert_eq!(ov.severity, None);
+        assert_eq!(ov.new_severity.as_deref(), Some("0"));
+        assert_eq!(ov.task, None);
+        assert_eq!(ov.result, None);
     }
 }

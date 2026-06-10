@@ -6,9 +6,9 @@
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, parse_bool, parse_csv_list, parse_document, parse_entity_id, parse_entity_meta,
-    parse_named_entity, status_from_response, ActionResponse, CountInfo, EntityMeta, NamedEntity,
-    ParseError,
+    count_info, parse_bool, parse_csv_list, parse_document, parse_entity_id,
+    parse_entity_meta_optional_name, parse_named_entity, status_from_response, ActionResponse,
+    CountInfo, EntityMeta, NamedEntity, ParseError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,7 +49,7 @@ pub struct CreateNoteResponse {
 impl Note {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
         Ok(Self {
-            meta: parse_entity_meta(node)?,
+            meta: parse_entity_meta_optional_name(node)?,
             text: node.optional_child_text("text"),
             nvt_oid: node
                 .child("nvt")
@@ -230,5 +230,63 @@ mod tests {
         assert!(note.hosts.is_empty());
         assert_eq!(note.task, None);
         assert!(!note.active);
+    }
+
+    #[test]
+    fn parses_gvmd_note_without_top_level_name() {
+        let response = Response::from(
+            r#"<get_notes_response status="200" status_text="OK">
+                <note id="139bd467-d6dc-46a6-9297-0f2bbaec342a">
+                    <permissions><permission><name>Everything</name></permission></permissions>
+                    <owner><name>admin</name></owner>
+                    <nvt oid="1.3.6.1.4.1.25623.1.0.12288"><name>Global variable settings</name><type>nvt</type></nvt>
+                    <creation_time>2026-06-10T12:41:51Z</creation_time>
+                    <modification_time>2026-06-10T12:41:51Z</modification_time>
+                    <writable>1</writable>
+                    <in_use>0</in_use>
+                    <active>1</active>
+                    <end_time>2026-06-11T12:41:51Z</end_time>
+                    <text>raw gmp parser repro</text>
+                    <hosts></hosts>
+                    <port></port>
+                    <severity></severity>
+                    <task id=""><name></name><trash>0</trash></task>
+                    <orphan>0</orphan>
+                    <result id=""/>
+                </note>
+            </get_notes_response>"#,
+        );
+
+        let parsed = GetNotesResponse::from_response(&response).expect("note parses");
+        let note = &parsed.items[0];
+
+        assert_eq!(
+            note.meta.id.as_str(),
+            "139bd467-d6dc-46a6-9297-0f2bbaec342a"
+        );
+        assert_eq!(note.meta.name, "");
+        assert_eq!(
+            note.meta.owner.as_ref().map(|owner| owner.name.as_str()),
+            Some("admin")
+        );
+        assert_eq!(
+            note.meta.creation_time.as_deref(),
+            Some("2026-06-10T12:41:51Z")
+        );
+        assert_eq!(
+            note.meta.modification_time.as_deref(),
+            Some("2026-06-10T12:41:51Z")
+        );
+        assert!(note.meta.writable);
+        assert!(!note.meta.in_use);
+        assert!(note.active);
+        assert_eq!(note.end_time.as_deref(), Some("2026-06-11T12:41:51Z"));
+        assert_eq!(note.text.as_deref(), Some("raw gmp parser repro"));
+        assert_eq!(note.nvt_oid.as_deref(), Some("1.3.6.1.4.1.25623.1.0.12288"));
+        assert!(note.hosts.is_empty());
+        assert_eq!(note.port, None);
+        assert_eq!(note.severity, None);
+        assert_eq!(note.task, None);
+        assert_eq!(note.result, None);
     }
 }

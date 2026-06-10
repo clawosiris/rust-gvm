@@ -351,14 +351,24 @@ pub(crate) fn parse_entity_ref(
         .map(Option::flatten)
 }
 
-pub(crate) fn parse_entity_meta(node: &XmlNode) -> Result<EntityMeta, ParseError> {
+fn parse_entity_meta_with_name(
+    node: &XmlNode,
+    name_required: bool,
+) -> Result<EntityMeta, ParseError> {
+    let id = parse_entity_id(
+        node.attr("id")
+            .ok_or_else(|| ParseError::MissingElement(format!("{}.id", node.name)))?,
+        &format!("{}.id", node.name),
+    )?;
+    let name = if name_required {
+        node.required_child_text("name")?
+    } else {
+        node.optional_child_text("name").unwrap_or_default()
+    };
+
     Ok(EntityMeta {
-        id: parse_entity_id(
-            node.attr("id")
-                .ok_or_else(|| ParseError::MissingElement(format!("{}.id", node.name)))?,
-            &format!("{}.id", node.name),
-        )?,
-        name: node.required_child_text("name")?,
+        id,
+        name,
         comment: node.optional_child_text("comment"),
         creation_time: node.optional_child_text("creation_time"),
         modification_time: node.optional_child_text("modification_time"),
@@ -374,6 +384,14 @@ pub(crate) fn parse_entity_meta(node: &XmlNode) -> Result<EntityMeta, ParseError
             .transpose()?
             .unwrap_or(false),
     })
+}
+
+pub(crate) fn parse_entity_meta(node: &XmlNode) -> Result<EntityMeta, ParseError> {
+    parse_entity_meta_with_name(node, true)
+}
+
+pub(crate) fn parse_entity_meta_optional_name(node: &XmlNode) -> Result<EntityMeta, ParseError> {
+    parse_entity_meta_with_name(node, false)
 }
 
 #[cfg(test)]
