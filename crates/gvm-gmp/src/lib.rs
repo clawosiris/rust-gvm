@@ -20,6 +20,6 @@ pub mod types;
 /// Re-exported GMP enums.
 pub use enums::*;
 /// Re-exported gvmd filter helpers.
-pub use filtering::{PaginatedFilter, Pagination};
+pub use filtering::{FilterFragment, FilterFragmentError, PaginatedFilter, Pagination};
 /// Re-exported shared GMP types.
 pub use types::{EntityId, EntityIdError, GmpVersion};
