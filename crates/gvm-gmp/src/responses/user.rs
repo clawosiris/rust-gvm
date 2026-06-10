@@ -82,7 +82,10 @@ impl User {
             groups,
             hosts_allow: node.optional_child_text("hosts_allow"),
             hosts: node.optional_child_text("hosts"),
-            authentication_type: node.optional_child_text("authentication"),
+            authentication_type: node
+                .child("sources")
+                .and_then(|sources| sources.optional_child_text("source"))
+                .or_else(|| node.optional_child_text("authentication")),
         })
     }
 }
@@ -149,13 +152,13 @@ mod tests {
                     </groups>
                     <hosts_allow>0</hosts_allow>
                     <hosts>192.168.1.0/24</hosts>
-                    <authentication>file</authentication>
+                    <sources><source>file</source></sources>
                 </user>
                 <user id="u-2">
                     <name>User Two</name>
                     <writable>0</writable>
                     <in_use>1</in_use>
-                    <authentication>future_auth_backend</authentication>
+                    <sources><source>future_auth_backend</source></sources>
                 </user>
                 <user_count>2<filtered>2</filtered><page>1</page></user_count>
             </get_users_response>"#,
@@ -246,9 +249,9 @@ mod tests {
     fn parses_known_user_authentication_types() {
         let response = Response::from(
             r#"<get_users_response status="200" status_text="OK">
-                <user id="u-1"><name>Alice</name><authentication>file</authentication></user>
-                <user id="u-2"><name>Bob</name><authentication>ldap_connect</authentication></user>
-                <user id="u-3"><name>Carol</name><authentication>radius_connect</authentication></user>
+                <user id="u-1"><name>Alice</name><sources><source>file</source></sources></user>
+                <user id="u-2"><name>Bob</name><sources><source>ldap_connect</source></sources></user>
+                <user id="u-3"><name>Carol</name><sources><source>radius_connect</source></sources></user>
             </get_users_response>"#,
         );
 
@@ -263,5 +266,18 @@ mod tests {
             parsed.items[2].authentication_type.as_deref(),
             Some("radius_connect")
         );
+    }
+
+    #[test]
+    fn falls_back_to_top_level_authentication_when_sources_are_absent() {
+        let response = Response::from(
+            r#"<get_users_response status="200" status_text="OK">
+                <user id="u-1"><name>Alice</name><authentication>file</authentication></user>
+            </get_users_response>"#,
+        );
+
+        let parsed = GetUsersResponse::from_response(&response).expect("users parse");
+
+        assert_eq!(parsed.items[0].authentication_type.as_deref(), Some("file"));
     }
 }
