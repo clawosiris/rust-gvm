@@ -7,7 +7,7 @@ use gvm_protocol::Response;
 
 use crate::responses::common::{
     count_info, parse_bool, parse_csv_list, parse_document, parse_entity_id,
-    parse_entity_meta_optional_name, parse_named_entity, status_from_response, ActionResponse,
+    parse_entity_meta_optional_name, parse_entity_ref, status_from_response, ActionResponse,
     CountInfo, EntityMeta, NamedEntity, ParseError,
 };
 
@@ -61,8 +61,8 @@ impl Note {
                 .unwrap_or_default(),
             port: node.optional_child_text("port"),
             severity: node.optional_child_text("severity"),
-            task: parse_named_entity(node, "task")?,
-            result: parse_named_entity(node, "result")?,
+            task: parse_entity_ref(node, "task")?,
+            result: parse_entity_ref(node, "result")?,
             active: node
                 .optional_child_text("active")
                 .map(|value| parse_bool(&value, "active"))
@@ -288,5 +288,29 @@ mod tests {
         assert_eq!(note.severity, None);
         assert_eq!(note.task, None);
         assert_eq!(note.result, None);
+    }
+
+    #[test]
+    fn parses_note_with_id_only_task_and_result_refs() {
+        let response = Response::from(
+            r#"<get_notes_response status="200" status_text="OK">
+                <note id="n-1">
+                    <name>Note One</name>
+                    <task id="t-1"/>
+                    <result id="r-1"/>
+                </note>
+            </get_notes_response>"#,
+        );
+
+        let parsed = GetNotesResponse::from_response(&response).expect("note parses");
+        let note = &parsed.items[0];
+
+        let task = note.task.as_ref().expect("task ref");
+        assert_eq!(task.id.as_str(), "t-1");
+        assert_eq!(task.name, "");
+
+        let result = note.result.as_ref().expect("result ref");
+        assert_eq!(result.id.as_str(), "r-1");
+        assert_eq!(result.name, "");
     }
 }
