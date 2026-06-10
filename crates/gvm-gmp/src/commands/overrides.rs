@@ -44,6 +44,15 @@ pub struct GetOverridesOpts {
     pub result: Option<bool>,
 }
 
+/// Options for `get_override` requests.
+#[derive(Debug, Clone, Default)]
+pub struct GetOverrideOpts {
+    /// Whether to request detailed output.
+    pub details: Option<bool>,
+    /// Whether to include associated result references in the response.
+    pub result: Option<bool>,
+}
+
 /// Build a clone request for an existing override.
 #[must_use]
 pub fn clone_override(override_id: &EntityId) -> impl Request {
@@ -77,9 +86,22 @@ pub fn get_overrides(opts: GetOverridesOpts) -> impl Request {
 /// Build a `get_override` request.
 #[must_use]
 pub fn get_override(override_id: &EntityId) -> impl Request {
-    XmlCommand::new("get_overrides")
-        .attribute("override_id", override_id.as_str())
-        .attribute("details", "1")
+    get_override_with_opts(
+        override_id,
+        GetOverrideOpts {
+            details: Some(true),
+            ..Default::default()
+        },
+    )
+}
+
+/// Build a `get_override` request with explicit options.
+#[must_use]
+pub fn get_override_with_opts(override_id: &EntityId, opts: GetOverrideOpts) -> impl Request {
+    let mut cmd = XmlCommand::new("get_overrides").attribute("override_id", override_id.as_str());
+    set_optional_bool_attr(&mut cmd, "details", opts.details.or(Some(true)));
+    set_optional_bool_attr(&mut cmd, "result", opts.result);
+    cmd
 }
 
 /// Build a `modify_override` request.
@@ -175,5 +197,19 @@ mod tests {
             xml(delete_override(&id("o1"), false)),
             "<delete_override override_id=\"o1\" ultimate=\"0\"/>"
         );
+    }
+
+    #[test]
+    fn get_override_with_opts_can_request_result_refs() {
+        let rendered = xml(get_override_with_opts(
+            &id("o1"),
+            GetOverrideOpts {
+                result: Some(true),
+                ..Default::default()
+            },
+        ));
+        assert!(rendered.contains("override_id=\"o1\""));
+        assert!(rendered.contains("details=\"1\""));
+        assert!(rendered.contains("result=\"1\""));
     }
 }

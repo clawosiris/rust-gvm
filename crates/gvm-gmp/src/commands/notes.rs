@@ -44,6 +44,15 @@ pub struct GetNotesOpts {
     pub result: Option<bool>,
 }
 
+/// Options for `get_note` requests.
+#[derive(Debug, Clone, Default)]
+pub struct GetNoteOpts {
+    /// Whether to request detailed output.
+    pub details: Option<bool>,
+    /// Whether to include associated result references in the response.
+    pub result: Option<bool>,
+}
+
 /// Build a clone request for an existing note.
 #[must_use]
 pub fn clone_note(note_id: &EntityId) -> impl Request {
@@ -77,9 +86,22 @@ pub fn get_notes(opts: GetNotesOpts) -> impl Request {
 /// Build a `get_note` request.
 #[must_use]
 pub fn get_note(note_id: &EntityId) -> impl Request {
-    XmlCommand::new("get_notes")
-        .attribute("note_id", note_id.as_str())
-        .attribute("details", "1")
+    get_note_with_opts(
+        note_id,
+        GetNoteOpts {
+            details: Some(true),
+            ..Default::default()
+        },
+    )
+}
+
+/// Build a `get_note` request with explicit options.
+#[must_use]
+pub fn get_note_with_opts(note_id: &EntityId, opts: GetNoteOpts) -> impl Request {
+    let mut cmd = XmlCommand::new("get_notes").attribute("note_id", note_id.as_str());
+    set_optional_bool_attr(&mut cmd, "details", opts.details.or(Some(true)));
+    set_optional_bool_attr(&mut cmd, "result", opts.result);
+    cmd
 }
 
 /// Build a `modify_note` request.
@@ -152,6 +174,7 @@ mod tests {
         assert!(rendered.contains("<get_notes "));
         assert!(rendered.contains("note_id=\"n1\""));
         assert!(rendered.contains("details=\"1\""));
+        assert!(!rendered.contains("result=\"1\""));
     }
 
     #[test]
@@ -180,5 +203,19 @@ mod tests {
             xml(delete_note(&id("n1"), true)),
             "<delete_note note_id=\"n1\" ultimate=\"1\"/>"
         );
+    }
+
+    #[test]
+    fn get_note_with_opts_can_request_result_refs() {
+        let rendered = xml(get_note_with_opts(
+            &id("n1"),
+            GetNoteOpts {
+                result: Some(true),
+                ..Default::default()
+            },
+        ));
+        assert!(rendered.contains("note_id=\"n1\""));
+        assert!(rendered.contains("details=\"1\""));
+        assert!(rendered.contains("result=\"1\""));
     }
 }
