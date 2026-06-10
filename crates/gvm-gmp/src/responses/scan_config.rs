@@ -6,8 +6,8 @@
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, parse_document, parse_entity_id, parse_entity_meta, status_from_response,
-    ActionResponse, CountInfo, EntityMeta, ParseError,
+    count_info, optional_u32, parse_document, parse_entity_id, parse_entity_meta,
+    status_from_response, ActionResponse, CountInfo, EntityMeta, ParseError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,6 +16,7 @@ use crate::responses::common::{
 pub struct ScanConfig {
     pub meta: EntityMeta,
     pub usage_type: Option<String>,
+    pub type_: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,6 +43,7 @@ impl ScanConfig {
         Ok(Self {
             meta: parse_entity_meta(node)?,
             usage_type: node.optional_child_text("usage_type"),
+            type_: optional_u32(node, "type", "type")?,
         })
     }
 }
@@ -103,10 +105,12 @@ mod tests {
                     <writable>1</writable>
                     <in_use>0</in_use>
                     <usage_type>scan</usage_type>
+                    <type>0</type>
                 </config>
                 <config id="cfg-2">
                     <name>Policy</name>
                     <usage_type>policy</usage_type>
+                    <type>7</type>
                 </config>
                 <config_count>2<filtered>2</filtered><page>1</page></config_count>
             </get_configs_response>"#,
@@ -118,6 +122,8 @@ mod tests {
         assert_eq!(parsed.counts.total, Some(2));
         assert_eq!(parsed.items[0].usage_type.as_deref(), Some("scan"));
         assert_eq!(parsed.items[1].usage_type.as_deref(), Some("policy"));
+        assert_eq!(parsed.items[0].type_, Some(0));
+        assert_eq!(parsed.items[1].type_, Some(7));
     }
 
     #[test]
@@ -174,6 +180,24 @@ mod tests {
 
         assert_eq!(config.meta.comment, None);
         assert_eq!(config.usage_type, None);
+        assert_eq!(config.type_, None);
         assert!(!config.meta.in_use);
+    }
+
+    #[test]
+    fn parses_known_and_unknown_scan_config_types() {
+        let response = Response::from(
+            r#"<get_configs_response status="200" status_text="OK">
+                <config id="cfg-1"><name>OpenVAS</name><type>0</type></config>
+                <config id="cfg-2"><name>OSP</name><type>1</type></config>
+                <config id="cfg-3"><name>Future</name><type>42</type></config>
+            </get_configs_response>"#,
+        );
+
+        let parsed = GetScanConfigsResponse::from_response(&response).expect("configs parse");
+
+        assert_eq!(parsed.items[0].type_, Some(0));
+        assert_eq!(parsed.items[1].type_, Some(1));
+        assert_eq!(parsed.items[2].type_, Some(42));
     }
 }
