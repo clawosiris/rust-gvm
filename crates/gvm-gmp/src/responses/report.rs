@@ -91,6 +91,7 @@ pub struct ReportTlsCertificate {
     pub subject: Option<String>,
     pub issuer: Option<String>,
     pub serial: Option<String>,
+    pub sha256_fingerprint: Option<String>,
     pub activation_time: Option<String>,
     pub expiration_time: Option<String>,
 }
@@ -275,11 +276,22 @@ impl ReportTlsCertificate {
         Self {
             id: node.attr("id").map(ToString::to_string),
             name: node.optional_child_text("name"),
-            host: node.optional_child_text("host"),
-            port: node.optional_child_text("port"),
-            subject: node.optional_child_text("subject"),
-            issuer: node.optional_child_text("issuer"),
+            host: node
+                .child("host")
+                .and_then(|host| host.optional_child_text("ip"))
+                .or_else(|| node.optional_child_text("host")),
+            port: node
+                .child("ports")
+                .and_then(|ports| ports.optional_child_text("port"))
+                .or_else(|| node.optional_child_text("port")),
+            subject: node
+                .optional_child_text("subject_dn")
+                .or_else(|| node.optional_child_text("subject")),
+            issuer: node
+                .optional_child_text("issuer_dn")
+                .or_else(|| node.optional_child_text("issuer")),
             serial: node.optional_child_text("serial"),
+            sha256_fingerprint: node.optional_child_text("sha256_fingerprint"),
             activation_time: node.optional_child_text("activation_time"),
             expiration_time: node.optional_child_text("expiration_time"),
         }
@@ -343,12 +355,6 @@ impl_report_detail_response!(
     "vuln_count"
 );
 impl_report_detail_response!(
-    GetReportTlsCertificatesResponse,
-    ReportTlsCertificate,
-    ["tls_certificate", "certificate"],
-    "tls_certificate_count"
-);
-impl_report_detail_response!(
     GetReportErrorsResponse,
     ReportError,
     ["error"],
@@ -360,6 +366,52 @@ impl_report_detail_response!(
     ["closed_cve", "cve"],
     "closed_cve_count"
 );
+
+impl GetReportTlsCertificatesResponse {
+    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+        let (status, status_text) = status_from_response(response)?;
+        let root = parse_document(response.data())?;
+        let container = root.child("tls_certificates");
+        let mut items = Vec::new();
+        items.extend(
+            root.children_named("tls_certificate")
+                .map(ReportTlsCertificate::from_node),
+        );
+        if let Some(container) = container {
+            items.extend(
+                container
+                    .children_named("tls_certificate")
+                    .map(ReportTlsCertificate::from_node),
+            );
+        }
+
+        Ok(Self {
+            status,
+            status_text,
+            items,
+            counts: report_tls_certificate_count_info(&root, container)?,
+        })
+    }
+}
+
+fn report_tls_certificate_count_info(
+    root: &crate::responses::common::XmlNode,
+    container: Option<&crate::responses::common::XmlNode>,
+) -> Result<CountInfo, ParseError> {
+    let legacy_counts = count_info(root, "tls_certificate_count")?;
+    if legacy_counts != CountInfo::default() {
+        return Ok(legacy_counts);
+    }
+
+    Ok(CountInfo {
+        total: container
+            .map(|node| optional_u32(node, "count", "tls_certificates.count"))
+            .transpose()?
+            .flatten(),
+        filtered: None,
+        page: None,
+    })
+}
 
 impl ReportExport {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
@@ -731,16 +783,18 @@ mod tests {
     fn parses_report_tls_certificates_response() {
         let response = Response::from(
             r#"<get_report_tls_certificates_response status="200" status_text="OK">
-                <tls_certificate id="tls-1">
-                    <name>example.com</name>
-                    <host>192.0.2.10</host>
-                    <port>443/tcp</port>
-                    <subject>CN=example.com</subject>
-                    <issuer>CN=Example CA</issuer>
-                    <serial>01</serial>
-                    <expiration_time>2027-01-01T00:00:00Z</expiration_time>
-                </tls_certificate>
-                <tls_certificate_count>1<filtered>1</filtered></tls_certificate_count>
+                <tls_certificates>
+                    <tls_certificate>
+                        <name>ee:ff:00:11</name>
+                        <host><ip>192.0.2.10</ip><hostname>example.com</hostname></host>
+                        <ports><port>443/tcp</port></ports>
+                        <subject_dn>CN=example.com</subject_dn>
+                        <issuer_dn>CN=Example CA</issuer_dn>
+                        <serial>01</serial>
+                        <sha256_fingerprint>ee:ff:00:11</sha256_fingerprint>
+                        <expiration_time>2027-01-01T00:00:00Z</expiration_time>
+                    </tls_certificate>
+                </tls_certificates>
             </get_report_tls_certificates_response>"#,
         );
 
@@ -748,10 +802,17 @@ mod tests {
             .expect("tls certificates parse");
 
         assert_eq!(parsed.items.len(), 1);
+        assert_eq!(parsed.items[0].host.as_deref(), Some("192.0.2.10"));
+        assert_eq!(parsed.items[0].port.as_deref(), Some("443/tcp"));
+        assert_eq!(parsed.items[0].subject.as_deref(), Some("CN=example.com"));
         assert_eq!(parsed.items[0].issuer.as_deref(), Some("CN=Example CA"));
         assert_eq!(
             parsed.items[0].expiration_time.as_deref(),
             Some("2027-01-01T00:00:00Z")
+        );
+        assert_eq!(
+            parsed.items[0].sha256_fingerprint.as_deref(),
+            Some("ee:ff:00:11")
         );
     }
 

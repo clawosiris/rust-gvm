@@ -3,6 +3,7 @@
 
 //! Alert response models.
 
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use gvm_protocol::Response;
@@ -19,8 +20,11 @@ use crate::{AlertCondition, AlertEvent, AlertMethod};
 pub struct Alert {
     pub meta: EntityMeta,
     pub event: Option<String>,
+    pub event_data: HashMap<String, String>,
     pub condition: Option<String>,
+    pub condition_data: HashMap<String, String>,
     pub method: Option<String>,
+    pub method_data: HashMap<String, String>,
     pub filter: Option<NamedEntity>,
     pub active: bool,
 }
@@ -48,13 +52,18 @@ impl Alert {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
         Ok(Self {
             meta: parse_entity_meta(node)?,
-            event: node.optional_child_text("event").map(normalize_alert_event),
+            event: alert_field_text(node, "event").map(normalize_alert_event),
+            event_data: alert_data(node, "event"),
             condition: node
-                .optional_child_text("condition")
+                .child("condition")
+                .and_then(alert_field_value)
                 .map(normalize_alert_condition),
+            condition_data: alert_data(node, "condition"),
             method: node
-                .optional_child_text("method")
+                .child("method")
+                .and_then(alert_field_value)
                 .map(normalize_alert_method),
+            method_data: alert_data(node, "method"),
             filter: parse_named_entity(node, "filter")?,
             active: node
                 .optional_child_text("active")
@@ -101,6 +110,40 @@ impl CreateAlertResponse {
 
 pub type ModifyAlertResponse = ActionResponse;
 pub type DeleteAlertResponse = ActionResponse;
+
+fn alert_field_text(node: &crate::responses::common::XmlNode, field: &str) -> Option<String> {
+    node.child(field).and_then(alert_field_value)
+}
+
+fn alert_field_value(node: &crate::responses::common::XmlNode) -> Option<String> {
+    node.optional_child_text("name")
+        .or_else(|| (!node.text.is_empty()).then(|| node.text.clone()))
+}
+
+fn alert_data(node: &crate::responses::common::XmlNode, field: &str) -> HashMap<String, String> {
+    node.child(field).map(parse_alert_data).unwrap_or_default()
+}
+
+fn parse_alert_data(node: &crate::responses::common::XmlNode) -> HashMap<String, String> {
+    let mut data = HashMap::new();
+    for item in node.children_named("data") {
+        let Some(name) = item
+            .attr("name")
+            .map(ToString::to_string)
+            .or_else(|| item.child_text("name"))
+        else {
+            continue;
+        };
+        let value = item
+            .attr("value")
+            .map(ToString::to_string)
+            .or_else(|| item.child_text("value"))
+            .or_else(|| item.child_text("data"))
+            .unwrap_or_else(|| item.text.clone());
+        data.insert(name, value);
+    }
+    data
+}
 
 fn normalize_alert_event(value: String) -> String {
     AlertEvent::from_str(&value)
@@ -260,9 +303,54 @@ mod tests {
 
         assert_eq!(alert.meta.comment, None);
         assert_eq!(alert.event, None);
+        assert!(alert.event_data.is_empty());
         assert_eq!(alert.condition, None);
+        assert!(alert.condition_data.is_empty());
         assert_eq!(alert.method, None);
+        assert!(alert.method_data.is_empty());
         assert_eq!(alert.filter, None);
         assert!(!alert.active);
+    }
+
+    #[test]
+    fn parses_alert_data_maps() {
+        let response = Response::from(
+            r#"<get_alerts_response status="200" status_text="OK">
+                <alert id="a-1">
+                    <name>Data Alert</name>
+                    <event>
+                        <name>Task run status changed</name>
+                        <data><name>status</name>Done</data>
+                    </event>
+                    <condition>
+                        Severity at least
+                        <data><name>severity</name>5.0</data>
+                    </condition>
+                    <method>
+                        Email
+                        <data><name>to_address</name>ops@example.com</data>
+                    </method>
+                </alert>
+            </get_alerts_response>"#,
+        );
+
+        let parsed = GetAlertsResponse::from_response(&response).expect("alerts parse");
+        let alert = &parsed.items[0];
+
+        assert_eq!(alert.event.as_deref(), Some("task_run_status_changed"));
+        assert_eq!(
+            alert.event_data.get("status").map(String::as_str),
+            Some("Done")
+        );
+        assert_eq!(alert.condition.as_deref(), Some("severity_at_least"));
+        assert_eq!(
+            alert.condition_data.get("severity").map(String::as_str),
+            Some("5.0")
+        );
+        assert_eq!(alert.method.as_deref(), Some("email"));
+        assert_eq!(
+            alert.method_data.get("to_address").map(String::as_str),
+            Some("ops@example.com")
+        );
     }
 }
