@@ -48,6 +48,17 @@ fn test_target_get_modify_delete() {
         "<get_targets details=\"1\" target_id=\"t1\"/>"
     );
     assert_eq!(
+        xml(modify_target(
+            &id("t1"),
+            ModifyTargetOpts {
+                reverse_lookup_only: Some(false),
+                reverse_lookup_unify: Some(true),
+                ..Default::default()
+            }
+        )),
+        "<modify_target target_id=\"t1\"><reverse_lookup_only>0</reverse_lookup_only><reverse_lookup_unify>1</reverse_lookup_unify></modify_target>"
+    );
+    assert_eq!(
         xml(delete_target(&id("t1"), false)),
         "<delete_target target_id=\"t1\" ultimate=\"0\"/>"
     );

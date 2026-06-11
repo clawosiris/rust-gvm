@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
+use gvm_protocol::xml_command::XmlElement;
 use gvm_protocol::XmlCommand;
 
 use crate::types::EntityId;
+use std::collections::HashMap;
 
 pub(crate) fn bool_str(value: bool) -> &'static str {
     if value {
@@ -62,6 +64,14 @@ pub(crate) fn add_string_list(cmd: &mut XmlCommand, parent: &str, child: &str, v
     let root = cmd.add_element(parent);
     for value in values {
         root.add_child_with_text(child, value);
+    }
+}
+
+pub(crate) fn add_named_data_map(parent: &mut XmlElement, values: &HashMap<String, String>) {
+    for (key, value) in values {
+        let data = parent.add_child("data");
+        data.set_text(value);
+        data.add_child_with_text("name", key);
     }
 }
 

@@ -3,9 +3,13 @@
 
 //! Alert command builders.
 
+use std::collections::HashMap;
+
 use gvm_protocol::{Request, XmlCommand};
 
-use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
+use crate::common::{
+    add_filter_attrs, add_named_data_map, add_text_element, bool_str, set_optional_bool_attr,
+};
 use crate::enums::{AlertCondition, AlertEvent, AlertMethod};
 use crate::types::EntityId;
 
@@ -20,6 +24,12 @@ pub struct AlertOpts {
     pub condition: Option<AlertCondition>,
     /// Optional alert delivery method.
     pub method: Option<AlertMethod>,
+    /// Optional alert event metadata map.
+    pub event_data: HashMap<String, String>,
+    /// Optional alert condition metadata map.
+    pub condition_data: HashMap<String, String>,
+    /// Optional alert method metadata map.
+    pub method_data: HashMap<String, String>,
     /// Optional saved filter identifier.
     pub filter_id: Option<EntityId>,
 }
@@ -99,13 +109,19 @@ pub fn test_alert(alert_id: &EntityId) -> impl Request {
 fn add_alert_body(cmd: &mut XmlCommand, opts: &AlertOpts) {
     add_text_element(cmd, "comment", opts.comment.as_deref());
     if let Some(event) = opts.event {
-        cmd.add_element_with_text("event", event.as_alert_name());
+        let event_node = cmd.add_element("event");
+        event_node.set_text(event.as_alert_name());
+        add_named_data_map(event_node, &opts.event_data);
     }
     if let Some(condition) = opts.condition {
-        cmd.add_element_with_text("condition", condition.as_alert_name());
+        let condition_node = cmd.add_element("condition");
+        condition_node.set_text(condition.as_alert_name());
+        add_named_data_map(condition_node, &opts.condition_data);
     }
     if let Some(method) = opts.method {
-        cmd.add_element_with_text("method", method.as_alert_name());
+        let method_node = cmd.add_element("method");
+        method_node.set_text(method.as_alert_name());
+        add_named_data_map(method_node, &opts.method_data);
     }
     if let Some(filter_id) = opts.filter_id.as_ref() {
         cmd.add_element("filter")
@@ -128,15 +144,32 @@ mod tests {
             "alert",
             AlertOpts {
                 event: Some(AlertEvent::TaskRunStatusChanged),
+                event_data: HashMap::from([(
+                    String::from("event_key"),
+                    String::from("event_value"),
+                )]),
                 condition: Some(AlertCondition::Always),
+                condition_data: HashMap::from([(
+                    String::from("condition_key"),
+                    String::from("condition_value"),
+                )]),
                 method: Some(AlertMethod::Email),
+                method_data: HashMap::from([(
+                    String::from("method_key"),
+                    String::from("method_value"),
+                )]),
                 filter_id: Some(id("f1")),
                 ..Default::default()
             },
         ));
-        assert!(rendered.contains("<event>Task run status changed</event>"));
-        assert!(rendered.contains("<condition>Always</condition>"));
-        assert!(rendered.contains("<method>Email</method>"));
+        assert!(rendered.contains(
+            "<event>Task run status changed<data>event_value<name>event_key</name></data></event>"
+        ));
+        assert!(rendered.contains(
+            "<condition>Always<data>condition_value<name>condition_key</name></data></condition>"
+        ));
+        assert!(rendered
+            .contains("<method>Email<data>method_value<name>method_key</name></data></method>"));
         assert!(rendered.contains("<filter id=\"f1\"/>"));
         assert_eq!(
             xml(clone_alert(&id("a1"))),
@@ -160,12 +193,13 @@ mod tests {
             AlertOpts {
                 comment: Some("updated".into()),
                 method: Some(AlertMethod::SysLog),
+                method_data: HashMap::from([(String::from("foo"), String::from("bar"))]),
                 ..Default::default()
             },
         ));
         assert_eq!(
             rendered,
-            "<modify_alert alert_id=\"a1\"><comment>updated</comment><method>Syslog</method></modify_alert>"
+            "<modify_alert alert_id=\"a1\"><comment>updated</comment><method>Syslog<data>bar<name>foo</name></data></method></modify_alert>"
         );
         assert_eq!(
             xml(delete_alert(&id("a1"), false)),

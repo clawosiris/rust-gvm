@@ -258,6 +258,20 @@ pub(crate) fn parse_u32(value: &str, field: &str) -> Result<u32, ParseError> {
     })
 }
 
+pub(crate) fn parse_named_data_map(
+    node: &XmlNode,
+    field: &str,
+) -> Result<HashMap<String, String>, ParseError> {
+    let mut values = HashMap::new();
+    for data in node.children_named("data") {
+        let name = data
+            .optional_child_text("name")
+            .ok_or_else(|| ParseError::MissingElement(format!("{field}.data.name")))?;
+        values.insert(name, data.text.clone());
+    }
+    Ok(values)
+}
+
 pub(crate) fn parse_score(value: &str) -> Option<f64> {
     value.parse::<f64>().ok().filter(|score| score.is_finite())
 }

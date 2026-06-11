@@ -3,13 +3,15 @@
 
 //! Alert response models.
 
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, parse_bool, parse_document, parse_entity_id, parse_entity_meta, parse_named_entity,
-    status_from_response, ActionResponse, CountInfo, EntityMeta, NamedEntity, ParseError,
+    count_info, parse_bool, parse_document, parse_entity_id, parse_entity_meta,
+    parse_named_data_map, parse_named_entity, status_from_response, ActionResponse, CountInfo,
+    EntityMeta, NamedEntity, ParseError,
 };
 use crate::{AlertCondition, AlertEvent, AlertMethod};
 
@@ -21,6 +23,9 @@ pub struct Alert {
     pub event: Option<String>,
     pub condition: Option<String>,
     pub method: Option<String>,
+    pub event_data: HashMap<String, String>,
+    pub condition_data: HashMap<String, String>,
+    pub method_data: HashMap<String, String>,
     pub filter: Option<NamedEntity>,
     pub active: bool,
 }
@@ -48,13 +53,30 @@ impl Alert {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
         Ok(Self {
             meta: parse_entity_meta(node)?,
-            event: node.optional_child_text("event").map(normalize_alert_event),
+            event: node
+                .child("event")
+                .map(|event| normalize_alert_event(event.text.clone())),
             condition: node
-                .optional_child_text("condition")
-                .map(normalize_alert_condition),
+                .child("condition")
+                .map(|condition| normalize_alert_condition(condition.text.clone())),
             method: node
-                .optional_child_text("method")
-                .map(normalize_alert_method),
+                .child("method")
+                .map(|method| normalize_alert_method(method.text.clone())),
+            event_data: node
+                .child("event")
+                .map(|event| parse_named_data_map(event, "event"))
+                .transpose()?
+                .unwrap_or_default(),
+            condition_data: node
+                .child("condition")
+                .map(|condition| parse_named_data_map(condition, "condition"))
+                .transpose()?
+                .unwrap_or_default(),
+            method_data: node
+                .child("method")
+                .map(|method| parse_named_data_map(method, "method"))
+                .transpose()?
+                .unwrap_or_default(),
             filter: parse_named_entity(node, "filter")?,
             active: node
                 .optional_child_text("active")
@@ -141,9 +163,9 @@ mod tests {
                     <modification_time>2026-01-02T00:00:00Z</modification_time>
                     <writable>1</writable>
                     <in_use>0</in_use>
-                    <event>task_run_status_changed</event>
-                    <condition>always</condition>
-                    <method>email</method>
+                    <event>task_run_status_changed<data>scan<name>status</name></data></event>
+                    <condition>always<data>9.5<name>severity</name></data></condition>
+                    <method>email<data>ops@example.com<name>to_address</name></data></method>
                     <filter id="f-1"><name>My Filter</name></filter>
                     <active>1</active>
                 </alert>
@@ -167,8 +189,26 @@ mod tests {
             parsed.items[0].event.as_deref(),
             Some("task_run_status_changed")
         );
+        assert_eq!(
+            parsed.items[0].event_data.get("status").map(String::as_str),
+            Some("scan")
+        );
         assert_eq!(parsed.items[0].condition.as_deref(), Some("always"));
+        assert_eq!(
+            parsed.items[0]
+                .condition_data
+                .get("severity")
+                .map(String::as_str),
+            Some("9.5")
+        );
         assert_eq!(parsed.items[0].method.as_deref(), Some("email"));
+        assert_eq!(
+            parsed.items[0]
+                .method_data
+                .get("to_address")
+                .map(String::as_str),
+            Some("ops@example.com")
+        );
         assert_eq!(
             parsed.items[0].filter.as_ref().map(|f| f.name.as_str()),
             Some("My Filter")
@@ -262,6 +302,9 @@ mod tests {
         assert_eq!(alert.event, None);
         assert_eq!(alert.condition, None);
         assert_eq!(alert.method, None);
+        assert!(alert.event_data.is_empty());
+        assert!(alert.condition_data.is_empty());
+        assert!(alert.method_data.is_empty());
         assert_eq!(alert.filter, None);
         assert!(!alert.active);
     }

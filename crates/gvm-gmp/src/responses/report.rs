@@ -93,6 +93,7 @@ pub struct ReportTlsCertificate {
     pub serial: Option<String>,
     pub activation_time: Option<String>,
     pub expiration_time: Option<String>,
+    pub sha256_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -282,6 +283,7 @@ impl ReportTlsCertificate {
             serial: node.optional_child_text("serial"),
             activation_time: node.optional_child_text("activation_time"),
             expiration_time: node.optional_child_text("expiration_time"),
+            sha256_fingerprint: node.optional_child_text("sha256_fingerprint"),
         }
     }
 }
@@ -738,6 +740,7 @@ mod tests {
                     <subject>CN=example.com</subject>
                     <issuer>CN=Example CA</issuer>
                     <serial>01</serial>
+                    <sha256_fingerprint>ee:ff:00:11</sha256_fingerprint>
                     <expiration_time>2027-01-01T00:00:00Z</expiration_time>
                 </tls_certificate>
                 <tls_certificate_count>1<filtered>1</filtered></tls_certificate_count>
@@ -749,6 +752,10 @@ mod tests {
 
         assert_eq!(parsed.items.len(), 1);
         assert_eq!(parsed.items[0].issuer.as_deref(), Some("CN=Example CA"));
+        assert_eq!(
+            parsed.items[0].sha256_fingerprint.as_deref(),
+            Some("ee:ff:00:11")
+        );
         assert_eq!(
             parsed.items[0].expiration_time.as_deref(),
             Some("2027-01-01T00:00:00Z")
