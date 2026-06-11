@@ -74,6 +74,10 @@ pub struct ModifyTargetOpts {
     pub esxi_credential_id: Option<EntityId>,
     /// Optional SNMP credential identifier.
     pub snmp_credential_id: Option<EntityId>,
+    /// Whether reverse lookup only should be enabled.
+    pub reverse_lookup_only: Option<bool>,
+    /// Whether reverse-lookup unification should be enabled.
+    pub reverse_lookup_unify: Option<bool>,
 }
 
 /// Build a clone request for an existing target.
@@ -147,6 +151,12 @@ pub fn modify_target(target_id: &EntityId, opts: ModifyTargetOpts) -> impl Reque
     }
     add_optional_id_element(&mut cmd, "port_list", opts.port_list_id.as_ref());
     add_target_credentials(&mut cmd, &opts);
+    if let Some(value) = opts.reverse_lookup_only {
+        cmd.add_element_with_text("reverse_lookup_only", bool_str(value));
+    }
+    if let Some(value) = opts.reverse_lookup_unify {
+        cmd.add_element_with_text("reverse_lookup_unify", bool_str(value));
+    }
     cmd
 }
 
@@ -272,6 +282,8 @@ mod tests {
                 smb_credential_id: Some(id("smb1")),
                 esxi_credential_id: Some(id("esxi1")),
                 snmp_credential_id: Some(id("snmp1")),
+                reverse_lookup_only: Some(true),
+                reverse_lookup_unify: Some(false),
                 ..Default::default()
             },
         ));
@@ -281,6 +293,8 @@ mod tests {
         assert!(rendered.contains("<smb_credential id=\"smb1\"/>"));
         assert!(rendered.contains("<esxi_credential id=\"esxi1\"/>"));
         assert!(rendered.contains("<snmp_credential id=\"snmp1\"/>"));
+        assert!(rendered.contains("<reverse_lookup_only>1</reverse_lookup_only>"));
+        assert!(rendered.contains("<reverse_lookup_unify>0</reverse_lookup_unify>"));
         assert_eq!(
             xml(delete_target(&id("t1"), false)),
             "<delete_target target_id=\"t1\" ultimate=\"0\"/>"
