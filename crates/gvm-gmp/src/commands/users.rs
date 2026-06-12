@@ -16,12 +16,60 @@ pub struct UserOpts {
     pub comment: Option<String>,
     /// Optional password value.
     pub password: Option<String>,
-    /// Optional host-access restriction string.
-    pub host_access: Option<String>,
+    /// Optional host-access restrictions.
+    pub host_access: Option<UserHostAccess>,
     /// Role identifiers assigned to the user.
     pub role_ids: Vec<EntityId>,
     /// Optional user authentication type.
     pub auth_type: Option<UserAuthType>,
+}
+
+/// User host-access restrictions.
+///
+/// `hosts` is the comma-separated GMP host expression string accepted by gvmd.
+/// It may contain individual hosts, ranges, or CIDR expressions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct UserHostAccess {
+    /// If true, allow only the listed hosts; otherwise forbid the listed hosts.
+    pub allow: bool,
+    /// Comma-separated GMP host expression list.
+    pub hosts: String,
+}
+
+impl UserHostAccess {
+    /// Create user host-access restrictions.
+    #[must_use]
+    pub fn new(allow: bool, hosts: impl Into<String>) -> Self {
+        Self {
+            allow,
+            hosts: hosts.into(),
+        }
+    }
+
+    /// Create an allow-list host-access restriction.
+    #[must_use]
+    pub fn allow(hosts: impl Into<String>) -> Self {
+        Self::new(true, hosts)
+    }
+
+    /// Create a deny-list host-access restriction.
+    #[must_use]
+    pub fn deny(hosts: impl Into<String>) -> Self {
+        Self::new(false, hosts)
+    }
+}
+
+impl From<String> for UserHostAccess {
+    fn from(hosts: String) -> Self {
+        Self::allow(hosts)
+    }
+}
+
+impl From<&str> for UserHostAccess {
+    fn from(hosts: &str) -> Self {
+        Self::allow(hosts)
+    }
 }
 
 /// Options for `get_users` requests.
@@ -93,7 +141,11 @@ pub fn delete_user(user_id: &EntityId, ultimate: bool) -> impl Request {
 fn add_user_body(cmd: &mut XmlCommand, opts: &UserOpts) {
     add_text_element(cmd, "comment", opts.comment.as_deref());
     add_text_element(cmd, "password", opts.password.as_deref());
-    add_text_element(cmd, "hosts", opts.host_access.as_deref());
+    if let Some(host_access) = &opts.host_access {
+        cmd.add_element("hosts")
+            .set_attribute("allow", bool_str(host_access.allow))
+            .set_text(&host_access.hosts);
+    }
     if let Some(auth_type) = opts.auth_type {
         cmd.add_element_with_text("authentication", auth_type.as_gmp_str());
     }
@@ -157,5 +209,53 @@ mod tests {
         assert!(rendered.contains("<delete_user "));
         assert!(rendered.contains("user_id=\"u1\""));
         assert!(rendered.contains("ultimate=\"1\""));
+    }
+
+    #[test]
+    fn modify_user_emits_host_access_allow_mode() {
+        let rendered = xml(modify_user(
+            &id("u1"),
+            UserOpts {
+                host_access: Some(UserHostAccess::allow("192.0.2.0/24")),
+                ..Default::default()
+            },
+        ));
+
+        assert_eq!(
+            rendered,
+            "<modify_user user_id=\"u1\"><hosts allow=\"1\">192.0.2.0/24</hosts></modify_user>"
+        );
+    }
+
+    #[test]
+    fn modify_user_emits_host_access_deny_mode() {
+        let rendered = xml(modify_user(
+            &id("u1"),
+            UserOpts {
+                host_access: Some(UserHostAccess::deny("192.0.2.0/24")),
+                ..Default::default()
+            },
+        ));
+
+        assert_eq!(
+            rendered,
+            "<modify_user user_id=\"u1\"><hosts allow=\"0\">192.0.2.0/24</hosts></modify_user>"
+        );
+    }
+
+    #[test]
+    fn modify_user_emits_explicit_empty_host_access() {
+        let rendered = xml(modify_user(
+            &id("u1"),
+            UserOpts {
+                host_access: Some(UserHostAccess::deny("")),
+                ..Default::default()
+            },
+        ));
+
+        assert_eq!(
+            rendered,
+            "<modify_user user_id=\"u1\"><hosts allow=\"0\"></hosts></modify_user>"
+        );
     }
 }
