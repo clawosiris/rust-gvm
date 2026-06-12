@@ -38,6 +38,14 @@ fn test_report_get_and_delete() {
         "<get_reports details=\"1\" report_id=\"r1\"/>"
     );
     assert_eq!(
+        xml(get_reports(GetReportsOpts {
+            report_id: Some(id("r1")),
+            details: Some(false),
+            ..Default::default()
+        })),
+        "<get_reports details=\"0\" report_id=\"r1\"/>"
+    );
+    assert_eq!(
         xml(delete_report(&id("r1"), false)),
         "<delete_report report_id=\"r1\" ultimate=\"0\"/>"
     );

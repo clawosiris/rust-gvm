@@ -23,6 +23,8 @@ pub struct CreateReportOpts {
 /// Options for `get_reports` requests.
 #[derive(Debug, Clone, Default)]
 pub struct GetReportsOpts {
+    /// Optional report identifier for a single-report request.
+    pub report_id: Option<EntityId>,
     /// Optional inline filter expression.
     pub filter_string: Option<String>,
     /// Optional saved filter identifier.
@@ -31,8 +33,6 @@ pub struct GetReportsOpts {
     pub details: Option<bool>,
     /// Whether pagination should be ignored.
     pub ignore_pagination: Option<bool>,
-    /// Whether report content should be omitted.
-    pub no_report: Option<bool>,
 }
 
 /// Shared options for `get_report_*` helper requests.
@@ -75,9 +75,11 @@ fn get_reports_with_usage(opts: GetReportsOpts, usage_type: Option<UsageType>) -
         opts.filter_string.as_deref(),
         opts.filter_id.as_ref(),
     );
+    if let Some(report_id) = opts.report_id {
+        cmd.set_attribute("report_id", report_id.as_str());
+    }
     set_optional_bool_attr(&mut cmd, "details", opts.details);
     set_optional_bool_attr(&mut cmd, "ignore_pagination", opts.ignore_pagination);
-    set_optional_bool_attr(&mut cmd, "no_report", opts.no_report);
     if let Some(usage_type) = usage_type {
         cmd.set_attribute("usage_type", usage_type.as_gmp_str());
     }
@@ -231,12 +233,19 @@ mod tests {
 
     #[test]
     fn report_get_delete_build_xml() {
+        assert_eq!(
+            xml(get_reports(GetReportsOpts {
+                report_id: Some(id("r1")),
+                details: Some(false),
+                ..Default::default()
+            })),
+            "<get_reports details=\"0\" report_id=\"r1\"/>"
+        );
         let rendered = xml(get_reports(GetReportsOpts {
             details: Some(true),
-            no_report: Some(true),
             ..Default::default()
         }));
-        assert!(rendered.contains("no_report=\"1\""));
+        assert!(rendered.contains("details=\"1\""));
         assert_eq!(
             xml(delete_report(&id("r1"), false)),
             "<delete_report report_id=\"r1\" ultimate=\"0\"/>"
