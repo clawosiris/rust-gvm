@@ -30,7 +30,41 @@ fn test_create_user_with_optionals() {
                 auth_type: Some(UserAuthType::File),
             }
         )),
-        "<create_user><name>alice</name><comment>c</comment><password>secret</password><hosts>127.0.0.1</hosts><authentication>file</authentication><role id=\"r1\"/><role id=\"r2\"/></create_user>"
+        "<create_user><name>alice</name><comment>c</comment><password>secret</password><hosts allow=\"1\">127.0.0.1</hosts><authentication>file</authentication><role id=\"r1\"/><role id=\"r2\"/></create_user>"
+    );
+}
+
+#[test]
+fn test_modify_user_with_host_access_modes() {
+    assert_eq!(
+        xml(modify_user(
+            &id("u1"),
+            UserOpts {
+                host_access: Some(UserHostAccess::allow("192.0.2.0/24")),
+                ..Default::default()
+            }
+        )),
+        "<modify_user user_id=\"u1\"><hosts allow=\"1\">192.0.2.0/24</hosts></modify_user>"
+    );
+    assert_eq!(
+        xml(modify_user(
+            &id("u1"),
+            UserOpts {
+                host_access: Some(UserHostAccess::deny("192.0.2.0/24")),
+                ..Default::default()
+            }
+        )),
+        "<modify_user user_id=\"u1\"><hosts allow=\"0\">192.0.2.0/24</hosts></modify_user>"
+    );
+    assert_eq!(
+        xml(modify_user(
+            &id("u1"),
+            UserOpts {
+                host_access: Some(UserHostAccess::deny("")),
+                ..Default::default()
+            }
+        )),
+        "<modify_user user_id=\"u1\"><hosts allow=\"0\"></hosts></modify_user>"
     );
 }
 

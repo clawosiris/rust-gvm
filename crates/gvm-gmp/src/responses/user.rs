@@ -5,6 +5,7 @@
 
 use gvm_protocol::Response;
 
+use crate::commands::users::UserHostAccess;
 use crate::responses::common::{
     count_info, parse_document, parse_entity_id, parse_entity_meta, status_from_response,
     ActionResponse, CountInfo, EntityMeta, NamedEntity, ParseError,
@@ -42,6 +43,21 @@ pub struct CreateUserResponse {
 }
 
 impl User {
+    /// Return host-access restrictions in the form accepted by `modify_user`.
+    ///
+    /// gvmd represents the host list as a comma-separated string. A missing
+    /// `allow` value defaults to allow mode, matching gvmd's command parser.
+    #[must_use]
+    pub fn host_access(&self) -> Option<UserHostAccess> {
+        let hosts = self.hosts.clone()?;
+        let allow = self
+            .hosts_allow
+            .as_deref()
+            .map(|value| !matches!(value, "0" | "false"))
+            .unwrap_or(true);
+        Some(UserHostAccess::new(allow, hosts))
+    }
+
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
         let roles = node
             .children_named("role")
@@ -80,8 +96,12 @@ impl User {
             meta: parse_entity_meta(node)?,
             roles,
             groups,
-            hosts_allow: node.optional_child_text("hosts_allow"),
-            hosts: node.optional_child_text("hosts"),
+            hosts_allow: node.optional_child_text("hosts_allow").or_else(|| {
+                node.child("hosts")
+                    .and_then(|hosts| hosts.attr("allow"))
+                    .map(ToString::to_string)
+            }),
+            hosts: node.child_text("hosts"),
             authentication_type: node
                 .child("sources")
                 .and_then(|sources| sources.optional_child_text("source"))
@@ -129,7 +149,9 @@ pub type DeleteUserResponse = ActionResponse;
 
 #[cfg(test)]
 mod tests {
-    use gvm_protocol::Response;
+    use gvm_protocol::{Request, Response};
+
+    use crate::commands::users::{modify_user, UserOpts};
 
     use super::*;
 
@@ -177,6 +199,10 @@ mod tests {
         assert_eq!(parsed.items[0].groups[0].name, "Group One");
         assert_eq!(parsed.items[0].hosts_allow.as_deref(), Some("0"));
         assert_eq!(parsed.items[0].hosts.as_deref(), Some("192.168.1.0/24"));
+        assert_eq!(
+            parsed.items[0].host_access(),
+            Some(UserHostAccess::deny("192.168.1.0/24"))
+        );
         assert_eq!(parsed.items[0].authentication_type.as_deref(), Some("file"));
         assert_eq!(
             parsed.items[1].authentication_type.as_deref(),
@@ -242,7 +268,125 @@ mod tests {
         assert!(user.groups.is_empty());
         assert_eq!(user.hosts_allow, None);
         assert_eq!(user.hosts, None);
+        assert_eq!(user.host_access(), None);
         assert_eq!(user.authentication_type, None);
+    }
+
+    #[test]
+    fn parses_hosts_allow_attribute_shape() {
+        let response = Response::from(
+            r#"<get_users_response status="200" status_text="OK">
+                <user id="u-1">
+                    <name>User One</name>
+                    <hosts allow="1">192.168.1.0/24, 192.168.2.0/24</hosts>
+                </user>
+            </get_users_response>"#,
+        );
+
+        let parsed = GetUsersResponse::from_response(&response).expect("users parse");
+        let user = &parsed.items[0];
+
+        assert_eq!(user.hosts_allow.as_deref(), Some("1"));
+        assert_eq!(
+            user.hosts.as_deref(),
+            Some("192.168.1.0/24, 192.168.2.0/24")
+        );
+        assert_eq!(
+            user.host_access(),
+            Some(UserHostAccess::allow("192.168.1.0/24, 192.168.2.0/24"))
+        );
+    }
+
+    #[test]
+    fn round_trips_hosts_allow_attribute_to_modify_user() {
+        let response = Response::from(
+            r#"<get_users_response status="200" status_text="OK">
+                <user id="u-1">
+                    <name>User One</name>
+                    <hosts allow="0">192.168.1.0/24</hosts>
+                </user>
+            </get_users_response>"#,
+        );
+
+        let parsed = GetUsersResponse::from_response(&response).expect("users parse");
+        let user = &parsed.items[0];
+        let rendered = String::from_utf8(
+            modify_user(
+                &user.meta.id,
+                UserOpts {
+                    comment: Some("updated".into()),
+                    host_access: user.host_access(),
+                    ..Default::default()
+                },
+            )
+            .to_bytes(),
+        )
+        .expect("request XML should be UTF-8");
+
+        assert_eq!(
+            rendered,
+            "<modify_user user_id=\"u-1\"><comment>updated</comment><hosts allow=\"0\">192.168.1.0/24</hosts></modify_user>"
+        );
+    }
+
+    #[test]
+    fn preserves_explicit_empty_hosts_for_round_trip() {
+        let response = Response::from(
+            r#"<get_users_response status="200" status_text="OK">
+                <user id="u-1">
+                    <name>User One</name>
+                    <hosts allow="0"></hosts>
+                </user>
+            </get_users_response>"#,
+        );
+
+        let parsed = GetUsersResponse::from_response(&response).expect("users parse");
+        let user = &parsed.items[0];
+
+        assert_eq!(user.hosts_allow.as_deref(), Some("0"));
+        assert_eq!(user.hosts.as_deref(), Some(""));
+        assert_eq!(user.host_access(), Some(UserHostAccess::deny("")));
+    }
+
+    #[test]
+    fn parses_false_hosts_allow_sibling_as_deny_mode() {
+        let response = Response::from(
+            r#"<get_users_response status="200" status_text="OK">
+                <user id="u-1">
+                    <name>User One</name>
+                    <hosts_allow>false</hosts_allow>
+                    <hosts>192.168.1.0/24</hosts>
+                </user>
+            </get_users_response>"#,
+        );
+
+        let parsed = GetUsersResponse::from_response(&response).expect("users parse");
+        let user = &parsed.items[0];
+
+        assert_eq!(
+            user.host_access(),
+            Some(UserHostAccess::deny("192.168.1.0/24"))
+        );
+    }
+
+    #[test]
+    fn parses_false_hosts_allow_attribute_as_deny_mode() {
+        let response = Response::from(
+            r#"<get_users_response status="200" status_text="OK">
+                <user id="u-1">
+                    <name>User One</name>
+                    <hosts allow="false">192.168.1.0/24</hosts>
+                </user>
+            </get_users_response>"#,
+        );
+
+        let parsed = GetUsersResponse::from_response(&response).expect("users parse");
+        let user = &parsed.items[0];
+
+        assert_eq!(
+            user.host_access(),
+            Some(UserHostAccess::deny("192.168.1.0/24"))
+        );
     }
 
     #[test]
