@@ -17,6 +17,8 @@ pub struct Schedule {
     pub meta: EntityMeta,
     pub icalendar: Option<String>,
     pub timezone: Option<String>,
+    pub first_run: Option<String>,
+    pub next_run: Option<String>,
     pub duration: Option<String>,
 }
 
@@ -45,6 +47,8 @@ impl Schedule {
             meta: parse_entity_meta(node)?,
             icalendar: node.optional_child_text("icalendar"),
             timezone: node.optional_child_text("timezone"),
+            first_run: node.optional_child_text("first_run"),
+            next_run: node.optional_child_text("next_run"),
             duration: node.optional_child_text("duration"),
         })
     }
@@ -107,6 +111,8 @@ mod tests {
                     <in_use>0</in_use>
                     <icalendar>BEGIN:VCALENDAR&#10;END:VCALENDAR</icalendar>
                     <timezone>UTC</timezone>
+                    <first_run>2026-01-03T00:00:00Z</first_run>
+                    <next_run>2026-01-04T00:00:00Z</next_run>
                     <duration>3600</duration>
                 </schedule>
                 <schedule id="s-2">
@@ -125,6 +131,14 @@ mod tests {
         assert_eq!(parsed.counts.filtered, Some(2));
         assert_eq!(parsed.counts.page, Some(1));
         assert_eq!(parsed.items[0].timezone.as_deref(), Some("UTC"));
+        assert_eq!(
+            parsed.items[0].first_run.as_deref(),
+            Some("2026-01-03T00:00:00Z")
+        );
+        assert_eq!(
+            parsed.items[0].next_run.as_deref(),
+            Some("2026-01-04T00:00:00Z")
+        );
         assert_eq!(parsed.items[0].duration.as_deref(), Some("3600"));
         assert!(parsed.items[1].meta.in_use);
     }
@@ -184,6 +198,8 @@ mod tests {
         assert_eq!(schedule.meta.comment, None);
         assert_eq!(schedule.icalendar, None);
         assert_eq!(schedule.timezone, None);
+        assert_eq!(schedule.first_run, None);
+        assert_eq!(schedule.next_run, None);
         assert_eq!(schedule.duration, None);
     }
 }
