@@ -37,7 +37,7 @@ pub use gvm_gmp::commands::integration_configs::{
     GetIntegrationConfigsOpts, ModifyIntegrationConfigOpts,
 };
 pub use gvm_gmp::commands::report_configs::ModifyReportConfigOpts;
-pub use gvm_gmp::commands::reports::GetReportDetailsOpts;
+pub use gvm_gmp::commands::reports::{GetReportDetailsOpts, GetReportExportOpts};
 pub use version::{
     command_supported, map_supported_version, minimum_version_for_command, parse_version_text,
     required_version_label,

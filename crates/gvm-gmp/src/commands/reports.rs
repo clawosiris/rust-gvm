@@ -35,6 +35,35 @@ pub struct GetReportsOpts {
     pub ignore_pagination: Option<bool>,
 }
 
+/// Options for `get_reports` report-format export requests.
+#[derive(Debug, Clone)]
+pub struct GetReportExportOpts {
+    /// Required report format identifier.
+    pub report_format_id: EntityId,
+    /// Optional report configuration identifier.
+    pub report_config_id: Option<EntityId>,
+    /// Optional inline result filter expression.
+    pub filter_string: Option<String>,
+    /// Optional saved result filter identifier.
+    pub filter_id: Option<EntityId>,
+    /// Whether pagination should be ignored. Defaults to true when omitted.
+    pub ignore_pagination: Option<bool>,
+}
+
+impl GetReportExportOpts {
+    /// Create export options for a report format.
+    #[must_use]
+    pub fn new(report_format_id: EntityId) -> Self {
+        Self {
+            report_format_id,
+            report_config_id: None,
+            filter_string: None,
+            filter_id: None,
+            ignore_pagination: None,
+        }
+    }
+}
+
 /// Shared options for `get_report_*` helper requests.
 #[derive(Debug, Clone, Default)]
 pub struct GetReportDetailsOpts {
@@ -97,11 +126,35 @@ pub fn get_report(report_id: &EntityId) -> impl Request {
 /// Build a `get_reports` export request for a specific report format.
 #[must_use]
 pub fn get_report_export(report_id: &EntityId, report_format_id: &EntityId) -> impl Request {
-    XmlCommand::new("get_reports")
+    get_report_export_with_opts(
+        report_id,
+        GetReportExportOpts::new(report_format_id.clone()),
+    )
+}
+
+/// Build a `get_reports` export request with report format export options.
+#[must_use]
+pub fn get_report_export_with_opts(
+    report_id: &EntityId,
+    opts: GetReportExportOpts,
+) -> impl Request {
+    let mut cmd = XmlCommand::new("get_reports")
         .attribute("report_id", report_id.as_str())
-        .attribute("format_id", report_format_id.as_str())
+        .attribute("format_id", opts.report_format_id.as_str())
         .attribute("details", "1")
-        .attribute("ignore_pagination", "1")
+        .attribute(
+            "ignore_pagination",
+            bool_str(opts.ignore_pagination.unwrap_or(true)),
+        );
+    if let Some(report_config_id) = opts.report_config_id {
+        cmd.set_attribute("config_id", report_config_id.as_str());
+    }
+    add_filter_attrs(
+        &mut cmd,
+        opts.filter_string.as_deref(),
+        opts.filter_id.as_ref(),
+    );
+    cmd
 }
 
 /// Build a `delete_report` request.

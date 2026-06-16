@@ -38,6 +38,10 @@ fn test_report_get_and_delete() {
         "<get_reports details=\"1\" report_id=\"r1\"/>"
     );
     assert_eq!(
+        xml(get_report_export(&id("r1"), &id("rf1"))),
+        "<get_reports details=\"1\" format_id=\"rf1\" ignore_pagination=\"1\" report_id=\"r1\"/>"
+    );
+    assert_eq!(
         xml(get_reports(GetReportsOpts {
             report_id: Some(id("r1")),
             details: Some(false),
@@ -48,6 +52,52 @@ fn test_report_get_and_delete() {
     assert_eq!(
         xml(delete_report(&id("r1"), false)),
         "<delete_report report_id=\"r1\" ultimate=\"0\"/>"
+    );
+}
+
+#[test]
+fn test_report_export_with_report_config() {
+    let mut opts = GetReportExportOpts::new(id("rf1"));
+    opts.report_config_id = Some(id("rc1"));
+
+    assert_eq!(
+        xml(get_report_export_with_opts(&id("r1"), opts)),
+        "<get_reports config_id=\"rc1\" details=\"1\" format_id=\"rf1\" ignore_pagination=\"1\" report_id=\"r1\"/>"
+    );
+}
+
+#[test]
+fn test_report_export_with_filter_string() {
+    let mut opts = GetReportExportOpts::new(id("rf1"));
+    opts.filter_string = Some("severity>5".into());
+
+    assert_eq!(
+        xml(get_report_export_with_opts(&id("r1"), opts)),
+        "<get_reports details=\"1\" filter=\"severity&gt;5\" format_id=\"rf1\" ignore_pagination=\"1\" report_id=\"r1\"/>"
+    );
+}
+
+#[test]
+fn test_report_export_with_filter_id() {
+    let mut opts = GetReportExportOpts::new(id("rf1"));
+    opts.filter_id = Some(id("f1"));
+
+    assert_eq!(
+        xml(get_report_export_with_opts(&id("r1"), opts)),
+        "<get_reports details=\"1\" filt_id=\"f1\" format_id=\"rf1\" ignore_pagination=\"1\" report_id=\"r1\"/>"
+    );
+}
+
+#[test]
+fn test_report_export_with_combined_options() {
+    let mut opts = GetReportExportOpts::new(id("rf1"));
+    opts.report_config_id = Some(id("rc1"));
+    opts.filter_string = Some("severity>5".into());
+    opts.filter_id = Some(id("f1"));
+
+    assert_eq!(
+        xml(get_report_export_with_opts(&id("r1"), opts)),
+        "<get_reports config_id=\"rc1\" details=\"1\" filt_id=\"f1\" filter=\"severity&gt;5\" format_id=\"rf1\" ignore_pagination=\"1\" report_id=\"r1\"/>"
     );
 }
 
