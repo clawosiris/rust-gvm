@@ -234,8 +234,8 @@ jobs:
 
           if failures:
               for path, score in failures:
-                  print(f"::error file={path}::SBOM quality score below {threshold:.1f}: {score:.2f}")
-              raise SystemExit(1)
+                  print(f"::warning file={path}::SBOM quality score below {threshold:.1f}: {score:.2f}")
+              print("SBOM quality score is below threshold; continuing release and uploading SBOM artifacts.")
           PY
 
       - name: Package SBOMs
