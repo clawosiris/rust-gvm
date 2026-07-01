@@ -420,7 +420,8 @@ impl ReportExport {
         reader.config_mut().trim_text(false);
 
         let mut saw_report = false;
-        let mut nested_depth = 0usize;
+        let mut envelope_depth = 0usize;
+        let mut xml_depth = 0usize;
         let mut nested_xml = Vec::new();
         let mut base64_body = String::new();
         let mut content_type = None;
@@ -429,28 +430,10 @@ impl ReportExport {
         loop {
             match reader.read_event()? {
                 Event::Start(event) if event.name().as_ref() == b"get_reports_response" => {
-                    let status = parse_status_attr(&event, "status")?
-                        .ok_or_else(|| ParseError::MissingElement("status".to_string()))?;
-                    let status_text = parse_string_attr(&event, "status_text")
-                        .ok_or_else(|| ParseError::MissingElement("status_text".to_string()))?;
-                    if !(200..300).contains(&status) {
-                        return Err(ParseError::ServerError {
-                            status,
-                            message: status_text,
-                        });
-                    }
+                    ensure_success_response(&event)?;
                 }
                 Event::Empty(event) if event.name().as_ref() == b"get_reports_response" => {
-                    let status = parse_status_attr(&event, "status")?
-                        .ok_or_else(|| ParseError::MissingElement("status".to_string()))?;
-                    let status_text = parse_string_attr(&event, "status_text")
-                        .ok_or_else(|| ParseError::MissingElement("status_text".to_string()))?;
-                    if !(200..300).contains(&status) {
-                        return Err(ParseError::ServerError {
-                            status,
-                            message: status_text,
-                        });
-                    }
+                    ensure_success_response(&event)?;
                 }
                 Event::Start(event) if event.name().as_ref() == b"report" && !saw_report => {
                     saw_report = true;
@@ -458,34 +441,52 @@ impl ReportExport {
                     extension = parse_string_attr(&event, "extension");
                 }
                 Event::Start(event) if saw_report => {
-                    nested_depth += 1;
-                    serialize_event(&mut nested_xml, Event::Start(event.into_owned()))?;
+                    if xml_depth > 0 {
+                        xml_depth += 1;
+                        serialize_event(&mut nested_xml, Event::Start(event.into_owned()))?;
+                    } else if envelope_depth == 0 && event.name().as_ref() == b"report" {
+                        xml_depth = 1;
+                        serialize_event(&mut nested_xml, Event::Start(event.into_owned()))?;
+                    } else {
+                        envelope_depth += 1;
+                    }
                 }
-                Event::Empty(event) if saw_report => {
+                Event::Empty(event)
+                    if saw_report
+                        && (xml_depth > 0
+                            || (envelope_depth == 0 && event.name().as_ref() == b"report")) =>
+                {
                     serialize_event(&mut nested_xml, Event::Empty(event.into_owned()))?;
                 }
                 Event::End(event) if saw_report => {
-                    if event.name().as_ref() == b"report" && nested_depth == 0 {
+                    if event.name().as_ref() == b"report" && envelope_depth == 0 && xml_depth == 0 {
                         break;
                     }
-                    serialize_event(&mut nested_xml, Event::End(event.into_owned()))?;
-                    nested_depth = nested_depth.saturating_sub(1);
+                    if xml_depth > 0 {
+                        serialize_event(&mut nested_xml, Event::End(event.into_owned()))?;
+                        xml_depth = xml_depth.saturating_sub(1);
+                    } else {
+                        envelope_depth = envelope_depth.saturating_sub(1);
+                    }
                 }
                 Event::Text(event) if saw_report => {
-                    if nested_depth == 0 && nested_xml.is_empty() {
+                    if xml_depth > 0 {
+                        serialize_event(&mut nested_xml, Event::Text(event.into_owned()))?;
+                    } else if envelope_depth == 0 {
                         let chunk = event.decode().map_err(quick_xml::Error::from)?;
                         if !chunk.trim().is_empty() {
                             base64_body.push_str(&chunk);
                         }
-                    } else {
-                        serialize_event(&mut nested_xml, Event::Text(event.into_owned()))?;
                     }
                 }
                 Event::CData(event) if saw_report => {
-                    if nested_depth == 0 && nested_xml.is_empty() {
-                        base64_body.push_str(&String::from_utf8_lossy(event.as_ref()));
-                    } else {
+                    if xml_depth > 0 {
                         serialize_event(&mut nested_xml, Event::CData(event.into_owned()))?;
+                    } else if envelope_depth == 0 {
+                        let chunk = String::from_utf8_lossy(event.as_ref());
+                        if !chunk.trim().is_empty() {
+                            base64_body.push_str(&chunk);
+                        }
                     }
                 }
                 Event::Eof => break,
@@ -502,15 +503,16 @@ impl ReportExport {
             return Err(ParseError::MissingElement("report".to_string()));
         }
 
-        let bytes = if nested_xml.is_empty() {
+        let encoded_body = strip_ascii_whitespace(&base64_body);
+        let bytes = if encoded_body.is_empty() && !nested_xml.is_empty() {
+            nested_xml
+        } else {
             base64::engine::general_purpose::STANDARD
-                .decode(strip_ascii_whitespace(&base64_body))
+                .decode(&encoded_body)
                 .map_err(|_| ParseError::InvalidValue {
                     field: "report export".to_string(),
                     value: base64_body,
                 })?
-        } else {
-            nested_xml
         };
 
         Ok(Self {
@@ -519,6 +521,20 @@ impl ReportExport {
             extension,
         })
     }
+}
+
+fn ensure_success_response(event: &quick_xml::events::BytesStart<'_>) -> Result<(), ParseError> {
+    let status = parse_status_attr(event, "status")?
+        .ok_or_else(|| ParseError::MissingElement("status".to_string()))?;
+    let status_text = parse_string_attr(event, "status_text")
+        .ok_or_else(|| ParseError::MissingElement("status_text".to_string()))?;
+    if !(200..300).contains(&status) {
+        return Err(ParseError::ServerError {
+            status,
+            message: status_text,
+        });
+    }
+    Ok(())
 }
 
 fn parse_status_attr(
@@ -878,6 +894,32 @@ mod tests {
     }
 
     #[test]
+    fn parses_base64_report_export_after_metadata_prefix() {
+        let response = Response::from(
+            r#"<get_reports_response status="200" status_text="OK">
+                <report id="report-1" format_id="c402cc3e-b531-11e1-9163-406186ea4fc5" extension="pdf" content_type="application/pdf">
+                    <owner><name>admin</name></owner>
+                    <name>2026-06-30T18:13:23Z</name>
+                    <comment></comment>
+                    <creation_time>2026-06-30T18:13:23Z</creation_time>
+                    <modification_time>2026-06-30T18:13:45Z</modification_time>
+                    <writable>0</writable>
+                    <in_use>0</in_use>
+                    <task id="task-1"><name>scan-task</name></task>
+                    <report_format id="c402cc3e-b531-11e1-9163-406186ea4fc5"><name>PDF</name></report_format>
+                    JVBERi0xLjcK
+                </report>
+            </get_reports_response>"#,
+        );
+
+        let export = ReportExport::from_response(&response).expect("export parse");
+
+        assert!(export.bytes.starts_with(b"%PDF-1.7\n"));
+        assert_eq!(export.content_type.as_deref(), Some("application/pdf"));
+        assert_eq!(export.extension.as_deref(), Some("pdf"));
+    }
+
+    #[test]
     fn parses_nested_xml_report_export() {
         let response = Response::from(
             r#"<get_reports_response status="200" status_text="OK">
@@ -892,6 +934,36 @@ mod tests {
         assert_eq!(export.extension.as_deref(), Some("xml"));
         assert!(xml.contains(r#"<report id="report-1">"#));
         assert!(xml.contains(r#"<result id="r1"/>"#));
+    }
+
+    #[test]
+    fn parses_nested_xml_report_export_after_metadata_prefix() {
+        let response = Response::from(
+            r#"<get_reports_response status="200" status_text="OK">
+                <report id="report-1" format_id="a994b278-1f62-11e1-96ac-406186ea4fc5" extension="xml" content_type="text/xml">
+                    <owner><name>admin</name></owner>
+                    <name>2026-06-30T18:13:23Z</name>
+                    <comment></comment>
+                    <creation_time>2026-06-30T18:13:23Z</creation_time>
+                    <modification_time>2026-06-30T18:13:45Z</modification_time>
+                    <writable>0</writable>
+                    <in_use>0</in_use>
+                    <task id="task-1"><name>scan-task</name></task>
+                    <report_format id="a994b278-1f62-11e1-96ac-406186ea4fc5"><name>XML</name></report_format>
+                    <report id="report-1"><results><result id="r1"/></results></report>
+                </report>
+            </get_reports_response>"#,
+        );
+
+        let export = ReportExport::from_response(&response).expect("export parse");
+        let xml = String::from_utf8(export.bytes).expect("utf8 xml");
+
+        assert_eq!(export.content_type.as_deref(), Some("text/xml"));
+        assert_eq!(export.extension.as_deref(), Some("xml"));
+        assert!(xml.starts_with(r#"<report id="report-1">"#));
+        assert!(xml.contains(r#"<result id="r1"/>"#));
+        assert!(!xml.contains("<owner>"));
+        assert!(!xml.contains("<report_format"));
     }
 
     #[test]
