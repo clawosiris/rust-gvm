@@ -8,7 +8,7 @@ use std::str;
 
 use gvm_protocol::Response;
 use quick_xml::events::Event;
-use quick_xml::Reader;
+use quick_xml::{Reader, XmlVersion};
 
 use crate::EntityId;
 
@@ -210,7 +210,7 @@ fn collect_attributes(
         attributes.insert(
             str::from_utf8(attribute.key.as_ref())?.to_string(),
             attribute
-                .decode_and_unescape_value(event.decoder())?
+                .decoded_and_normalized_value(XmlVersion::Implicit1_0, event.decoder())?
                 .into_owned(),
         );
     }

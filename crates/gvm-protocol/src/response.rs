@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use quick_xml::events::Event;
-use quick_xml::Reader;
+use quick_xml::{Reader, XmlVersion};
 
 use crate::error::ProtocolError;
 
@@ -214,13 +214,13 @@ impl Response {
                     child_texts.entry(name.to_string()).or_default();
                 }
                 Ok(Event::Text(ref text)) if current_child_name.is_some() => {
-                    let Ok(unescaped) = text.xml_content() else {
+                    let Ok(unescaped) = text.xml_content(XmlVersion::Implicit1_0) else {
                         return HashMap::new();
                     };
                     current_text.push_str(&unescaped);
                 }
                 Ok(Event::CData(ref text)) if current_child_name.is_some() => {
-                    let Ok(unescaped) = text.xml_content() else {
+                    let Ok(unescaped) = text.xml_content(XmlVersion::Implicit1_0) else {
                         return HashMap::new();
                     };
                     current_text.push_str(&unescaped);

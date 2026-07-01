@@ -52,18 +52,18 @@ impl TryRng for SystemRng {
 
     fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
         let mut bytes = [0_u8; 4];
-        getrandom::getrandom(&mut bytes).map_err(map_getrandom_error)?;
+        getrandom::fill(&mut bytes).map_err(map_getrandom_error)?;
         Ok(u32::from_le_bytes(bytes))
     }
 
     fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
         let mut bytes = [0_u8; 8];
-        getrandom::getrandom(&mut bytes).map_err(map_getrandom_error)?;
+        getrandom::fill(&mut bytes).map_err(map_getrandom_error)?;
         Ok(u64::from_le_bytes(bytes))
     }
 
     fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
-        getrandom::getrandom(dst).map_err(map_getrandom_error)
+        getrandom::fill(dst).map_err(map_getrandom_error)
     }
 }
 
