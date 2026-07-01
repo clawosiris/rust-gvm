@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 
 use quick_xml::events::Event;
-use quick_xml::Reader;
+use quick_xml::{Reader, XmlVersion};
 
 /// A parsed GMP command extracted from incoming XML.
 #[derive(Debug, Clone)]
@@ -136,7 +136,7 @@ fn parse_children(
                 });
             }
             Ok(Event::Text(ref t)) => {
-                if let Ok(unescaped) = t.xml_content() {
+                if let Ok(unescaped) = t.xml_content(XmlVersion::Implicit1_0) {
                     current_text.push_str(&unescaped);
                 }
             }
@@ -179,7 +179,7 @@ pub fn parse_element_text(xml: &[u8], element_name: &str) -> Option<String> {
                 }
             }
             Ok(Event::Text(ref t)) if inside => {
-                if let Ok(unescaped) = t.xml_content() {
+                if let Ok(unescaped) = t.xml_content(XmlVersion::Implicit1_0) {
                     result.push_str(&unescaped);
                 }
             }
@@ -202,7 +202,8 @@ fn extract_attributes(e: &quick_xml::events::BytesStart<'_>) -> HashMap<String, 
     for attr in e.attributes().flatten() {
         if let (Ok(key), Ok(val)) = (
             std::str::from_utf8(attr.key.as_ref()),
-            attr.unescape_value().map(|v| v.into_owned()),
+            attr.normalized_value(XmlVersion::Implicit1_0)
+                .map(|v| v.into_owned()),
         ) {
             map.insert(key.to_string(), val);
         }

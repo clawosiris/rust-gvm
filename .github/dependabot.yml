@@ -38,15 +38,3 @@ updates:
     labels:
       - "dependencies"
       - "ci"
-
-  # Python dependencies (pip) — for integration tests
-  - package-ecosystem: "pip"
-    directory: "/"
-    schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 3
-    commit-message:
-      prefix: "test(deps)"
-    labels:
-      - "dependencies"
-      - "python"
