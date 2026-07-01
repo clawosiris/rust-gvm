@@ -11,7 +11,7 @@ members = [
 [workspace.package]
 version = "0.3.3"
 edition = "2021"
-rust-version = "1.75.0"
+rust-version = "1.79.0"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/clawosiris/rust-gvm"
 keywords = ["greenbone", "gvm", "gmp", "vulnerability", "security"]
@@ -23,7 +23,7 @@ tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
 
 # XML
-quick-xml = { version = "0.39", features = ["serialize"] }
+quick-xml = { version = "0.40", features = ["serialize"] }
 
 # Error handling
 thiserror = "2"
@@ -48,7 +48,7 @@ rustls-pemfile = "2"
 
 # SSH (feature-gated)
 russh = "0.61"
-getrandom = "0.2"
+getrandom = "0.4"
 
 # CLI
 clap = { version = "4", features = ["derive"] }

@@ -342,7 +342,7 @@ fn threat_for_severity(severity: &str) -> &'static str {
 mod tests {
     use super::*;
     use quick_xml::events::Event;
-    use quick_xml::Reader;
+    use quick_xml::{Reader, XmlVersion};
 
     fn extract_descriptions(xml: &str) -> Vec<String> {
         let mut reader = Reader::from_str(xml);
@@ -356,7 +356,7 @@ mod tests {
                 }
                 Ok(Event::Text(text)) if in_description => {
                     descriptions.push(
-                        text.xml_content()
+                        text.xml_content(XmlVersion::Implicit1_0)
                             .expect("description text should decode")
                             .into_owned(),
                     );
