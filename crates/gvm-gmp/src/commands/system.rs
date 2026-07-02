@@ -6,7 +6,7 @@
 use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::add_filter_attrs;
-use crate::enums::{AggregateStatistic, EntityType, FeedType, HelpFormat, InfoType, SortOrder};
+use crate::enums::{AggregateStatistic, FeedType, HelpFormat, InfoType, ResourceType, SortOrder};
 use crate::types::EntityId;
 
 /// Options for `get_aggregates` requests.
@@ -52,7 +52,7 @@ pub struct GetInfoOpts {
 #[derive(Debug, Clone, Default)]
 pub struct GetResourceNamesOpts {
     /// Optional related resource type.
-    pub resource_type: Option<EntityType>,
+    pub resource_type: Option<ResourceType>,
     /// Optional related resource identifier.
     pub resource_id: Option<EntityId>,
     /// Optional inline filter expression.
@@ -195,6 +195,15 @@ pub fn get_resource_names(opts: GetResourceNamesOpts) -> impl Request {
     cmd
 }
 
+/// Build a `get_resource_names` request for a single resource.
+#[must_use]
+pub fn get_resource_name(resource_id: &EntityId, resource_type: ResourceType) -> impl Request {
+    let mut cmd = XmlCommand::new("get_resource_names");
+    cmd.set_attribute("resource_id", resource_id.as_str());
+    cmd.set_attribute("type", resource_type.as_gmp_str());
+    cmd
+}
+
 /// Build a `get_vulns` request.
 #[must_use]
 pub fn get_vulns(opts: FilteredGetOpts) -> impl Request {
@@ -301,7 +310,7 @@ mod tests {
         }))
         .contains("type=\"NVT\""));
         assert!(xml(get_resource_names(GetResourceNamesOpts {
-            resource_type: Some(EntityType::Task),
+            resource_type: Some(ResourceType::Task),
             resource_id: Some(id("t1")),
             ..Default::default()
         }))
