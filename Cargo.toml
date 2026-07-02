@@ -23,7 +23,7 @@ tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
 
 # XML
-quick-xml = { version = "0.40", features = ["serialize"] }
+quick-xml = { version = "0.41", features = ["serialize"] }
 
 # Error handling
 thiserror = "2"
