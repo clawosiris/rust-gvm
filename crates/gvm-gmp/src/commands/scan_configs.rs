@@ -43,6 +43,15 @@ pub struct NvtFamilySelection {
     pub all: bool,
 }
 
+/// Options for scan-config `get_preferences` requests.
+#[derive(Debug, Clone, Default)]
+pub struct GetScanConfigPreferencesOpts {
+    /// Optional NVT OID to restrict preference lookup.
+    pub nvt_oid: Option<String>,
+    /// Optional scan-config identifier to request configured values.
+    pub config_id: Option<EntityId>,
+}
+
 /// Build a clone request for an existing scan config.
 #[must_use]
 pub fn clone_scan_config(config_id: &EntityId) -> impl Request {
@@ -106,6 +115,44 @@ pub fn get_scan_config(config_id: &EntityId) -> impl Request {
     XmlCommand::new("get_configs")
         .attribute("config_id", config_id.as_str())
         .attribute("details", "1")
+}
+
+/// Build a `get_preferences` request for scan-config preferences.
+#[must_use]
+pub fn get_scan_config_preferences(opts: GetScanConfigPreferencesOpts) -> impl Request {
+    get_preferences_with(
+        None,
+        opts.nvt_oid.as_deref(),
+        opts.config_id.as_ref().map(EntityId::as_str),
+    )
+}
+
+/// Build a `get_preferences` request for a single scan-config preference.
+#[must_use]
+pub fn get_scan_config_preference(name: &str, opts: GetScanConfigPreferencesOpts) -> impl Request {
+    get_preferences_with(
+        Some(name),
+        opts.nvt_oid.as_deref(),
+        opts.config_id.as_ref().map(EntityId::as_str),
+    )
+}
+
+fn get_preferences_with(
+    preference: Option<&str>,
+    nvt_oid: Option<&str>,
+    config_id: Option<&str>,
+) -> XmlCommand {
+    let mut cmd = XmlCommand::new("get_preferences");
+    if let Some(preference) = preference {
+        cmd.set_attribute("preference", preference);
+    }
+    if let Some(nvt_oid) = nvt_oid {
+        cmd.set_attribute("nvt_oid", nvt_oid);
+    }
+    if let Some(config_id) = config_id {
+        cmd.set_attribute("config_id", config_id);
+    }
+    cmd
 }
 
 /// Build a `modify_scan_config` request.
@@ -396,6 +443,33 @@ mod tests {
         assert!(rendered.contains("<get_configs "));
         assert!(rendered.contains("config_id=\"c1\""));
         assert!(rendered.contains("details=\"1\""));
+    }
+
+    #[test]
+    fn scan_config_preference_commands_build_xml() {
+        assert_eq!(
+            xml(get_scan_config_preferences(
+                GetScanConfigPreferencesOpts::default()
+            )),
+            "<get_preferences/>"
+        );
+        assert_eq!(
+            xml(get_scan_config_preferences(GetScanConfigPreferencesOpts {
+                nvt_oid: Some("1.3.6.1".into()),
+                config_id: Some(id("c1")),
+            })),
+            "<get_preferences config_id=\"c1\" nvt_oid=\"1.3.6.1\"/>"
+        );
+        assert_eq!(
+            xml(get_scan_config_preference(
+                "timeout",
+                GetScanConfigPreferencesOpts {
+                    nvt_oid: Some("1.3.6.1".into()),
+                    config_id: Some(id("c1")),
+                }
+            )),
+            "<get_preferences config_id=\"c1\" nvt_oid=\"1.3.6.1\" preference=\"timeout\"/>"
+        );
     }
 
     #[test]
