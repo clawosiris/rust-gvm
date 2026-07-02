@@ -32,7 +32,7 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: taiki-e/install-action@bffeee26d4db9be238a4ea78d8826604ebcb594d # v2
+      - uses: taiki-e/install-action@16b05812d776ae1dfaabc8277e421fb6d2506419 # v2
         with:
           tool: cargo-audit@0.22.1
       - name: Run cargo-audit
@@ -48,7 +48,7 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: taiki-e/install-action@bffeee26d4db9be238a4ea78d8826604ebcb594d # v2
+      - uses: taiki-e/install-action@16b05812d776ae1dfaabc8277e421fb6d2506419 # v2
         with:
           tool: cargo-machete@0.9.1
       - name: Run cargo-machete
@@ -61,7 +61,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: taiki-e/install-action@bffeee26d4db9be238a4ea78d8826604ebcb594d # cargo-vet
+      - uses: taiki-e/install-action@16b05812d776ae1dfaabc8277e421fb6d2506419 # cargo-vet
         with:
           tool: cargo-vet
       - name: Run cargo-vet
@@ -75,7 +75,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: taiki-e/install-action@bffeee26d4db9be238a4ea78d8826604ebcb594d # cargo-geiger
+      - uses: taiki-e/install-action@16b05812d776ae1dfaabc8277e421fb6d2506419 # cargo-geiger
         with:
           tool: cargo-geiger
       - name: Generate geiger reports (all workspace crates)
@@ -104,7 +104,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: taiki-e/install-action@bffeee26d4db9be238a4ea78d8826604ebcb594d # cargo-geiger
+      - uses: taiki-e/install-action@16b05812d776ae1dfaabc8277e421fb6d2506419 # cargo-geiger
         with:
           tool: cargo-geiger
       - name: Fail if workspace crates use unsafe
