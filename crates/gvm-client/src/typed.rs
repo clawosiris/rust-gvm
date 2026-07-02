@@ -61,7 +61,9 @@ use gvm_gmp::commands::secinfo::{
     get_cert_bund_advisories, get_cert_bund_advisory, get_cpe, get_cpes, get_cve, get_cves,
     get_dfn_cert_advisories, get_dfn_cert_advisory, GetSecInfoOpts,
 };
-use gvm_gmp::commands::system::{describe_auth, get_settings, get_timezones, FilteredGetOpts};
+use gvm_gmp::commands::system::{
+    describe_auth, get_settings, get_timezones, get_vuln, get_vulns, FilteredGetOpts,
+};
 use gvm_gmp::commands::tags::{create_tag, get_tags, GetTagsOpts, TagOpts};
 use gvm_gmp::commands::targets::{create_target, get_targets, CreateTargetOpts, GetTargetsOpts};
 use gvm_gmp::commands::tasks::{
@@ -92,8 +94,9 @@ use gvm_gmp::responses::{
     GetScanConfigsResponse, GetScannersResponse, GetSchedulesResponse, GetSettingsResponse,
     GetTagsResponse, GetTargetsResponse, GetTasksResponse, GetTicketsResponse,
     GetTimezonesResponse, GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse,
-    HelpResponse, ModifyScanConfigResponse, ModifyScannerResponse, ReportExport, RestoreResponse,
-    ResumeTaskResponse, StartTaskResponse, SyncConfigResponse, VerifyScannerResponse,
+    GetVulnerabilitiesResponse, HelpResponse, ModifyScanConfigResponse, ModifyScannerResponse,
+    ReportExport, RestoreResponse, ResumeTaskResponse, StartTaskResponse, SyncConfigResponse,
+    VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
 
@@ -695,6 +698,32 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ) -> Result<GetDfnCertAdvisoriesResponse, GvmError> {
         let response = self.send(get_dfn_cert_advisory(cert_id)).await?;
         GetDfnCertAdvisoriesResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `get_vulns` request for vulnerabilities and return a typed
+    /// [`GetVulnerabilitiesResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_vulnerabilities(
+        &mut self,
+        opts: FilteredGetOpts,
+    ) -> Result<GetVulnerabilitiesResponse, GvmError> {
+        let response = self.send(get_vulns(opts)).await?;
+        GetVulnerabilitiesResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `get_vulns` request for a single vulnerability and return a typed
+    /// [`GetVulnerabilitiesResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_vulnerability(
+        &mut self,
+        vulnerability_id: &str,
+    ) -> Result<GetVulnerabilitiesResponse, GvmError> {
+        let response = self.send(get_vuln(vulnerability_id)).await?;
+        GetVulnerabilitiesResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     // ── Alerts ────────────────────────────────────────────────────────────────
