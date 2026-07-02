@@ -161,6 +161,18 @@ pub fn modify_scan_config_set_family_selection(
     modify_config_set_family_selection(config_id, families, auto_add_new_families)
 }
 
+/// Build a `modify_config` request that sets a scan-config name.
+#[must_use]
+pub fn modify_scan_config_set_name(config_id: &EntityId, name: &str) -> impl Request {
+    modify_config_set_name(config_id, name)
+}
+
+/// Build a `modify_config` request that sets or clears a scan-config comment.
+#[must_use]
+pub fn modify_scan_config_set_comment(config_id: &EntityId, comment: Option<&str>) -> impl Request {
+    modify_config_set_comment(config_id, comment)
+}
+
 fn modify_config_with_usage(
     config_id: &EntityId,
     opts: ConfigOpts,
@@ -239,6 +251,18 @@ fn add_encoded_preference_value(preference: &mut XmlElement, value: Option<&str>
         let encoded = base64::engine::general_purpose::STANDARD.encode(value.as_bytes());
         preference.add_child_with_text("value", &encoded);
     }
+}
+
+fn modify_config_set_name(config_id: &EntityId, name: &str) -> XmlCommand {
+    XmlCommand::new("modify_config")
+        .attribute("config_id", config_id.as_str())
+        .child_with_text("name", name)
+}
+
+fn modify_config_set_comment(config_id: &EntityId, comment: Option<&str>) -> XmlCommand {
+    XmlCommand::new("modify_config")
+        .attribute("config_id", config_id.as_str())
+        .child_with_text("comment", comment.unwrap_or_default())
 }
 
 /// Build a `delete_scan_config` request.
@@ -326,6 +350,18 @@ pub fn modify_policy_set_family_selection(
     modify_config_set_family_selection(policy_id, families, auto_add_new_families)
 }
 
+/// Build a `modify_config` request that sets a policy name.
+#[must_use]
+pub fn modify_policy_set_name(policy_id: &EntityId, name: &str) -> impl Request {
+    modify_config_set_name(policy_id, name)
+}
+
+/// Build a `modify_config` request that sets or clears a policy comment.
+#[must_use]
+pub fn modify_policy_set_comment(policy_id: &EntityId, comment: Option<&str>) -> impl Request {
+    modify_config_set_comment(policy_id, comment)
+}
+
 /// Build a `delete_config` request for a policy.
 #[must_use]
 pub fn delete_policy(config_id: &EntityId) -> impl Request {
@@ -381,6 +417,18 @@ mod tests {
             "<modify_config config_id=\"c1\"><comment>updated</comment></modify_config>"
         );
         assert_eq!(
+            xml(modify_scan_config_set_name(&id("c1"), "renamed")),
+            "<modify_config config_id=\"c1\"><name>renamed</name></modify_config>"
+        );
+        assert_eq!(
+            xml(modify_scan_config_set_comment(&id("c1"), Some("updated"))),
+            "<modify_config config_id=\"c1\"><comment>updated</comment></modify_config>"
+        );
+        assert_eq!(
+            xml(modify_scan_config_set_comment(&id("c1"), None)),
+            "<modify_config config_id=\"c1\"><comment></comment></modify_config>"
+        );
+        assert_eq!(
             xml(delete_scan_config(&id("c1"), false)),
             "<delete_config config_id=\"c1\" ultimate=\"0\"/>"
         );
@@ -415,6 +463,18 @@ mod tests {
                 }
             )),
             "<modify_config config_id=\"p1\"><comment>updated</comment><usage_type>policy</usage_type></modify_config>"
+        );
+        assert_eq!(
+            xml(modify_policy_set_name(&id("p1"), "renamed")),
+            "<modify_config config_id=\"p1\"><name>renamed</name></modify_config>"
+        );
+        assert_eq!(
+            xml(modify_policy_set_comment(&id("p1"), Some("updated"))),
+            "<modify_config config_id=\"p1\"><comment>updated</comment></modify_config>"
+        );
+        assert_eq!(
+            xml(modify_policy_set_comment(&id("p1"), None)),
+            "<modify_config config_id=\"p1\"><comment></comment></modify_config>"
         );
         assert_eq!(
             xml(delete_policy(&id("p1"))),
