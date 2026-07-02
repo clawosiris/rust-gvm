@@ -497,6 +497,55 @@ async fn typed_rest_support_gap_helpers_parse_fixture_responses() {
 }
 
 #[tokio::test]
+async fn typed_secinfo_singular_helpers_fetch_one_entry() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let cve = client
+        .get_cve("CVE-2026-1000")
+        .await
+        .expect("single CVE should parse");
+    assert_eq!(cve.items.len(), 1);
+    assert_eq!(cve.items[0].id, "CVE-2026-1000");
+    assert_eq!(cve.items[0].name, "Mock CVE one");
+    assert_eq!(cve.counts.total, Some(1));
+
+    let cpe = client
+        .get_cpe("cpe:/a:greenbone:gvm")
+        .await
+        .expect("single CPE should parse");
+    assert_eq!(cpe.items.len(), 1);
+    assert_eq!(cpe.items[0].id, "cpe:/a:greenbone:gvm");
+    assert_eq!(cpe.items[0].name, "Greenbone GVM");
+
+    let cert = client
+        .get_cert_bund_advisory("CB-K26/001")
+        .await
+        .expect("single CERT-Bund advisory should parse");
+    assert_eq!(cert.items.len(), 1);
+    assert_eq!(cert.items[0].id, "CB-K26/001");
+
+    let dfn = client
+        .get_dfn_cert_advisory("DFN-2026-001")
+        .await
+        .expect("single DFN-CERT advisory should parse");
+    assert_eq!(dfn.items.len(), 1);
+    assert_eq!(dfn.items[0].id, "DFN-2026-001");
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn full_crud_lifecycle_succeeds() {
     let Some(server) = stateful_server().await else {
         return;

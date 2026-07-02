@@ -989,28 +989,28 @@ fn render_system_reports_response() -> Vec<u8> {
 fn render_secinfo_response(cmd: &ParsedCommand) -> Vec<u8> {
     let info_type = cmd.attr("type").unwrap_or("cve");
     let (element, entries) = match info_type {
-        "cpe" => (
+        "CPE" | "cpe" => (
             "cpe",
             vec![
                 ("cpe:/a:greenbone:gvm", "Greenbone GVM"),
                 ("cpe:/o:debian:debian_linux:12", "Debian 12"),
             ],
         ),
-        "cve" => (
+        "CVE" | "cve" => (
             "cve",
             vec![
                 ("CVE-2026-1000", "Mock CVE one"),
                 ("CVE-2026-1001", "Mock CVE two"),
             ],
         ),
-        "cert_bund_adv" => (
+        "CERT_BUND_ADV" | "cert_bund_adv" => (
             "cert_bund_adv",
             vec![
                 ("CB-K26/001", "CERT-Bund advisory one"),
                 ("CB-K26/002", "CERT-Bund advisory two"),
             ],
         ),
-        "dfn_cert_adv" => (
+        "DFN_CERT_ADV" | "dfn_cert_adv" => (
             "dfn_cert_adv",
             vec![
                 ("DFN-2026-001", "DFN-CERT advisory one"),
@@ -1031,12 +1031,18 @@ fn render_secinfo_response(cmd: &ParsedCommand) -> Vec<u8> {
         _ => ("info", vec![("info-1", "Generic info entry")]),
     };
 
+    let info_id = cmd.attr("info_id");
+    let entries: Vec<_> = entries
+        .into_iter()
+        .filter(|(id, _)| info_id.is_none_or(|wanted| wanted == *id))
+        .collect();
+    let count = entries.len();
     let items: String = entries
         .into_iter()
         .map(|(id, name)| format!("<{element} id=\"{id}\"><name>{name}</name></{element}>"))
         .collect();
     format!(
-        "<get_info_response status=\"200\" status_text=\"OK\">{items}<{element}_count>2<filtered>2</filtered></{element}_count></get_info_response>"
+        "<get_info_response status=\"200\" status_text=\"OK\">{items}<{element}_count>{count}<filtered>{count}</filtered></{element}_count></get_info_response>"
     )
     .into_bytes()
 }
