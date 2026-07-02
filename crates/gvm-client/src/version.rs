@@ -37,7 +37,7 @@ pub fn minimum_version_for_command(command_name: &str) -> Option<GmpVersion> {
 /// Return whether a command is supported by the negotiated version.
 #[must_use]
 pub fn command_supported(command_name: &str, version: GmpVersion) -> bool {
-    minimum_version_for_command(command_name).map_or(true, |minimum| version >= minimum)
+    minimum_version_for_command(command_name).is_none_or(|minimum| version >= minimum)
 }
 
 /// Human-readable minimum version label for a version-gated command.

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-#![cfg(feature = "ssh")]
 #![allow(missing_docs)]
+#![cfg(feature = "ssh")]
 
 use std::path::PathBuf;
 use std::time::Duration;
