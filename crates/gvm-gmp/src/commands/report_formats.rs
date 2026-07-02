@@ -4,9 +4,12 @@
 //! Report format command builders.
 
 use gvm_protocol::{Request, XmlCommand};
+use quick_xml::events::Event;
+use quick_xml::Reader;
 
 use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
 use crate::enums::ReportFormatType;
+use crate::responses::ParseError;
 use crate::types::EntityId;
 
 /// Optional fields for report-format create and modify requests.
@@ -40,6 +43,28 @@ pub fn create_report_format(name: &str, opts: ReportFormatOpts) -> impl Request 
     cmd.add_element_with_text("name", name);
     add_report_format_body(&mut cmd, &opts);
     cmd
+}
+
+/// Build a `create_report_format` request that clones an existing report format.
+#[must_use]
+pub fn clone_report_format(report_format_id: &EntityId) -> impl Request {
+    XmlCommand::new("create_report_format").child_with_text("copy", report_format_id.as_str())
+}
+
+/// Build a `create_report_format` request that imports report-format XML.
+///
+/// # Errors
+/// Returns an error if `report_format_xml` is not a single well-formed XML
+/// document.
+pub fn import_report_format(report_format_xml: &str) -> Result<impl Request, ParseError> {
+    validate_single_xml_document(report_format_xml)?;
+    let mut request = Vec::with_capacity(
+        "<create_report_format></create_report_format>".len() + report_format_xml.len(),
+    );
+    request.extend_from_slice(b"<create_report_format>");
+    request.extend_from_slice(report_format_xml.as_bytes());
+    request.extend_from_slice(b"</create_report_format>");
+    Ok(request)
 }
 
 /// Build a `get_report_formats` request.
@@ -95,6 +120,82 @@ fn add_report_format_body(cmd: &mut XmlCommand, opts: &ReportFormatOpts) {
     }
 }
 
+fn validate_single_xml_document(xml: &str) -> Result<(), ParseError> {
+    let mut reader = Reader::from_str(xml);
+    reader.config_mut().trim_text(true);
+    let mut depth = 0usize;
+    let mut saw_root = false;
+    let mut completed_root = false;
+
+    loop {
+        match reader.read_event()? {
+            Event::Start(_) => {
+                if completed_root {
+                    return Err(ParseError::InvalidValue {
+                        field: "report_format_xml".to_string(),
+                        value: "multiple root elements".to_string(),
+                    });
+                }
+                saw_root = true;
+                depth += 1;
+            }
+            Event::Empty(_) => {
+                if completed_root {
+                    return Err(ParseError::InvalidValue {
+                        field: "report_format_xml".to_string(),
+                        value: "multiple root elements".to_string(),
+                    });
+                }
+                saw_root = true;
+                completed_root = true;
+            }
+            Event::End(_) => {
+                if depth == 0 {
+                    return Err(ParseError::InvalidValue {
+                        field: "report_format_xml".to_string(),
+                        value: "unmatched end tag".to_string(),
+                    });
+                }
+                depth -= 1;
+                if depth == 0 {
+                    completed_root = true;
+                }
+            }
+            Event::Text(event) => {
+                if depth == 0 && !std::str::from_utf8(event.as_ref())?.trim().is_empty() {
+                    return Err(ParseError::InvalidValue {
+                        field: "report_format_xml".to_string(),
+                        value: if completed_root {
+                            "text after root element"
+                        } else {
+                            "text before root element"
+                        }
+                        .to_string(),
+                    });
+                }
+            }
+            Event::CData(_) | Event::GeneralRef(_) if depth == 0 => {
+                return Err(ParseError::InvalidValue {
+                    field: "report_format_xml".to_string(),
+                    value: "content outside root element".to_string(),
+                });
+            }
+            Event::Eof => {
+                if saw_root && depth == 0 {
+                    return Ok(());
+                }
+                return Err(ParseError::MissingElement("root".to_string()));
+            }
+            Event::Decl(_)
+            | Event::PI(_)
+            | Event::DocType(_)
+            | Event::Comment(_)
+            | Event::CData(_)
+            | Event::GeneralRef(_) => {}
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,6 +215,30 @@ mod tests {
             },
         ));
         assert!(rendered.contains("<type>pdf</type>"));
+        assert_eq!(
+            xml(clone_report_format(&id("rf1"))),
+            "<create_report_format><copy>rf1</copy></create_report_format>"
+        );
+        assert_eq!(
+            xml(import_report_format(
+                r#"<get_report_formats_response status="200" status_text="OK"><report_format id="rf1"><name>Imported</name></report_format></get_report_formats_response>"#
+            )
+            .expect("valid report format XML")),
+            r#"<create_report_format><get_report_formats_response status="200" status_text="OK"><report_format id="rf1"><name>Imported</name></report_format></get_report_formats_response></create_report_format>"#
+        );
+        assert!(import_report_format(
+            r#"<get_report_formats_response status="200" status_text="OK"/></create_report_format><delete_task/>"#
+        )
+        .is_err());
+        assert!(import_report_format(
+            r#"prefix<get_report_formats_response status="200" status_text="OK"/>"#
+        )
+        .is_err());
+        assert!(import_report_format(
+            r#"<get_report_formats_response status="200" status_text="OK"/>suffix"#
+        )
+        .is_err());
+        assert!(import_report_format("").is_err());
         assert_eq!(
             xml(get_report_format(&id("rf1"))),
             "<get_report_formats details=\"1\" report_format_id=\"rf1\"/>"
