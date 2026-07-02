@@ -25,6 +25,12 @@ criteria = "safe-to-deploy"
 delta = "0.39.3 -> 0.39.4"
 notes = "Reviewed local diff: DTD parser guards avoid buffer overrun/panic paths when unknown markup exceeds the fixed lookahead window; no new capability or unsafe surface added."
 
+[[audits.quick-xml]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "0.40.1 -> 0.41.0"
+notes = "Reviewed 0.40.1 to 0.41.0 security release diff for RUSTSEC-2026-0194 and RUSTSEC-2026-0195; changes bound duplicate-attribute and namespace-declaration DoS paths."
+
 [[audits.rustls]]
 who = "Thoth"
 criteria = "safe-to-deploy"
