@@ -41,6 +41,14 @@ pub fn create_tls_certificate(name: &str, opts: TlsCertificateOpts) -> impl Requ
     cmd
 }
 
+/// Build a `clone_tls_certificate` request.
+#[must_use]
+pub fn clone_tls_certificate(tls_certificate_id: &EntityId) -> impl Request {
+    let mut cmd = XmlCommand::new("create_tls_certificate");
+    cmd.add_element_with_text("copy", tls_certificate_id.as_str());
+    cmd
+}
+
 /// Build a `get_tls_certificates` request.
 #[must_use]
 pub fn get_tls_certificates(opts: GetTlsCertificatesOpts) -> impl Request {
@@ -108,6 +116,10 @@ mod tests {
             },
         ));
         assert!(rendered.contains("<certificate>cert</certificate>"));
+        assert_eq!(
+            xml(clone_tls_certificate(&id("tls1"))),
+            "<create_tls_certificate><copy>tls1</copy></create_tls_certificate>"
+        );
         assert_eq!(
             xml(get_tls_certificate(&id("tls1"))),
             "<get_tls_certificates details=\"1\" tls_certificate_id=\"tls1\"/>"

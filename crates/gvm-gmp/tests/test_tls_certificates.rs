@@ -32,6 +32,14 @@ fn test_create_tls_certificate_with_optionals() {
 }
 
 #[test]
+fn test_clone_tls_certificate() {
+    assert_eq!(
+        xml(clone_tls_certificate(&id("tls1"))),
+        "<create_tls_certificate><copy>tls1</copy></create_tls_certificate>"
+    );
+}
+
+#[test]
 fn test_tls_certificate_get_modify_delete() {
     assert_eq!(
         xml(get_tls_certificate(&id("tls1"))),
