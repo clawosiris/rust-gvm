@@ -282,6 +282,21 @@ pub fn get_audits(opts: GetTasksOpts) -> impl Request {
     get_tasks_with_usage(opts, UsageType::Audit)
 }
 
+/// Build a clone request for an existing audit.
+#[must_use]
+pub fn clone_audit(task_id: &EntityId) -> impl Request {
+    clone_task(task_id)
+}
+
+/// Build a `get_tasks` request for a single audit.
+#[must_use]
+pub fn get_audit(task_id: &EntityId) -> impl Request {
+    XmlCommand::new("get_tasks")
+        .attribute("task_id", task_id.as_str())
+        .attribute("usage_type", UsageType::Audit.as_gmp_str())
+        .attribute("details", "1")
+}
+
 /// Build a `start_task` request for an audit.
 #[must_use]
 pub fn start_audit(task_id: &EntityId) -> impl Request {
@@ -424,6 +439,14 @@ mod tests {
         assert_eq!(
             xml(get_audits(GetTasksOpts::default())),
             "<get_tasks usage_type=\"audit\"/>"
+        );
+        assert_eq!(
+            xml(clone_audit(&id("a1"))),
+            "<create_task><copy>a1</copy></create_task>"
+        );
+        assert_eq!(
+            xml(get_audit(&id("a1"))),
+            "<get_tasks details=\"1\" task_id=\"a1\" usage_type=\"audit\"/>"
         );
         assert_eq!(
             xml(modify_audit(

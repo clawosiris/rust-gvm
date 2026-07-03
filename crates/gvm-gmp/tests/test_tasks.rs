@@ -47,12 +47,20 @@ fn test_task_mutation_and_actions() {
         "<create_task><copy>a1</copy></create_task>"
     );
     assert_eq!(
+        xml(clone_audit(&id("a1"))),
+        "<create_task><copy>a1</copy></create_task>"
+    );
+    assert_eq!(
         xml(create_container_task("foo", Some("bar"))),
         "<create_task><name>foo</name><comment>bar</comment><target id=\"0\"/></create_task>"
     );
     assert_eq!(
         xml(get_task(&id("a1"))),
         "<get_tasks details=\"1\" task_id=\"a1\" usage_type=\"scan\"/>"
+    );
+    assert_eq!(
+        xml(get_audit(&id("a1"))),
+        "<get_tasks details=\"1\" task_id=\"a1\" usage_type=\"audit\"/>"
     );
     assert_eq!(
         xml(move_task(&id("a1"), Some(&id("s1")))),
