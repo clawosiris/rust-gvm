@@ -14,6 +14,10 @@ fn test_create_report_config_basic() {
         xml(create_report_config("cfg", "rf1")),
         "<create_report_config><name>cfg</name><report_format_id>rf1</report_format_id></create_report_config>"
     );
+    assert_eq!(
+        xml(clone_report_config("cfg1")),
+        "<create_report_config><copy>cfg1</copy></create_report_config>"
+    );
 }
 
 #[test]

@@ -33,7 +33,9 @@ use gvm_gmp::commands::permissions::{
 use gvm_gmp::commands::port_lists::{
     create_port_list, get_port_lists, GetPortListsOpts, PortListOpts,
 };
-use gvm_gmp::commands::report_configs::{get_report_configs_opts, GetReportConfigsOpts};
+use gvm_gmp::commands::report_configs::{
+    clone_report_config, get_report_configs_opts, GetReportConfigsOpts,
+};
 use gvm_gmp::commands::report_formats::{
     create_report_format, get_report_formats, GetReportFormatsOpts, ReportFormatOpts,
 };
@@ -73,23 +75,23 @@ use gvm_gmp::commands::version::get_version;
 use gvm_gmp::responses::{
     AuthenticateResponse, CreateAlertResponse, CreateCredentialResponse, CreateFilterResponse,
     CreateGroupResponse, CreateHostResponse, CreateNoteResponse, CreateOverrideResponse,
-    CreatePermissionResponse, CreatePortListResponse, CreateReportFormatResponse,
-    CreateRoleResponse, CreateScanConfigResponse, CreateScannerResponse, CreateScheduleResponse,
-    CreateTagResponse, CreateTargetResponse, CreateTaskResponse, CreateTicketResponse,
-    CreateTlsCertificateResponse, CreateUserResponse, DeleteScanConfigResponse,
-    DeleteScannerResponse, DescribeAuthResponse, GetAlertsResponse, GetCertBundAdvisoriesResponse,
-    GetCpesResponse, GetCredentialStoresResponse, GetCredentialsResponse, GetCvesResponse,
-    GetDfnCertAdvisoriesResponse, GetFeedsResponse, GetFiltersResponse, GetGroupsResponse,
-    GetHostsResponse, GetNotesResponse, GetNvtFamiliesResponse, GetNvtsResponse,
-    GetOverridesResponse, GetPermissionsResponse, GetPortListsResponse,
-    GetReportClosedCvesResponse, GetReportConfigsResponse, GetReportErrorsResponse,
-    GetReportFormatsResponse, GetReportTlsCertificatesResponse, GetReportVulnsResponse,
-    GetReportsResponse, GetResultsResponse, GetRolesResponse, GetScanConfigsResponse,
-    GetScannersResponse, GetSchedulesResponse, GetSettingsResponse, GetTagsResponse,
-    GetTargetsResponse, GetTasksResponse, GetTicketsResponse, GetTimezonesResponse,
-    GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse, HelpResponse,
-    ModifyScanConfigResponse, ModifyScannerResponse, ReportExport, ResumeTaskResponse,
-    StartTaskResponse, SyncConfigResponse, VerifyScannerResponse,
+    CreatePermissionResponse, CreatePortListResponse, CreateReportConfigResponse,
+    CreateReportFormatResponse, CreateRoleResponse, CreateScanConfigResponse,
+    CreateScannerResponse, CreateScheduleResponse, CreateTagResponse, CreateTargetResponse,
+    CreateTaskResponse, CreateTicketResponse, CreateTlsCertificateResponse, CreateUserResponse,
+    DeleteScanConfigResponse, DeleteScannerResponse, DescribeAuthResponse, GetAlertsResponse,
+    GetCertBundAdvisoriesResponse, GetCpesResponse, GetCredentialStoresResponse,
+    GetCredentialsResponse, GetCvesResponse, GetDfnCertAdvisoriesResponse, GetFeedsResponse,
+    GetFiltersResponse, GetGroupsResponse, GetHostsResponse, GetNotesResponse,
+    GetNvtFamiliesResponse, GetNvtsResponse, GetOverridesResponse, GetPermissionsResponse,
+    GetPortListsResponse, GetReportClosedCvesResponse, GetReportConfigsResponse,
+    GetReportErrorsResponse, GetReportFormatsResponse, GetReportTlsCertificatesResponse,
+    GetReportVulnsResponse, GetReportsResponse, GetResultsResponse, GetRolesResponse,
+    GetScanConfigsResponse, GetScannersResponse, GetSchedulesResponse, GetSettingsResponse,
+    GetTagsResponse, GetTargetsResponse, GetTasksResponse, GetTicketsResponse,
+    GetTimezonesResponse, GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse,
+    HelpResponse, ModifyScanConfigResponse, ModifyScannerResponse, ReportExport,
+    ResumeTaskResponse, StartTaskResponse, SyncConfigResponse, VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
 
@@ -1024,6 +1026,19 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ) -> Result<GetReportConfigsResponse, GvmError> {
         let response = self.send(get_report_configs_opts(opts)).await?;
         GetReportConfigsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `clone_report_config` request and return a typed
+    /// [`CreateReportConfigResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn clone_report_config(
+        &mut self,
+        id: &str,
+    ) -> Result<CreateReportConfigResponse, GvmError> {
+        let response = self.send(clone_report_config(id)).await?;
+        CreateReportConfigResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     // ── System ────────────────────────────────────────────────────────────────
