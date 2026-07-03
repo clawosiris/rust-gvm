@@ -39,8 +39,8 @@ use gvm_gmp::commands::report_formats::{
 };
 use gvm_gmp::commands::reports::{
     get_report_closed_cves, get_report_errors, get_report_export, get_report_export_with_opts,
-    get_report_tls_certificates, get_report_vulns, get_reports, GetReportDetailsOpts,
-    GetReportExportOpts, GetReportsOpts,
+    get_report_tls_certificates, get_report_vulnerabilities, get_report_vulns, get_reports,
+    GetReportDetailsOpts, GetReportExportOpts, GetReportsOpts,
 };
 use gvm_gmp::commands::results::{get_results, GetResultsOpts};
 use gvm_gmp::commands::roles::{create_role, get_roles, GetRolesOpts, RoleOpts};
@@ -427,6 +427,22 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         opts: GetReportDetailsOpts,
     ) -> Result<GetReportVulnsResponse, GvmError> {
         let response = self.send(get_report_vulns(report_id, opts)).await?;
+        GetReportVulnsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `get_report_vulns` request using python-gvm's descriptive helper
+    /// name and return a typed [`GetReportVulnsResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_report_vulnerabilities(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<GetReportVulnsResponse, GvmError> {
+        let response = self
+            .send(get_report_vulnerabilities(report_id, opts))
+            .await?;
         GetReportVulnsResponse::from_response(&response).map_err(GvmError::Parse)
     }
 

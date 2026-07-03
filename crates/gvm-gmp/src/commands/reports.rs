@@ -232,6 +232,15 @@ pub fn get_report_vulns(report_id: &EntityId, opts: GetReportDetailsOpts) -> imp
     get_report_detail_command("get_report_vulns", report_id, opts)
 }
 
+/// Build a `get_report_vulns` request using python-gvm's descriptive helper name.
+#[must_use]
+pub fn get_report_vulnerabilities(
+    report_id: &EntityId,
+    opts: GetReportDetailsOpts,
+) -> impl Request {
+    get_report_vulns(report_id, opts)
+}
+
 /// Build a `get_report_tls_certificates` request.
 #[must_use]
 pub fn get_report_tls_certificates(
@@ -354,6 +363,16 @@ mod tests {
         assert_eq!(
             xml(get_report_vulns(&id("r1"), GetReportDetailsOpts::default())),
             "<get_report_vulns details=\"1\" report_id=\"r1\"/>"
+        );
+        assert_eq!(
+            xml(get_report_vulnerabilities(
+                &id("r1"),
+                GetReportDetailsOpts {
+                    filter_string: Some("name=foo".into()),
+                    ..Default::default()
+                },
+            )),
+            "<get_report_vulns details=\"1\" filter=\"name=foo\" report_id=\"r1\"/>"
         );
         assert_eq!(
             xml(get_report_tls_certificates(
