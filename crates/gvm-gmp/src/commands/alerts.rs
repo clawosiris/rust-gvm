@@ -37,6 +37,19 @@ pub struct GetAlertsOpts {
     pub details: Option<bool>,
 }
 
+/// Options for `trigger_alert` requests.
+#[derive(Debug, Clone, Default)]
+pub struct TriggerAlertOpts {
+    /// Optional inline filter expression.
+    pub filter_string: Option<String>,
+    /// Optional saved filter identifier.
+    pub filter_id: Option<EntityId>,
+    /// Optional report format identifier.
+    pub report_format_id: Option<EntityId>,
+    /// Optional delta report identifier.
+    pub delta_report_id: Option<EntityId>,
+}
+
 /// Build a clone request for an existing alert.
 #[must_use]
 pub fn clone_alert(alert_id: &EntityId) -> impl Request {
@@ -94,6 +107,30 @@ pub fn delete_alert(alert_id: &EntityId, ultimate: bool) -> impl Request {
 #[must_use]
 pub fn test_alert(alert_id: &EntityId) -> impl Request {
     XmlCommand::new("test_alert").attribute("alert_id", alert_id.as_str())
+}
+
+/// Build a `trigger_alert` request.
+#[must_use]
+pub fn trigger_alert(
+    alert_id: &EntityId,
+    report_id: &EntityId,
+    opts: TriggerAlertOpts,
+) -> impl Request {
+    let mut cmd = XmlCommand::new("get_reports")
+        .attribute("report_id", report_id.as_str())
+        .attribute("alert_id", alert_id.as_str());
+    add_filter_attrs(
+        &mut cmd,
+        opts.filter_string.as_deref(),
+        opts.filter_id.as_ref(),
+    );
+    if let Some(report_format_id) = opts.report_format_id.as_ref() {
+        cmd = cmd.attribute("format_id", report_format_id.as_str());
+    }
+    if let Some(delta_report_id) = opts.delta_report_id.as_ref() {
+        cmd = cmd.attribute("delta_report_id", delta_report_id.as_str());
+    }
+    cmd
 }
 
 fn add_alert_body(cmd: &mut XmlCommand, opts: &AlertOpts) {
@@ -172,5 +209,13 @@ mod tests {
             "<delete_alert alert_id=\"a1\" ultimate=\"0\"/>"
         );
         assert_eq!(xml(test_alert(&id("a1"))), "<test_alert alert_id=\"a1\"/>");
+        assert_eq!(
+            xml(trigger_alert(
+                &id("a1"),
+                &id("r1"),
+                TriggerAlertOpts::default()
+            )),
+            "<get_reports alert_id=\"a1\" report_id=\"r1\"/>"
+        );
     }
 }

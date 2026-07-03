@@ -6,6 +6,7 @@
 
 use gvm_client::{GmpClient, GmpNextCommands, GmpVersioned, GvmError};
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
+use gvm_gmp::commands::alerts::{trigger_alert, TriggerAlertOpts};
 use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::reports::{get_report_hosts, get_report_vulnerabilities};
 use gvm_gmp::commands::scan_configs::ConfigOpts;
@@ -61,6 +62,20 @@ async fn fixture_server(version: MockVersion) -> Option<MockGmpServer> {
         .mode(ServerMode::Fixture)
         .version(version)
         .unix_socket_auto()
+        .build()
+        .await
+    {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("server should start: {error}"),
+    }
+}
+
+async fn echo_server(version: MockVersion) -> Option<MockGmpServer> {
+    match MockGmpServer::builder()
+        .mode(ServerMode::Echo)
+        .version(version)
+        .unix_socket(socket_path())
         .build()
         .await
     {
@@ -201,6 +216,47 @@ async fn create_target_and_get_targets_succeed() {
         .as_str()
         .expect("valid UTF-8 XML")
         .contains("Integration Target"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn trigger_alert_sends_get_reports_command() {
+    let Some(server) = echo_server(MockVersion::V22_4).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    let response = client
+        .call(trigger_alert(
+            &EntityId::new("alert-1").expect("valid id"),
+            &EntityId::new("report-1").expect("valid id"),
+            TriggerAlertOpts {
+                filter_string: Some("severity>5".into()),
+                filter_id: Some(EntityId::new("filter-1").expect("valid id")),
+                report_format_id: Some(EntityId::new("format-1").expect("valid id")),
+                delta_report_id: Some(EntityId::new("delta-1").expect("valid id")),
+            },
+        ))
+        .await
+        .expect("trigger_alert should send get_reports command");
+
+    assert_eq!(response.status_code(), Some(200));
+    assert_eq!(
+        response.root_element_name().as_deref(),
+        Some("get_reports_response")
+    );
+
+    let history = server.command_history();
+    let command = history.last().expect("trigger command recorded");
+    assert_eq!(command.command_name(), "get_reports");
+    assert_eq!(
+        std::str::from_utf8(command.raw_xml()).expect("valid UTF-8 command"),
+        "<get_reports alert_id=\"alert-1\" delta_report_id=\"delta-1\" filt_id=\"filter-1\" filter=\"severity&gt;5\" format_id=\"format-1\" report_id=\"report-1\"/>"
+    );
 
     server.shutdown().await;
 }
