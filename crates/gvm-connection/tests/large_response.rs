@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-#![cfg(feature = "large-response-tests")]
 #![allow(clippy::unwrap_used, missing_docs)]
+#![cfg(feature = "large-response-tests")]
 
 use gvm_connection::{GvmConnection, UnixSocketConfig, UnixSocketConnection};
 use gvm_gmp::commands::reports::get_report;

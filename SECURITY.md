@@ -73,7 +73,7 @@ Accepted advisories are documented in [`deny.toml`](deny.toml) with rationale:
 
 - `cargo clippy` with `-D warnings` in CI
 - `#[deny(unsafe_code)]` — no unsafe blocks in any crate
-- MSRV tested (currently Rust 1.75.0)
+- MSRV tested (currently Rust 1.85.0)
 - All XML parsing uses `quick-xml` with default limits (no unbounded expansion)
 
 ## Security-Relevant Architecture
