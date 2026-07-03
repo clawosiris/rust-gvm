@@ -31,6 +31,8 @@ pub mod integration_configs;
 pub mod notes;
 /// NVT command builders.
 pub mod nvts;
+/// OCI image target command builders.
+pub mod oci_image_targets;
 /// Operating-system asset command builders.
 pub mod operating_systems;
 /// Override command builders.

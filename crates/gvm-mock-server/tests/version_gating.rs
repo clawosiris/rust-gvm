@@ -16,6 +16,10 @@ use gvm_gmp::commands::features::get_features;
 use gvm_gmp::commands::integration_configs::{
     get_integration_config, get_integration_configs, modify_integration_config,
 };
+use gvm_gmp::commands::oci_image_targets::{
+    create_oci_image_target, delete_oci_image_target, get_oci_image_targets,
+    modify_oci_image_target, CreateOciImageTargetOpts, ModifyOciImageTargetOpts,
+};
 use gvm_gmp::commands::report_configs::{create_report_config, get_report_configs};
 use gvm_gmp::commands::reports::{get_report_cves, get_report_hosts};
 use gvm_gmp::commands::targets::{create_target, CreateTargetOpts};
@@ -225,6 +229,28 @@ async fn version_22_7_rejects_next_commands() {
         .unwrap()
         .contains("get_web_application_targets"));
 
+    let response = send_recv(&mut stream, get_oci_image_targets(Default::default())).await;
+    assert_eq!(response.status_code(), Some(400));
+    assert!(response
+        .status_text()
+        .unwrap()
+        .contains("get_oci_image_targets"));
+
+    let response = send_recv(
+        &mut stream,
+        create_oci_image_target(
+            "Rejected OCI Target",
+            &["registry.example/app:1".to_string()],
+            CreateOciImageTargetOpts::default(),
+        ),
+    )
+    .await;
+    assert_eq!(response.status_code(), Some(400));
+    assert!(response
+        .status_text()
+        .unwrap()
+        .contains("create_oci_image_target"));
+
     server.shutdown().await;
 }
 
@@ -335,7 +361,59 @@ async fn version_22_8_accepts_next_commands() {
     assert!(web_target_xml.contains("<urls>https://example.com</urls>"));
     assert!(web_target_xml.contains("<credential_id>credential-web-gate</credential_id>"));
 
+    assert_oci_image_targets_work_on_next(&mut stream).await;
+
     server.shutdown().await;
+}
+
+async fn assert_oci_image_targets_work_on_next(stream: &mut UnixStream) {
+    let oci_target_response = send_recv(
+        stream,
+        create_oci_image_target(
+            "Version Gated OCI Target",
+            &["registry.example/app:1".to_string()],
+            CreateOciImageTargetOpts {
+                comment: Some("accepted on 22.8".into()),
+                credential_id: Some(id("credential-oci-gate")),
+            },
+        ),
+    )
+    .await;
+    assert_eq!(oci_target_response.status_code(), Some(201));
+    let oci_target_id = id(&oci_target_response.id().expect("created OCI target id"));
+
+    let oci_target_list = send_recv(stream, get_oci_image_targets(Default::default())).await;
+    assert_eq!(oci_target_list.status_code(), Some(200));
+    let oci_target_xml = oci_target_list.as_str().expect("utf8");
+    assert!(oci_target_xml.contains("Version Gated OCI Target"));
+    assert!(oci_target_xml.contains("<image_references>registry.example/app:1</image_references>"));
+    assert!(oci_target_xml.contains("<credential_id>credential-oci-gate</credential_id>"));
+
+    let modify_response = send_recv(
+        stream,
+        modify_oci_image_target(
+            &oci_target_id,
+            ModifyOciImageTargetOpts {
+                name: Some("Updated Version Gated OCI Target".into()),
+                image_references: vec!["registry.example/app:latest".into()],
+                credential_id: Some(id("credential-oci-updated")),
+                ..Default::default()
+            },
+        ),
+    )
+    .await;
+    assert_eq!(modify_response.status_code(), Some(200));
+
+    let modified_list = send_recv(stream, get_oci_image_targets(Default::default())).await;
+    let modified_xml = modified_list.as_str().expect("utf8");
+    assert!(modified_xml.contains("Updated Version Gated OCI Target"));
+    assert!(
+        modified_xml.contains("<image_references>registry.example/app:latest</image_references>")
+    );
+    assert!(modified_xml.contains("<credential_id>credential-oci-updated</credential_id>"));
+
+    let delete_response = send_recv(stream, delete_oci_image_target(&oci_target_id, true)).await;
+    assert_eq!(delete_response.status_code(), Some(200));
 }
 
 fn id(value: &str) -> gvm_gmp::EntityId {
