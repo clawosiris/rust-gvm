@@ -389,6 +389,15 @@ pub trait GmpNextCommands {
         opts: GetReportDetailsOpts,
     ) -> Result<Response, GvmError>;
 
+    /// Get report vulnerability summaries using python-gvm's descriptive helper name.
+    async fn get_report_vulnerabilities(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetReportDetailsOpts,
+    ) -> Result<Response, GvmError> {
+        self.get_report_vulns(report_id, opts).await
+    }
+
     /// Get report TLS certificate summaries.
     async fn get_report_tls_certificates(
         &mut self,
