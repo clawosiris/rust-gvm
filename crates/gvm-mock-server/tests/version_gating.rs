@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
-#![cfg(feature = "unix-socket-tests")]
 #![allow(
     clippy::print_stderr,
     clippy::print_stdout,
@@ -9,7 +8,9 @@
     clippy::unwrap_used,
     missing_docs
 )]
+#![cfg(feature = "unix-socket-tests")]
 
+use gvm_gmp::commands::agent_groups::{create_agent_group, get_agent_groups, CreateAgentGroupOpts};
 use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::features::get_features;
 use gvm_gmp::commands::integration_configs::{
@@ -199,6 +200,10 @@ async fn version_22_7_rejects_next_commands() {
         .unwrap()
         .contains("get_integration_configs"));
 
+    let response = send_recv(&mut stream, get_agent_groups(Default::default())).await;
+    assert_eq!(response.status_code(), Some(400));
+    assert!(response.status_text().unwrap().contains("get_agent_groups"));
+
     let response = send_recv(
         &mut stream,
         get_report_hosts(
@@ -234,6 +239,25 @@ async fn version_22_8_accepts_next_commands() {
         .as_str()
         .expect("utf8")
         .contains("Default Integration Config"));
+
+    let agent_group_response = send_recv(
+        &mut stream,
+        create_agent_group(
+            "Version Gated Agent Group",
+            &[id("agent-1")],
+            "0 */5 * * *",
+            CreateAgentGroupOpts::default(),
+        ),
+    )
+    .await;
+    assert_eq!(agent_group_response.status_code(), Some(201));
+
+    let agent_groups_response = send_recv(&mut stream, get_agent_groups(Default::default())).await;
+    assert_eq!(agent_groups_response.status_code(), Some(200));
+    assert!(agent_groups_response
+        .as_str()
+        .expect("utf8")
+        .contains("Version Gated Agent Group"));
 
     let modify_response = send_recv(
         &mut stream,
