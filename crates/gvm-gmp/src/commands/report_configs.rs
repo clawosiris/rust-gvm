@@ -61,6 +61,12 @@ pub fn create_report_config_opts(
     cmd
 }
 
+/// Build a clone request for an existing report configuration.
+#[must_use]
+pub fn clone_report_config(id: &str) -> XmlCommand {
+    XmlCommand::new("create_report_config").child_with_text("copy", id)
+}
+
 /// Build a `delete_report_config` request.
 #[must_use]
 pub fn delete_report_config(id: &str) -> XmlCommand {
@@ -128,6 +134,10 @@ mod tests {
         assert_eq!(
             xml(get_report_config("cfg1")),
             "<get_report_configs report_config_id=\"cfg1\"/>"
+        );
+        assert_eq!(
+            xml(clone_report_config("cfg1")),
+            "<create_report_config><copy>cfg1</copy></create_report_config>"
         );
     }
 
