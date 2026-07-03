@@ -10,6 +10,7 @@ use gvm_client::{
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::alerts::{trigger_alert, TriggerAlertOpts};
 use gvm_gmp::commands::authentication::authenticate;
+use gvm_gmp::commands::feed::get_feed;
 use gvm_gmp::commands::nvts::{get_nvt_preference, get_nvt_preferences, GetNvtPreferencesOpts};
 use gvm_gmp::commands::operating_systems::{get_operating_systems, GetOperatingSystemsOpts};
 use gvm_gmp::commands::reports::{get_report_hosts, get_report_vulnerabilities};
@@ -26,6 +27,7 @@ use gvm_gmp::commands::tasks::{create_task, delete_task, get_task, start_task, s
 use gvm_gmp::responses::{CreateScanConfigResponse, GetScanConfigsResponse};
 use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
+use gvm_gmp::FeedType;
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 use std::sync::{Arc, Mutex};
 
@@ -365,6 +367,39 @@ async fn operating_system_helpers_send_asset_commands() {
     assert_eq!(
         std::str::from_utf8(command.raw_xml()).expect("valid UTF-8 command"),
         "<get_assets details=\"1\" filt_id=\"filter-1\" filter=\"name=Debian\" type=\"os\"/>"
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn get_feed_sends_typed_get_feeds_command() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .call(authenticate("admin", "admin"))
+        .await
+        .expect("authenticate should succeed");
+
+    let response = client
+        .call(get_feed(FeedType::Nvt))
+        .await
+        .expect("get_feed should send get_feeds command");
+
+    assert_eq!(response.status_code(), Some(200));
+
+    let history = server.command_history();
+    let command = history.last().expect("feed command recorded");
+    assert_eq!(command.command_name(), "get_feeds");
+    assert_eq!(
+        std::str::from_utf8(command.raw_xml()).expect("valid UTF-8 command"),
+        "<get_feeds type=\"NVT\"/>"
     );
 
     server.shutdown().await;
