@@ -49,8 +49,12 @@ const GMP_22_6_COMMANDS: &[&str] = &[
 
 /// Commands only available in GMP 22.8+ / GMP Next.
 const GMP_22_8_COMMANDS: &[&str] = &[
+    "create_agent_group",
+    "delete_agent_group",
+    "get_agent_groups",
     "get_integration_configs",
     "modify_integration_config",
+    "modify_agent_group",
     "get_report_hosts",
     "get_report_ports",
     "get_report_applications",
@@ -172,5 +176,9 @@ mod tests {
             "get_credential_stores",
             GmpVersion::V22_8
         ));
+        assert!(!command_available("get_agent_groups", GmpVersion::V22_7));
+        assert!(command_available("get_agent_groups", GmpVersion::V22_8));
+        assert!(!command_available("create_agent_group", GmpVersion::V22_6));
+        assert!(command_available("create_agent_group", GmpVersion::V22_8));
     }
 }

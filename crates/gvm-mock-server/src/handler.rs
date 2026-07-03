@@ -288,6 +288,9 @@ impl SessionHandler {
         if let Some(comment) = parse_element_text(raw_xml, "comment") {
             resource.comment = comment;
         }
+        if let Some(scheduler_cron_time) = parse_element_text(raw_xml, "scheduler_cron_time") {
+            resource.set_attr("scheduler_cron_time", &scheduler_cron_time);
+        }
 
         if matches!(resource_type, "config" | "task") {
             if let Some(usage_type) = parse_element_text(raw_xml, "usage_type") {
@@ -503,6 +506,7 @@ impl SessionHandler {
         let new_host = parse_element_text(raw_xml, "host");
         let new_hosts = parse_element_text(raw_xml, "hosts");
         let new_status = parse_element_text(raw_xml, "status");
+        let new_scheduler_cron_time = parse_element_text(raw_xml, "scheduler_cron_time");
         let new_nvt_oid = parse_element_text(raw_xml, "nvt_oid")
             .or_else(|| cmd.child_attr("nvt", "oid").map(str::to_string));
         let new_result_id = parse_element_text(raw_xml, "result_id")
@@ -590,6 +594,9 @@ impl SessionHandler {
             }
             if let Some(ref oidc_client_secret) = new_oidc_client_secret {
                 r.set_attr("oidc_provider_client_secret", oidc_client_secret);
+            }
+            if let Some(ref scheduler_cron_time) = new_scheduler_cron_time {
+                r.set_attr("scheduler_cron_time", scheduler_cron_time);
             }
             if resource_type == "ticket" {
                 if let Some(ref status) = new_status {

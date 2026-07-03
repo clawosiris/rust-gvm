@@ -14,6 +14,10 @@ mod typed;
 mod version;
 
 use gvm_connection::GvmConnection;
+use gvm_gmp::commands::agent_groups::{
+    clone_agent_group, create_agent_group, delete_agent_group, get_agent_group, get_agent_groups,
+    modify_agent_group,
+};
 use gvm_gmp::commands::credentials::get_credential_stores;
 use gvm_gmp::commands::features::get_features;
 use gvm_gmp::commands::integration_configs::{
@@ -33,6 +37,9 @@ use gvm_gmp::types::{EntityId, GmpVersion};
 use gvm_protocol::{Request, Response};
 
 pub use error::GvmError;
+pub use gvm_gmp::commands::agent_groups::{
+    CreateAgentGroupOpts, GetAgentGroupsOpts, ModifyAgentGroupOpts,
+};
 pub use gvm_gmp::commands::integration_configs::{
     GetIntegrationConfigsOpts, ModifyIntegrationConfigOpts,
 };
@@ -197,6 +204,96 @@ impl<C: GvmConnection> GmpClient<C> {
             .await
     }
 
+    /// Create an agent group.
+    ///
+    /// # Errors
+    /// Returns an error if the server does not support the command, the transport fails,
+    /// parsing fails, or the server returns a non-success status.
+    pub async fn create_agent_group(
+        &mut self,
+        name: &str,
+        agent_ids: &[EntityId],
+        scheduler_cron_time: &str,
+        opts: CreateAgentGroupOpts,
+    ) -> Result<Response, GvmError> {
+        self.call(create_agent_group(
+            name,
+            agent_ids,
+            scheduler_cron_time,
+            opts,
+        ))
+        .await
+    }
+
+    /// Clone an agent group.
+    ///
+    /// # Errors
+    /// Returns an error if the server does not support the command, the transport fails,
+    /// parsing fails, or the server returns a non-success status.
+    pub async fn clone_agent_group(
+        &mut self,
+        agent_group_id: &EntityId,
+    ) -> Result<Response, GvmError> {
+        self.call(clone_agent_group(agent_group_id)).await
+    }
+
+    /// Get a single agent group.
+    ///
+    /// # Errors
+    /// Returns an error if the server does not support the command, the transport fails,
+    /// parsing fails, or the server returns a non-success status.
+    pub async fn get_agent_group(
+        &mut self,
+        agent_group_id: &EntityId,
+    ) -> Result<Response, GvmError> {
+        self.call(get_agent_group(agent_group_id)).await
+    }
+
+    /// List agent groups.
+    ///
+    /// # Errors
+    /// Returns an error if the server does not support the command, the transport fails,
+    /// parsing fails, or the server returns a non-success status.
+    pub async fn get_agent_groups(
+        &mut self,
+        opts: GetAgentGroupsOpts,
+    ) -> Result<Response, GvmError> {
+        self.call(get_agent_groups(opts)).await
+    }
+
+    /// Modify an agent group.
+    ///
+    /// # Errors
+    /// Returns an error if the server does not support the command, the transport fails,
+    /// parsing fails, or the server returns a non-success status.
+    pub async fn modify_agent_group(
+        &mut self,
+        agent_group_id: &EntityId,
+        scheduler_cron_time: &str,
+        opts: ModifyAgentGroupOpts,
+    ) -> Result<Response, GvmError> {
+        self.call(modify_agent_group(
+            agent_group_id,
+            scheduler_cron_time,
+            opts,
+        ))
+        .await
+    }
+
+    /// Delete an agent group.
+    ///
+    /// # Errors
+    /// Returns an error if the server does not support the command, the transport fails,
+    /// parsing fails, or the server returns a non-success status.
+    pub async fn delete_agent_group(
+        &mut self,
+        agent_group_id: &EntityId,
+        ultimate: bool,
+    ) -> Result<Response, GvmError> {
+        self.call(delete_agent_group(agent_group_id, ultimate))
+            .await
+    }
+
     /// Get host summaries for a report.
     ///
     /// # Errors
@@ -327,6 +424,39 @@ pub trait Gmp226Commands {
 /// Commands available only in GMP 22.8 and later.
 #[async_trait::async_trait]
 pub trait GmpNextCommands {
+    /// Create an agent group.
+    async fn create_agent_group(
+        &mut self,
+        name: &str,
+        agent_ids: &[EntityId],
+        scheduler_cron_time: &str,
+        opts: CreateAgentGroupOpts,
+    ) -> Result<Response, GvmError>;
+
+    /// Clone an agent group.
+    async fn clone_agent_group(&mut self, agent_group_id: &EntityId) -> Result<Response, GvmError>;
+
+    /// Get a single agent group.
+    async fn get_agent_group(&mut self, agent_group_id: &EntityId) -> Result<Response, GvmError>;
+
+    /// List agent groups.
+    async fn get_agent_groups(&mut self, opts: GetAgentGroupsOpts) -> Result<Response, GvmError>;
+
+    /// Modify an agent group.
+    async fn modify_agent_group(
+        &mut self,
+        agent_group_id: &EntityId,
+        scheduler_cron_time: &str,
+        opts: ModifyAgentGroupOpts,
+    ) -> Result<Response, GvmError>;
+
+    /// Delete an agent group.
+    async fn delete_agent_group(
+        &mut self,
+        agent_group_id: &EntityId,
+        ultimate: bool,
+    ) -> Result<Response, GvmError>;
+
     /// Get a single integration configuration.
     async fn get_integration_config(
         &mut self,
@@ -543,6 +673,49 @@ impl_gmp226_commands!(GmpNext);
 
 #[async_trait::async_trait]
 impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
+    async fn create_agent_group(
+        &mut self,
+        name: &str,
+        agent_ids: &[EntityId],
+        scheduler_cron_time: &str,
+        opts: CreateAgentGroupOpts,
+    ) -> Result<Response, GvmError> {
+        self.0
+            .create_agent_group(name, agent_ids, scheduler_cron_time, opts)
+            .await
+    }
+
+    async fn clone_agent_group(&mut self, agent_group_id: &EntityId) -> Result<Response, GvmError> {
+        self.0.clone_agent_group(agent_group_id).await
+    }
+
+    async fn get_agent_group(&mut self, agent_group_id: &EntityId) -> Result<Response, GvmError> {
+        self.0.get_agent_group(agent_group_id).await
+    }
+
+    async fn get_agent_groups(&mut self, opts: GetAgentGroupsOpts) -> Result<Response, GvmError> {
+        self.0.get_agent_groups(opts).await
+    }
+
+    async fn modify_agent_group(
+        &mut self,
+        agent_group_id: &EntityId,
+        scheduler_cron_time: &str,
+        opts: ModifyAgentGroupOpts,
+    ) -> Result<Response, GvmError> {
+        self.0
+            .modify_agent_group(agent_group_id, scheduler_cron_time, opts)
+            .await
+    }
+
+    async fn delete_agent_group(
+        &mut self,
+        agent_group_id: &EntityId,
+        ultimate: bool,
+    ) -> Result<Response, GvmError> {
+        self.0.delete_agent_group(agent_group_id, ultimate).await
+    }
+
     async fn get_integration_config(
         &mut self,
         integration_config_id: &EntityId,

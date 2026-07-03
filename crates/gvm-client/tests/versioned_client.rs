@@ -4,8 +4,11 @@
 #![allow(clippy::print_stderr, missing_docs)]
 #![cfg(feature = "unix-socket-tests")]
 
-use gvm_client::{Gmp226Commands, GmpNextCommands, GmpVersioned};
+use gvm_client::{
+    CreateAgentGroupOpts, Gmp226Commands, GmpNextCommands, GmpVersioned, ModifyAgentGroupOpts,
+};
 use gvm_connection::UnixSocketConnection;
+use gvm_gmp::types::EntityId;
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 
 async fn stateful_server(version: MockVersion) -> Option<MockGmpServer> {
@@ -92,6 +95,112 @@ async fn next_client_exposes_next_trait_methods() {
         .await
         .expect("next-only command should succeed");
     assert_eq!(response.status_code(), Some(200));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn next_client_agent_groups_round_trip() {
+    let Some(server) = stateful_server(MockVersion::V22_8).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpVersioned::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .call(gvm_gmp::commands::authentication::authenticate(
+            "admin", "admin",
+        ))
+        .await
+        .expect("authenticate should succeed");
+
+    let mut client = match client {
+        GmpVersioned::Next(client) => client,
+        other => panic!("expected Next client, got {other:?}"),
+    };
+
+    let agent_ids = [
+        EntityId::new("agent-1").expect("valid id"),
+        EntityId::new("agent-2").expect("valid id"),
+    ];
+    let create_response = client
+        .create_agent_group(
+            "Client Agent Group",
+            &agent_ids,
+            "0 */5 * * *",
+            CreateAgentGroupOpts {
+                comment: Some("created through client".into()),
+            },
+        )
+        .await
+        .expect("create_agent_group should succeed");
+    assert_eq!(create_response.status_code(), Some(201));
+    let agent_group_id = EntityId::new(create_response.id().expect("created id"))
+        .expect("server id should be valid");
+
+    let clone_response = client
+        .clone_agent_group(&agent_group_id)
+        .await
+        .expect("clone_agent_group should succeed");
+    assert_eq!(clone_response.status_code(), Some(201));
+
+    let get_response = client
+        .get_agent_group(&agent_group_id)
+        .await
+        .expect("get_agent_group should succeed");
+    let get_text = get_response.as_str().expect("valid UTF-8 XML");
+    assert!(get_text.contains("Client Agent Group"));
+    assert!(get_text.contains("<scheduler_cron_time>0 */5 * * *</scheduler_cron_time>"));
+
+    let list_response = client
+        .get_agent_groups(Default::default())
+        .await
+        .expect("get_agent_groups should succeed");
+    assert_eq!(list_response.status_code(), Some(200));
+    assert!(list_response
+        .as_str()
+        .expect("valid UTF-8 XML")
+        .contains("<agent_group_count>2"));
+
+    let modify_response = client
+        .modify_agent_group(
+            &agent_group_id,
+            "0 */10 * * *",
+            ModifyAgentGroupOpts {
+                name: Some("Updated Agent Group".into()),
+                comment: Some("modified through client".into()),
+                agent_ids: vec![EntityId::new("agent-3").expect("valid id")],
+            },
+        )
+        .await
+        .expect("modify_agent_group should succeed");
+    assert_eq!(modify_response.status_code(), Some(200));
+
+    let updated_response = client
+        .get_agent_group(&agent_group_id)
+        .await
+        .expect("updated get_agent_group should succeed");
+    let updated_text = updated_response.as_str().expect("valid UTF-8 XML");
+    assert!(updated_text.contains("Updated Agent Group"));
+    assert!(updated_text.contains("<comment>modified through client</comment>"));
+    assert!(updated_text.contains("<scheduler_cron_time>0 */10 * * *</scheduler_cron_time>"));
+
+    let delete_response = client
+        .delete_agent_group(&agent_group_id, true)
+        .await
+        .expect("delete_agent_group should succeed");
+    assert_eq!(delete_response.status_code(), Some(200));
+
+    let error = client
+        .get_agent_group(&agent_group_id)
+        .await
+        .expect_err("deleted agent group should not be found");
+    assert!(matches!(
+        error,
+        gvm_client::GvmError::Server { status: 404, .. }
+    ));
 
     server.shutdown().await;
 }
