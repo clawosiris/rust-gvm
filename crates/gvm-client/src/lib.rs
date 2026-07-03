@@ -507,6 +507,7 @@ fn redact_wire_bytes(bytes: &[u8]) -> Vec<u8> {
         "secret",
         "auth_password",
         "privacy_password",
+        "key",
     ] {
         text = redact_xml_element_text(&text, tag);
     }
@@ -1244,6 +1245,19 @@ mod tests {
         assert!(!redacted.contains(">auth<"));
         assert!(!redacted.contains(">privacy<"));
         assert!(!redacted.contains(">again<"));
+    }
+
+    #[test]
+    fn redacts_modify_license_key_element() {
+        let request = gvm_gmp::commands::system::modify_license("license-secret").to_bytes();
+
+        let redacted = String::from_utf8(redact_wire_bytes(&request)).expect("utf-8");
+
+        assert_eq!(
+            redacted,
+            "<modify_license><key><redacted></key></modify_license>"
+        );
+        assert!(!redacted.contains("license-secret"));
     }
 
     #[test]
