@@ -20,7 +20,8 @@ use gvm_gmp::commands::integration_configs::{
     get_integration_config, get_integration_configs, modify_integration_config,
 };
 use gvm_gmp::commands::report_configs::{
-    create_report_config, delete_report_config, get_report_configs, modify_report_config,
+    clone_report_config, create_report_config, delete_report_config, get_report_configs,
+    modify_report_config,
 };
 use gvm_gmp::commands::reports::{
     get_report_applications, get_report_closed_cves, get_report_cves, get_report_errors,
@@ -310,6 +311,9 @@ pub trait Gmp226Commands {
         report_format_id: &str,
     ) -> Result<Response, GvmError>;
 
+    /// Send a `clone_report_config` request.
+    async fn clone_report_config(&mut self, id: &str) -> Result<Response, GvmError>;
+
     /// Send a `get_report_configs` request.
     async fn get_report_configs(&mut self) -> Result<Response, GvmError>;
 
@@ -433,6 +437,10 @@ macro_rules! impl_gmp226_commands {
                 self.0
                     .call(create_report_config(name, report_format_id))
                     .await
+            }
+
+            async fn clone_report_config(&mut self, id: &str) -> Result<Response, GvmError> {
+                self.0.call(clone_report_config(id)).await
             }
 
             async fn get_report_configs(&mut self) -> Result<Response, GvmError> {
