@@ -16,7 +16,11 @@ pub fn minimum_version_for_command(command_name: &str) -> Option<GmpVersion> {
         | "get_report_configs"
         | "modify_report_config"
         | "get_features" => Some(GmpVersion(22, 6)),
-        "get_integration_configs"
+        "create_agent_group"
+        | "delete_agent_group"
+        | "get_agent_groups"
+        | "modify_agent_group"
+        | "get_integration_configs"
         | "modify_integration_config"
         | "get_report_hosts"
         | "get_report_ports"
@@ -195,6 +199,12 @@ mod tests {
         );
         assert_eq!(
             minimum_version_for_command("get_credential_stores"),
+            Some(GmpVersion(22, 8))
+        );
+        assert!(!command_supported("get_agent_groups", GmpVersion(22, 7)));
+        assert!(command_supported("get_agent_groups", GmpVersion(22, 8)));
+        assert_eq!(
+            minimum_version_for_command("create_agent_group"),
             Some(GmpVersion(22, 8))
         );
     }

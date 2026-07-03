@@ -43,6 +43,7 @@ impl Default for LargeReportConfig {
 /// Known GMP commands that the mock server recognizes.
 pub static KNOWN_COMMANDS: &[&str] = &[
     "authenticate",
+    "create_agent_group",
     "create_alert",
     "create_asset",
     "create_config",
@@ -65,6 +66,7 @@ pub static KNOWN_COMMANDS: &[&str] = &[
     "create_ticket",
     "create_tls_certificate",
     "create_user",
+    "delete_agent_group",
     "delete_alert",
     "delete_asset",
     "delete_config",
@@ -88,6 +90,7 @@ pub static KNOWN_COMMANDS: &[&str] = &[
     "delete_user",
     "describe_auth",
     "empty_trashcan",
+    "get_agent_groups",
     "get_aggregates",
     "get_alerts",
     "get_assets",
@@ -123,6 +126,7 @@ pub static KNOWN_COMMANDS: &[&str] = &[
     "get_version",
     "get_vulns",
     "help",
+    "modify_agent_group",
     "modify_alert",
     "modify_asset",
     "modify_auth",
