@@ -3,6 +3,8 @@
 
 //! GMP command builders.
 
+/// Agent group command builders.
+pub mod agent_groups;
 /// Aggregate command builders.
 pub mod aggregates;
 /// Alert command builders.
