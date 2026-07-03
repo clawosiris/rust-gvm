@@ -34,6 +34,10 @@ use gvm_gmp::commands::reports::{
 };
 use gvm_gmp::commands::system::get_timezones;
 use gvm_gmp::commands::version::get_version;
+use gvm_gmp::commands::web_application_targets::{
+    clone_web_application_target, create_web_application_target, delete_web_application_target,
+    get_web_application_target, get_web_application_targets, modify_web_application_target,
+};
 use gvm_gmp::types::{EntityId, GmpVersion};
 use gvm_protocol::{Request, Response};
 
@@ -46,6 +50,9 @@ pub use gvm_gmp::commands::integration_configs::{
 };
 pub use gvm_gmp::commands::report_configs::ModifyReportConfigOpts;
 pub use gvm_gmp::commands::reports::{GetReportDetailsOpts, GetReportExportOpts};
+pub use gvm_gmp::commands::web_application_targets::{
+    CreateWebApplicationTargetOpts, GetWebApplicationTargetsOpts, ModifyWebApplicationTargetOpts,
+};
 pub use version::{
     command_supported, map_supported_version, minimum_version_for_command, parse_version_text,
     required_version_label,
@@ -295,6 +302,94 @@ impl<C: GvmConnection> GmpClient<C> {
             .await
     }
 
+    /// Create a web application target.
+    ///
+    /// # Errors
+    /// Returns an error if the server does not support the command, the transport fails,
+    /// parsing fails, or the server returns a non-success status.
+    pub async fn create_web_application_target(
+        &mut self,
+        name: &str,
+        urls: &[String],
+        opts: CreateWebApplicationTargetOpts,
+    ) -> Result<Response, GvmError> {
+        self.call(create_web_application_target(name, urls, opts))
+            .await
+    }
+
+    /// Clone a web application target.
+    ///
+    /// # Errors
+    /// Returns an error if the server does not support the command, the transport fails,
+    /// parsing fails, or the server returns a non-success status.
+    pub async fn clone_web_application_target(
+        &mut self,
+        web_application_target_id: &EntityId,
+    ) -> Result<Response, GvmError> {
+        self.call(clone_web_application_target(web_application_target_id))
+            .await
+    }
+
+    /// Get a single web application target.
+    ///
+    /// # Errors
+    /// Returns an error if the server does not support the command, the transport fails,
+    /// parsing fails, or the server returns a non-success status.
+    pub async fn get_web_application_target(
+        &mut self,
+        web_application_target_id: &EntityId,
+        tasks: Option<bool>,
+    ) -> Result<Response, GvmError> {
+        self.call(get_web_application_target(web_application_target_id, tasks))
+            .await
+    }
+
+    /// List web application targets.
+    ///
+    /// # Errors
+    /// Returns an error if the server does not support the command, the transport fails,
+    /// parsing fails, or the server returns a non-success status.
+    pub async fn get_web_application_targets(
+        &mut self,
+        opts: GetWebApplicationTargetsOpts,
+    ) -> Result<Response, GvmError> {
+        self.call(get_web_application_targets(opts)).await
+    }
+
+    /// Modify a web application target.
+    ///
+    /// # Errors
+    /// Returns an error if the server does not support the command, the transport fails,
+    /// parsing fails, or the server returns a non-success status.
+    pub async fn modify_web_application_target(
+        &mut self,
+        web_application_target_id: &EntityId,
+        opts: ModifyWebApplicationTargetOpts,
+    ) -> Result<Response, GvmError> {
+        self.call(modify_web_application_target(
+            web_application_target_id,
+            opts,
+        ))
+        .await
+    }
+
+    /// Delete a web application target.
+    ///
+    /// # Errors
+    /// Returns an error if the server does not support the command, the transport fails,
+    /// parsing fails, or the server returns a non-success status.
+    pub async fn delete_web_application_target(
+        &mut self,
+        web_application_target_id: &EntityId,
+        ultimate: bool,
+    ) -> Result<Response, GvmError> {
+        self.call(delete_web_application_target(
+            web_application_target_id,
+            ultimate,
+        ))
+        .await
+    }
+
     /// Get host summaries for a report.
     ///
     /// # Errors
@@ -458,6 +553,47 @@ pub trait GmpNextCommands {
     async fn delete_agent_group(
         &mut self,
         agent_group_id: &EntityId,
+        ultimate: bool,
+    ) -> Result<Response, GvmError>;
+
+    /// Create a web application target.
+    async fn create_web_application_target(
+        &mut self,
+        name: &str,
+        urls: &[String],
+        opts: CreateWebApplicationTargetOpts,
+    ) -> Result<Response, GvmError>;
+
+    /// Clone a web application target.
+    async fn clone_web_application_target(
+        &mut self,
+        web_application_target_id: &EntityId,
+    ) -> Result<Response, GvmError>;
+
+    /// Get a single web application target.
+    async fn get_web_application_target(
+        &mut self,
+        web_application_target_id: &EntityId,
+        tasks: Option<bool>,
+    ) -> Result<Response, GvmError>;
+
+    /// List web application targets.
+    async fn get_web_application_targets(
+        &mut self,
+        opts: GetWebApplicationTargetsOpts,
+    ) -> Result<Response, GvmError>;
+
+    /// Modify a web application target.
+    async fn modify_web_application_target(
+        &mut self,
+        web_application_target_id: &EntityId,
+        opts: ModifyWebApplicationTargetOpts,
+    ) -> Result<Response, GvmError>;
+
+    /// Delete a web application target.
+    async fn delete_web_application_target(
+        &mut self,
+        web_application_target_id: &EntityId,
         ultimate: bool,
     ) -> Result<Response, GvmError>;
 
@@ -731,6 +867,61 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
         ultimate: bool,
     ) -> Result<Response, GvmError> {
         self.0.delete_agent_group(agent_group_id, ultimate).await
+    }
+
+    async fn create_web_application_target(
+        &mut self,
+        name: &str,
+        urls: &[String],
+        opts: CreateWebApplicationTargetOpts,
+    ) -> Result<Response, GvmError> {
+        self.0.create_web_application_target(name, urls, opts).await
+    }
+
+    async fn clone_web_application_target(
+        &mut self,
+        web_application_target_id: &EntityId,
+    ) -> Result<Response, GvmError> {
+        self.0
+            .clone_web_application_target(web_application_target_id)
+            .await
+    }
+
+    async fn get_web_application_target(
+        &mut self,
+        web_application_target_id: &EntityId,
+        tasks: Option<bool>,
+    ) -> Result<Response, GvmError> {
+        self.0
+            .get_web_application_target(web_application_target_id, tasks)
+            .await
+    }
+
+    async fn get_web_application_targets(
+        &mut self,
+        opts: GetWebApplicationTargetsOpts,
+    ) -> Result<Response, GvmError> {
+        self.0.get_web_application_targets(opts).await
+    }
+
+    async fn modify_web_application_target(
+        &mut self,
+        web_application_target_id: &EntityId,
+        opts: ModifyWebApplicationTargetOpts,
+    ) -> Result<Response, GvmError> {
+        self.0
+            .modify_web_application_target(web_application_target_id, opts)
+            .await
+    }
+
+    async fn delete_web_application_target(
+        &mut self,
+        web_application_target_id: &EntityId,
+        ultimate: bool,
+    ) -> Result<Response, GvmError> {
+        self.0
+            .delete_web_application_target(web_application_target_id, ultimate)
+            .await
     }
 
     async fn get_integration_config(

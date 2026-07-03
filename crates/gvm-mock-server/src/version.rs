@@ -66,6 +66,10 @@ const GMP_22_8_COMMANDS: &[&str] = &[
     "get_report_closed_cves",
     "get_timezones",
     "get_credential_stores",
+    "create_web_application_target",
+    "delete_web_application_target",
+    "get_web_application_targets",
+    "modify_web_application_target",
 ];
 
 /// Check if a command is available in the given GMP version.
@@ -180,5 +184,21 @@ mod tests {
         assert!(command_available("get_agent_groups", GmpVersion::V22_8));
         assert!(!command_available("create_agent_group", GmpVersion::V22_6));
         assert!(command_available("create_agent_group", GmpVersion::V22_8));
+        assert!(!command_available(
+            "get_web_application_targets",
+            GmpVersion::V22_7
+        ));
+        assert!(command_available(
+            "get_web_application_targets",
+            GmpVersion::V22_8
+        ));
+        assert!(!command_available(
+            "create_web_application_target",
+            GmpVersion::V22_6
+        ));
+        assert!(command_available(
+            "create_web_application_target",
+            GmpVersion::V22_8
+        ));
     }
 }

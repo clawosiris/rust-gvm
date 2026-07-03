@@ -5,7 +5,8 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_client::{
-    CreateAgentGroupOpts, Gmp226Commands, GmpNextCommands, GmpVersioned, ModifyAgentGroupOpts,
+    CreateAgentGroupOpts, CreateWebApplicationTargetOpts, Gmp226Commands, GmpNextCommands,
+    GmpVersioned, GvmError, ModifyAgentGroupOpts, ModifyWebApplicationTargetOpts,
 };
 use gvm_connection::UnixSocketConnection;
 use gvm_gmp::types::EntityId;
@@ -206,6 +207,114 @@ async fn next_client_agent_groups_round_trip() {
 }
 
 #[tokio::test]
+async fn next_client_web_application_targets_round_trip() {
+    let Some(server) = stateful_server(MockVersion::V22_8).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpVersioned::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .call(gvm_gmp::commands::authentication::authenticate(
+            "admin", "admin",
+        ))
+        .await
+        .expect("authenticate should succeed");
+
+    let mut client = match client {
+        GmpVersioned::Next(client) => client,
+        other => panic!("expected Next client, got {other:?}"),
+    };
+
+    let urls = vec![
+        "https://example.com".to_string(),
+        "https://example.com/app".to_string(),
+    ];
+    let create_response = client
+        .create_web_application_target(
+            "Client Web Target",
+            &urls,
+            CreateWebApplicationTargetOpts {
+                comment: Some("created from versioned client".into()),
+                exclude_urls: vec!["https://example.com/logout".into()],
+                credential_id: Some(id("credential-web-1")),
+            },
+        )
+        .await
+        .expect("create_web_application_target should succeed");
+    assert_eq!(create_response.status_code(), Some(201));
+    let target_id = EntityId::new(create_response.id().expect("created id")).expect("valid id");
+
+    let get_response = client
+        .get_web_application_target(&target_id, Some(true))
+        .await
+        .expect("get_web_application_target should succeed");
+    let get_xml = get_response.as_str().expect("valid utf8");
+    assert!(get_xml.contains("<name>Client Web Target</name>"));
+    assert!(get_xml.contains("<urls>https://example.com,https://example.com/app</urls>"));
+    assert!(get_xml.contains("<exclude_urls>https://example.com/logout</exclude_urls>"));
+    assert!(get_xml.contains("<credential_id>credential-web-1</credential_id>"));
+
+    let clone_response = client
+        .clone_web_application_target(&target_id)
+        .await
+        .expect("clone_web_application_target should succeed");
+    assert_eq!(clone_response.status_code(), Some(201));
+
+    let list_response = client
+        .get_web_application_targets(Default::default())
+        .await
+        .expect("get_web_application_targets should succeed");
+    let list_xml = list_response.as_str().expect("valid utf8");
+    assert!(list_xml.contains("<web_application_target_count>2<filtered>2</filtered>"));
+
+    let modify_response = client
+        .modify_web_application_target(
+            &target_id,
+            ModifyWebApplicationTargetOpts {
+                name: Some("Updated Web Target".into()),
+                comment: Some("updated from versioned client".into()),
+                urls: vec!["https://updated.example".into()],
+                exclude_urls: vec!["https://updated.example/logout".into()],
+                credential_id: Some(id("credential-web-2")),
+            },
+        )
+        .await
+        .expect("modify_web_application_target should succeed");
+    assert_eq!(modify_response.status_code(), Some(200));
+
+    let modified_response = client
+        .get_web_application_target(&target_id, None)
+        .await
+        .expect("modified web application target should be readable");
+    let modified_xml = modified_response.as_str().expect("valid utf8");
+    assert!(modified_xml.contains("<name>Updated Web Target</name>"));
+    assert!(modified_xml.contains("<comment>updated from versioned client</comment>"));
+    assert!(modified_xml.contains("<urls>https://updated.example</urls>"));
+    assert!(modified_xml.contains("<exclude_urls>https://updated.example/logout</exclude_urls>"));
+    assert!(modified_xml.contains("<credential_id>credential-web-2</credential_id>"));
+
+    let delete_response = client
+        .delete_web_application_target(&target_id, true)
+        .await
+        .expect("delete_web_application_target should succeed");
+    assert_eq!(delete_response.status_code(), Some(200));
+
+    let deleted_error = client
+        .get_web_application_target(&target_id, None)
+        .await
+        .expect_err("deleted web application target should be gone");
+    assert!(matches!(
+        deleted_error,
+        GvmError::Server { status: 404, .. }
+    ));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn gmp226_commands_work_on_v226() {
     let Some(server) = stateful_server(MockVersion::V22_6).await else {
         return;
@@ -242,4 +351,8 @@ async fn gmp226_commands_work_on_v226() {
     assert!(create_response.id().is_some());
 
     server.shutdown().await;
+}
+
+fn id(value: &str) -> EntityId {
+    EntityId::new(value).expect("valid id")
 }
