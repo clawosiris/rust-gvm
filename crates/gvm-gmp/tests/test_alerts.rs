@@ -62,3 +62,20 @@ fn test_alert_get_modify_delete_and_test() {
     );
     assert_eq!(xml(test_alert(&id("a1"))), "<test_alert alert_id=\"a1\"/>");
 }
+
+#[test]
+fn test_trigger_alert_builds_get_reports_command() {
+    assert_eq!(
+        xml(trigger_alert(
+            &id("a1"),
+            &id("r1"),
+            TriggerAlertOpts {
+                filter_string: Some("severity>5".into()),
+                filter_id: Some(id("f1")),
+                report_format_id: Some(id("rf1")),
+                delta_report_id: Some(id("dr1")),
+            }
+        )),
+        "<get_reports alert_id=\"a1\" delta_report_id=\"dr1\" filt_id=\"f1\" filter=\"severity&gt;5\" format_id=\"rf1\" report_id=\"r1\"/>"
+    );
+}
