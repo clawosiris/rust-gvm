@@ -7,7 +7,7 @@
 use gvm_client::{GmpClient, GmpNextCommands, GmpVersioned, GvmError};
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::authentication::authenticate;
-use gvm_gmp::commands::reports::get_report_hosts;
+use gvm_gmp::commands::reports::{get_report_hosts, get_report_vulnerabilities};
 use gvm_gmp::commands::scan_configs::ConfigOpts;
 use gvm_gmp::commands::scanners::ScannerOpts;
 use gvm_gmp::commands::system::get_timezones;
@@ -18,16 +18,6 @@ use gvm_gmp::commands::tasks::{create_task, delete_task, get_task, start_task, s
 use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
-use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-fn socket_path() -> PathBuf {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time should be after epoch")
-        .as_nanos();
-    std::env::temp_dir().join(format!("gvmc-{}-{unique}.sock", std::process::id()))
-}
 
 async fn stateful_server() -> Option<MockGmpServer> {
     stateful_server_with_version(MockVersion::V22_5).await
@@ -37,7 +27,7 @@ async fn stateful_server_with_version(version: MockVersion) -> Option<MockGmpSer
     match MockGmpServer::builder()
         .mode(ServerMode::Stateful)
         .version(version)
-        .unix_socket(socket_path())
+        .unix_socket_auto()
         .build()
         .await
     {
@@ -50,7 +40,7 @@ async fn stateful_server_with_version(version: MockVersion) -> Option<MockGmpSer
 async fn fixture_server_with_version_response(version_xml: &str) -> Option<MockGmpServer> {
     match MockGmpServer::builder()
         .mode(ServerMode::Fixture)
-        .unix_socket(socket_path())
+        .unix_socket_auto()
         .override_response(
             "get_version",
             &format!(
@@ -70,7 +60,7 @@ async fn fixture_server(version: MockVersion) -> Option<MockGmpServer> {
     match MockGmpServer::builder()
         .mode(ServerMode::Fixture)
         .version(version)
-        .unix_socket(socket_path())
+        .unix_socket_auto()
         .build()
         .await
     {
@@ -295,6 +285,22 @@ async fn unsupported_next_command_rejected_before_send() {
     }
 
     let error = client
+        .call(get_report_vulnerabilities(
+            &EntityId::new("report-1").expect("valid id"),
+            Default::default(),
+        ))
+        .await
+        .expect_err("22.7 should reject report vulnerabilities alias");
+    assert!(matches!(
+        error,
+        GvmError::UnsupportedCommand {
+            command,
+            version: GmpVersion(22, 7),
+            required: "22.8"
+        } if command == "get_report_vulns"
+    ));
+
+    let error = client
         .call(get_timezones())
         .await
         .expect_err("22.7 should reject get_timezones");
@@ -363,6 +369,12 @@ async fn next_commands_work_on_v22_8() {
         .expect_err("missing report should return server error");
     assert!(matches!(helper_error, GvmError::Server { status: 404, .. }));
 
+    let alias_error = client
+        .get_report_vulnerabilities(&report_id, Default::default())
+        .await
+        .expect_err("missing report should return server error through alias");
+    assert!(matches!(alias_error, GvmError::Server { status: 404, .. }));
+
     server.shutdown().await;
 }
 
@@ -384,6 +396,13 @@ async fn typed_rest_support_gap_helpers_parse_fixture_responses() {
         .expect("report vulns should parse");
     assert_eq!(vulns.items.len(), 1);
     assert_eq!(vulns.items[0].severity.as_deref(), Some("8.2"));
+
+    let vulnerabilities = client
+        .get_report_vulnerabilities(&report_id, Default::default())
+        .await
+        .expect("report vulnerabilities alias should parse");
+    assert_eq!(vulnerabilities.items.len(), 1);
+    assert_eq!(vulnerabilities.items[0].severity.as_deref(), Some("8.2"));
 
     let tls = client
         .get_report_tls_certificates(&report_id, Default::default())
