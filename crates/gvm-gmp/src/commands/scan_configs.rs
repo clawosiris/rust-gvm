@@ -3,7 +3,8 @@
 
 //! Scan configuration command builders.
 
-use gvm_protocol::{Request, XmlCommand};
+use base64::Engine as _;
+use gvm_protocol::{xml_command::XmlElement, Request, XmlCommand};
 
 use crate::commands::usage_type::UsageType;
 use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
@@ -29,6 +30,17 @@ pub struct GetScanConfigsOpts {
     pub trash: Option<bool>,
     /// Whether to request detailed output.
     pub details: Option<bool>,
+}
+
+/// NVT family selection entry for scan-config and policy modify requests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NvtFamilySelection {
+    /// NVT family name.
+    pub name: String,
+    /// Whether new NVTs should be added to this family automatically.
+    pub growing: bool,
+    /// Whether all NVTs from this family should be selected.
+    pub all: bool,
 }
 
 /// Build a clone request for an existing scan config.
@@ -102,6 +114,53 @@ pub fn modify_scan_config(config_id: &EntityId, opts: ConfigOpts) -> impl Reques
     modify_config_with_usage(config_id, opts, None)
 }
 
+/// Build a `modify_config` request that sets a scan-config NVT preference.
+///
+/// Pass `None` for `value` to delete the configured value and fall back to the
+/// default preference.
+#[must_use]
+pub fn modify_scan_config_set_nvt_preference(
+    config_id: &EntityId,
+    name: &str,
+    nvt_oid: &str,
+    value: Option<&str>,
+) -> impl Request {
+    modify_config_set_nvt_preference(config_id, name, nvt_oid, value)
+}
+
+/// Build a `modify_config` request that sets a scan-config scanner preference.
+///
+/// Pass `None` for `value` to delete the configured value and fall back to the
+/// default preference.
+#[must_use]
+pub fn modify_scan_config_set_scanner_preference(
+    config_id: &EntityId,
+    name: &str,
+    value: Option<&str>,
+) -> impl Request {
+    modify_config_set_scanner_preference(config_id, name, value)
+}
+
+/// Build a `modify_config` request that replaces a scan-config family NVT selection.
+#[must_use]
+pub fn modify_scan_config_set_nvt_selection(
+    config_id: &EntityId,
+    family: &str,
+    nvt_oids: &[String],
+) -> impl Request {
+    modify_config_set_nvt_selection(config_id, family, nvt_oids)
+}
+
+/// Build a `modify_config` request that replaces scan-config family selection.
+#[must_use]
+pub fn modify_scan_config_set_family_selection(
+    config_id: &EntityId,
+    families: &[NvtFamilySelection],
+    auto_add_new_families: bool,
+) -> impl Request {
+    modify_config_set_family_selection(config_id, families, auto_add_new_families)
+}
+
 fn modify_config_with_usage(
     config_id: &EntityId,
     opts: ConfigOpts,
@@ -116,6 +175,70 @@ fn modify_config_with_usage(
         add_text_element(&mut cmd, "usage_type", opts.usage_type.as_deref());
     }
     cmd
+}
+
+fn modify_config_set_nvt_preference(
+    config_id: &EntityId,
+    name: &str,
+    nvt_oid: &str,
+    value: Option<&str>,
+) -> XmlCommand {
+    let mut cmd = XmlCommand::new("modify_config").attribute("config_id", config_id.as_str());
+    let preference = cmd.add_element("preference");
+    preference.add_child("nvt").set_attribute("oid", nvt_oid);
+    preference.add_child_with_text("name", name);
+    add_encoded_preference_value(preference, value);
+    cmd
+}
+
+fn modify_config_set_scanner_preference(
+    config_id: &EntityId,
+    name: &str,
+    value: Option<&str>,
+) -> XmlCommand {
+    let mut cmd = XmlCommand::new("modify_config").attribute("config_id", config_id.as_str());
+    let preference = cmd.add_element("preference");
+    preference.add_child_with_text("name", name);
+    add_encoded_preference_value(preference, value);
+    cmd
+}
+
+fn modify_config_set_nvt_selection(
+    config_id: &EntityId,
+    family: &str,
+    nvt_oids: &[String],
+) -> XmlCommand {
+    let mut cmd = XmlCommand::new("modify_config").attribute("config_id", config_id.as_str());
+    let nvt_selection = cmd.add_element("nvt_selection");
+    nvt_selection.add_child_with_text("family", family);
+    for nvt_oid in nvt_oids {
+        nvt_selection.add_child("nvt").set_attribute("oid", nvt_oid);
+    }
+    cmd
+}
+
+fn modify_config_set_family_selection(
+    config_id: &EntityId,
+    families: &[NvtFamilySelection],
+    auto_add_new_families: bool,
+) -> XmlCommand {
+    let mut cmd = XmlCommand::new("modify_config").attribute("config_id", config_id.as_str());
+    let family_selection = cmd.add_element("family_selection");
+    family_selection.add_child_with_text("growing", bool_str(auto_add_new_families));
+    for family in families {
+        let family_element = family_selection.add_child("family");
+        family_element.add_child_with_text("name", &family.name);
+        family_element.add_child_with_text("all", bool_str(family.all));
+        family_element.add_child_with_text("growing", bool_str(family.growing));
+    }
+    cmd
+}
+
+fn add_encoded_preference_value(preference: &mut XmlElement, value: Option<&str>) {
+    if let Some(value) = value.filter(|value| !value.is_empty()) {
+        let encoded = base64::engine::general_purpose::STANDARD.encode(value.as_bytes());
+        preference.add_child_with_text("value", &encoded);
+    }
 }
 
 /// Build a `delete_scan_config` request.
@@ -154,6 +277,53 @@ pub fn get_policies(opts: GetScanConfigsOpts) -> impl Request {
 #[must_use]
 pub fn modify_policy(config_id: &EntityId, opts: ConfigOpts) -> impl Request {
     modify_config_with_usage(config_id, opts, Some(UsageType::Policy))
+}
+
+/// Build a `modify_config` request that sets a policy NVT preference.
+///
+/// Pass `None` for `value` to delete the configured value and fall back to the
+/// default preference.
+#[must_use]
+pub fn modify_policy_set_nvt_preference(
+    policy_id: &EntityId,
+    name: &str,
+    nvt_oid: &str,
+    value: Option<&str>,
+) -> impl Request {
+    modify_config_set_nvt_preference(policy_id, name, nvt_oid, value)
+}
+
+/// Build a `modify_config` request that sets a policy scanner preference.
+///
+/// Pass `None` for `value` to delete the configured value and fall back to the
+/// default preference.
+#[must_use]
+pub fn modify_policy_set_scanner_preference(
+    policy_id: &EntityId,
+    name: &str,
+    value: Option<&str>,
+) -> impl Request {
+    modify_config_set_scanner_preference(policy_id, name, value)
+}
+
+/// Build a `modify_config` request that replaces a policy family NVT selection.
+#[must_use]
+pub fn modify_policy_set_nvt_selection(
+    policy_id: &EntityId,
+    family: &str,
+    nvt_oids: &[String],
+) -> impl Request {
+    modify_config_set_nvt_selection(policy_id, family, nvt_oids)
+}
+
+/// Build a `modify_config` request that replaces policy family selection.
+#[must_use]
+pub fn modify_policy_set_family_selection(
+    policy_id: &EntityId,
+    families: &[NvtFamilySelection],
+    auto_add_new_families: bool,
+) -> impl Request {
+    modify_config_set_family_selection(policy_id, families, auto_add_new_families)
 }
 
 /// Build a `delete_config` request for a policy.
