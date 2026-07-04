@@ -10,6 +10,7 @@ use gvm_client::{
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::alerts::{trigger_alert, TriggerAlertOpts};
 use gvm_gmp::commands::authentication::authenticate;
+use gvm_gmp::commands::operating_systems::{get_operating_systems, GetOperatingSystemsOpts};
 use gvm_gmp::commands::reports::{get_report_hosts, get_report_vulnerabilities};
 use gvm_gmp::commands::scan_configs::ConfigOpts;
 use gvm_gmp::commands::scanners::ScannerOpts;
@@ -322,6 +323,43 @@ async fn trigger_alert_sends_get_reports_command() {
     assert_eq!(
         std::str::from_utf8(command.raw_xml()).expect("valid UTF-8 command"),
         "<get_reports alert_id=\"alert-1\" delta_report_id=\"delta-1\" filt_id=\"filter-1\" filter=\"severity&gt;5\" format_id=\"format-1\" report_id=\"report-1\"/>"
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn operating_system_helpers_send_asset_commands() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .call(authenticate("admin", "admin"))
+        .await
+        .expect("authenticate should succeed");
+
+    let response = client
+        .call(get_operating_systems(GetOperatingSystemsOpts {
+            filter_string: Some("name=Debian".into()),
+            filter_id: Some(EntityId::new("filter-1").expect("valid id")),
+            details: Some(true),
+        }))
+        .await
+        .expect("get_operating_systems should send get_assets command");
+
+    assert_eq!(response.status_code(), Some(200));
+
+    let history = server.command_history();
+    let command = history.last().expect("operating system command recorded");
+    assert_eq!(command.command_name(), "get_assets");
+    assert_eq!(
+        std::str::from_utf8(command.raw_xml()).expect("valid UTF-8 command"),
+        "<get_assets details=\"1\" filt_id=\"filter-1\" filter=\"name=Debian\" type=\"os\"/>"
     );
 
     server.shutdown().await;
