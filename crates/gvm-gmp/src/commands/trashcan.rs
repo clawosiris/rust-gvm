@@ -19,6 +19,14 @@ pub fn restore(resource_id: &EntityId) -> impl Request {
     XmlCommand::new("restore").attribute("id", resource_id.as_str())
 }
 
+/// Build a `restore` request for a resource in the trashcan.
+///
+/// This is a python-gvm-compatible name for [`restore`].
+#[must_use]
+pub fn restore_from_trashcan(resource_id: &EntityId) -> impl Request {
+    restore(resource_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -30,6 +38,12 @@ mod tests {
         assert_eq!(xml(empty_trashcan()), "<empty_trashcan/>");
         assert_eq!(
             xml(restore(&EntityId::new("a1").expect("valid id"))),
+            "<restore id=\"a1\"/>"
+        );
+        assert_eq!(
+            xml(restore_from_trashcan(
+                &EntityId::new("a1").expect("valid id")
+            )),
             "<restore id=\"a1\"/>"
         );
     }

@@ -647,6 +647,79 @@ async fn full_crud_lifecycle_succeeds() {
 }
 
 #[tokio::test]
+async fn typed_trashcan_helpers_restore_deleted_task() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let empty_response = client
+        .empty_trashcan()
+        .await
+        .expect("empty_trashcan should succeed");
+    assert_eq!(empty_response.status, 200);
+
+    let target_response = client
+        .create_target(
+            "Trashcan Target",
+            CreateTargetOpts {
+                hosts: vec!["127.0.0.1".to_string()],
+                ..CreateTargetOpts::default()
+            },
+        )
+        .await
+        .expect("create_target should succeed");
+    let target_id = target_response.id;
+    let config_id = "550e8400-e29b-41d4-a716-446655440001"
+        .parse()
+        .expect("entity id");
+    let scanner_id = "550e8400-e29b-41d4-a716-446655440002"
+        .parse()
+        .expect("entity id");
+
+    let task_response = client
+        .create_task(
+            "Trashcan Task",
+            &config_id,
+            &target_id,
+            &scanner_id,
+            Default::default(),
+        )
+        .await
+        .expect("create_task should succeed");
+    let task_id = task_response.id;
+
+    let delete_response = client
+        .call(delete_task(&task_id, false))
+        .await
+        .expect("delete_task should succeed");
+    assert_eq!(delete_response.status_code(), Some(200));
+
+    let restore_response = client
+        .restore_from_trashcan(&task_id)
+        .await
+        .expect("restore_from_trashcan should succeed");
+    assert_eq!(restore_response.status, 200);
+
+    let get_response = client
+        .call(get_task(&task_id))
+        .await
+        .expect("get_task should succeed");
+    let body = get_response.as_str().expect("utf8");
+    assert!(body.contains("Trashcan Task"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn typed_resume_task_returns_report_id() {
     let Some(server) = stateful_server().await else {
         return;

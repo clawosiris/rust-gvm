@@ -70,6 +70,7 @@ use gvm_gmp::commands::tickets::{create_ticket, get_tickets, GetTicketsOpts, Tic
 use gvm_gmp::commands::tls_certificates::{
     create_tls_certificate, get_tls_certificates, GetTlsCertificatesOpts, TlsCertificateOpts,
 };
+use gvm_gmp::commands::trashcan::{empty_trashcan, restore_from_trashcan};
 use gvm_gmp::commands::users::{create_user, get_users, GetUsersOpts, UserOpts};
 use gvm_gmp::commands::version::get_version;
 use gvm_gmp::responses::{
@@ -79,8 +80,8 @@ use gvm_gmp::responses::{
     CreateReportFormatResponse, CreateRoleResponse, CreateScanConfigResponse,
     CreateScannerResponse, CreateScheduleResponse, CreateTagResponse, CreateTargetResponse,
     CreateTaskResponse, CreateTicketResponse, CreateTlsCertificateResponse, CreateUserResponse,
-    DeleteScanConfigResponse, DeleteScannerResponse, DescribeAuthResponse, GetAlertsResponse,
-    GetCertBundAdvisoriesResponse, GetCpesResponse, GetCredentialStoresResponse,
+    DeleteScanConfigResponse, DeleteScannerResponse, DescribeAuthResponse, EmptyTrashcanResponse,
+    GetAlertsResponse, GetCertBundAdvisoriesResponse, GetCpesResponse, GetCredentialStoresResponse,
     GetCredentialsResponse, GetCvesResponse, GetDfnCertAdvisoriesResponse, GetFeedsResponse,
     GetFiltersResponse, GetGroupsResponse, GetHostsResponse, GetNotesResponse,
     GetNvtFamiliesResponse, GetNvtsResponse, GetOverridesResponse, GetPermissionsResponse,
@@ -90,7 +91,7 @@ use gvm_gmp::responses::{
     GetScanConfigsResponse, GetScannersResponse, GetSchedulesResponse, GetSettingsResponse,
     GetTagsResponse, GetTargetsResponse, GetTasksResponse, GetTicketsResponse,
     GetTimezonesResponse, GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse,
-    HelpResponse, ModifyScanConfigResponse, ModifyScannerResponse, ReportExport,
+    HelpResponse, ModifyScanConfigResponse, ModifyScannerResponse, ReportExport, RestoreResponse,
     ResumeTaskResponse, StartTaskResponse, SyncConfigResponse, VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
@@ -403,6 +404,27 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ) -> Result<ResumeTaskResponse, GvmError> {
         let response = self.send(resume_task(task_id)).await?;
         ResumeTaskResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send an `empty_trashcan` request and return a typed [`EmptyTrashcanResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn empty_trashcan(&mut self) -> Result<EmptyTrashcanResponse, GvmError> {
+        let response = self.send(empty_trashcan()).await?;
+        EmptyTrashcanResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `restore` request and return a typed [`RestoreResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn restore_from_trashcan(
+        &mut self,
+        resource_id: &EntityId,
+    ) -> Result<RestoreResponse, GvmError> {
+        let response = self.send(restore_from_trashcan(resource_id)).await?;
+        RestoreResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     // ── Reports ───────────────────────────────────────────────────────────────
