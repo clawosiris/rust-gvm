@@ -291,6 +291,14 @@ impl SessionHandler {
         if let Some(scheduler_cron_time) = parse_element_text(raw_xml, "scheduler_cron_time") {
             resource.set_attr("scheduler_cron_time", &scheduler_cron_time);
         }
+        if resource_type == "oci_image_target" {
+            if let Some(image_references) = parse_element_text(raw_xml, "image_references") {
+                resource.set_attr("image_references", &image_references);
+            }
+            if let Some(credential_id) = cmd.child_attr("credential", "id") {
+                resource.set_attr("credential_id", credential_id);
+            }
+        }
         if resource_type == "web_application_target" {
             if let Some(urls) = parse_element_text(raw_xml, "urls") {
                 resource.set_attr("urls", &urls);
@@ -517,6 +525,7 @@ impl SessionHandler {
         let new_comment = parse_element_text(raw_xml, "comment");
         let new_host = parse_element_text(raw_xml, "host");
         let new_hosts = parse_element_text(raw_xml, "hosts");
+        let new_image_references = parse_element_text(raw_xml, "image_references");
         let new_urls = parse_element_text(raw_xml, "urls");
         let new_exclude_urls = parse_element_text(raw_xml, "exclude_urls");
         let new_status = parse_element_text(raw_xml, "status");
@@ -568,6 +577,11 @@ impl SessionHandler {
             if let Some(ref hosts) = new_hosts {
                 r.set_attr("hosts", hosts);
             }
+            if resource_type == "oci_image_target" {
+                if let Some(ref image_references) = new_image_references {
+                    r.set_attr("image_references", image_references);
+                }
+            }
             if resource_type == "web_application_target" {
                 if let Some(ref urls) = new_urls {
                     r.set_attr("urls", urls);
@@ -584,6 +598,11 @@ impl SessionHandler {
             }
             if let Some(ref task_id) = new_task_id {
                 r.set_attr("task_id", task_id);
+            }
+            if resource_type == "oci_image_target" {
+                if let Some(ref credential_id) = new_credential_id {
+                    r.set_attr("credential_id", credential_id);
+                }
             }
             if resource_type == "web_application_target" {
                 if let Some(ref credential_id) = new_credential_id {
