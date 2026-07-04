@@ -4,7 +4,9 @@
 #![allow(missing_docs)]
 #![cfg(feature = "unix-socket-tests")]
 
-use gvm_client::{GmpClient, GmpNextCommands, GmpVersioned, GvmError};
+use gvm_client::{
+    GmpClient, GmpNextCommands, GmpVersioned, GvmError, WireTraceDirection, WireTraceEvent,
+};
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::alerts::{trigger_alert, TriggerAlertOpts};
 use gvm_gmp::commands::authentication::authenticate;
@@ -19,6 +21,7 @@ use gvm_gmp::commands::tasks::{create_task, delete_task, get_task, start_task, s
 use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
+use std::sync::{Arc, Mutex};
 
 async fn stateful_server() -> Option<MockGmpServer> {
     stateful_server_with_version(MockVersion::V22_5).await
@@ -75,7 +78,7 @@ async fn echo_server(version: MockVersion) -> Option<MockGmpServer> {
     match MockGmpServer::builder()
         .mode(ServerMode::Echo)
         .version(version)
-        .unix_socket(socket_path())
+        .unix_socket_auto()
         .build()
         .await
     {
@@ -87,6 +90,10 @@ async fn echo_server(version: MockVersion) -> Option<MockGmpServer> {
 
 fn unix_connection(server: &MockGmpServer) -> UnixSocketConnection {
     UnixSocketConnection::with_path(server.socket_path().expect("unix socket path"))
+}
+
+fn event_text(event: &WireTraceEvent) -> String {
+    String::from_utf8(event.bytes.clone()).expect("trace event should be UTF-8")
 }
 
 #[tokio::test]
@@ -149,6 +156,65 @@ async fn unsupported_version_returns_error() {
         .expect_err("unsupported version should fail");
     assert!(matches!(error, GvmError::UnsupportedVersion(21, 4)));
 
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn live_wire_trace_observes_typed_helper_with_redaction() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let trace_events = Arc::clone(&events);
+
+    let mut client = GmpClient::connect_with_wire_trace(connection, move |event| {
+        trace_events.lock().expect("trace lock").push(event);
+    })
+    .await
+    .expect("client should connect");
+
+    let response = client
+        .authenticate("admin", "admin")
+        .await
+        .expect("typed authenticate should succeed");
+    assert_eq!(response.status, 200);
+
+    assert_eq!(server.command_count(), 2);
+    let history = server.command_history();
+    assert_eq!(history[0].command_name(), "get_version");
+    assert_eq!(history[1].command_name(), "authenticate");
+    let raw_auth_request =
+        String::from_utf8(history[1].raw_xml().to_vec()).expect("history should be UTF-8");
+    assert!(raw_auth_request.contains("<password>admin</password>"));
+
+    {
+        let events = events.lock().expect("trace lock");
+        assert!(events
+            .iter()
+            .any(|event| event.direction == WireTraceDirection::Request
+                && event_text(event) == "<get_version/>"));
+        assert!(events.iter().any(|event| {
+            event.direction == WireTraceDirection::Response
+                && event_text(event).contains("<get_version_response")
+        }));
+
+        let auth_request = events
+            .iter()
+            .find(|event| {
+                event.direction == WireTraceDirection::Request
+                    && event_text(event).contains("<authenticate>")
+            })
+            .map(event_text)
+            .expect("authenticate request trace event");
+        assert!(auth_request.contains("<password><redacted></password>"));
+        assert!(!auth_request.contains("<password>admin</password>"));
+
+        assert!(events.iter().any(|event| {
+            event.direction == WireTraceDirection::Response
+                && event_text(event).contains("<authenticate_response")
+        }));
+    }
     server.shutdown().await;
 }
 
