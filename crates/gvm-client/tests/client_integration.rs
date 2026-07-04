@@ -15,7 +15,7 @@ use gvm_gmp::commands::operating_systems::{get_operating_systems, GetOperatingSy
 use gvm_gmp::commands::reports::{get_report_hosts, get_report_vulnerabilities};
 use gvm_gmp::commands::scan_configs::{
     create_policy, get_policies, get_scan_config_preference, get_scan_config_preferences,
-    ConfigOpts, GetScanConfigPreferencesOpts, GetScanConfigsOpts,
+    ConfigOpts, GetPolicyOpts, GetScanConfigPreferencesOpts, GetScanConfigsOpts,
 };
 use gvm_gmp::commands::scanners::ScannerOpts;
 use gvm_gmp::commands::system::get_timezones;
@@ -855,6 +855,89 @@ async fn preference_getters_send_expected_mock_server_commands() {
     assert_eq!(
         commands[3],
         "<get_preferences nvt_oid=\"1.3.6.1\" preference=\"timeout\"/>"
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_policy_getters_filter_stateful_mock_resources() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    client
+        .create_scan_config(
+            "Scan Config One",
+            None,
+            ConfigOpts {
+                usage_type: Some("scan".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("scan config should be created");
+
+    let response = client
+        .send(create_policy(
+            "Policy One",
+            ConfigOpts {
+                comment: Some("policy comment".into()),
+                ..Default::default()
+            },
+        ))
+        .await
+        .expect("policy create request should succeed");
+    let policy = CreateScanConfigResponse::from_response(&response).expect("policy create parses");
+
+    server.clear_history();
+
+    let policies = client
+        .get_policies(GetScanConfigsOpts::default())
+        .await
+        .expect("policies should be fetched");
+    assert_eq!(policies.items.len(), 1);
+    assert_eq!(policies.items[0].meta.id, policy.id);
+    assert_eq!(policies.items[0].meta.name, "Policy One");
+    assert_eq!(policies.items[0].usage_type.as_deref(), Some("policy"));
+
+    let fetched = client
+        .get_policy(&policy.id, GetPolicyOpts { audits: Some(true) })
+        .await
+        .expect("policy should be fetched");
+    assert_eq!(fetched.items.len(), 1);
+    assert_eq!(fetched.items[0].meta.id, policy.id);
+    assert_eq!(
+        fetched.items[0].meta.comment.as_deref(),
+        Some("policy comment")
+    );
+    assert_eq!(fetched.items[0].usage_type.as_deref(), Some("policy"));
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 2);
+    assert!(history
+        .iter()
+        .all(|record| record.command_name() == "get_configs"));
+    let commands = history
+        .iter()
+        .map(|record| String::from_utf8(record.raw_xml().to_vec()).expect("xml is utf-8"))
+        .collect::<Vec<_>>();
+    assert_eq!(commands[0], "<get_configs usage_type=\"policy\"/>");
+    assert_eq!(
+        commands[1],
+        format!(
+            "<get_configs config_id=\"{}\" details=\"1\" tasks=\"1\" usage_type=\"policy\"/>",
+            policy.id.as_str()
+        )
     );
 
     server.shutdown().await;

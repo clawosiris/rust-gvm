@@ -52,6 +52,13 @@ pub struct GetScanConfigPreferencesOpts {
     pub config_id: Option<EntityId>,
 }
 
+/// Options for singular policy `get_configs` requests.
+#[derive(Debug, Clone, Default)]
+pub struct GetPolicyOpts {
+    /// Whether to include audits using this policy.
+    pub audits: Option<bool>,
+}
+
 /// Build a clone request for an existing scan config.
 #[must_use]
 pub fn clone_scan_config(config_id: &EntityId) -> impl Request {
@@ -344,6 +351,17 @@ pub fn get_policies(opts: GetScanConfigsOpts) -> impl Request {
     get_configs_with_usage(opts, Some(UsageType::Policy))
 }
 
+/// Build a `get_configs` request for a single policy.
+#[must_use]
+pub fn get_policy(policy_id: &EntityId, opts: GetPolicyOpts) -> impl Request {
+    let mut cmd = XmlCommand::new("get_configs")
+        .attribute("config_id", policy_id.as_str())
+        .attribute("usage_type", UsageType::Policy.as_gmp_str())
+        .attribute("details", "1");
+    set_optional_bool_attr(&mut cmd, "tasks", opts.audits);
+    cmd
+}
+
 /// Build a `modify_config` request scoped to policies.
 #[must_use]
 pub fn modify_policy(config_id: &EntityId, opts: ConfigOpts) -> impl Request {
@@ -527,6 +545,14 @@ mod tests {
         assert_eq!(
             xml(get_policies(GetScanConfigsOpts::default())),
             "<get_configs usage_type=\"policy\"/>"
+        );
+        assert_eq!(
+            xml(get_policy(&id("p1"), GetPolicyOpts::default())),
+            "<get_configs config_id=\"p1\" details=\"1\" usage_type=\"policy\"/>"
+        );
+        assert_eq!(
+            xml(get_policy(&id("p1"), GetPolicyOpts { audits: Some(true) })),
+            "<get_configs config_id=\"p1\" details=\"1\" tasks=\"1\" usage_type=\"policy\"/>"
         );
         assert_eq!(
             xml(modify_policy(

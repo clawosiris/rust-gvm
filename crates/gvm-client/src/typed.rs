@@ -47,10 +47,10 @@ use gvm_gmp::commands::reports::{
 use gvm_gmp::commands::results::{get_results, GetResultsOpts};
 use gvm_gmp::commands::roles::{create_role, get_roles, GetRolesOpts, RoleOpts};
 use gvm_gmp::commands::scan_configs::{
-    clone_scan_config, create_scan_config, delete_scan_config, get_scan_config, get_scan_configs,
-    modify_policy_set_comment, modify_policy_set_name, modify_scan_config,
-    modify_scan_config_set_comment, modify_scan_config_set_name, sync_config, ConfigOpts,
-    GetScanConfigsOpts,
+    clone_scan_config, create_scan_config, delete_scan_config, get_policies, get_policy,
+    get_scan_config, get_scan_configs, modify_policy_set_comment, modify_policy_set_name,
+    modify_scan_config, modify_scan_config_set_comment, modify_scan_config_set_name, sync_config,
+    ConfigOpts, GetPolicyOpts, GetScanConfigsOpts,
 };
 use gvm_gmp::commands::scanners::{
     clone_scanner, create_scanner, delete_scanner, get_scanner, get_scanners, modify_scanner,
@@ -193,6 +193,33 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         config_id: &EntityId,
     ) -> Result<GetScanConfigsResponse, GvmError> {
         let response = self.send(get_scan_config(config_id)).await?;
+        GetScanConfigsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a policy-scoped `get_configs` request and return a typed
+    /// [`GetScanConfigsResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_policies(
+        &mut self,
+        opts: GetScanConfigsOpts,
+    ) -> Result<GetScanConfigsResponse, GvmError> {
+        let response = self.send(get_policies(opts)).await?;
+        GetScanConfigsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `get_configs` request for a single policy and return a typed
+    /// [`GetScanConfigsResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_policy(
+        &mut self,
+        policy_id: &EntityId,
+        opts: GetPolicyOpts,
+    ) -> Result<GetScanConfigsResponse, GvmError> {
+        let response = self.send(get_policy(policy_id, opts)).await?;
         GetScanConfigsResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
