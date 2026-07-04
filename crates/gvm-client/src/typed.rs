@@ -48,7 +48,9 @@ use gvm_gmp::commands::results::{get_results, GetResultsOpts};
 use gvm_gmp::commands::roles::{create_role, get_roles, GetRolesOpts, RoleOpts};
 use gvm_gmp::commands::scan_configs::{
     clone_scan_config, create_scan_config, delete_scan_config, get_scan_config, get_scan_configs,
-    modify_scan_config, sync_config, ConfigOpts, GetScanConfigsOpts,
+    modify_policy_set_comment, modify_policy_set_name, modify_scan_config,
+    modify_scan_config_set_comment, modify_scan_config_set_name, sync_config, ConfigOpts,
+    GetScanConfigsOpts,
 };
 use gvm_gmp::commands::scanners::{
     clone_scanner, create_scanner, delete_scanner, get_scanner, get_scanners, modify_scanner,
@@ -204,6 +206,68 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         opts: ConfigOpts,
     ) -> Result<ModifyScanConfigResponse, GvmError> {
         let response = self.send(modify_scan_config(config_id, opts)).await?;
+        ModifyScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `modify_config` request to set a scan-config name and return a
+    /// typed [`ModifyScanConfigResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_scan_config_set_name(
+        &mut self,
+        config_id: &EntityId,
+        name: &str,
+    ) -> Result<ModifyScanConfigResponse, GvmError> {
+        let response = self
+            .send(modify_scan_config_set_name(config_id, name))
+            .await?;
+        ModifyScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `modify_config` request to set or clear a scan-config comment and
+    /// return a typed [`ModifyScanConfigResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_scan_config_set_comment(
+        &mut self,
+        config_id: &EntityId,
+        comment: Option<&str>,
+    ) -> Result<ModifyScanConfigResponse, GvmError> {
+        let response = self
+            .send(modify_scan_config_set_comment(config_id, comment))
+            .await?;
+        ModifyScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `modify_config` request to set a policy name and return a typed
+    /// [`ModifyScanConfigResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_policy_set_name(
+        &mut self,
+        policy_id: &EntityId,
+        name: &str,
+    ) -> Result<ModifyScanConfigResponse, GvmError> {
+        let response = self.send(modify_policy_set_name(policy_id, name)).await?;
+        ModifyScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `modify_config` request to set or clear a policy comment and
+    /// return a typed [`ModifyScanConfigResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_policy_set_comment(
+        &mut self,
+        policy_id: &EntityId,
+        comment: Option<&str>,
+    ) -> Result<ModifyScanConfigResponse, GvmError> {
+        let response = self
+            .send(modify_policy_set_comment(policy_id, comment))
+            .await?;
         ModifyScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
