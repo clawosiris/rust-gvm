@@ -7,7 +7,7 @@ mod common;
 
 use common::{id, xml};
 use gvm_gmp::commands::system::*;
-use gvm_gmp::{AggregateStatistic, EntityType, FeedType, HelpFormat, InfoType, SortOrder};
+use gvm_gmp::{AggregateStatistic, FeedType, HelpFormat, InfoType, ResourceType, SortOrder};
 
 #[test]
 fn test_system_help_and_feeds() {
@@ -72,12 +72,12 @@ fn test_system_aggregates_info_resource_names_and_mutations() {
     );
     assert_eq!(
         xml(get_resource_names(GetResourceNamesOpts {
-            resource_type: Some(EntityType::Task),
+            resource_type: Some(ResourceType::Task),
             resource_id: Some(id("t1")),
             filter_string: None,
             filter_id: None
         })),
-        "<get_resource_names resource_id=\"t1\" type=\"task\"/>"
+        "<get_resource_names resource_id=\"t1\" type=\"TASK\"/>"
     );
     assert_eq!(xml(get_license()), "<get_license/>");
     assert_eq!(xml(describe_auth()), "<describe_auth/>");

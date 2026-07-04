@@ -1003,6 +1003,31 @@ fn test_entitytype_invalid_string_returns_error() {
 }
 
 #[test]
+fn test_resourcetype_task_as_gmp_str() {
+    assert_eq!(ResourceType::Task.as_gmp_str(), "TASK");
+}
+#[test]
+fn test_resourcetype_operatingsystem_as_gmp_str() {
+    assert_eq!(ResourceType::OperatingSystem.as_gmp_str(), "OS");
+}
+#[test]
+fn test_resourcetype_audit_aliases_as_gmp_str() {
+    assert_eq!(ResourceType::Audit.as_gmp_str(), "TASK");
+    assert_eq!(ResourceType::AuditReport.as_gmp_str(), "REPORT");
+}
+#[test]
+fn test_resourcetype_from_str() {
+    assert_eq!(
+        ResourceType::from_str("TLS_CERTIFICATE").unwrap(),
+        ResourceType::TlsCertificate
+    );
+}
+#[test]
+fn test_resourcetype_invalid_string_returns_error() {
+    assert!(ResourceType::from_str("task").is_err());
+}
+
+#[test]
 fn test_feedtype_nvt_as_gmp_str() {
     assert_eq!(FeedType::Nvt.as_gmp_str(), "NVT");
 }
