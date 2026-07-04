@@ -12,13 +12,16 @@ use gvm_gmp::commands::alerts::{trigger_alert, TriggerAlertOpts};
 use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::operating_systems::{get_operating_systems, GetOperatingSystemsOpts};
 use gvm_gmp::commands::reports::{get_report_hosts, get_report_vulnerabilities};
-use gvm_gmp::commands::scan_configs::ConfigOpts;
+use gvm_gmp::commands::scan_configs::{
+    create_policy, get_policies, ConfigOpts, GetScanConfigsOpts,
+};
 use gvm_gmp::commands::scanners::ScannerOpts;
 use gvm_gmp::commands::system::get_timezones;
 use gvm_gmp::commands::targets::{
     create_target, delete_target, get_targets, CreateTargetOpts, GetTargetsOpts,
 };
 use gvm_gmp::commands::tasks::{create_task, delete_task, get_task, start_task, stop_task};
+use gvm_gmp::responses::{CreateScanConfigResponse, GetScanConfigsResponse};
 use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
@@ -679,6 +682,98 @@ async fn typed_vulnerability_helpers_parse_stateful_mock_response() {
     assert_eq!(vulnerability.items[0].id, "vuln-1");
     assert_eq!(vulnerability.items[0].name, "Outdated package");
     assert_eq!(vulnerability.counts.total, Some(1));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_scan_config_field_helpers_modify_stateful_mock_resource() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let created = client
+        .create_scan_config(
+            "Original config",
+            None,
+            ConfigOpts {
+                comment: Some("initial comment".into()),
+                usage_type: Some("scan".into()),
+            },
+        )
+        .await
+        .expect("scan config should be created");
+
+    let fetched = client
+        .get_scan_config(&created.id)
+        .await
+        .expect("created scan config should be fetched");
+    assert_eq!(fetched.items.len(), 1);
+    assert_eq!(fetched.items[0].meta.name, "Original config");
+    assert_eq!(
+        fetched.items[0].meta.comment.as_deref(),
+        Some("initial comment")
+    );
+
+    client
+        .modify_scan_config_set_name(&created.id, "Renamed config")
+        .await
+        .expect("scan config name should be modified");
+    client
+        .modify_scan_config_set_comment(&created.id, None)
+        .await
+        .expect("scan config comment should be cleared");
+
+    let fetched = client
+        .get_scan_config(&created.id)
+        .await
+        .expect("scan config should be fetched");
+    assert_eq!(fetched.items.len(), 1);
+    assert_eq!(fetched.items[0].meta.name, "Renamed config");
+    assert_eq!(fetched.items[0].meta.comment, None);
+
+    let response = client
+        .send(create_policy(
+            "Original policy",
+            ConfigOpts {
+                comment: Some("initial policy comment".into()),
+                ..Default::default()
+            },
+        ))
+        .await
+        .expect("policy create request should succeed");
+    let policy = CreateScanConfigResponse::from_response(&response).expect("policy create parses");
+
+    client
+        .modify_policy_set_name(&policy.id, "Renamed policy")
+        .await
+        .expect("policy name should be modified");
+    client
+        .modify_policy_set_comment(&policy.id, None)
+        .await
+        .expect("policy comment should be cleared");
+
+    let response = client
+        .send(get_policies(GetScanConfigsOpts::default()))
+        .await
+        .expect("policies should be fetched");
+    let policies = GetScanConfigsResponse::from_response(&response).expect("policies parse");
+    let policy = policies
+        .items
+        .iter()
+        .find(|item| item.meta.id == policy.id)
+        .expect("modified policy should be returned");
+    assert_eq!(policy.meta.name, "Renamed policy");
+    assert_eq!(policy.meta.comment, None);
 
     server.shutdown().await;
 }
