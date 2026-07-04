@@ -944,6 +944,57 @@ async fn typed_policy_getters_filter_stateful_mock_resources() {
 }
 
 #[tokio::test]
+async fn typed_report_format_import_and_clone_use_mock_server_create_command() {
+    let Some(server) = echo_server(MockVersion::V22_5).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+    server.clear_history();
+
+    let report_format_id = EntityId::new("rf1").expect("valid id");
+    let cloned = client
+        .clone_report_format(&report_format_id)
+        .await
+        .expect("report format clone should succeed");
+    assert_eq!(cloned.status, 201);
+
+    let report_format_xml = r#"<get_report_formats_response status="200" status_text="OK"><report_format id="rf1"><name>Imported</name></report_format></get_report_formats_response>"#;
+    let imported = client
+        .import_report_format(report_format_xml)
+        .await
+        .expect("report format import should succeed");
+    assert_eq!(imported.status, 201);
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 2);
+    assert!(history
+        .iter()
+        .all(|record| record.command_name() == "create_report_format"));
+    let commands = history
+        .iter()
+        .map(|record| String::from_utf8(record.raw_xml().to_vec()).expect("xml is utf-8"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        commands[0],
+        "<create_report_format><copy>rf1</copy></create_report_format>"
+    );
+    assert_eq!(
+        commands[1],
+        format!("<create_report_format>{report_format_xml}</create_report_format>")
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn full_crud_lifecycle_succeeds() {
     let Some(server) = stateful_server().await else {
         return;

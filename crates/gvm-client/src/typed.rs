@@ -37,7 +37,8 @@ use gvm_gmp::commands::report_configs::{
     clone_report_config, get_report_configs_opts, GetReportConfigsOpts,
 };
 use gvm_gmp::commands::report_formats::{
-    create_report_format, get_report_formats, GetReportFormatsOpts, ReportFormatOpts,
+    clone_report_format, create_report_format, get_report_formats, import_report_format,
+    GetReportFormatsOpts, ReportFormatOpts,
 };
 use gvm_gmp::commands::reports::{
     get_report_closed_cves, get_report_errors, get_report_export, get_report_export_with_opts,
@@ -1196,6 +1197,33 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         opts: ReportFormatOpts,
     ) -> Result<CreateReportFormatResponse, GvmError> {
         let response = self.send(create_report_format(name, opts)).await?;
+        CreateReportFormatResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `create_report_format` request that clones an existing report
+    /// format and return a typed [`CreateReportFormatResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn clone_report_format(
+        &mut self,
+        report_format_id: &EntityId,
+    ) -> Result<CreateReportFormatResponse, GvmError> {
+        let response = self.send(clone_report_format(report_format_id)).await?;
+        CreateReportFormatResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `create_report_format` request that imports report-format XML and
+    /// return a typed [`CreateReportFormatResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn import_report_format(
+        &mut self,
+        report_format_xml: &str,
+    ) -> Result<CreateReportFormatResponse, GvmError> {
+        let request = import_report_format(report_format_xml)?;
+        let response = self.send(request).await?;
         CreateReportFormatResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
