@@ -409,6 +409,7 @@ impl SessionHandler {
             "get_aggregates" => return render_aggregates_response(cmd),
             "get_system_reports" => return render_system_reports_response(),
             "get_info" => return render_secinfo_response(cmd),
+            "get_vulns" => return render_vulnerabilities_response(cmd),
             "get_report_hosts"
             | "get_report_ports"
             | "get_report_applications"
@@ -1070,6 +1071,27 @@ fn render_secinfo_response(cmd: &ParsedCommand) -> Vec<u8> {
         .collect();
     format!(
         "<get_info_response status=\"200\" status_text=\"OK\">{items}<{element}_count>{count}<filtered>{count}</filtered></{element}_count></get_info_response>"
+    )
+    .into_bytes()
+}
+
+fn render_vulnerabilities_response(cmd: &ParsedCommand) -> Vec<u8> {
+    let entries = [
+        ("vuln-1", "Outdated package"),
+        ("vuln-2", "Weak configuration"),
+    ];
+    let vuln_id = cmd.attr("vuln_id");
+    let entries: Vec<_> = entries
+        .into_iter()
+        .filter(|(id, _)| vuln_id.is_none_or(|wanted| wanted == *id))
+        .collect();
+    let count = entries.len();
+    let items: String = entries
+        .into_iter()
+        .map(|(id, name)| format!("<vuln id=\"{id}\"><name>{name}</name></vuln>"))
+        .collect();
+    format!(
+        "<get_vulns_response status=\"200\" status_text=\"OK\">{items}<vuln_count>{count}<filtered>{count}</filtered></vuln_count></get_vulns_response>"
     )
     .into_bytes()
 }
