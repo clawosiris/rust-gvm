@@ -10,10 +10,12 @@ use gvm_client::{
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::alerts::{trigger_alert, TriggerAlertOpts};
 use gvm_gmp::commands::authentication::authenticate;
+use gvm_gmp::commands::nvts::{get_nvt_preference, get_nvt_preferences, GetNvtPreferencesOpts};
 use gvm_gmp::commands::operating_systems::{get_operating_systems, GetOperatingSystemsOpts};
 use gvm_gmp::commands::reports::{get_report_hosts, get_report_vulnerabilities};
 use gvm_gmp::commands::scan_configs::{
-    create_policy, get_policies, ConfigOpts, GetScanConfigsOpts,
+    create_policy, get_policies, get_scan_config_preference, get_scan_config_preferences,
+    ConfigOpts, GetScanConfigPreferencesOpts, GetScanConfigsOpts,
 };
 use gvm_gmp::commands::scanners::ScannerOpts;
 use gvm_gmp::commands::system::get_timezones;
@@ -774,6 +776,86 @@ async fn typed_scan_config_field_helpers_modify_stateful_mock_resource() {
         .expect("modified policy should be returned");
     assert_eq!(policy.meta.name, "Renamed policy");
     assert_eq!(policy.meta.comment, None);
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn preference_getters_send_expected_mock_server_commands() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+    server.clear_history();
+
+    let responses = [
+        client
+            .call(get_scan_config_preferences(GetScanConfigPreferencesOpts {
+                nvt_oid: Some("1.3.6.1".into()),
+                config_id: Some(EntityId::new("config-1").expect("valid id")),
+            }))
+            .await
+            .expect("scan-config preferences request should succeed"),
+        client
+            .call(get_scan_config_preference(
+                "timeout",
+                GetScanConfigPreferencesOpts {
+                    nvt_oid: Some("1.3.6.1".into()),
+                    config_id: Some(EntityId::new("config-1").expect("valid id")),
+                },
+            ))
+            .await
+            .expect("scan-config preference request should succeed"),
+        client
+            .call(get_nvt_preferences(GetNvtPreferencesOpts {
+                nvt_oid: Some("1.3.6.1".into()),
+            }))
+            .await
+            .expect("nvt preferences request should succeed"),
+        client
+            .call(get_nvt_preference(
+                "timeout",
+                GetNvtPreferencesOpts {
+                    nvt_oid: Some("1.3.6.1".into()),
+                },
+            ))
+            .await
+            .expect("nvt preference request should succeed"),
+    ];
+    assert!(responses
+        .iter()
+        .all(|response| response.status_code() == Some(200)));
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 4);
+    assert!(history
+        .iter()
+        .all(|record| record.command_name() == "get_preferences"));
+    let commands = history
+        .iter()
+        .map(|record| String::from_utf8(record.raw_xml().to_vec()).expect("xml is utf-8"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        commands[0],
+        "<get_preferences config_id=\"config-1\" nvt_oid=\"1.3.6.1\"/>"
+    );
+    assert_eq!(
+        commands[1],
+        "<get_preferences config_id=\"config-1\" nvt_oid=\"1.3.6.1\" preference=\"timeout\"/>"
+    );
+    assert_eq!(commands[2], "<get_preferences nvt_oid=\"1.3.6.1\"/>");
+    assert_eq!(
+        commands[3],
+        "<get_preferences nvt_oid=\"1.3.6.1\" preference=\"timeout\"/>"
+    );
 
     server.shutdown().await;
 }
