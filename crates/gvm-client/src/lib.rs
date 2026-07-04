@@ -6,12 +6,19 @@
 //! Combines [`gvm_connection`], [`gvm_protocol`], and [`gvm_gmp`] into a
 //! single client that connects, negotiates the GMP version, and provides
 //! typed access to all GMP commands.
+//!
+//! Opt-in wire tracing on [`GmpClient`] observes redacted request and response
+//! XML at the client boundary. This is separate from GMP `details` flags, which
+//! are request parameters that ask gvmd for more or less resource detail.
 
 #![forbid(unsafe_code)]
 
 mod error;
 mod typed;
 mod version;
+
+use std::fmt;
+use std::sync::Arc;
 
 use gvm_connection::GvmConnection;
 use gvm_gmp::commands::agent_groups::{
@@ -52,10 +59,56 @@ pub use version::{
 };
 
 /// High-level async GMP client over an abstract transport.
-#[derive(Debug)]
 pub struct GmpClient<C: GvmConnection> {
     connection: C,
     version: GmpVersion,
+    wire_trace: Option<Arc<dyn WireTrace>>,
+}
+
+impl<C: GvmConnection + fmt::Debug> fmt::Debug for GmpClient<C> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GmpClient")
+            .field("connection", &self.connection)
+            .field("version", &self.version)
+            .field("wire_trace_enabled", &self.wire_trace.is_some())
+            .finish()
+    }
+}
+
+/// Direction of a GMP wire trace event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WireTraceDirection {
+    /// XML bytes sent to gvmd.
+    Request,
+    /// XML bytes received from gvmd.
+    Response,
+}
+
+/// Redacted GMP wire data captured at the client boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WireTraceEvent {
+    /// Whether the bytes are outbound request XML or inbound response XML.
+    pub direction: WireTraceDirection,
+    /// Redacted XML bytes.
+    pub bytes: Vec<u8>,
+}
+
+/// Sink for opt-in GMP wire trace events.
+///
+/// Events are redacted by default before this callback is invoked. The tracing
+/// hook is disabled unless configured explicitly on [`GmpClient`].
+pub trait WireTrace: Send + Sync + 'static {
+    /// Receive a redacted GMP wire trace event.
+    fn trace(&self, event: WireTraceEvent);
+}
+
+impl<F> WireTrace for F
+where
+    F: Fn(WireTraceEvent) + Send + Sync + 'static,
+{
+    fn trace(&self, event: WireTraceEvent) {
+        self(event);
+    }
 }
 
 impl<C: GvmConnection> GmpClient<C> {
@@ -64,10 +117,32 @@ impl<C: GvmConnection> GmpClient<C> {
     /// # Errors
     /// Returns an error if the transport fails, version negotiation fails, or
     /// the server advertises an unsupported GMP version.
-    pub async fn connect(mut connection: C) -> Result<Self, GvmError> {
+    pub async fn connect(connection: C) -> Result<Self, GvmError> {
+        Self::connect_inner(connection, None).await
+    }
+
+    /// Connect, negotiate GMP version, and construct a client with wire tracing.
+    ///
+    /// The trace sink receives redacted request and response XML for the version
+    /// negotiation request and later client calls.
+    ///
+    /// # Errors
+    /// Returns an error if the transport fails, version negotiation fails, or
+    /// the server advertises an unsupported GMP version.
+    pub async fn connect_with_wire_trace<T>(connection: C, wire_trace: T) -> Result<Self, GvmError>
+    where
+        T: WireTrace,
+    {
+        Self::connect_inner(connection, Some(Arc::new(wire_trace))).await
+    }
+
+    async fn connect_inner(
+        mut connection: C,
+        wire_trace: Option<Arc<dyn WireTrace>>,
+    ) -> Result<Self, GvmError> {
         connection.connect().await?;
 
-        let response = Self::send_on(&mut connection, get_version()).await?;
+        let response = Self::send_on(&mut connection, get_version(), wire_trace.as_deref()).await?;
         let response = Self::raise_for_status(response)?;
         let version_text = response.child_text("version").ok_or_else(|| {
             GvmError::XmlParse("missing <version> in get_version response".to_string())
@@ -77,6 +152,7 @@ impl<C: GvmConnection> GmpClient<C> {
         Ok(Self {
             connection,
             version,
+            wire_trace,
         })
     }
 
@@ -86,6 +162,23 @@ impl<C: GvmConnection> GmpClient<C> {
         self.version
     }
 
+    /// Enable redacted GMP wire tracing on this client.
+    #[must_use]
+    pub fn with_wire_trace<T>(mut self, wire_trace: T) -> Self
+    where
+        T: WireTrace,
+    {
+        self.wire_trace = Some(Arc::new(wire_trace));
+        self
+    }
+
+    /// Disable GMP wire tracing on this client.
+    #[must_use]
+    pub fn without_wire_trace(mut self) -> Self {
+        self.wire_trace = None;
+        self
+    }
+
     /// Send a request and return the raw parsed response.
     ///
     /// # Errors
@@ -93,7 +186,12 @@ impl<C: GvmConnection> GmpClient<C> {
     pub async fn send<R: Request>(&mut self, request: R) -> Result<Response, GvmError> {
         let request_bytes = request.to_bytes();
         self.ensure_command_supported(&request_bytes)?;
-        Self::send_on_bytes(&mut self.connection, request_bytes).await
+        Self::send_on_bytes(
+            &mut self.connection,
+            request_bytes,
+            self.wire_trace.as_deref(),
+        )
+        .await
     }
 
     /// Send a request and raise a server error on non-2xx responses.
@@ -133,16 +231,23 @@ impl<C: GvmConnection> GmpClient<C> {
         self.connection
     }
 
-    async fn send_on<R: Request>(connection: &mut C, request: R) -> Result<Response, GvmError> {
-        Self::send_on_bytes(connection, request.to_bytes()).await
+    async fn send_on<R: Request>(
+        connection: &mut C,
+        request: R,
+        wire_trace: Option<&dyn WireTrace>,
+    ) -> Result<Response, GvmError> {
+        Self::send_on_bytes(connection, request.to_bytes(), wire_trace).await
     }
 
     async fn send_on_bytes(
         connection: &mut C,
         request_bytes: Vec<u8>,
+        wire_trace: Option<&dyn WireTrace>,
     ) -> Result<Response, GvmError> {
+        emit_wire_trace(wire_trace, WireTraceDirection::Request, &request_bytes);
         connection.send(&request_bytes).await?;
         let bytes = connection.read().await?;
+        emit_wire_trace(wire_trace, WireTraceDirection::Response, &bytes);
         Ok(Response::new(bytes))
     }
 
@@ -373,6 +478,93 @@ impl<C: GvmConnection> GmpClient<C> {
                 .unwrap_or_else(|| "Unknown error".to_string()),
         })
     }
+}
+
+fn emit_wire_trace(
+    wire_trace: Option<&dyn WireTrace>,
+    direction: WireTraceDirection,
+    bytes: &[u8],
+) {
+    if let Some(wire_trace) = wire_trace {
+        wire_trace.trace(WireTraceEvent {
+            direction,
+            bytes: redact_wire_bytes(bytes),
+        });
+    }
+}
+
+fn redact_wire_bytes(bytes: &[u8]) -> Vec<u8> {
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return b"<non-utf8-redacted/>".to_vec();
+    };
+
+    let mut text = text.to_string();
+    for tag in [
+        "password",
+        "private",
+        "private_key",
+        "passphrase",
+        "secret",
+        "auth_password",
+        "privacy_password",
+        "key",
+    ] {
+        text = redact_xml_element_text(&text, tag);
+    }
+    text.into_bytes()
+}
+
+fn redact_xml_element_text(input: &str, tag: &str) -> String {
+    let mut redacted = String::with_capacity(input.len());
+    let close = format!("</{tag}>");
+    let mut rest = input;
+
+    while let Some(open_start) = find_open_element(rest, tag) {
+        let (before, after_before) = rest.split_at(open_start);
+        redacted.push_str(before);
+
+        let Some(open_end) = after_before.find('>') else {
+            redacted.push_str(after_before);
+            return redacted;
+        };
+        let (open_tag, after_open) = after_before.split_at(open_end + 1);
+        redacted.push_str(open_tag);
+
+        if open_tag.trim_end().ends_with("/>") {
+            rest = after_open;
+            continue;
+        }
+
+        let Some(close_start) = after_open.find(&close) else {
+            redacted.push_str(after_open);
+            return redacted;
+        };
+        redacted.push_str("<redacted>");
+        redacted.push_str(&close);
+        rest = &after_open[close_start + close.len()..];
+    }
+
+    redacted.push_str(rest);
+    redacted
+}
+
+fn find_open_element(input: &str, tag: &str) -> Option<usize> {
+    let open_prefix = format!("<{tag}");
+    let mut search_start = 0;
+
+    while let Some(relative_start) = input[search_start..].find(&open_prefix) {
+        let start = search_start + relative_start;
+        let after_tag = start + open_prefix.len();
+        let next = input[after_tag..].chars().next();
+
+        if next.is_some_and(|ch| ch == '>' || ch == '/' || ch.is_whitespace()) {
+            return Some(start);
+        }
+
+        search_start = after_tag;
+    }
+
+    None
 }
 
 /// GMP 22.4 client wrapper.
@@ -617,6 +809,16 @@ pub enum GmpVersioned<C: GvmConnection> {
 }
 
 impl<C: GvmConnection> GmpVersioned<C> {
+    fn from_client(client: GmpClient<C>) -> Self {
+        match client.version() {
+            GmpVersion(22, 4) => Self::V224(Gmp224(client)),
+            GmpVersion(22, 5) => Self::V225(Gmp225(client)),
+            GmpVersion(22, 6) => Self::V226(Gmp226(client)),
+            GmpVersion(22, 7) => Self::V227(Gmp227(client)),
+            _ => Self::Next(GmpNext(client)),
+        }
+    }
+
     fn inner(&self) -> &GmpClient<C> {
         match self {
             Self::V224(client) => &client.0,
@@ -643,13 +845,22 @@ impl<C: GvmConnection> GmpVersioned<C> {
     /// Returns an error if the transport or negotiation fails.
     pub async fn connect(connection: C) -> Result<Self, GvmError> {
         let client = GmpClient::connect(connection).await?;
-        Ok(match client.version() {
-            GmpVersion(22, 4) => Self::V224(Gmp224(client)),
-            GmpVersion(22, 5) => Self::V225(Gmp225(client)),
-            GmpVersion(22, 6) => Self::V226(Gmp226(client)),
-            GmpVersion(22, 7) => Self::V227(Gmp227(client)),
-            _ => Self::Next(GmpNext(client)),
-        })
+        Ok(Self::from_client(client))
+    }
+
+    /// Connect with wire tracing and wrap the negotiated client by version.
+    ///
+    /// The trace sink receives redacted request and response XML for the version
+    /// negotiation request and later client calls.
+    ///
+    /// # Errors
+    /// Returns an error if the transport or negotiation fails.
+    pub async fn connect_with_wire_trace<T>(connection: C, wire_trace: T) -> Result<Self, GvmError>
+    where
+        T: WireTrace,
+    {
+        let client = GmpClient::connect_with_wire_trace(connection, wire_trace).await?;
+        Ok(Self::from_client(client))
     }
 
     /// Return the negotiated GMP version.
@@ -850,4 +1061,219 @@ fn request_command_name(request_bytes: &[u8]) -> Option<&str> {
         .find(|ch: char| ch == '>' || ch == '/' || ch.is_whitespace())
         .unwrap_or(request.len());
     Some(&request[..end])
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::VecDeque;
+    use std::io;
+    use std::sync::{Arc, Mutex};
+
+    use async_trait::async_trait;
+    use gvm_connection::{ConnectionError, GvmConnection};
+
+    use super::*;
+
+    #[derive(Debug)]
+    struct ScriptedConnection {
+        responses: VecDeque<Vec<u8>>,
+        sent: Arc<Mutex<Vec<Vec<u8>>>>,
+        connected: bool,
+    }
+
+    impl ScriptedConnection {
+        fn new<I, S>(responses: I) -> Self
+        where
+            I: IntoIterator<Item = S>,
+            S: AsRef<[u8]>,
+        {
+            Self {
+                responses: responses
+                    .into_iter()
+                    .map(|response| response.as_ref().to_vec())
+                    .collect(),
+                sent: Arc::new(Mutex::new(Vec::new())),
+                connected: false,
+            }
+        }
+
+        fn sent(&self) -> Arc<Mutex<Vec<Vec<u8>>>> {
+            Arc::clone(&self.sent)
+        }
+    }
+
+    #[async_trait]
+    impl GvmConnection for ScriptedConnection {
+        async fn connect(&mut self) -> gvm_connection::Result<()> {
+            self.connected = true;
+            Ok(())
+        }
+
+        async fn disconnect(&mut self) -> gvm_connection::Result<()> {
+            self.connected = false;
+            Ok(())
+        }
+
+        async fn send(&mut self, data: &[u8]) -> gvm_connection::Result<()> {
+            if !self.connected {
+                return Err(ConnectionError::NotConnected);
+            }
+            self.sent.lock().expect("sent lock").push(data.to_vec());
+            Ok(())
+        }
+
+        async fn read(&mut self) -> gvm_connection::Result<Vec<u8>> {
+            self.responses.pop_front().ok_or_else(|| {
+                ConnectionError::ReadFailed(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "scripted response exhausted",
+                ))
+            })
+        }
+
+        fn is_connected(&self) -> bool {
+            self.connected
+        }
+    }
+
+    fn version_response(version: &str) -> String {
+        format!(
+            r#"<get_version_response status="200" status_text="OK"><version>{version}</version></get_version_response>"#
+        )
+    }
+
+    fn auth_response() -> &'static str {
+        r#"<authenticate_response status="200" status_text="OK"/>"#
+    }
+
+    fn event_text(event: &WireTraceEvent) -> String {
+        String::from_utf8(event.bytes.clone()).expect("trace event is utf-8")
+    }
+
+    #[tokio::test]
+    async fn connect_with_wire_trace_emits_redacted_typed_helper_events() {
+        let connection =
+            ScriptedConnection::new([version_response("22.7"), auth_response().to_string()]);
+        let sent = connection.sent();
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let trace_events = Arc::clone(&events);
+
+        let mut client = GmpClient::connect_with_wire_trace(connection, move |event| {
+            trace_events.lock().expect("trace lock").push(event);
+        })
+        .await
+        .expect("client connects");
+
+        client
+            .authenticate("admin", "secret-password")
+            .await
+            .expect("authenticate succeeds");
+
+        let sent = sent.lock().expect("sent lock");
+        assert_eq!(sent.len(), 2);
+        assert_eq!(
+            std::str::from_utf8(&sent[0]).expect("utf-8"),
+            "<get_version/>"
+        );
+        assert!(std::str::from_utf8(&sent[1])
+            .expect("utf-8")
+            .contains("<password>secret-password</password>"));
+
+        let events = events.lock().expect("trace lock");
+        assert_eq!(events.len(), 4);
+        assert_eq!(events[0].direction, WireTraceDirection::Request);
+        assert_eq!(event_text(&events[0]), "<get_version/>");
+        assert_eq!(events[1].direction, WireTraceDirection::Response);
+        assert!(event_text(&events[1]).contains("<get_version_response"));
+        assert_eq!(events[2].direction, WireTraceDirection::Request);
+
+        let auth_request = event_text(&events[2]);
+        assert!(auth_request.contains("<authenticate>"));
+        assert!(auth_request.contains("<password><redacted></password>"));
+        assert!(!auth_request.contains("secret-password"));
+
+        assert_eq!(events[3].direction, WireTraceDirection::Response);
+        assert!(event_text(&events[3]).contains("<authenticate_response"));
+    }
+
+    #[tokio::test]
+    async fn default_client_does_not_emit_wire_trace() {
+        let connection = ScriptedConnection::new([version_response("22.7")]);
+
+        let client = GmpClient::connect(connection)
+            .await
+            .expect("client connects");
+
+        assert!(client.wire_trace.is_none());
+    }
+
+    #[tokio::test]
+    async fn versioned_connect_with_wire_trace_wraps_negotiated_client() {
+        let connection = ScriptedConnection::new([version_response("22.6")]);
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let trace_events = Arc::clone(&events);
+
+        let client = GmpVersioned::connect_with_wire_trace(connection, move |event| {
+            trace_events.lock().expect("trace lock").push(event);
+        })
+        .await
+        .expect("client connects");
+
+        assert!(matches!(client, GmpVersioned::V226(_)));
+
+        let events = events.lock().expect("trace lock");
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].direction, WireTraceDirection::Request);
+        assert_eq!(event_text(&events[0]), "<get_version/>");
+    }
+
+    #[test]
+    fn redacts_known_credential_elements() {
+        let bytes = br#"<root><password>pw</password><private>key</private><private_key>key2</private_key><passphrase>phrase</passphrase><secret>oidc-secret</secret><auth_password>auth</auth_password><privacy_password>privacy</privacy_password><password algorithm="x">again</password></root>"#;
+
+        let redacted = String::from_utf8(redact_wire_bytes(bytes)).expect("utf-8");
+
+        assert_eq!(
+            redacted,
+            r#"<root><password><redacted></password><private><redacted></private><private_key><redacted></private_key><passphrase><redacted></passphrase><secret><redacted></secret><auth_password><redacted></auth_password><privacy_password><redacted></privacy_password><password algorithm="x"><redacted></password></root>"#
+        );
+        assert!(!redacted.contains(">pw<"));
+        assert!(!redacted.contains(">key<"));
+        assert!(!redacted.contains(">key2<"));
+        assert!(!redacted.contains(">phrase<"));
+        assert!(!redacted.contains(">oidc-secret<"));
+        assert!(!redacted.contains(">auth<"));
+        assert!(!redacted.contains(">privacy<"));
+        assert!(!redacted.contains(">again<"));
+    }
+
+    #[test]
+    fn redacts_modify_license_key_element() {
+        let request = gvm_gmp::commands::system::modify_license("license-secret").to_bytes();
+
+        let redacted = String::from_utf8(redact_wire_bytes(&request)).expect("utf-8");
+
+        assert_eq!(
+            redacted,
+            "<modify_license><key><redacted></key></modify_license>"
+        );
+        assert!(!redacted.contains("license-secret"));
+    }
+
+    #[test]
+    fn redaction_ignores_similar_and_self_closing_tags() {
+        let bytes = br#"<root><password_hash>keep</password_hash><secret_name>keep-secret-name</secret_name><password/><secret/><password>pw</password><secret>s</secret></root>"#;
+
+        let redacted = String::from_utf8(redact_wire_bytes(bytes)).expect("utf-8");
+
+        assert_eq!(
+            redacted,
+            r#"<root><password_hash>keep</password_hash><secret_name>keep-secret-name</secret_name><password/><secret/><password><redacted></password><secret><redacted></secret></root>"#
+        );
+    }
+
+    #[test]
+    fn redacts_non_utf8_wire_bytes() {
+        assert_eq!(redact_wire_bytes(&[0xff]), b"<non-utf8-redacted/>");
+    }
 }
