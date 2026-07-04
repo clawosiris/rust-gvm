@@ -291,6 +291,17 @@ impl SessionHandler {
         if let Some(scheduler_cron_time) = parse_element_text(raw_xml, "scheduler_cron_time") {
             resource.set_attr("scheduler_cron_time", &scheduler_cron_time);
         }
+        if resource_type == "web_application_target" {
+            if let Some(urls) = parse_element_text(raw_xml, "urls") {
+                resource.set_attr("urls", &urls);
+            }
+            if let Some(exclude_urls) = parse_element_text(raw_xml, "exclude_urls") {
+                resource.set_attr("exclude_urls", &exclude_urls);
+            }
+            if let Some(credential_id) = cmd.child_attr("credential", "id") {
+                resource.set_attr("credential_id", credential_id);
+            }
+        }
 
         if matches!(resource_type, "config" | "task") {
             if let Some(usage_type) = parse_element_text(raw_xml, "usage_type") {
@@ -505,6 +516,8 @@ impl SessionHandler {
         let new_comment = parse_element_text(raw_xml, "comment");
         let new_host = parse_element_text(raw_xml, "host");
         let new_hosts = parse_element_text(raw_xml, "hosts");
+        let new_urls = parse_element_text(raw_xml, "urls");
+        let new_exclude_urls = parse_element_text(raw_xml, "exclude_urls");
         let new_status = parse_element_text(raw_xml, "status");
         let new_scheduler_cron_time = parse_element_text(raw_xml, "scheduler_cron_time");
         let new_nvt_oid = parse_element_text(raw_xml, "nvt_oid")
@@ -512,6 +525,7 @@ impl SessionHandler {
         let new_result_id = parse_element_text(raw_xml, "result_id")
             .or_else(|| cmd.child_attr("result", "id").map(str::to_string));
         let new_task_id = cmd.child_attr("task", "id").map(str::to_string);
+        let new_credential_id = cmd.child_attr("credential", "id").map(str::to_string);
         let new_port = parse_element_text(raw_xml, "port");
         let new_severity = parse_element_text(raw_xml, "severity");
         let new_new_severity = parse_element_text(raw_xml, "new_severity");
@@ -553,6 +567,14 @@ impl SessionHandler {
             if let Some(ref hosts) = new_hosts {
                 r.set_attr("hosts", hosts);
             }
+            if resource_type == "web_application_target" {
+                if let Some(ref urls) = new_urls {
+                    r.set_attr("urls", urls);
+                }
+                if let Some(ref exclude_urls) = new_exclude_urls {
+                    r.set_attr("exclude_urls", exclude_urls);
+                }
+            }
             if let Some(ref nvt_oid) = new_nvt_oid {
                 r.set_attr("nvt_oid", nvt_oid);
             }
@@ -561,6 +583,11 @@ impl SessionHandler {
             }
             if let Some(ref task_id) = new_task_id {
                 r.set_attr("task_id", task_id);
+            }
+            if resource_type == "web_application_target" {
+                if let Some(ref credential_id) = new_credential_id {
+                    r.set_attr("credential_id", credential_id);
+                }
             }
             if let Some(ref port) = new_port {
                 r.set_attr("port", port);

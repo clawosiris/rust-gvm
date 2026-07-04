@@ -19,6 +19,9 @@ use gvm_gmp::commands::integration_configs::{
 use gvm_gmp::commands::report_configs::{create_report_config, get_report_configs};
 use gvm_gmp::commands::reports::{get_report_cves, get_report_hosts};
 use gvm_gmp::commands::targets::{create_target, CreateTargetOpts};
+use gvm_gmp::commands::web_application_targets::{
+    create_web_application_target, get_web_application_targets, CreateWebApplicationTargetOpts,
+};
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
 use gvm_protocol::{Request, Response, XmlCommand};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -215,6 +218,13 @@ async fn version_22_7_rejects_next_commands() {
     assert_eq!(response.status_code(), Some(400));
     assert!(response.status_text().unwrap().contains("get_report_hosts"));
 
+    let response = send_recv(&mut stream, get_web_application_targets(Default::default())).await;
+    assert_eq!(response.status_code(), Some(400));
+    assert!(response
+        .status_text()
+        .unwrap()
+        .contains("get_web_application_targets"));
+
     server.shutdown().await;
 }
 
@@ -301,6 +311,29 @@ async fn version_22_8_accepts_next_commands() {
     )
     .await;
     assert_eq!(report_helper.status_code(), Some(404));
+
+    let web_target_response = send_recv(
+        &mut stream,
+        create_web_application_target(
+            "Version Gated Web Target",
+            &["https://example.com".to_string()],
+            CreateWebApplicationTargetOpts {
+                comment: Some("accepted on 22.8".into()),
+                exclude_urls: vec!["https://example.com/logout".into()],
+                credential_id: Some(id("credential-web-gate")),
+            },
+        ),
+    )
+    .await;
+    assert_eq!(web_target_response.status_code(), Some(201));
+
+    let web_target_list =
+        send_recv(&mut stream, get_web_application_targets(Default::default())).await;
+    assert_eq!(web_target_list.status_code(), Some(200));
+    let web_target_xml = web_target_list.as_str().expect("utf8");
+    assert!(web_target_xml.contains("Version Gated Web Target"));
+    assert!(web_target_xml.contains("<urls>https://example.com</urls>"));
+    assert!(web_target_xml.contains("<credential_id>credential-web-gate</credential_id>"));
 
     server.shutdown().await;
 }

@@ -83,3 +83,5 @@ pub mod user_settings;
 pub mod users;
 /// Version command builders.
 pub mod version;
+/// Web application target command builders.
+pub mod web_application_targets;
