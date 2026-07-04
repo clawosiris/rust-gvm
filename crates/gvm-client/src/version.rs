@@ -33,7 +33,11 @@ pub fn minimum_version_for_command(command_name: &str) -> Option<GmpVersion> {
         | "get_report_closed_cves"
         | "get_timezones"
         | "get_report_export"
-        | "get_credential_stores" => Some(GmpVersion(22, 8)),
+        | "get_credential_stores"
+        | "create_web_application_target"
+        | "delete_web_application_target"
+        | "get_web_application_targets"
+        | "modify_web_application_target" => Some(GmpVersion(22, 8)),
         _ => None,
     }
 }
@@ -205,6 +209,18 @@ mod tests {
         assert!(command_supported("get_agent_groups", GmpVersion(22, 8)));
         assert_eq!(
             minimum_version_for_command("create_agent_group"),
+            Some(GmpVersion(22, 8))
+        );
+        assert!(!command_supported(
+            "get_web_application_targets",
+            GmpVersion(22, 7)
+        ));
+        assert!(command_supported(
+            "get_web_application_targets",
+            GmpVersion(22, 8)
+        ));
+        assert_eq!(
+            minimum_version_for_command("create_web_application_target"),
             Some(GmpVersion(22, 8))
         );
     }
