@@ -5,11 +5,13 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_client::{
-    CreateAgentGroupOpts, CreateWebApplicationTargetOpts, Gmp226Commands, GmpNextCommands,
-    GmpVersioned, GvmError, ModifyAgentGroupOpts, ModifyWebApplicationTargetOpts,
+    CreateAgentGroupOpts, CreateOciImageTargetOpts, CreateWebApplicationTargetOpts, Gmp226Commands,
+    GmpNextCommands, GmpVersioned, GvmError, ModifyAgentGroupOpts, ModifyOciImageTargetOpts,
+    ModifyWebApplicationTargetOpts,
 };
 use gvm_connection::UnixSocketConnection;
-use gvm_gmp::types::EntityId;
+use gvm_gmp::commands::oci_image_targets::get_oci_image_targets;
+use gvm_gmp::{EntityId, GmpVersion};
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 
 async fn stateful_server(version: MockVersion) -> Option<MockGmpServer> {
@@ -201,6 +203,148 @@ async fn next_client_agent_groups_round_trip() {
     assert!(matches!(
         error,
         gvm_client::GvmError::Server { status: 404, .. }
+    ));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn versioned_client_rejects_oci_image_targets_before_next() {
+    let Some(server) = stateful_server(MockVersion::V22_7).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpVersioned::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .call(gvm_gmp::commands::authentication::authenticate(
+            "admin", "admin",
+        ))
+        .await
+        .expect("authenticate should succeed");
+
+    let error = client
+        .call(get_oci_image_targets(Default::default()))
+        .await
+        .expect_err("22.7 should reject next-only OCI image target command");
+
+    assert!(matches!(
+        error,
+        GvmError::UnsupportedCommand {
+            command,
+            version: GmpVersion(22, 7),
+            required: "22.8",
+        } if command == "get_oci_image_targets"
+    ));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn next_client_oci_image_targets_round_trip() {
+    let Some(server) = stateful_server(MockVersion::V22_8).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpVersioned::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .call(gvm_gmp::commands::authentication::authenticate(
+            "admin", "admin",
+        ))
+        .await
+        .expect("authenticate should succeed");
+
+    let mut client = match client {
+        GmpVersioned::Next(client) => client,
+        other => panic!("expected Next client, got {other:?}"),
+    };
+
+    let image_references = vec![
+        "registry.example/app:1".to_string(),
+        "registry.example/app:2".to_string(),
+    ];
+    let create_response = client
+        .create_oci_image_target(
+            "Client OCI Target",
+            &image_references,
+            CreateOciImageTargetOpts {
+                comment: Some("created from versioned client".into()),
+                credential_id: Some(id("credential-oci-1")),
+            },
+        )
+        .await
+        .expect("create_oci_image_target should succeed");
+    assert_eq!(create_response.status_code(), Some(201));
+    let target_id = EntityId::new(create_response.id().expect("created id")).expect("valid id");
+
+    let get_response = client
+        .get_oci_image_target(&target_id, Some(true))
+        .await
+        .expect("get_oci_image_target should succeed");
+    let get_xml = get_response.as_str().expect("valid utf8");
+    assert!(get_xml.contains("<name>Client OCI Target</name>"));
+    assert!(get_xml.contains(
+        "<image_references>registry.example/app:1,registry.example/app:2</image_references>"
+    ));
+    assert!(get_xml.contains("<credential_id>credential-oci-1</credential_id>"));
+
+    let clone_response = client
+        .clone_oci_image_target(&target_id)
+        .await
+        .expect("clone_oci_image_target should succeed");
+    assert_eq!(clone_response.status_code(), Some(201));
+
+    let list_response = client
+        .get_oci_image_targets(Default::default())
+        .await
+        .expect("get_oci_image_targets should succeed");
+    let list_xml = list_response.as_str().expect("valid utf8");
+    assert!(list_xml.contains("<oci_image_target_count>2<filtered>2</filtered>"));
+
+    let modify_response = client
+        .modify_oci_image_target(
+            &target_id,
+            ModifyOciImageTargetOpts {
+                name: Some("Updated OCI Target".into()),
+                comment: Some("updated from versioned client".into()),
+                image_references: vec!["registry.example/app:latest".into()],
+                credential_id: Some(id("credential-oci-2")),
+            },
+        )
+        .await
+        .expect("modify_oci_image_target should succeed");
+    assert_eq!(modify_response.status_code(), Some(200));
+
+    let modified_response = client
+        .get_oci_image_target(&target_id, None)
+        .await
+        .expect("modified OCI image target should be readable");
+    let modified_xml = modified_response.as_str().expect("valid utf8");
+    assert!(modified_xml.contains("<name>Updated OCI Target</name>"));
+    assert!(modified_xml.contains("<comment>updated from versioned client</comment>"));
+    assert!(
+        modified_xml.contains("<image_references>registry.example/app:latest</image_references>")
+    );
+    assert!(modified_xml.contains("<credential_id>credential-oci-2</credential_id>"));
+
+    let delete_response = client
+        .delete_oci_image_target(&target_id, true)
+        .await
+        .expect("delete_oci_image_target should succeed");
+    assert_eq!(delete_response.status_code(), Some(200));
+
+    let deleted_error = client
+        .get_oci_image_target(&target_id, None)
+        .await
+        .expect_err("deleted OCI image target should be gone");
+    assert!(matches!(
+        deleted_error,
+        GvmError::Server { status: 404, .. }
     ));
 
     server.shutdown().await;
