@@ -58,7 +58,8 @@ use gvm_gmp::commands::schedules::{
     create_schedule, get_schedules, GetSchedulesOpts, ScheduleOpts,
 };
 use gvm_gmp::commands::secinfo::{
-    get_cert_bund_advisories, get_cpes, get_cves, get_dfn_cert_advisories, GetSecInfoOpts,
+    get_cert_bund_advisories, get_cert_bund_advisory, get_cpe, get_cpes, get_cve, get_cves,
+    get_dfn_cert_advisories, get_dfn_cert_advisory, GetSecInfoOpts,
 };
 use gvm_gmp::commands::system::{describe_auth, get_settings, get_timezones, FilteredGetOpts};
 use gvm_gmp::commands::tags::{create_tag, get_tags, GetTagsOpts, TagOpts};
@@ -615,12 +616,32 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         GetCvesResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
+    /// Send a `get_info` request for a single CVE entry and return a typed
+    /// [`GetCvesResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_cve(&mut self, cve_id: &str) -> Result<GetCvesResponse, GvmError> {
+        let response = self.send(get_cve(cve_id)).await?;
+        GetCvesResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
     /// Send a `get_info` request for CPE entries and return a typed [`GetCpesResponse`].
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_cpes(&mut self, opts: GetSecInfoOpts) -> Result<GetCpesResponse, GvmError> {
         let response = self.send(get_cpes(opts)).await?;
+        GetCpesResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `get_info` request for a single CPE entry and return a typed
+    /// [`GetCpesResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_cpe(&mut self, cpe_id: &str) -> Result<GetCpesResponse, GvmError> {
+        let response = self.send(get_cpe(cpe_id)).await?;
         GetCpesResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
@@ -637,6 +658,19 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         GetCertBundAdvisoriesResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
+    /// Send a `get_info` request for a single CERT-Bund advisory and return a
+    /// typed [`GetCertBundAdvisoriesResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_cert_bund_advisory(
+        &mut self,
+        cert_id: &str,
+    ) -> Result<GetCertBundAdvisoriesResponse, GvmError> {
+        let response = self.send(get_cert_bund_advisory(cert_id)).await?;
+        GetCertBundAdvisoriesResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
     /// Send a `get_info` request for DFN-CERT advisories and return a typed
     /// [`GetDfnCertAdvisoriesResponse`].
     ///
@@ -647,6 +681,19 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         opts: GetSecInfoOpts,
     ) -> Result<GetDfnCertAdvisoriesResponse, GvmError> {
         let response = self.send(get_dfn_cert_advisories(opts)).await?;
+        GetDfnCertAdvisoriesResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `get_info` request for a single DFN-CERT advisory and return a
+    /// typed [`GetDfnCertAdvisoriesResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_dfn_cert_advisory(
+        &mut self,
+        cert_id: &str,
+    ) -> Result<GetDfnCertAdvisoriesResponse, GvmError> {
+        let response = self.send(get_dfn_cert_advisory(cert_id)).await?;
         GetDfnCertAdvisoriesResponse::from_response(&response).map_err(GvmError::Parse)
     }
 

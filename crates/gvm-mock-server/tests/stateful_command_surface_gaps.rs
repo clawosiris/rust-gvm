@@ -287,6 +287,29 @@ async fn stateful_secinfo_returns_typed_entries() {
 }
 
 #[tokio::test]
+async fn stateful_secinfo_accepts_uppercase_type_and_info_id() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let resp = send_recv(
+        &mut stream,
+        br#"<get_info details="1" info_id="CVE-2026-1000" type="CVE"/>"#,
+    )
+    .await;
+    assert_eq!(resp.status_code(), Some(200));
+    let text = resp.as_str().expect("utf8");
+    assert!(text.contains("<cve id=\"CVE-2026-1000\">"));
+    assert!(text.contains("Mock CVE one"));
+    assert!(text.contains("<cve_count>1<filtered>1</filtered></cve_count>"));
+    assert!(!text.contains("CVE-2026-1001"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn stateful_audit_reports_filter_by_usage_type() {
     let Some(server) = stateful_server().await else {
         return;
