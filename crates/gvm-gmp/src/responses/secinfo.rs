@@ -416,3 +416,28 @@ impl GetVulnerabilitiesResponse {
         })
     }
 }
+
+#[cfg(test)]
+mod additional_tests {
+    use gvm_protocol::Response;
+
+    use super::*;
+
+    #[test]
+    fn parses_get_vulns_response() {
+        let response = Response::from(
+            r#"<get_vulns_response status="200" status_text="OK">
+                <vuln id="vuln-1"><name>Outdated package</name></vuln>
+                <vuln_count>1<filtered>1</filtered></vuln_count>
+            </get_vulns_response>"#,
+        );
+
+        let parsed = GetVulnerabilitiesResponse::from_response(&response).expect("vulns parse");
+
+        assert_eq!(parsed.status, 200);
+        assert_eq!(parsed.items.len(), 1);
+        assert_eq!(parsed.items[0].id, "vuln-1");
+        assert_eq!(parsed.items[0].name, "Outdated package");
+        assert_eq!(parsed.counts.total, Some(1));
+    }
+}

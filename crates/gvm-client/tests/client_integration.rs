@@ -650,6 +650,40 @@ async fn typed_secinfo_singular_helpers_fetch_one_entry() {
 }
 
 #[tokio::test]
+async fn typed_vulnerability_helpers_parse_stateful_mock_response() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let vulnerabilities = client
+        .get_vulnerabilities(Default::default())
+        .await
+        .expect("vulnerabilities should parse");
+    assert_eq!(vulnerabilities.items.len(), 2);
+    assert_eq!(vulnerabilities.items[0].id, "vuln-1");
+
+    let vulnerability = client
+        .get_vulnerability("vuln-1")
+        .await
+        .expect("single vulnerability should parse");
+    assert_eq!(vulnerability.items.len(), 1);
+    assert_eq!(vulnerability.items[0].id, "vuln-1");
+    assert_eq!(vulnerability.items[0].name, "Outdated package");
+    assert_eq!(vulnerability.counts.total, Some(1));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn full_crud_lifecycle_succeeds() {
     let Some(server) = stateful_server().await else {
         return;

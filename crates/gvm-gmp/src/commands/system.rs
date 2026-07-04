@@ -216,6 +216,12 @@ pub fn get_vulns(opts: FilteredGetOpts) -> impl Request {
     cmd
 }
 
+/// Build a `get_vulns` request for a single vulnerability entry.
+#[must_use]
+pub fn get_vuln(vuln_id: &str) -> impl Request {
+    XmlCommand::new("get_vulns").attribute("vuln_id", vuln_id)
+}
+
 /// Build a `get_license` request.
 #[must_use]
 pub fn get_license() -> impl Request {
@@ -315,6 +321,14 @@ mod tests {
             ..Default::default()
         }))
         .contains("resource_id=\"t1\""));
+        assert_eq!(
+            xml(get_vulns(FilteredGetOpts {
+                filter_string: Some("severity>5".into()),
+                filter_id: Some(id("filter-1")),
+            })),
+            "<get_vulns filt_id=\"filter-1\" filter=\"severity&gt;5\"/>"
+        );
+        assert_eq!(xml(get_vuln("vuln-1")), "<get_vulns vuln_id=\"vuln-1\"/>");
         assert_eq!(xml(modify_auth(true)), "<modify_auth enabled=\"1\"/>");
         assert_eq!(
             xml(modify_license("abc")),
