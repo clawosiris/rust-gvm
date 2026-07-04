@@ -410,6 +410,145 @@ gmp_enum!(EntityType {
     User => "user",
     Vulnerability => "vulnerability"
 });
+/// Resource types accepted by `get_resource_names`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum ResourceType {
+    /// Alert resources.
+    Alert,
+    /// Audit resources are represented as tasks in GMP.
+    Audit,
+    /// Audit report resources are represented as reports in GMP.
+    AuditReport,
+    /// CERT-Bund advisory resources.
+    CertBundAdv,
+    /// Scan configuration resources.
+    Config,
+    /// CPE resources.
+    Cpe,
+    /// Credential resources.
+    Credential,
+    /// CVE resources.
+    Cve,
+    /// DFN-CERT advisory resources.
+    DfnCertAdv,
+    /// Filter resources.
+    Filter,
+    /// Group resources.
+    Group,
+    /// Host resources.
+    Host,
+    /// Note resources.
+    Note,
+    /// NVT resources.
+    Nvt,
+    /// Operating system resources.
+    OperatingSystem,
+    /// Override resources.
+    Override,
+    /// Permission resources.
+    Permission,
+    /// Port list resources.
+    PortList,
+    /// Report format resources.
+    ReportFormat,
+    /// Report resources.
+    Report,
+    /// Report config resources.
+    ReportConfig,
+    /// Result resources.
+    Result,
+    /// Role resources.
+    Role,
+    /// Scanner resources.
+    Scanner,
+    /// Schedule resources.
+    Schedule,
+    /// Target resources.
+    Target,
+    /// Task resources.
+    Task,
+    /// TLS certificate resources.
+    TlsCertificate,
+    /// User resources.
+    User,
+}
+
+impl ResourceType {
+    /// Returns the GMP wire-format string for this value.
+    #[must_use]
+    pub const fn as_gmp_str(self) -> &'static str {
+        match self {
+            Self::Alert => "ALERT",
+            Self::Audit | Self::Task => "TASK",
+            Self::AuditReport | Self::Report => "REPORT",
+            Self::CertBundAdv => "CERT_BUND_ADV",
+            Self::Config => "CONFIG",
+            Self::Cpe => "CPE",
+            Self::Credential => "CREDENTIAL",
+            Self::Cve => "CVE",
+            Self::DfnCertAdv => "DFN_CERT_ADV",
+            Self::Filter => "FILTER",
+            Self::Group => "GROUP",
+            Self::Host => "HOST",
+            Self::Note => "NOTE",
+            Self::Nvt => "NVT",
+            Self::OperatingSystem => "OS",
+            Self::Override => "OVERRIDE",
+            Self::Permission => "PERMISSION",
+            Self::PortList => "PORT_LIST",
+            Self::ReportFormat => "REPORT_FORMAT",
+            Self::ReportConfig => "REPORT_CONFIG",
+            Self::Result => "RESULT",
+            Self::Role => "ROLE",
+            Self::Scanner => "SCANNER",
+            Self::Schedule => "SCHEDULE",
+            Self::Target => "TARGET",
+            Self::TlsCertificate => "TLS_CERTIFICATE",
+            Self::User => "USER",
+        }
+    }
+}
+
+impl FromStr for ResourceType {
+    type Err = EnumParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "ALERT" => Ok(Self::Alert),
+            "TASK" => Ok(Self::Task),
+            "REPORT" => Ok(Self::Report),
+            "CERT_BUND_ADV" => Ok(Self::CertBundAdv),
+            "CONFIG" => Ok(Self::Config),
+            "CPE" => Ok(Self::Cpe),
+            "CREDENTIAL" => Ok(Self::Credential),
+            "CVE" => Ok(Self::Cve),
+            "DFN_CERT_ADV" => Ok(Self::DfnCertAdv),
+            "FILTER" => Ok(Self::Filter),
+            "GROUP" => Ok(Self::Group),
+            "HOST" => Ok(Self::Host),
+            "NOTE" => Ok(Self::Note),
+            "NVT" => Ok(Self::Nvt),
+            "OS" => Ok(Self::OperatingSystem),
+            "OVERRIDE" => Ok(Self::Override),
+            "PERMISSION" => Ok(Self::Permission),
+            "PORT_LIST" => Ok(Self::PortList),
+            "REPORT_FORMAT" => Ok(Self::ReportFormat),
+            "REPORT_CONFIG" => Ok(Self::ReportConfig),
+            "RESULT" => Ok(Self::Result),
+            "ROLE" => Ok(Self::Role),
+            "SCANNER" => Ok(Self::Scanner),
+            "SCHEDULE" => Ok(Self::Schedule),
+            "TARGET" => Ok(Self::Target),
+            "TLS_CERTIFICATE" => Ok(Self::TlsCertificate),
+            "USER" => Ok(Self::User),
+            _ => Err(EnumParseError {
+                enum_name: "ResourceType",
+                value: s.to_string(),
+            }),
+        }
+    }
+}
 gmp_enum!(FeedType {
     Nvt => "NVT",
     Cert => "CERT",
@@ -690,6 +829,7 @@ mod tests {
         "up"
     );
     enum_round_trip_test!(entity_type_round_trip, EntityType, Task, "task");
+    enum_round_trip_test!(resource_type_round_trip, ResourceType, Task, "TASK");
     enum_round_trip_test!(feed_type_round_trip, FeedType, Nvt, "NVT");
     enum_round_trip_test!(filter_type_round_trip, FilterType, Task, "task");
     enum_round_trip_test!(help_format_round_trip, HelpFormat, Xml, "xml");
