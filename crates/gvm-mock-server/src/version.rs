@@ -66,6 +66,10 @@ const GMP_22_8_COMMANDS: &[&str] = &[
     "get_report_closed_cves",
     "get_timezones",
     "get_credential_stores",
+    "create_oci_image_target",
+    "delete_oci_image_target",
+    "get_oci_image_targets",
+    "modify_oci_image_target",
     "create_web_application_target",
     "delete_web_application_target",
     "get_web_application_targets",
@@ -184,6 +188,22 @@ mod tests {
         assert!(command_available("get_agent_groups", GmpVersion::V22_8));
         assert!(!command_available("create_agent_group", GmpVersion::V22_6));
         assert!(command_available("create_agent_group", GmpVersion::V22_8));
+        assert!(!command_available(
+            "get_oci_image_targets",
+            GmpVersion::V22_7
+        ));
+        assert!(command_available(
+            "get_oci_image_targets",
+            GmpVersion::V22_8
+        ));
+        assert!(!command_available(
+            "create_oci_image_target",
+            GmpVersion::V22_6
+        ));
+        assert!(command_available(
+            "create_oci_image_target",
+            GmpVersion::V22_8
+        ));
         assert!(!command_available(
             "get_web_application_targets",
             GmpVersion::V22_7
