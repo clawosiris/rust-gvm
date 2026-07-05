@@ -13,6 +13,8 @@ pub mod alerts;
 pub mod assets;
 /// Authentication command builders.
 pub mod authentication;
+/// Generic config command builders.
+pub mod configs;
 /// Credential command builders.
 pub mod credentials;
 /// Feature command builders.
