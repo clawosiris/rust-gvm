@@ -12,12 +12,18 @@ use gvm_gmp::commands::scan_configs::{
     delete_scan_config, get_policies, get_policy, get_scan_config, get_scan_configs, modify_policy,
     modify_scan_config, ConfigOpts, GetPolicyOpts, GetScanConfigsOpts,
 };
+use gvm_gmp::commands::usage_type::UsageType;
 
 #[test]
 fn test_generic_configs_usage_type_xml() {
     assert_eq!(ConfigUsageType::Scan.as_gmp_str(), "scan");
+    assert_eq!(ConfigUsageType::Audit.as_gmp_str(), "audit");
     assert_eq!(ConfigUsageType::Policy.as_gmp_str(), "policy");
-    assert_eq!(ConfigUsageType::custom("audit").as_gmp_str(), "audit");
+    assert_eq!(ConfigUsageType::custom("custom").as_gmp_str(), "custom");
+    assert_eq!(
+        ConfigUsageType::from(UsageType::Audit).as_gmp_str(),
+        "audit"
+    );
 }
 
 #[test]
@@ -66,7 +72,7 @@ fn test_generic_configs_get_xml() {
         xml(get_config(
             &id("c1"),
             GetConfigOpts {
-                usage_type: Some(ConfigUsageType::Policy),
+                usage_type: Some(ConfigUsageType::from(UsageType::Policy)),
                 tasks: Some(true),
                 ..Default::default()
             },
@@ -196,7 +202,7 @@ fn test_policies_wrappers_match_generic_xml() {
     assert_eq!(
         xml(get_policies(GetScanConfigsOpts::default())),
         xml(get_configs(GetConfigsOpts {
-            usage_type: Some(ConfigUsageType::Policy),
+            usage_type: Some(ConfigUsageType::from(UsageType::Policy)),
             ..Default::default()
         }))
     );
@@ -205,7 +211,7 @@ fn test_policies_wrappers_match_generic_xml() {
         xml(get_config(
             &id("p1"),
             GetConfigOpts {
-                usage_type: Some(ConfigUsageType::Policy),
+                usage_type: Some(ConfigUsageType::from(UsageType::Policy)),
                 tasks: Some(true),
                 ..Default::default()
             },
@@ -223,7 +229,7 @@ fn test_policies_wrappers_match_generic_xml() {
             &id("p1"),
             ModifyConfigOpts {
                 comment: Some("updated".into()),
-                usage_type: Some(ConfigUsageType::Policy),
+                usage_type: Some(ConfigUsageType::from(UsageType::Policy)),
                 ..Default::default()
             },
         ))

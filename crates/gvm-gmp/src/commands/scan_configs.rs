@@ -11,6 +11,7 @@ use crate::commands::configs::{
     CloneConfigOpts, ConfigUsageType, CreateConfigOpts, DeleteConfigOpts, GetConfigOpts,
     GetConfigsOpts, ModifyConfigOpts,
 };
+use crate::commands::usage_type::UsageType;
 use crate::common::bool_str;
 use crate::types::EntityId;
 
@@ -318,7 +319,7 @@ pub fn create_policy(name: &str, opts: ConfigOpts) -> impl Request {
         name: name.into(),
         base_id: None,
         comment: opts.comment,
-        usage_type: Some(ConfigUsageType::Policy),
+        usage_type: Some(ConfigUsageType::from(UsageType::Policy)),
     })
 }
 
@@ -330,7 +331,7 @@ pub fn get_policies(opts: GetScanConfigsOpts) -> impl Request {
         filter_id: opts.filter_id,
         trash: opts.trash,
         details: opts.details,
-        usage_type: Some(ConfigUsageType::Policy),
+        usage_type: Some(ConfigUsageType::from(UsageType::Policy)),
         ..Default::default()
     })
 }
@@ -341,7 +342,7 @@ pub fn get_policy(policy_id: &EntityId, opts: GetPolicyOpts) -> impl Request {
     get_config(
         policy_id,
         GetConfigOpts {
-            usage_type: Some(ConfigUsageType::Policy),
+            usage_type: Some(ConfigUsageType::from(UsageType::Policy)),
             tasks: opts.audits,
             ..Default::default()
         },
@@ -355,7 +356,7 @@ pub fn modify_policy(config_id: &EntityId, opts: ConfigOpts) -> impl Request {
         config_id,
         ModifyConfigOpts {
             comment: opts.comment,
-            usage_type: Some(ConfigUsageType::Policy),
+            usage_type: Some(ConfigUsageType::from(UsageType::Policy)),
             ..Default::default()
         },
     )

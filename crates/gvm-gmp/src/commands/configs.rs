@@ -5,6 +5,7 @@
 
 use gvm_protocol::{Request, XmlCommand};
 
+use crate::commands::usage_type::UsageType;
 use crate::common::{add_filter_attrs, add_text_element, set_optional_bool_attr};
 use crate::types::EntityId;
 
@@ -13,6 +14,8 @@ use crate::types::EntityId;
 pub enum ConfigUsageType {
     /// Standard scan configs.
     Scan,
+    /// Audit configs.
+    Audit,
     /// Policy configs.
     Policy,
     /// Forward-compatible custom usage type.
@@ -30,9 +33,20 @@ impl ConfigUsageType {
     #[must_use]
     pub fn as_gmp_str(&self) -> &str {
         match self {
-            Self::Scan => "scan",
-            Self::Policy => "policy",
+            Self::Scan => UsageType::Scan.as_gmp_str(),
+            Self::Audit => UsageType::Audit.as_gmp_str(),
+            Self::Policy => UsageType::Policy.as_gmp_str(),
             Self::Custom(value) => value.as_str(),
+        }
+    }
+}
+
+impl From<UsageType> for ConfigUsageType {
+    fn from(value: UsageType) -> Self {
+        match value {
+            UsageType::Scan => Self::Scan,
+            UsageType::Audit => Self::Audit,
+            UsageType::Policy => Self::Policy,
         }
     }
 }
@@ -227,8 +241,13 @@ mod tests {
     #[test]
     fn config_usage_type_maps_to_wire_values() {
         assert_eq!(ConfigUsageType::Scan.as_gmp_str(), "scan");
+        assert_eq!(ConfigUsageType::Audit.as_gmp_str(), "audit");
         assert_eq!(ConfigUsageType::Policy.as_gmp_str(), "policy");
-        assert_eq!(ConfigUsageType::custom("audit").as_gmp_str(), "audit");
+        assert_eq!(ConfigUsageType::custom("custom").as_gmp_str(), "custom");
+        assert_eq!(
+            ConfigUsageType::from(UsageType::Audit).as_gmp_str(),
+            "audit"
+        );
     }
 
     #[test]
