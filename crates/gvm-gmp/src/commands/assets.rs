@@ -102,8 +102,8 @@ pub fn get_assets(opts: GetAssetsOpts) -> impl Request {
     if let Some(asset_type) = opts.asset_type.as_ref() {
         cmd.set_attribute("asset_type", asset_type.as_gmp_str());
     }
-    if let Some(asset_type) = opts.type_.as_ref() {
-        cmd.set_attribute("type", asset_type.as_gmp_str());
+    if let Some(type_) = opts.type_.as_ref() {
+        cmd.set_attribute("type", type_.as_gmp_str());
     }
     add_filter_attrs(
         &mut cmd,

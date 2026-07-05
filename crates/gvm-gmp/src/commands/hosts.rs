@@ -38,8 +38,8 @@ pub struct GetHostsOpts {
 pub fn create_host(opts: HostOpts) -> impl Request {
     create_asset(CreateAssetOpts {
         asset_type: AssetType::Host,
-        comment: normalize_optional_text(opts.comment),
-        value: normalize_optional_text(opts.value),
+        comment: opts.comment,
+        value: opts.value,
     })
 }
 
@@ -75,8 +75,8 @@ pub fn modify_host(host_id: &EntityId, opts: HostOpts) -> impl Request {
     modify_asset(
         host_id,
         ModifyAssetOpts {
-            comment: normalize_optional_text(opts.comment),
-            value: normalize_optional_text(opts.value),
+            comment: opts.comment,
+            value: opts.value,
         },
     )
 }
@@ -90,10 +90,6 @@ pub fn delete_host(host_id: &EntityId, ultimate: bool) -> impl Request {
             ultimate: Some(ultimate),
         },
     )
-}
-
-fn normalize_optional_text(value: Option<String>) -> Option<String> {
-    value.filter(|value| !value.is_empty())
 }
 
 #[cfg(test)]
