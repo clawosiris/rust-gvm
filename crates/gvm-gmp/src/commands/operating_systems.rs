@@ -5,7 +5,9 @@
 
 use gvm_protocol::{Request, XmlCommand};
 
-use crate::common::{add_filter_attrs, set_optional_bool_attr};
+use crate::commands::assets::{
+    delete_asset, get_assets, AssetType, DeleteAssetOpts, GetAssetsOpts,
+};
 use crate::types::EntityId;
 
 /// Options for `get_operating_systems` requests.
@@ -22,24 +24,24 @@ pub struct GetOperatingSystemsOpts {
 /// Build a `get_operating_systems` request.
 #[must_use]
 pub fn get_operating_systems(opts: GetOperatingSystemsOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("get_assets").attribute("type", "os");
-    add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
-    );
-    set_optional_bool_attr(&mut cmd, "details", opts.details);
-    cmd
+    get_assets(GetAssetsOpts {
+        type_: Some(AssetType::OperatingSystem),
+        filter_string: opts.filter_string,
+        filter_id: opts.filter_id,
+        details: opts.details,
+        ..Default::default()
+    })
 }
 
 /// Build a `get_operating_system` request.
 #[must_use]
 pub fn get_operating_system(operating_system_id: &EntityId, details: Option<bool>) -> impl Request {
-    let mut cmd = XmlCommand::new("get_assets")
-        .attribute("asset_id", operating_system_id.as_str())
-        .attribute("type", "os");
-    set_optional_bool_attr(&mut cmd, "details", details);
-    cmd
+    get_assets(GetAssetsOpts {
+        asset_id: Some(operating_system_id.clone()),
+        type_: Some(AssetType::OperatingSystem),
+        details,
+        ..Default::default()
+    })
 }
 
 /// Build a `modify_operating_system` request.
@@ -57,7 +59,7 @@ pub fn modify_operating_system(
 /// Build a `delete_operating_system` request.
 #[must_use]
 pub fn delete_operating_system(operating_system_id: &EntityId) -> impl Request {
-    XmlCommand::new("delete_asset").attribute("asset_id", operating_system_id.as_str())
+    delete_asset(operating_system_id, DeleteAssetOpts::default())
 }
 
 #[cfg(test)]

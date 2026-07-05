@@ -3,9 +3,12 @@
 
 //! Host command builders.
 
-use gvm_protocol::{Request, XmlCommand};
+use gvm_protocol::Request;
 
-use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
+use crate::commands::assets::{
+    create_asset, delete_asset, get_assets, modify_asset, AssetType, CreateAssetOpts,
+    DeleteAssetOpts, GetAssetsOpts, ModifyAssetOpts,
+};
 use crate::types::EntityId;
 
 /// Optional fields for host create and modify requests.
@@ -33,57 +36,60 @@ pub struct GetHostsOpts {
 /// Build a `create_host` request.
 #[must_use]
 pub fn create_host(opts: HostOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("create_asset");
-    cmd.add_element_with_text("asset_type", "host");
-    add_host_body(&mut cmd, &opts);
-    cmd
+    create_asset(CreateAssetOpts {
+        asset_type: AssetType::Host,
+        comment: opts.comment,
+        value: opts.value,
+    })
 }
 
 /// Build a `get_hosts` request.
 #[must_use]
 pub fn get_hosts(opts: GetHostsOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("get_assets")
-        .attribute("asset_type", "host")
-        .attribute("type", "host");
-    add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
-    );
-    set_optional_bool_attr(&mut cmd, "trash", opts.trash);
-    set_optional_bool_attr(&mut cmd, "details", opts.details);
-    cmd
+    get_assets(GetAssetsOpts {
+        asset_type: Some(AssetType::Host),
+        type_: Some(AssetType::Host),
+        filter_string: opts.filter_string,
+        filter_id: opts.filter_id,
+        trash: opts.trash,
+        details: opts.details,
+        ..Default::default()
+    })
 }
 
 /// Build a `get_host` request.
 #[must_use]
 pub fn get_host(host_id: &EntityId) -> impl Request {
-    XmlCommand::new("get_assets")
-        .attribute("asset_id", host_id.as_str())
-        .attribute("asset_type", "host")
-        .attribute("type", "host")
-        .attribute("details", "1")
+    get_assets(GetAssetsOpts {
+        asset_id: Some(host_id.clone()),
+        asset_type: Some(AssetType::Host),
+        type_: Some(AssetType::Host),
+        details: Some(true),
+        ..Default::default()
+    })
 }
 
 /// Build a `modify_host` request.
 #[must_use]
 pub fn modify_host(host_id: &EntityId, opts: HostOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("modify_asset").attribute("asset_id", host_id.as_str());
-    add_host_body(&mut cmd, &opts);
-    cmd
+    modify_asset(
+        host_id,
+        ModifyAssetOpts {
+            comment: opts.comment,
+            value: opts.value,
+        },
+    )
 }
 
 /// Build a `delete_host` request.
 #[must_use]
 pub fn delete_host(host_id: &EntityId, ultimate: bool) -> impl Request {
-    XmlCommand::new("delete_asset")
-        .attribute("asset_id", host_id.as_str())
-        .attribute("ultimate", bool_str(ultimate))
-}
-
-fn add_host_body(cmd: &mut XmlCommand, opts: &HostOpts) {
-    add_text_element(cmd, "comment", opts.comment.as_deref());
-    add_text_element(cmd, "value", opts.value.as_deref());
+    delete_asset(
+        host_id,
+        DeleteAssetOpts {
+            ultimate: Some(ultimate),
+        },
+    )
 }
 
 #[cfg(test)]
