@@ -8,6 +8,7 @@ use std::fmt::Write;
 use uuid::Uuid;
 
 use crate::util::xml_escape_attr;
+use crate::version::GmpVersion;
 
 const LARGE_REPORT_FORMAT_ID: Uuid = Uuid::from_u128(0xc402cc3e_b531_11e1_9163_406186ea4fc5);
 /// Well-known report-format UUID that returns a binary export payload in the mock server.
@@ -21,6 +22,211 @@ const SEVERITIES: [&str; 7] = ["2.1", "4.3", "5.0", "6.5", "7.5", "8.1", "9.8"];
 const DESCRIPTION_SENTENCE: &str =
     "Synthetic result payload generated for large-response integration testing. ";
 const REPORT_EXPORT_BINARY_BODY: &str = "SGVsbG8gUERG";
+
+/// Declared support level for a command recognized by the mock server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandSupport {
+    /// Command has meaningful stateful behavior, either custom or generic CRUD.
+    Stateful,
+    /// Command returns deterministic built-in fixture-style data.
+    Fixture,
+    /// Command intentionally returns the generic echo success response.
+    EchoOnly,
+}
+
+/// Explicit command coverage metadata for commands recognized by the mock server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CommandCoverage {
+    /// GMP command name.
+    pub name: &'static str,
+    /// Mock support level.
+    pub support: CommandSupport,
+    /// Minimum GMP version that exposes the command, if version-gated.
+    pub min_version: Option<GmpVersion>,
+}
+
+impl CommandCoverage {
+    const fn new(
+        name: &'static str,
+        support: CommandSupport,
+        min_version: Option<GmpVersion>,
+    ) -> Self {
+        Self {
+            name,
+            support,
+            min_version,
+        }
+    }
+}
+
+const fn stateful(name: &'static str) -> CommandCoverage {
+    CommandCoverage::new(name, CommandSupport::Stateful, None)
+}
+
+const fn fixture(name: &'static str) -> CommandCoverage {
+    CommandCoverage::new(name, CommandSupport::Fixture, None)
+}
+
+const fn echo_only(name: &'static str) -> CommandCoverage {
+    CommandCoverage::new(name, CommandSupport::EchoOnly, None)
+}
+
+const fn stateful_since(name: &'static str, version: GmpVersion) -> CommandCoverage {
+    CommandCoverage::new(name, CommandSupport::Stateful, Some(version))
+}
+
+const fn fixture_since(name: &'static str, version: GmpVersion) -> CommandCoverage {
+    CommandCoverage::new(name, CommandSupport::Fixture, Some(version))
+}
+
+/// Explicit support metadata for the mock server command surface.
+pub static COMMAND_COVERAGE: &[CommandCoverage] = &[
+    stateful("authenticate"),
+    stateful_since("create_agent_group", GmpVersion::V22_8),
+    stateful("create_alert"),
+    stateful("create_asset"),
+    stateful("create_config"),
+    stateful("create_credential"),
+    stateful("create_filter"),
+    stateful("create_group"),
+    stateful("create_note"),
+    stateful_since("create_oci_image_target", GmpVersion::V22_8),
+    stateful("create_override"),
+    stateful("create_permission"),
+    stateful("create_port_list"),
+    stateful("create_port_range"),
+    stateful("create_report"),
+    stateful_since("create_report_config", GmpVersion::V22_6),
+    stateful("create_report_format"),
+    stateful("create_role"),
+    stateful("create_scanner"),
+    stateful("create_schedule"),
+    stateful("create_tag"),
+    stateful("create_target"),
+    stateful("create_task"),
+    stateful("create_ticket"),
+    stateful("create_tls_certificate"),
+    stateful("create_user"),
+    stateful_since("create_web_application_target", GmpVersion::V22_8),
+    stateful_since("delete_agent_group", GmpVersion::V22_8),
+    stateful("delete_alert"),
+    stateful("delete_asset"),
+    stateful("delete_config"),
+    stateful("delete_credential"),
+    stateful("delete_filter"),
+    stateful("delete_group"),
+    stateful("delete_note"),
+    stateful_since("delete_oci_image_target", GmpVersion::V22_8),
+    stateful("delete_override"),
+    stateful("delete_permission"),
+    stateful("delete_port_list"),
+    stateful("delete_port_range"),
+    stateful("delete_report"),
+    stateful_since("delete_report_config", GmpVersion::V22_6),
+    stateful("delete_report_format"),
+    stateful("delete_role"),
+    stateful("delete_scanner"),
+    stateful("delete_schedule"),
+    stateful("delete_tag"),
+    stateful("delete_target"),
+    stateful("delete_task"),
+    stateful("delete_ticket"),
+    stateful("delete_tls_certificate"),
+    stateful("delete_user"),
+    stateful_since("delete_web_application_target", GmpVersion::V22_8),
+    echo_only("describe_auth"),
+    stateful("empty_trashcan"),
+    stateful_since("get_agent_groups", GmpVersion::V22_8),
+    fixture("get_aggregates"),
+    stateful("get_alerts"),
+    stateful("get_assets"),
+    stateful("get_configs"),
+    fixture_since("get_credential_stores", GmpVersion::V22_8),
+    stateful("get_credentials"),
+    stateful_since("get_features", GmpVersion::V22_6),
+    fixture("get_feeds"),
+    stateful("get_filters"),
+    stateful("get_groups"),
+    fixture("get_info"),
+    stateful_since("get_integration_configs", GmpVersion::V22_8),
+    stateful("get_license"),
+    stateful("get_notes"),
+    stateful("get_nvt_families"),
+    stateful("get_nvts"),
+    stateful_since("get_oci_image_targets", GmpVersion::V22_8),
+    stateful("get_overrides"),
+    stateful("get_permissions"),
+    stateful("get_port_lists"),
+    stateful("get_preferences"),
+    stateful_since("get_report_applications", GmpVersion::V22_8),
+    stateful_since("get_report_closed_cves", GmpVersion::V22_8),
+    stateful_since("get_report_configs", GmpVersion::V22_6),
+    stateful_since("get_report_cves", GmpVersion::V22_8),
+    stateful_since("get_report_errors", GmpVersion::V22_8),
+    stateful("get_report_formats"),
+    stateful_since("get_report_hosts", GmpVersion::V22_8),
+    stateful_since("get_report_operating_systems", GmpVersion::V22_8),
+    stateful_since("get_report_ports", GmpVersion::V22_8),
+    stateful_since("get_report_tls_certificates", GmpVersion::V22_8),
+    stateful_since("get_report_vulns", GmpVersion::V22_8),
+    stateful("get_reports"),
+    stateful("get_resource_names"),
+    stateful("get_results"),
+    stateful("get_roles"),
+    stateful("get_scanners"),
+    stateful("get_schedules"),
+    stateful("get_settings"),
+    fixture("get_system_reports"),
+    stateful("get_tags"),
+    stateful("get_targets"),
+    stateful("get_tasks"),
+    stateful("get_tickets"),
+    fixture_since("get_timezones", GmpVersion::V22_8),
+    stateful("get_tls_certificates"),
+    stateful("get_users"),
+    stateful("get_version"),
+    fixture("get_vulns"),
+    stateful_since("get_web_application_targets", GmpVersion::V22_8),
+    fixture("help"),
+    stateful_since("modify_agent_group", GmpVersion::V22_8),
+    stateful("modify_alert"),
+    stateful("modify_asset"),
+    stateful("modify_auth"),
+    stateful("modify_config"),
+    stateful("modify_credential"),
+    stateful("modify_filter"),
+    stateful("modify_group"),
+    stateful_since("modify_integration_config", GmpVersion::V22_8),
+    stateful("modify_license"),
+    stateful("modify_note"),
+    stateful_since("modify_oci_image_target", GmpVersion::V22_8),
+    stateful("modify_override"),
+    stateful("modify_permission"),
+    stateful("modify_port_list"),
+    stateful_since("modify_report_config", GmpVersion::V22_6),
+    stateful("modify_report_format"),
+    stateful("modify_role"),
+    stateful("modify_scanner"),
+    stateful("modify_schedule"),
+    stateful("modify_setting"),
+    stateful("modify_tag"),
+    stateful("modify_target"),
+    stateful("modify_task"),
+    stateful("modify_ticket"),
+    stateful("modify_tls_certificate"),
+    stateful("modify_user"),
+    stateful_since("modify_web_application_target", GmpVersion::V22_8),
+    echo_only("move_task"),
+    stateful("restore"),
+    stateful("resume_task"),
+    echo_only("run_wizard"),
+    stateful("start_task"),
+    stateful("stop_task"),
+    echo_only("sync_config"),
+    echo_only("test_alert"),
+    echo_only("verify_report_format"),
+    echo_only("verify_scanner"),
+];
 
 /// Configuration for synthetic large report generation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,6 +298,7 @@ pub static KNOWN_COMMANDS: &[&str] = &[
     "delete_target",
     "delete_task",
     "delete_ticket",
+    "delete_tls_certificate",
     "delete_user",
     "delete_web_application_target",
     "describe_auth",
@@ -101,12 +308,14 @@ pub static KNOWN_COMMANDS: &[&str] = &[
     "get_alerts",
     "get_assets",
     "get_configs",
+    "get_credential_stores",
     "get_credentials",
     "get_features",
     "get_feeds",
     "get_filters",
     "get_groups",
     "get_info",
+    "get_integration_configs",
     "get_license",
     "get_notes",
     "get_nvt_families",
@@ -116,8 +325,17 @@ pub static KNOWN_COMMANDS: &[&str] = &[
     "get_permissions",
     "get_port_lists",
     "get_preferences",
+    "get_report_applications",
+    "get_report_closed_cves",
     "get_report_configs",
+    "get_report_cves",
+    "get_report_errors",
     "get_report_formats",
+    "get_report_hosts",
+    "get_report_operating_systems",
+    "get_report_ports",
+    "get_report_tls_certificates",
+    "get_report_vulns",
     "get_reports",
     "get_resource_names",
     "get_results",
@@ -130,6 +348,7 @@ pub static KNOWN_COMMANDS: &[&str] = &[
     "get_targets",
     "get_tasks",
     "get_tickets",
+    "get_timezones",
     "get_tls_certificates",
     "get_users",
     "get_version",
@@ -144,6 +363,7 @@ pub static KNOWN_COMMANDS: &[&str] = &[
     "modify_credential",
     "modify_filter",
     "modify_group",
+    "modify_integration_config",
     "modify_license",
     "modify_note",
     "modify_oci_image_target",
