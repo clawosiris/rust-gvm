@@ -73,6 +73,13 @@ fn test_generic_configs_get_xml() {
         )),
         "<get_configs config_id=\"c1\" details=\"1\" tasks=\"1\" usage_type=\"policy\"/>"
     );
+    assert_eq!(
+        xml(get_configs(GetConfigsOpts {
+            usage_type: Some(ConfigUsageType::custom("")),
+            ..Default::default()
+        })),
+        "<get_configs/>"
+    );
 }
 
 #[test]

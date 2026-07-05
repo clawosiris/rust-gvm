@@ -164,9 +164,7 @@ pub fn get_configs(opts: GetConfigsOpts) -> impl Request {
     set_optional_bool_attr(&mut cmd, "families", opts.families);
     set_optional_bool_attr(&mut cmd, "preferences", opts.preferences);
     set_optional_bool_attr(&mut cmd, "tasks", opts.tasks);
-    if let Some(usage_type) = opts.usage_type.as_ref() {
-        cmd.set_attribute("usage_type", usage_type.as_gmp_str());
-    }
+    set_usage_type_attr(&mut cmd, opts.usage_type.as_ref());
     cmd
 }
 
@@ -205,6 +203,15 @@ pub fn delete_config(config_id: &EntityId, opts: DeleteConfigOpts) -> impl Reque
 fn add_usage_type_element(cmd: &mut XmlCommand, usage_type: Option<&ConfigUsageType>) {
     if let Some(usage_type) = usage_type {
         add_text_element(cmd, "usage_type", Some(usage_type.as_gmp_str()));
+    }
+}
+
+fn set_usage_type_attr(cmd: &mut XmlCommand, usage_type: Option<&ConfigUsageType>) {
+    if let Some(value) = usage_type
+        .map(ConfigUsageType::as_gmp_str)
+        .filter(|value| !value.is_empty())
+    {
+        cmd.set_attribute("usage_type", value);
     }
 }
 
@@ -272,6 +279,13 @@ mod tests {
                 },
             )),
             "<get_configs config_id=\"c1\" details=\"1\" tasks=\"1\" usage_type=\"policy\"/>"
+        );
+        assert_eq!(
+            xml(get_configs(GetConfigsOpts {
+                usage_type: Some(ConfigUsageType::custom("")),
+                ..Default::default()
+            })),
+            "<get_configs/>"
         );
     }
 
