@@ -9,6 +9,8 @@ pub mod agent_groups;
 pub mod aggregates;
 /// Alert command builders.
 pub mod alerts;
+/// Generic asset command builders.
+pub mod assets;
 /// Authentication command builders.
 pub mod authentication;
 /// Credential command builders.
