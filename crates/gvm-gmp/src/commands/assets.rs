@@ -5,7 +5,7 @@
 
 use gvm_protocol::{Request, XmlCommand};
 
-use crate::common::{add_filter_attrs, bool_str, set_optional_bool_attr};
+use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
 use crate::types::EntityId;
 
 /// Typed GMP asset type values.
@@ -134,12 +134,8 @@ pub fn delete_asset(asset_id: &EntityId, opts: DeleteAssetOpts) -> impl Request 
 }
 
 fn add_asset_body(cmd: &mut XmlCommand, comment: &Option<String>, value: &Option<String>) {
-    if let Some(comment) = comment {
-        cmd.add_element_with_text("comment", comment);
-    }
-    if let Some(value) = value {
-        cmd.add_element_with_text("value", value);
-    }
+    add_text_element(cmd, "comment", comment.as_deref());
+    add_text_element(cmd, "value", value.as_deref());
 }
 
 #[cfg(test)]
@@ -171,6 +167,18 @@ mod tests {
     }
 
     #[test]
+    fn create_asset_skips_empty_optional_text() {
+        assert_eq!(
+            xml(create_asset(CreateAssetOpts {
+                asset_type: AssetType::Host,
+                comment: Some(String::new()),
+                value: Some(String::new()),
+            })),
+            "<create_asset><asset_type>host</asset_type></create_asset>"
+        );
+    }
+
+    #[test]
     fn get_assets_builds_xml() {
         assert_eq!(
             xml(get_assets(GetAssetsOpts {
@@ -197,6 +205,16 @@ mod tests {
                 },
             )),
             "<modify_asset asset_id=\"a1\"><comment>updated</comment><value>v</value></modify_asset>"
+        );
+        assert_eq!(
+            xml(modify_asset(
+                &id("a1"),
+                ModifyAssetOpts {
+                    comment: Some(String::new()),
+                    value: Some(String::new()),
+                },
+            )),
+            "<modify_asset asset_id=\"a1\"/>"
         );
         assert_eq!(
             xml(delete_asset(
