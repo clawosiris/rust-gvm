@@ -124,9 +124,9 @@ impl Default for GetConfigOpts {
 /// Options for `modify_config` requests.
 #[derive(Debug, Clone, Default)]
 pub struct ModifyConfigOpts {
-    /// Optional config name.
+    /// Optional config name. `Some("")` emits an empty element to clear it.
     pub name: Option<String>,
-    /// Optional comment text included in the request.
+    /// Optional comment text included in the request. `Some("")` emits an empty element to clear it.
     pub comment: Option<String>,
     /// Optional config usage type.
     pub usage_type: Option<ConfigUsageType>,
@@ -200,8 +200,8 @@ pub fn get_config(config_id: &EntityId, opts: GetConfigOpts) -> impl Request {
 #[must_use]
 pub fn modify_config(config_id: &EntityId, opts: ModifyConfigOpts) -> impl Request {
     let mut cmd = XmlCommand::new("modify_config").attribute("config_id", config_id.as_str());
-    add_text_element(&mut cmd, "name", opts.name.as_deref());
-    add_text_element(&mut cmd, "comment", opts.comment.as_deref());
+    add_modify_text_element(&mut cmd, "name", opts.name.as_deref());
+    add_modify_text_element(&mut cmd, "comment", opts.comment.as_deref());
     add_usage_type_element(&mut cmd, opts.usage_type.as_ref());
     cmd
 }
@@ -217,6 +217,12 @@ pub fn delete_config(config_id: &EntityId, opts: DeleteConfigOpts) -> impl Reque
 fn add_usage_type_element(cmd: &mut XmlCommand, usage_type: Option<&ConfigUsageType>) {
     if let Some(usage_type) = usage_type {
         add_text_element(cmd, "usage_type", Some(usage_type.as_gmp_str()));
+    }
+}
+
+fn add_modify_text_element(cmd: &mut XmlCommand, name: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        cmd.add_element_with_text(name, value);
     }
 }
 
@@ -320,6 +326,17 @@ mod tests {
                 },
             )),
             "<modify_config config_id=\"c1\"><name>renamed</name><comment>updated</comment><usage_type>policy</usage_type></modify_config>"
+        );
+        assert_eq!(
+            xml(modify_config(
+                &id("c1"),
+                ModifyConfigOpts {
+                    name: Some(String::new()),
+                    comment: Some(String::new()),
+                    ..Default::default()
+                },
+            )),
+            "<modify_config config_id=\"c1\"><name></name><comment></comment></modify_config>"
         );
         assert_eq!(
             xml(delete_config(

@@ -147,7 +147,7 @@ pub fn modify_scan_config(config_id: &EntityId, opts: ConfigOpts) -> impl Reques
     modify_config(
         config_id,
         ModifyConfigOpts {
-            comment: opts.comment,
+            comment: normalize_optional_text(opts.comment),
             usage_type: opts.usage_type.map(ConfigUsageType::custom),
             ..Default::default()
         },
@@ -355,11 +355,15 @@ pub fn modify_policy(config_id: &EntityId, opts: ConfigOpts) -> impl Request {
     modify_config(
         config_id,
         ModifyConfigOpts {
-            comment: opts.comment,
+            comment: normalize_optional_text(opts.comment),
             usage_type: Some(ConfigUsageType::from(UsageType::Policy)),
             ..Default::default()
         },
     )
+}
+
+fn normalize_optional_text(value: Option<String>) -> Option<String> {
+    value.filter(|value| !value.is_empty())
 }
 
 /// Build a `modify_config` request that sets a policy NVT preference.

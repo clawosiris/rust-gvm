@@ -102,6 +102,17 @@ fn test_generic_configs_modify_delete_xml() {
         "<modify_config config_id=\"c1\"><name>renamed</name><comment>updated</comment><usage_type>policy</usage_type></modify_config>"
     );
     assert_eq!(
+        xml(modify_config(
+            &id("c1"),
+            ModifyConfigOpts {
+                name: Some(String::new()),
+                comment: Some(String::new()),
+                ..Default::default()
+            },
+        )),
+        "<modify_config config_id=\"c1\"><name></name><comment></comment></modify_config>"
+    );
+    assert_eq!(
         xml(delete_config(
             &id("c1"),
             DeleteConfigOpts {
@@ -166,6 +177,16 @@ fn test_scan_configs_wrappers_match_generic_xml() {
                 ..Default::default()
             },
         ))
+    );
+    assert_eq!(
+        xml(modify_scan_config(
+            &id("c1"),
+            ConfigOpts {
+                comment: Some(String::new()),
+                ..Default::default()
+            },
+        )),
+        "<modify_config config_id=\"c1\"/>"
     );
     assert_eq!(
         xml(delete_scan_config(&id("c1"), true)),
@@ -233,6 +254,16 @@ fn test_policies_wrappers_match_generic_xml() {
                 ..Default::default()
             },
         ))
+    );
+    assert_eq!(
+        xml(modify_policy(
+            &id("p1"),
+            ConfigOpts {
+                comment: Some(String::new()),
+                ..Default::default()
+            },
+        )),
+        "<modify_config config_id=\"p1\"><usage_type>policy</usage_type></modify_config>"
     );
     assert_eq!(
         xml(delete_policy(&id("p1"))),
