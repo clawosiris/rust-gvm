@@ -2,7 +2,7 @@ name: Security
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main, devel]
     paths-ignore:
       - 'journal/**'
       - 'docs/**'
@@ -13,7 +13,7 @@ on:
   pull_request:
     # Keep the workflow running for docs-only PRs so branch protection always
     # receives the required `Security` status check.
-    branches: [main]
+    branches: [main, devel]
   schedule:
     # Run weekly on Monday at 06:00 UTC
     - cron: "0 6 * * 1"

@@ -11,14 +11,9 @@ on:
       - 'LICENSE'
       - '.github/ISSUE_TEMPLATE/**'
   pull_request:
-    branches: [main]
-    paths-ignore:
-      - 'journal/**'
-      - 'docs/**'
-      - 'spec/**'
-      - '*.md'
-      - 'LICENSE'
-      - '.github/ISSUE_TEMPLATE/**'
+    # Keep the workflow running for docs-only PRs so branch protection can
+    # require the aggregate `CI` status check without waiting forever.
+    branches: [main, devel]
 
 env:
   CARGO_TERM_COLOR: always
@@ -158,6 +153,43 @@ jobs:
           toolchain: "1.85.0"
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - run: cargo check --workspace --all-features
+
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    needs:
+      - fmt
+      - clippy
+      - test
+      - test-features
+      - doc
+      - deny
+      - coverage
+      - integration
+      - msrv
+    steps:
+      - name: Require all CI jobs to pass
+        env:
+          FMT_RESULT: ${{ needs.fmt.result }}
+          CLIPPY_RESULT: ${{ needs.clippy.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          TEST_FEATURES_RESULT: ${{ needs.test-features.result }}
+          DOC_RESULT: ${{ needs.doc.result }}
+          DENY_RESULT: ${{ needs.deny.result }}
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
+          INTEGRATION_RESULT: ${{ needs.integration.result }}
+          MSRV_RESULT: ${{ needs.msrv.result }}
+        run: |
+          test "$FMT_RESULT" = success
+          test "$CLIPPY_RESULT" = success
+          test "$TEST_RESULT" = success
+          test "$TEST_FEATURES_RESULT" = success
+          test "$DOC_RESULT" = success
+          test "$DENY_RESULT" = success
+          test "$COVERAGE_RESULT" = success
+          test "$INTEGRATION_RESULT" = success
+          test "$MSRV_RESULT" = success
 
   trigger-e2e:
     name: Trigger E2E Tests
