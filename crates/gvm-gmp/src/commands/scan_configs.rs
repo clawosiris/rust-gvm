@@ -6,8 +6,12 @@
 use base64::Engine as _;
 use gvm_protocol::{xml_command::XmlElement, Request, XmlCommand};
 
-use crate::commands::usage_type::UsageType;
-use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
+use crate::commands::configs::{
+    clone_config, create_config, delete_config, get_config, get_configs, modify_config,
+    CloneConfigOpts, ConfigUsageType, CreateConfigOpts, DeleteConfigOpts, GetConfigOpts,
+    GetConfigsOpts, ModifyConfigOpts,
+};
+use crate::common::bool_str;
 use crate::types::EntityId;
 
 /// Optional fields for scan-configuration create and modify requests.
@@ -62,7 +66,7 @@ pub struct GetPolicyOpts {
 /// Build a clone request for an existing scan config.
 #[must_use]
 pub fn clone_scan_config(config_id: &EntityId) -> impl Request {
-    XmlCommand::new("create_config").child_with_text("copy", config_id.as_str())
+    clone_config(config_id, CloneConfigOpts::default())
 }
 
 /// Build a `create_scan_config` request.
@@ -72,56 +76,30 @@ pub fn create_scan_config(
     base_id: Option<&EntityId>,
     opts: ConfigOpts,
 ) -> impl Request {
-    create_config_with_usage(name, base_id, opts, None)
-}
-
-fn create_config_with_usage(
-    name: &str,
-    base_id: Option<&EntityId>,
-    opts: ConfigOpts,
-    usage_type: Option<UsageType>,
-) -> XmlCommand {
-    let mut cmd = XmlCommand::new("create_config");
-    cmd.add_element_with_text("name", name);
-    if let Some(base_id) = base_id {
-        cmd.add_element("copy").set_text(base_id.as_str());
-    }
-    add_text_element(&mut cmd, "comment", opts.comment.as_deref());
-    if let Some(usage_type) = usage_type {
-        cmd.add_element_with_text("usage_type", usage_type.as_gmp_str());
-    } else {
-        add_text_element(&mut cmd, "usage_type", opts.usage_type.as_deref());
-    }
-    cmd
+    create_config(CreateConfigOpts {
+        name: name.into(),
+        base_id: base_id.cloned(),
+        comment: opts.comment,
+        usage_type: opts.usage_type.map(ConfigUsageType::custom),
+    })
 }
 
 /// Build a `get_scan_configs` request.
 #[must_use]
 pub fn get_scan_configs(opts: GetScanConfigsOpts) -> impl Request {
-    get_configs_with_usage(opts, None)
-}
-
-fn get_configs_with_usage(opts: GetScanConfigsOpts, usage_type: Option<UsageType>) -> XmlCommand {
-    let mut cmd = XmlCommand::new("get_configs");
-    add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
-    );
-    set_optional_bool_attr(&mut cmd, "trash", opts.trash);
-    set_optional_bool_attr(&mut cmd, "details", opts.details);
-    if let Some(usage_type) = usage_type {
-        cmd.set_attribute("usage_type", usage_type.as_gmp_str());
-    }
-    cmd
+    get_configs(GetConfigsOpts {
+        filter_string: opts.filter_string,
+        filter_id: opts.filter_id,
+        trash: opts.trash,
+        details: opts.details,
+        ..Default::default()
+    })
 }
 
 /// Build a `get_scan_config` request.
 #[must_use]
 pub fn get_scan_config(config_id: &EntityId) -> impl Request {
-    XmlCommand::new("get_configs")
-        .attribute("config_id", config_id.as_str())
-        .attribute("details", "1")
+    get_config(config_id, GetConfigOpts::default())
 }
 
 /// Build a `get_preferences` request for scan-config preferences.
@@ -165,7 +143,14 @@ fn get_preferences_with(
 /// Build a `modify_scan_config` request.
 #[must_use]
 pub fn modify_scan_config(config_id: &EntityId, opts: ConfigOpts) -> impl Request {
-    modify_config_with_usage(config_id, opts, None)
+    modify_config(
+        config_id,
+        ModifyConfigOpts {
+            comment: opts.comment,
+            usage_type: opts.usage_type.map(ConfigUsageType::custom),
+            ..Default::default()
+        },
+    )
 }
 
 /// Build a `modify_config` request that sets a scan-config NVT preference.
@@ -225,22 +210,6 @@ pub fn modify_scan_config_set_name(config_id: &EntityId, name: &str) -> impl Req
 #[must_use]
 pub fn modify_scan_config_set_comment(config_id: &EntityId, comment: Option<&str>) -> impl Request {
     modify_config_set_comment(config_id, comment)
-}
-
-fn modify_config_with_usage(
-    config_id: &EntityId,
-    opts: ConfigOpts,
-    usage_type: Option<UsageType>,
-) -> XmlCommand {
-    let mut cmd = XmlCommand::new("modify_config").attribute("config_id", config_id.as_str());
-    add_text_element(&mut cmd, "name", Some(""));
-    add_text_element(&mut cmd, "comment", opts.comment.as_deref());
-    if let Some(usage_type) = usage_type {
-        cmd.add_element_with_text("usage_type", usage_type.as_gmp_str());
-    } else {
-        add_text_element(&mut cmd, "usage_type", opts.usage_type.as_deref());
-    }
-    cmd
 }
 
 fn modify_config_set_nvt_preference(
@@ -322,9 +291,12 @@ fn modify_config_set_comment(config_id: &EntityId, comment: Option<&str>) -> Xml
 /// Build a `delete_scan_config` request.
 #[must_use]
 pub fn delete_scan_config(config_id: &EntityId, ultimate: bool) -> impl Request {
-    XmlCommand::new("delete_config")
-        .attribute("config_id", config_id.as_str())
-        .attribute("ultimate", bool_str(ultimate))
+    delete_config(
+        config_id,
+        DeleteConfigOpts {
+            ultimate: Some(ultimate),
+        },
+    )
 }
 
 /// Build a `sync_config` request.
@@ -342,30 +314,51 @@ pub fn clone_policy(config_id: &EntityId) -> impl Request {
 /// Build a `create_config` request for a policy.
 #[must_use]
 pub fn create_policy(name: &str, opts: ConfigOpts) -> impl Request {
-    create_config_with_usage(name, None, opts, Some(UsageType::Policy))
+    create_config(CreateConfigOpts {
+        name: name.into(),
+        base_id: None,
+        comment: opts.comment,
+        usage_type: Some(ConfigUsageType::Policy),
+    })
 }
 
 /// Build a `get_configs` request scoped to policies.
 #[must_use]
 pub fn get_policies(opts: GetScanConfigsOpts) -> impl Request {
-    get_configs_with_usage(opts, Some(UsageType::Policy))
+    get_configs(GetConfigsOpts {
+        filter_string: opts.filter_string,
+        filter_id: opts.filter_id,
+        trash: opts.trash,
+        details: opts.details,
+        usage_type: Some(ConfigUsageType::Policy),
+        ..Default::default()
+    })
 }
 
 /// Build a `get_configs` request for a single policy.
 #[must_use]
 pub fn get_policy(policy_id: &EntityId, opts: GetPolicyOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("get_configs")
-        .attribute("config_id", policy_id.as_str())
-        .attribute("usage_type", UsageType::Policy.as_gmp_str())
-        .attribute("details", "1");
-    set_optional_bool_attr(&mut cmd, "tasks", opts.audits);
-    cmd
+    get_config(
+        policy_id,
+        GetConfigOpts {
+            usage_type: Some(ConfigUsageType::Policy),
+            tasks: opts.audits,
+            ..Default::default()
+        },
+    )
 }
 
 /// Build a `modify_config` request scoped to policies.
 #[must_use]
 pub fn modify_policy(config_id: &EntityId, opts: ConfigOpts) -> impl Request {
-    modify_config_with_usage(config_id, opts, Some(UsageType::Policy))
+    modify_config(
+        config_id,
+        ModifyConfigOpts {
+            comment: opts.comment,
+            usage_type: Some(ConfigUsageType::Policy),
+            ..Default::default()
+        },
+    )
 }
 
 /// Build a `modify_config` request that sets a policy NVT preference.
