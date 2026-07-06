@@ -108,9 +108,21 @@ fn gvm_gmp_emitted_commands_are_known_and_classified() {
 
 #[test]
 fn version_gated_commands_declare_minimum_version() {
+    let versions = [
+        GmpVersion::V22_4,
+        GmpVersion::V22_5,
+        GmpVersion::V22_6,
+        GmpVersion::V22_7,
+        GmpVersion::V22_8,
+    ];
+
     let missing_min_version: Vec<_> = COMMAND_COVERAGE
         .iter()
-        .filter(|entry| !command_available(entry.name, GmpVersion::V22_7))
+        .filter(|entry| {
+            versions
+                .iter()
+                .any(|version| !command_available(entry.name, *version))
+        })
         .filter(|entry| entry.min_version.is_none())
         .map(|entry| entry.name)
         .collect();
@@ -124,11 +136,16 @@ fn version_gated_commands_declare_minimum_version() {
         .filter(|entry| entry.min_version.is_some())
     {
         let min_version = entry.min_version.expect("checked above");
+        let first_available = versions
+            .iter()
+            .copied()
+            .find(|version| command_available(entry.name, *version));
         assert!(
-            command_available(entry.name, min_version),
-            "{} is not available at its declared minimum GMP version {}",
+            first_available == Some(min_version),
+            "{} declares minimum GMP version {}, but first becomes available at {:?}",
             entry.name,
-            min_version
+            min_version,
+            first_available
         );
     }
 }
