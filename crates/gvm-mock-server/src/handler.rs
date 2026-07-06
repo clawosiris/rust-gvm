@@ -202,14 +202,20 @@ impl SessionHandler {
                     .as_bytes()
                     .to_vec()
             }
+            "get_agent_installer_instruction" => render_agent_installer_instruction_response(cmd),
+            "get_agent_support_bundle" => render_agent_support_bundle_response(cmd),
             // Create commands
             name if name.starts_with("create_") => self.handle_create(cmd, raw_xml, store),
             // Get commands
             name if name.starts_with("get_") => self.handle_get(cmd, store),
+            "modify_agent" => handle_agent_set_action(cmd),
+            "modify_agent_control_scan_config" => handle_modify_agent_control_scan_config(cmd),
             "modify_auth" => self.handle_modify_auth(cmd),
+            "modify_credential_store" => handle_modify_credential_store(cmd),
             "modify_license" => self.handle_modify_license(cmd),
             // Modify commands
             name if name.starts_with("modify_") => self.handle_modify(cmd, raw_xml, store),
+            "delete_agent" => handle_agent_set_action(cmd),
             // Delete commands
             name if name.starts_with("delete_") => self.handle_delete(cmd, store),
             // Task actions
@@ -224,6 +230,7 @@ impl SessionHandler {
             "restore" => self.handle_restore(cmd, store),
             // Help
             "help" => render_help_response(cmd.attr("format")),
+            "sync_agents" => b"<sync_agents_response status=\"200\" status_text=\"OK\"/>".to_vec(),
             // Everything else
             _ => echo_response(&cmd.name, self.version.as_str()),
         }
@@ -1009,6 +1016,98 @@ fn render_report_result_xml(result: &Resource) -> String {
 
     xml.push_str("</result>");
     xml
+}
+
+fn render_agent_installer_instruction_response(cmd: &ParsedCommand) -> Vec<u8> {
+    if cmd.attr("scanner_id").is_none() {
+        return error_response(&cmd.name, 400, "Missing required attribute: scanner_id");
+    }
+    let Some(language) = cmd.attr("language") else {
+        return error_response(&cmd.name, 400, "Missing required attribute: language");
+    };
+    if !matches!(language, "en" | "de") {
+        return error_response(&cmd.name, 400, "Unsupported language");
+    }
+    if cmd.attr("origin_url").is_none_or(str::is_empty) {
+        return error_response(&cmd.name, 400, "Missing required attribute: origin_url");
+    }
+
+    format!(
+        "<get_agent_installer_instruction_response status=\"200\" status_text=\"OK\">\
+         <language>{language}</language>\
+         <instruction>Install the mock agent and connect it to the requested manager.</instruction>\
+         </get_agent_installer_instruction_response>"
+    )
+    .into_bytes()
+}
+
+fn render_agent_support_bundle_response(cmd: &ParsedCommand) -> Vec<u8> {
+    if cmd.attr("agent_uuid").is_none() {
+        return error_response(&cmd.name, 400, "Missing required attribute: agent_uuid");
+    }
+    if let Some(days) = cmd.attr("days") {
+        if days.parse::<u32>().is_err() {
+            return error_response(&cmd.name, 400, "Invalid days value");
+        }
+    }
+
+    b"<get_agent_support_bundle_response status=\"200\" status_text=\"OK\">\
+      <file>\
+      <name>mock-agent-support-bundle.tar.gz</name>\
+      <content_type>application/octet-stream</content_type>\
+      <size>11</size>\
+      <content encoding=\"base64\">aGVsbG8tbW9jaw==</content>\
+      </file>\
+      </get_agent_support_bundle_response>"
+        .to_vec()
+}
+
+fn handle_agent_set_action(cmd: &ParsedCommand) -> Vec<u8> {
+    if !has_agent_ids(cmd) {
+        return error_response(&cmd.name, 400, "Missing required element: agents");
+    }
+    format!("<{}_response status=\"200\" status_text=\"OK\"/>", cmd.name).into_bytes()
+}
+
+fn handle_modify_agent_control_scan_config(cmd: &ParsedCommand) -> Vec<u8> {
+    if cmd.attr("agent_control_id").is_none() {
+        return error_response(
+            &cmd.name,
+            400,
+            "Missing required attribute: agent_control_id",
+        );
+    }
+    if !cmd
+        .children
+        .iter()
+        .any(|child| child.name == "config_defaults")
+    {
+        return error_response(&cmd.name, 400, "Missing required element: config_defaults");
+    }
+    format!("<{}_response status=\"200\" status_text=\"OK\"/>", cmd.name).into_bytes()
+}
+
+fn handle_modify_credential_store(cmd: &ParsedCommand) -> Vec<u8> {
+    if cmd.attr("credential_store_id").is_none() {
+        return error_response(
+            &cmd.name,
+            400,
+            "Missing required attribute: credential_store_id",
+        );
+    }
+    format!("<{}_response status=\"200\" status_text=\"OK\"/>", cmd.name).into_bytes()
+}
+
+fn has_agent_ids(cmd: &ParsedCommand) -> bool {
+    cmd.children
+        .iter()
+        .find(|child| child.name == "agents")
+        .is_some_and(|agents| {
+            agents
+                .children
+                .iter()
+                .any(|agent| agent.name == "agent" && agent.attributes.contains_key("id"))
+        })
 }
 
 fn usage_type_matches(resource: &Resource, requested_usage_type: Option<&str>) -> bool {

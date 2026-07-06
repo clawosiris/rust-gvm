@@ -5,6 +5,8 @@
 
 /// Agent group command builders.
 pub mod agent_groups;
+/// Agent command builders.
+pub mod agents;
 /// Aggregate command builders.
 pub mod aggregates;
 /// Alert command builders.

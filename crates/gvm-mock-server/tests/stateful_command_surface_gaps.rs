@@ -11,6 +11,12 @@
     missing_docs
 )]
 
+use gvm_gmp::commands::agents::{
+    delete_agent, get_agent_installer_instruction, get_agent_support_bundle, get_agents,
+    modify_agent, modify_agent_control_scan_config, sync_agents, AgentInstallerLanguage,
+    GetAgentsOpts, ModifyAgentControlScanConfigOpts, ModifyAgentOpts,
+};
+use gvm_gmp::commands::credentials::{modify_credential_store, ModifyCredentialStoreOpts};
 use gvm_gmp::commands::hosts::{create_host, get_host, get_hosts, HostOpts};
 use gvm_gmp::commands::system::{modify_auth, modify_license};
 use gvm_gmp::types::EntityId;
@@ -33,9 +39,13 @@ async fn send_request(stream: &mut UnixStream, request: impl Request) -> Respons
 }
 
 async fn stateful_server() -> Option<MockGmpServer> {
+    stateful_server_with_version(GmpVersion::V22_6).await
+}
+
+async fn stateful_server_with_version(version: GmpVersion) -> Option<MockGmpServer> {
     match MockGmpServer::builder()
         .mode(ServerMode::Stateful)
-        .version(GmpVersion::V22_6)
+        .version(version)
         .credentials("admin", "admin")
         .unix_socket_auto()
         .build()
@@ -63,6 +73,128 @@ async fn auth_admin(stream: &mut UnixStream) {
 
 fn extract_id(resp: &Response) -> String {
     resp.id().expect("response should contain id")
+}
+
+fn id(value: &str) -> EntityId {
+    EntityId::new(value).expect("valid id")
+}
+
+#[tokio::test]
+async fn stateful_agent_commands_use_gvmd_builder_shapes() {
+    let Some(server) = stateful_server_with_version(GmpVersion::V22_8).await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let agents = send_request(
+        &mut stream,
+        get_agents(GetAgentsOpts {
+            filter_string: Some("scanner=agent-controller".into()),
+            ..Default::default()
+        }),
+    )
+    .await;
+    assert_eq!(agents.status_code(), Some(200));
+
+    let modify = send_request(
+        &mut stream,
+        modify_agent(
+            &[id("agent-1")],
+            ModifyAgentOpts {
+                authorized: Some(true),
+                update_to_latest: Some(true),
+                comment: Some("managed".into()),
+                ..Default::default()
+            },
+        ),
+    )
+    .await;
+    assert_eq!(modify.status_code(), Some(200));
+
+    let delete = send_request(&mut stream, delete_agent(&[id("agent-1")])).await;
+    assert_eq!(delete.status_code(), Some(200));
+
+    let sync = send_request(&mut stream, sync_agents()).await;
+    assert_eq!(sync.status_code(), Some(200));
+
+    let control_config = send_request(
+        &mut stream,
+        modify_agent_control_scan_config(
+            &id("scanner-1"),
+            ModifyAgentControlScanConfigOpts {
+                update_to_latest: Some(true),
+                ..Default::default()
+            },
+        ),
+    )
+    .await;
+    assert_eq!(control_config.status_code(), Some(200));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn stateful_agent_download_helpers_return_fixture_shapes() {
+    let Some(server) = stateful_server_with_version(GmpVersion::V22_8).await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let instruction = send_request(
+        &mut stream,
+        get_agent_installer_instruction(
+            &id("scanner-1"),
+            AgentInstallerLanguage::En,
+            "https://gvmd.example",
+        ),
+    )
+    .await;
+    assert_eq!(instruction.status_code(), Some(200));
+    let instruction_text = instruction.as_str().expect("utf8");
+    assert!(instruction_text.contains("<language>en</language>"));
+    assert!(instruction_text.contains("<instruction>"));
+
+    let bundle = send_request(
+        &mut stream,
+        get_agent_support_bundle(&id("agent-1"), Some(7)),
+    )
+    .await;
+    assert_eq!(bundle.status_code(), Some(200));
+    let bundle_text = bundle.as_str().expect("utf8");
+    assert!(bundle_text.contains("<content_type>application/octet-stream</content_type>"));
+    assert!(bundle_text.contains("<content encoding=\"base64\">"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn stateful_credential_store_modify_uses_gvmd_builder_shape() {
+    let Some(server) = stateful_server_with_version(GmpVersion::V22_8).await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let modify = send_request(
+        &mut stream,
+        modify_credential_store(
+            &id("credential-store-1"),
+            ModifyCredentialStoreOpts {
+                active: Some(true),
+                host: Some("store.example".into()),
+                path: Some("/vault".into()),
+                port: Some(8200),
+                comment: Some("primary".into()),
+                ..Default::default()
+            },
+        ),
+    )
+    .await;
+    assert_eq!(modify.status_code(), Some(200));
+
+    server.shutdown().await;
 }
 
 #[tokio::test]
