@@ -206,6 +206,8 @@ impl SessionHandler {
             name if name.starts_with("create_") => self.handle_create(cmd, raw_xml, store),
             // Get commands
             name if name.starts_with("get_") => self.handle_get(cmd, store),
+            "modify_auth" => self.handle_modify_auth(cmd),
+            "modify_license" => self.handle_modify_license(cmd),
             // Modify commands
             name if name.starts_with("modify_") => self.handle_modify(cmd, raw_xml, store),
             // Delete commands
@@ -268,15 +270,34 @@ impl SessionHandler {
             return error_response(&cmd.name, 404, "Resource to clone not found");
         }
 
+        let asset_type = if resource_type == "asset" {
+            cmd.attr("asset_type")
+                .map(str::to_string)
+                .or_else(|| parse_element_text(raw_xml, "asset_type"))
+                .or_else(|| cmd.attr("type").map(str::to_string))
+                .or_else(|| parse_element_text(raw_xml, "type"))
+        } else {
+            None
+        };
+        let asset_value = if resource_type == "asset" {
+            parse_element_text(raw_xml, "value")
+        } else {
+            None
+        };
+
         let name = match resource_type {
             "note" | "override" => parse_element_text(raw_xml, "text")
                 .or_else(|| parse_element_text(raw_xml, "name"))
                 .unwrap_or_default(),
+            "asset" => parse_element_text(raw_xml, "name")
+                .or_else(|| asset_value.clone())
+                .or_else(|| asset_type.as_ref().map(|ty| format!("{ty} asset")))
+                .unwrap_or_else(|| "asset".to_string()),
             _ => parse_element_text(raw_xml, "name").unwrap_or_default(),
         };
         let requires_name = !matches!(
             resource_type,
-            "note" | "override" | "ticket" | "port_range" | "report"
+            "asset" | "note" | "override" | "ticket" | "port_range" | "report"
         );
         if name.is_empty() && requires_name {
             return error_response(&cmd.name, 400, "Missing required element: name");
@@ -352,15 +373,12 @@ impl SessionHandler {
         }
 
         if resource_type == "asset" {
-            let asset_type = cmd
-                .attr("asset_type")
-                .map(str::to_string)
-                .or_else(|| cmd.attr("type").map(str::to_string))
-                .or_else(|| parse_element_text(raw_xml, "type"))
-                .unwrap_or_default();
-            if !asset_type.is_empty() {
-                resource.set_attr("asset_type", &asset_type);
-                resource.set_attr("type", &asset_type);
+            if let Some(asset_type) = asset_type.as_ref().filter(|value| !value.is_empty()) {
+                resource.set_attr("asset_type", asset_type);
+                resource.set_attr("type", asset_type);
+            }
+            if let Some(value) = asset_value.as_ref().filter(|value| !value.is_empty()) {
+                resource.set_attr("value", value);
             }
         }
 
@@ -657,6 +675,20 @@ impl SessionHandler {
         } else {
             error_response(&cmd.name, 404, "Resource not found")
         }
+    }
+
+    fn handle_modify_auth(&self, cmd: &ParsedCommand) -> Vec<u8> {
+        match cmd.attr("enabled") {
+            Some("0" | "1") => {
+                format!("<{}_response status=\"200\" status_text=\"OK\"/>", cmd.name).into_bytes()
+            }
+            Some(_) => error_response(&cmd.name, 400, "Invalid enabled value"),
+            None => error_response(&cmd.name, 400, "Missing required attribute: enabled"),
+        }
+    }
+
+    fn handle_modify_license(&self, cmd: &ParsedCommand) -> Vec<u8> {
+        format!("<{}_response status=\"200\" status_text=\"OK\"/>", cmd.name).into_bytes()
     }
 
     fn handle_delete(&self, cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {

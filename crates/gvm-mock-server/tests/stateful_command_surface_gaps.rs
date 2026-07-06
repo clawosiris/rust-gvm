@@ -11,8 +11,11 @@
     missing_docs
 )]
 
+use gvm_gmp::commands::hosts::{create_host, get_host, get_hosts, HostOpts};
+use gvm_gmp::commands::system::{modify_auth, modify_license};
+use gvm_gmp::types::EntityId;
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
-use gvm_protocol::Response;
+use gvm_protocol::{Request, Response};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
@@ -23,6 +26,10 @@ async fn send_recv(stream: &mut UnixStream, xml: &[u8]) -> Response {
     let n = stream.read(&mut buf).await.expect("read failed");
     buf.truncate(n);
     Response::new(buf)
+}
+
+async fn send_request(stream: &mut UnixStream, request: impl Request) -> Response {
+    send_recv(stream, &request.to_bytes()).await
 }
 
 async fn stateful_server() -> Option<MockGmpServer> {
@@ -56,6 +63,58 @@ async fn auth_admin(stream: &mut UnixStream) {
 
 fn extract_id(resp: &Response) -> String {
     resp.id().expect("response should contain id")
+}
+
+#[tokio::test]
+async fn stateful_host_asset_uses_gmp_builder_shape() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let create = send_request(
+        &mut stream,
+        create_host(HostOpts {
+            value: Some("1.1.1.1".into()),
+            ..Default::default()
+        }),
+    )
+    .await;
+    assert_eq!(create.status_code(), Some(201));
+    let host_id = extract_id(&create);
+    let host_entity_id = EntityId::new(host_id.clone()).expect("valid host id");
+
+    let hosts = send_request(&mut stream, get_hosts(Default::default())).await;
+    let hosts_text = hosts.as_str().expect("utf8");
+    assert!(hosts_text.contains(&host_id));
+    assert!(hosts_text.contains("<asset_type>host</asset_type>"));
+    assert!(hosts_text.contains("<value>1.1.1.1</value>"));
+
+    let host = send_request(&mut stream, get_host(&host_entity_id)).await;
+    let host_text = host.as_str().expect("utf8");
+    assert!(host_text.contains(&host_id));
+    assert!(host_text.contains("<asset_type>host</asset_type>"));
+    assert!(host_text.contains("<value>1.1.1.1</value>"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn stateful_auth_and_license_modifiers_use_gmp_builder_shape() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let auth = send_request(&mut stream, modify_auth(true)).await;
+    assert_eq!(auth.status_code(), Some(200));
+
+    let license = send_request(&mut stream, modify_license("abc")).await;
+    assert_eq!(license.status_code(), Some(200));
+
+    server.shutdown().await;
 }
 
 #[tokio::test]
