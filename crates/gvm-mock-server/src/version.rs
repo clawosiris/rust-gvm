@@ -50,9 +50,15 @@ const GMP_22_6_COMMANDS: &[&str] = &[
 /// Commands only available in GMP 22.8+ / GMP Next.
 const GMP_22_8_COMMANDS: &[&str] = &[
     "create_agent_group",
+    "delete_agent",
     "delete_agent_group",
+    "get_agents",
     "get_agent_groups",
+    "get_agent_installer_instruction",
+    "get_agent_support_bundle",
     "get_integration_configs",
+    "modify_agent",
+    "modify_agent_control_scan_config",
     "modify_integration_config",
     "modify_agent_group",
     "get_report_hosts",
@@ -66,6 +72,7 @@ const GMP_22_8_COMMANDS: &[&str] = &[
     "get_report_closed_cves",
     "get_timezones",
     "get_credential_stores",
+    "modify_credential_store",
     "create_oci_image_target",
     "delete_oci_image_target",
     "get_oci_image_targets",
@@ -74,6 +81,7 @@ const GMP_22_8_COMMANDS: &[&str] = &[
     "delete_web_application_target",
     "get_web_application_targets",
     "modify_web_application_target",
+    "sync_agents",
 ];
 
 /// Check if a command is available in the given GMP version.
@@ -186,8 +194,48 @@ mod tests {
         ));
         assert!(!command_available("get_agent_groups", GmpVersion::V22_7));
         assert!(command_available("get_agent_groups", GmpVersion::V22_8));
+        assert!(!command_available("get_agents", GmpVersion::V22_7));
+        assert!(command_available("get_agents", GmpVersion::V22_8));
         assert!(!command_available("create_agent_group", GmpVersion::V22_6));
         assert!(command_available("create_agent_group", GmpVersion::V22_8));
+        assert!(!command_available("delete_agent", GmpVersion::V22_6));
+        assert!(command_available("delete_agent", GmpVersion::V22_8));
+        assert!(!command_available(
+            "get_agent_installer_instruction",
+            GmpVersion::V22_7
+        ));
+        assert!(command_available(
+            "get_agent_installer_instruction",
+            GmpVersion::V22_8
+        ));
+        assert!(!command_available(
+            "get_agent_support_bundle",
+            GmpVersion::V22_7
+        ));
+        assert!(command_available(
+            "get_agent_support_bundle",
+            GmpVersion::V22_8
+        ));
+        assert!(!command_available("modify_agent", GmpVersion::V22_7));
+        assert!(command_available("modify_agent", GmpVersion::V22_8));
+        assert!(!command_available(
+            "modify_agent_control_scan_config",
+            GmpVersion::V22_7
+        ));
+        assert!(command_available(
+            "modify_agent_control_scan_config",
+            GmpVersion::V22_8
+        ));
+        assert!(!command_available("sync_agents", GmpVersion::V22_7));
+        assert!(command_available("sync_agents", GmpVersion::V22_8));
+        assert!(!command_available(
+            "modify_credential_store",
+            GmpVersion::V22_7
+        ));
+        assert!(command_available(
+            "modify_credential_store",
+            GmpVersion::V22_8
+        ));
         assert!(!command_available(
             "get_oci_image_targets",
             GmpVersion::V22_7

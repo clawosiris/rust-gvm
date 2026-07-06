@@ -37,6 +37,7 @@ russh = { workspace = true, optional = true }
 getrandom.workspace = true
 
 [dev-dependencies]
+base64.workspace = true
 gvm-gmp.workspace = true
 pretty_assertions.workspace = true
 rstest.workspace = true
