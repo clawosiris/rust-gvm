@@ -45,6 +45,32 @@ pub struct GetCredentialsOpts {
     pub details: Option<bool>,
 }
 
+/// A credential-store preference update.
+#[derive(Debug, Clone, Default)]
+pub struct CredentialStorePreference {
+    /// Preference name.
+    pub name: String,
+    /// Preference value.
+    pub value: String,
+}
+
+/// Optional fields for `modify_credential_store` requests.
+#[derive(Debug, Clone, Default)]
+pub struct ModifyCredentialStoreOpts {
+    /// Whether the credential store is active.
+    pub active: Option<bool>,
+    /// Credential-store host.
+    pub host: Option<String>,
+    /// Credential-store path.
+    pub path: Option<String>,
+    /// Credential-store port.
+    pub port: Option<u16>,
+    /// Optional comment text.
+    pub comment: Option<String>,
+    /// Preference values to update.
+    pub preferences: Vec<CredentialStorePreference>,
+}
+
 /// Build a clone request for an existing credential.
 #[must_use]
 pub fn clone_credential(credential_id: &EntityId) -> impl Request {
@@ -86,6 +112,34 @@ pub fn get_credential(credential_id: &EntityId) -> impl Request {
 #[must_use]
 pub fn get_credential_stores() -> impl Request {
     XmlCommand::new("get_credential_stores")
+}
+
+/// Build a `modify_credential_store` request.
+#[must_use]
+pub fn modify_credential_store(
+    credential_store_id: &EntityId,
+    opts: ModifyCredentialStoreOpts,
+) -> impl Request {
+    let mut cmd = XmlCommand::new("modify_credential_store")
+        .attribute("credential_store_id", credential_store_id.as_str());
+    if let Some(active) = opts.active {
+        cmd.add_element_with_text("active", bool_str(active));
+    }
+    add_text_element(&mut cmd, "host", opts.host.as_deref());
+    add_text_element(&mut cmd, "path", opts.path.as_deref());
+    if let Some(port) = opts.port {
+        cmd.add_element_with_text("port", &port.to_string());
+    }
+    add_text_element(&mut cmd, "comment", opts.comment.as_deref());
+    if !opts.preferences.is_empty() {
+        let preferences = cmd.add_element("preferences");
+        for preference in opts.preferences {
+            let preference_element = preferences.add_child("preference");
+            preference_element.add_child_with_text("name", &preference.name);
+            preference_element.add_child_with_text("value", &preference.value);
+        }
+    }
+    cmd
 }
 
 /// Build a `modify_credential` request.
@@ -157,6 +211,23 @@ mod tests {
         assert!(rendered.contains("credential_id=\"c1\""));
         assert!(rendered.contains("details=\"1\""));
         assert_eq!(xml(get_credential_stores()), "<get_credential_stores/>");
+        assert_eq!(
+            xml(modify_credential_store(
+                &id("cs1"),
+                ModifyCredentialStoreOpts {
+                    active: Some(true),
+                    host: Some("store.example".into()),
+                    path: Some("/vault".into()),
+                    port: Some(8200),
+                    comment: Some("primary".into()),
+                    preferences: vec![CredentialStorePreference {
+                        name: "token".into(),
+                        value: "secret".into(),
+                    }],
+                },
+            )),
+            "<modify_credential_store credential_store_id=\"cs1\"><active>1</active><host>store.example</host><path>/vault</path><port>8200</port><comment>primary</comment><preferences><preference><name>token</name><value>secret</value></preference></preferences></modify_credential_store>"
+        );
     }
 
     #[test]
