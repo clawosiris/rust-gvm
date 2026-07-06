@@ -1055,7 +1055,7 @@ fn render_agent_support_bundle_response(cmd: &ParsedCommand) -> Vec<u8> {
       <file>\
       <name>mock-agent-support-bundle.tar.gz</name>\
       <content_type>application/octet-stream</content_type>\
-      <size>11</size>\
+      <size>10</size>\
       <content encoding=\"base64\">aGVsbG8tbW9jaw==</content>\
       </file>\
       </get_agent_support_bundle_response>"

@@ -11,6 +11,7 @@
     missing_docs
 )]
 
+use base64::Engine;
 use gvm_gmp::commands::agents::{
     delete_agent, get_agent_installer_instruction, get_agent_support_bundle, get_agents,
     modify_agent, modify_agent_control_scan_config, sync_agents, AgentInstallerLanguage,
@@ -77,6 +78,12 @@ fn extract_id(resp: &Response) -> String {
 
 fn id(value: &str) -> EntityId {
     EntityId::new(value).expect("valid id")
+}
+
+fn text_between<'a>(text: &'a str, start: &str, end: &str) -> &'a str {
+    let start_index = text.find(start).expect("start marker") + start.len();
+    let end_index = text[start_index..].find(end).expect("end marker") + start_index;
+    &text[start_index..end_index]
 }
 
 #[tokio::test]
@@ -165,6 +172,14 @@ async fn stateful_agent_download_helpers_return_fixture_shapes() {
     let bundle_text = bundle.as_str().expect("utf8");
     assert!(bundle_text.contains("<content_type>application/octet-stream</content_type>"));
     assert!(bundle_text.contains("<content encoding=\"base64\">"));
+    let declared_size: usize = text_between(bundle_text, "<size>", "</size>")
+        .parse()
+        .expect("size");
+    let encoded_content = text_between(bundle_text, "<content encoding=\"base64\">", "</content>");
+    let decoded_content = base64::engine::general_purpose::STANDARD
+        .decode(encoded_content)
+        .expect("base64 content");
+    assert_eq!(decoded_content.len(), declared_size);
 
     server.shutdown().await;
 }
