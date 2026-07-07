@@ -23,7 +23,9 @@ use gvm_gmp::commands::groups::{create_group, get_groups, GetGroupsOpts, GroupOp
 use gvm_gmp::commands::help::help;
 use gvm_gmp::commands::hosts::{create_host, get_hosts, GetHostsOpts, HostOpts};
 use gvm_gmp::commands::notes::{create_note, get_notes, GetNotesOpts, NoteOpts};
-use gvm_gmp::commands::nvts::{get_nvt_families, get_nvts, GetNvtsOpts};
+use gvm_gmp::commands::nvts::{
+    get_nvt_families, get_nvts, get_scan_config_nvt, get_scan_config_nvts, GetNvtsOpts,
+};
 use gvm_gmp::commands::overrides::{
     create_override, get_overrides, GetOverridesOpts, OverrideOpts,
 };
@@ -688,6 +690,30 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_nvts(&mut self, opts: GetNvtsOpts) -> Result<GetNvtsResponse, GvmError> {
         let response = self.send(get_nvts(opts)).await?;
+        GetNvtsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a scan-config scoped `get_nvts` request and return a typed [`GetNvtsResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_scan_config_nvts(
+        &mut self,
+        opts: GetNvtsOpts,
+    ) -> Result<GetNvtsResponse, GvmError> {
+        let response = self.send(get_scan_config_nvts(opts)).await?;
+        GetNvtsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a scan-config compatibility `get_nvts` request for a single NVT.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_scan_config_nvt(
+        &mut self,
+        nvt_oid: &str,
+    ) -> Result<GetNvtsResponse, GvmError> {
+        let response = self.send(get_scan_config_nvt(nvt_oid)).await?;
         GetNvtsResponse::from_response(&response).map_err(GvmError::Parse)
     }
 

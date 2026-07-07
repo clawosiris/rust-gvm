@@ -63,6 +63,23 @@ fn crud_scanners() {
 }
 
 #[test]
+fn nvt_xml_uses_oid_attribute_without_request_scope_children() {
+    let mut nvt = Resource::new("nvt", "Config NVT");
+    nvt.set_attr("oid", "1.3.6.1.4.1.25623.1.0.90001");
+    nvt.set_attr("config_id", "config-1");
+    nvt.set_attr("preferences_config_id", "prefs-1");
+    nvt.set_attr("family", "General");
+
+    let xml = nvt.to_xml();
+
+    assert!(xml.contains(" oid=\"1.3.6.1.4.1.25623.1.0.90001\""));
+    assert!(xml.contains("<family>General</family>"));
+    assert!(!xml.contains("<oid>"));
+    assert!(!xml.contains("<config_id>"));
+    assert!(!xml.contains("<preferences_config_id>"));
+}
+
+#[test]
 fn crud_alerts() {
     let store = ResourceStore::new();
     let id1 = store.create(Resource::new("alert", "Alert 1"));

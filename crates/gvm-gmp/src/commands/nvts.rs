@@ -17,6 +17,22 @@ pub struct GetNvtsOpts {
     pub filter_id: Option<EntityId>,
     /// Whether to request detailed output.
     pub details: Option<bool>,
+    /// Whether to include NVT preferences.
+    pub preferences: Option<bool>,
+    /// Whether to include the preference count.
+    pub preference_count: Option<bool>,
+    /// Whether to include the special timeout preference.
+    pub timeout: Option<bool>,
+    /// Optional scan config identifier to restrict NVT listing.
+    pub config_id: Option<EntityId>,
+    /// Optional scan config identifier to use for preference values.
+    pub preferences_config_id: Option<EntityId>,
+    /// Optional NVT family to restrict listing.
+    pub family: Option<String>,
+    /// Optional sort order.
+    pub sort_order: Option<String>,
+    /// Optional sort field.
+    pub sort_field: Option<String>,
 }
 
 /// Options for NVT `get_preferences` requests.
@@ -36,7 +52,31 @@ pub fn get_nvts(opts: GetNvtsOpts) -> impl Request {
         opts.filter_id.as_ref(),
     );
     set_optional_bool_attr(&mut cmd, "details", opts.details);
+    set_optional_bool_attr(&mut cmd, "preferences", opts.preferences);
+    set_optional_bool_attr(&mut cmd, "preference_count", opts.preference_count);
+    set_optional_bool_attr(&mut cmd, "timeout", opts.timeout);
+    if let Some(config_id) = opts.config_id.as_ref() {
+        cmd.set_attribute("config_id", config_id.as_str());
+    }
+    if let Some(preferences_config_id) = opts.preferences_config_id.as_ref() {
+        cmd.set_attribute("preferences_config_id", preferences_config_id.as_str());
+    }
+    if let Some(family) = opts.family.as_deref() {
+        cmd.set_attribute("family", family);
+    }
+    if let Some(sort_order) = opts.sort_order.as_deref() {
+        cmd.set_attribute("sort_order", sort_order);
+    }
+    if let Some(sort_field) = opts.sort_field.as_deref() {
+        cmd.set_attribute("sort_field", sort_field);
+    }
     cmd
+}
+
+/// Build a `get_nvts` request for scan-config scoped NVT listing.
+#[must_use]
+pub fn get_scan_config_nvts(opts: GetNvtsOpts) -> impl Request {
+    get_nvts(opts)
 }
 
 /// Build a `get_nvts` request for a single NVT.
@@ -45,6 +85,16 @@ pub fn get_nvt(nvt_oid: &str) -> impl Request {
     XmlCommand::new("get_nvts")
         .attribute("nvt_oid", nvt_oid)
         .attribute("details", "1")
+}
+
+/// Build a scan-config compatibility `get_nvts` request for a single NVT.
+#[must_use]
+pub fn get_scan_config_nvt(nvt_oid: &str) -> impl Request {
+    XmlCommand::new("get_nvts")
+        .attribute("nvt_oid", nvt_oid)
+        .attribute("details", "1")
+        .attribute("preferences", "1")
+        .attribute("preference_count", "1")
 }
 
 /// Build a `get_preferences` request for NVT preferences.
@@ -97,6 +147,26 @@ mod tests {
         assert_eq!(
             xml(get_nvt("1.3.6.1")),
             "<get_nvts details=\"1\" nvt_oid=\"1.3.6.1\"/>"
+        );
+        assert_eq!(
+            xml(get_scan_config_nvts(GetNvtsOpts {
+                filter_string: Some("family=General".into()),
+                filter_id: Some(id("f1")),
+                details: Some(true),
+                preferences: Some(true),
+                preference_count: Some(false),
+                timeout: Some(true),
+                config_id: Some(id("c1")),
+                preferences_config_id: Some(id("pc1")),
+                family: Some("General".into()),
+                sort_order: Some("ascending".into()),
+                sort_field: Some("name".into()),
+            })),
+            "<get_nvts config_id=\"c1\" details=\"1\" family=\"General\" filt_id=\"f1\" filter=\"family=General\" preference_count=\"0\" preferences=\"1\" preferences_config_id=\"pc1\" sort_field=\"name\" sort_order=\"ascending\" timeout=\"1\"/>"
+        );
+        assert_eq!(
+            xml(get_scan_config_nvt("1.3.6.1")),
+            "<get_nvts details=\"1\" nvt_oid=\"1.3.6.1\" preference_count=\"1\" preferences=\"1\"/>"
         );
         assert_eq!(
             xml(get_nvt_preferences(GetNvtPreferencesOpts::default())),

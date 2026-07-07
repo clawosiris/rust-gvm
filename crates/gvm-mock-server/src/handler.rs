@@ -507,6 +507,27 @@ impl SessionHandler {
             }
         }
 
+        if cmd.name == "get_nvts" {
+            if let Some(nvt_oid) = cmd.attr("nvt_oid") {
+                resources.retain(|resource| {
+                    resource.attr("oid") == Some(nvt_oid)
+                        || resource.attr("nvt_oid") == Some(nvt_oid)
+                        || resource.id.to_string() == nvt_oid
+                });
+            }
+            if let Some(config_id) = cmd.attr("config_id") {
+                resources.retain(|resource| resource.attr("config_id") == Some(config_id));
+            }
+            if let Some(preferences_config_id) = cmd.attr("preferences_config_id") {
+                resources.retain(|resource| {
+                    resource.attr("preferences_config_id") == Some(preferences_config_id)
+                });
+            }
+            if let Some(family) = cmd.attr("family") {
+                resources.retain(|resource| resource.attr("family") == Some(family));
+            }
+        }
+
         if let Some(usage_type) = requested_usage_type {
             resources.retain(|resource| resource.attr("usage_type") == Some(usage_type));
         }
