@@ -233,6 +233,7 @@ pub static COMMAND_COVERAGE: &[CommandCoverage] = &[
     echo_only("sync_config"),
     echo_only("test_alert"),
     echo_only("verify_report_format"),
+    stateful_since("verify_credential_store", GmpVersion::V22_8),
     echo_only("verify_scanner"),
 ];
 
@@ -407,6 +408,7 @@ pub static KNOWN_COMMANDS: &[&str] = &[
     "sync_agents",
     "sync_config",
     "test_alert",
+    "verify_credential_store",
     "verify_report_format",
     "verify_scanner",
 ];

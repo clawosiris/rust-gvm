@@ -136,6 +136,8 @@ impl CreateCredentialResponse {
     }
 }
 
+pub type VerifyCredentialStoreResponse = ActionResponse;
+
 pub type ModifyCredentialResponse = ActionResponse;
 pub type DeleteCredentialResponse = ActionResponse;
 

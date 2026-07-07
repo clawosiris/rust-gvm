@@ -216,6 +216,7 @@ impl SessionHandler {
             "modify_license" => self.handle_modify_license(cmd),
             // Modify commands
             name if name.starts_with("modify_") => self.handle_modify(cmd, raw_xml, store),
+            "verify_credential_store" => handle_verify_credential_store(cmd),
             "delete_agent" => handle_agent_set_action(cmd),
             // Delete commands
             name if name.starts_with("delete_") => self.handle_delete(cmd, store),
@@ -1136,6 +1137,17 @@ fn handle_modify_agent_control_scan_config(cmd: &ParsedCommand) -> Vec<u8> {
 }
 
 fn handle_modify_credential_store(cmd: &ParsedCommand) -> Vec<u8> {
+    if cmd.attr("credential_store_id").is_none() {
+        return error_response(
+            &cmd.name,
+            400,
+            "Missing required attribute: credential_store_id",
+        );
+    }
+    format!("<{}_response status=\"200\" status_text=\"OK\"/>", cmd.name).into_bytes()
+}
+
+fn handle_verify_credential_store(cmd: &ParsedCommand) -> Vec<u8> {
     if cmd.attr("credential_store_id").is_none() {
         return error_response(
             &cmd.name,

@@ -52,6 +52,7 @@ pub use common::{ActionResponse, CountInfo, EntityMeta, NamedEntity, Owner, Pars
 pub use credential::{
     CreateCredentialResponse, Credential, CredentialStore, DeleteCredentialResponse,
     GetCredentialStoresResponse, GetCredentialsResponse, ModifyCredentialResponse,
+    VerifyCredentialStoreResponse,
 };
 pub use features::{Feature, GetFeaturesResponse};
 pub use feed::{Feed, GetFeedsResponse};
