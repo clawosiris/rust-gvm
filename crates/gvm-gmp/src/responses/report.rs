@@ -9,8 +9,9 @@ use quick_xml::events::Event;
 use quick_xml::Writer;
 
 use crate::responses::common::{
-    count_info, optional_u32, parse_document, parse_entity_meta, parse_named_entity,
-    status_from_response, ActionResponse, CountInfo, EntityMeta, NamedEntity, ParseError,
+    count_info, optional_u32, parse_document, parse_entity_id, parse_entity_meta,
+    parse_named_entity, status_from_response, ActionResponse, CountInfo, EntityMeta, NamedEntity,
+    ParseError,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -64,6 +65,15 @@ pub struct GetReportsResponse {
     pub status_text: String,
     pub items: Vec<Report>,
     pub counts: CountInfo,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct CreateReportResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub id: crate::EntityId,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -249,6 +259,23 @@ impl GetReportsResponse {
             status_text,
             items,
             counts: count_info(&root, "report_count")?,
+        })
+    }
+}
+
+impl CreateReportResponse {
+    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+        let (status, status_text) = status_from_response(response)?;
+        let root = parse_document(response.data())?;
+        let id = parse_entity_id(
+            root.attr("id")
+                .ok_or_else(|| ParseError::MissingElement("id".to_string()))?,
+            "id",
+        )?;
+        Ok(Self {
+            status,
+            status_text,
+            id,
         })
     }
 }
@@ -646,6 +673,18 @@ mod tests {
 
         assert!(parsed.items.is_empty());
         assert_eq!(parsed.counts.filtered, Some(0));
+    }
+
+    #[test]
+    fn parses_create_report_response() {
+        let response = Response::from(
+            r#"<create_report_response status="201" status_text="OK, resource created" id="report-1"/>"#,
+        );
+
+        let parsed = CreateReportResponse::from_response(&response).expect("create parses");
+
+        assert_eq!(parsed.status, 201);
+        assert_eq!(parsed.id.as_str(), "report-1");
     }
 
     #[test]

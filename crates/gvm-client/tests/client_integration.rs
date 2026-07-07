@@ -5,7 +5,8 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_client::{
-    GmpClient, GmpNextCommands, GmpVersioned, GvmError, WireTraceDirection, WireTraceEvent,
+    GmpClient, GmpNextCommands, GmpVersioned, GvmError, ImportReportOpts, WireTraceDirection,
+    WireTraceEvent,
 };
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::alerts::{trigger_alert, TriggerAlertOpts};
@@ -13,7 +14,9 @@ use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::feed::get_feed;
 use gvm_gmp::commands::nvts::{get_nvt_preference, get_nvt_preferences, GetNvtPreferencesOpts};
 use gvm_gmp::commands::operating_systems::{get_operating_systems, GetOperatingSystemsOpts};
-use gvm_gmp::commands::reports::{get_report_hosts, get_report_vulnerabilities};
+use gvm_gmp::commands::reports::{
+    get_report_hosts, get_report_vulnerabilities, get_reports, GetReportsOpts,
+};
 use gvm_gmp::commands::scan_configs::{
     create_policy, get_policies, get_scan_config_preference, get_scan_config_preferences,
     ConfigOpts, GetPolicyOpts, GetScanConfigPreferencesOpts, GetScanConfigsOpts,
@@ -1024,6 +1027,64 @@ async fn typed_report_format_import_and_clone_use_mock_server_create_command() {
     assert_eq!(
         commands[1],
         format!("<create_report_format>{report_format_xml}</create_report_format>")
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_report_import_uses_mock_server_stateful_create_command() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+    server.clear_history();
+
+    let task_id = EntityId::new("task-import").expect("valid id");
+    let report_xml = r#"<report id="imported-report"><name>Imported</name></report>"#;
+    let created = client
+        .import_report(
+            report_xml,
+            &task_id,
+            ImportReportOpts {
+                in_assets: Some(true),
+            },
+        )
+        .await
+        .expect("report import should succeed");
+    assert_eq!(created.status, 201);
+
+    let readback = client
+        .send(get_reports(GetReportsOpts {
+            details: Some(true),
+            ..Default::default()
+        }))
+        .await
+        .expect("get_reports should succeed");
+    let readback_xml = readback.as_str().expect("response XML should be UTF-8");
+    assert!(readback_xml.contains(&format!("id=\"{}\"", created.id)));
+    assert!(readback_xml.contains("<task_id>task-import</task_id>"));
+    assert!(readback_xml.contains("<in_assets>1</in_assets>"));
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[0].command_name(), "create_report");
+    assert_eq!(history[1].command_name(), "get_reports");
+    let import_command =
+        String::from_utf8(history[0].raw_xml().to_vec()).expect("history should be UTF-8");
+    assert_eq!(
+        import_command,
+        format!(
+            r#"<create_report><task id="task-import"/><in_assets>1</in_assets>{report_xml}</create_report>"#
+        )
     );
 
     server.shutdown().await;

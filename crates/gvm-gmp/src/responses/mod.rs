@@ -78,10 +78,10 @@ pub use permission::{
 };
 pub use port_list::{CreatePortListResponse, GetPortListsResponse, PortList};
 pub use report::{
-    DeleteReportResponse, GetReportClosedCvesResponse, GetReportErrorsResponse,
-    GetReportTlsCertificatesResponse, GetReportVulnsResponse, GetReportsResponse, Report,
-    ReportClosedCve, ReportError, ReportExport, ReportTlsCertificate, ReportVulnerability,
-    ResultCount, Severity,
+    CreateReportResponse, DeleteReportResponse, GetReportClosedCvesResponse,
+    GetReportErrorsResponse, GetReportTlsCertificatesResponse, GetReportVulnsResponse,
+    GetReportsResponse, Report, ReportClosedCve, ReportError, ReportExport, ReportTlsCertificate,
+    ReportVulnerability, ResultCount, Severity,
 };
 pub use report_config::{
     CreateReportConfigResponse, DeleteReportConfigResponse, GetReportConfigsResponse,

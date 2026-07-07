@@ -32,6 +32,69 @@ fn test_create_report_with_optionals() {
 }
 
 #[test]
+fn test_import_report_basic() {
+    let report_xml = r#"<report id="r1"><name>Imported</name></report>"#;
+
+    assert_eq!(
+        xml(import_report(report_xml, &id("t1"), Default::default()).expect("valid report XML")),
+        r#"<create_report><task id="t1"/><report id="r1"><name>Imported</name></report></create_report>"#
+    );
+}
+
+#[test]
+fn test_import_report_with_in_assets() {
+    let report_xml = r#"<report id="r1"><name>Imported</name></report>"#;
+
+    assert_eq!(
+        xml(import_report(
+            report_xml,
+            &id("t1"),
+            ImportReportOpts {
+                in_assets: Some(false),
+            },
+        )
+        .expect("valid report XML")),
+        r#"<create_report><task id="t1"/><in_assets>0</in_assets><report id="r1"><name>Imported</name></report></create_report>"#
+    );
+    assert_eq!(
+        xml(import_report(
+            report_xml,
+            &id("t1"),
+            ImportReportOpts {
+                in_assets: Some(true),
+            },
+        )
+        .expect("valid report XML")),
+        r#"<create_report><task id="t1"/><in_assets>1</in_assets><report id="r1"><name>Imported</name></report></create_report>"#
+    );
+}
+
+#[test]
+fn test_import_report_rejects_invalid_report_xml() {
+    assert!(import_report("report", &id("t1"), Default::default()).is_err());
+    assert!(import_report("", &id("t1"), Default::default()).is_err());
+    assert!(import_report("<foo/>", &id("t1"), Default::default()).is_err());
+    assert!(import_report(
+        r#"<?xml version="1.0"?><report id="r1"/>"#,
+        &id("t1"),
+        Default::default()
+    )
+    .is_err());
+    assert!(import_report(
+        r#"<!DOCTYPE report><report id="r1"/>"#,
+        &id("t1"),
+        Default::default()
+    )
+    .is_err());
+    assert!(import_report(
+        r#"<report id="r1"/></create_report><delete_task/>"#,
+        &id("t1"),
+        Default::default()
+    )
+    .is_err());
+}
+
+#[test]
 fn test_report_get_and_delete() {
     assert_eq!(
         xml(get_report(&id("r1"))),
