@@ -2009,6 +2009,103 @@ mod tests {
     }
 
     #[test]
+    fn credential_store_create_semantic_detection_matches_next_shape() {
+        assert_eq!(
+            next_only_semantic_command(
+                "create_credential",
+                b"<create_credential><type>cs_pw</type></create_credential>",
+            ),
+            Some("create_credential_store_credential")
+        );
+        assert_eq!(
+            next_only_semantic_command(
+                "create_credential",
+                b"<create_credential><type>up</type></create_credential>",
+            ),
+            None
+        );
+        assert_eq!(
+            next_only_semantic_command(
+                "modify_credential",
+                b"<modify_credential><type>cs_pw</type></modify_credential>",
+            ),
+            None
+        );
+        assert!(!request_contains_credential_store_type(b"\xff"));
+
+        for credential_type in [
+            "cs_cc", "cs_snmp", "cs_up", "cs_usk", "cs_smime", "cs_pgp", "cs_pw",
+        ] {
+            let request =
+                format!("<create_credential><type>{credential_type}</type></create_credential>");
+            assert!(request_contains_credential_store_type(request.as_bytes()));
+        }
+    }
+
+    #[test]
+    fn credential_store_create_semantic_gate_uses_next_version() {
+        let client = GmpClient {
+            connection: ScriptedConnection::new(std::iter::empty::<&str>()),
+            version: GmpVersion(22, 7),
+            wire_trace: None,
+        };
+        let error = client
+            .ensure_command_supported(b"<create_credential><type>cs_up</type></create_credential>")
+            .expect_err("credential-store create is gated before 22.8");
+
+        match error {
+            GvmError::UnsupportedCommand {
+                command,
+                version,
+                required,
+            } => {
+                assert_eq!(command, "create_credential_store_credential");
+                assert_eq!(version, GmpVersion(22, 7));
+                assert_eq!(required, "22.8");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+
+        let client = GmpClient {
+            connection: ScriptedConnection::new(std::iter::empty::<&str>()),
+            version: GmpVersion(22, 8),
+            wire_trace: None,
+        };
+        client
+            .ensure_command_supported(b"<create_credential><type>cs_up</type></create_credential>")
+            .expect("credential-store create is available in 22.8");
+        client
+            .ensure_command_supported(b"<get_version/>")
+            .expect("normal supported command still passes");
+    }
+
+    #[tokio::test]
+    async fn next_trait_create_credential_store_credential_sends_request() {
+        let mut connection = ScriptedConnection::new([
+            r#"<create_credential_response id="credential-1" status="201" status_text="Created"/>"#,
+        ]);
+        connection.connect().await.expect("connection opens");
+        let mut client = GmpNext(GmpClient {
+            connection,
+            version: GmpVersion(22, 8),
+            wire_trace: None,
+        });
+
+        let response = client
+            .create_credential_store_credential(
+                "Credential",
+                CredentialStoreCredentialType::UsernamePassword,
+                "vault-1",
+                "host-1",
+                CredentialStoreCredentialOpts::default(),
+            )
+            .await
+            .expect("request succeeds");
+
+        assert_eq!(response.status_code(), Some(201));
+    }
+
+    #[test]
     fn redacts_known_credential_elements() {
         let bytes = br#"<root><password>pw</password><private>key</private><private_key>key2</private_key><passphrase>phrase</passphrase><secret>oidc-secret</secret><auth_password>auth</auth_password><privacy_password>privacy</privacy_password><password algorithm="x">again</password></root>"#;
 
