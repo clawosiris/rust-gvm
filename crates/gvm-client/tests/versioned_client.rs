@@ -5,11 +5,13 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_client::{
-    CreateAgentGroupOpts, CreateOciImageTargetOpts, CreateWebApplicationTargetOpts, Gmp226Commands,
-    GmpNextCommands, GmpVersioned, GvmError, ModifyAgentGroupOpts, ModifyOciImageTargetOpts,
-    ModifyWebApplicationTargetOpts,
+    AgentInstallerLanguage, CreateAgentGroupOpts, CreateOciImageTargetOpts,
+    CreateWebApplicationTargetOpts, GetAgentsOpts, Gmp226Commands, GmpNextCommands, GmpVersioned,
+    GvmError, ModifyAgentControlScanConfigOpts, ModifyAgentGroupOpts, ModifyAgentOpts,
+    ModifyOciImageTargetOpts, ModifyWebApplicationTargetOpts,
 };
 use gvm_connection::UnixSocketConnection;
+use gvm_gmp::commands::agents::get_agents;
 use gvm_gmp::commands::oci_image_targets::get_oci_image_targets;
 use gvm_gmp::{EntityId, GmpVersion};
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
@@ -238,6 +240,142 @@ async fn versioned_client_rejects_oci_image_targets_before_next() {
             required: "22.8",
         } if command == "get_oci_image_targets"
     ));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn versioned_client_rejects_agent_commands_before_next() {
+    let Some(server) = stateful_server(MockVersion::V22_7).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpVersioned::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .call(gvm_gmp::commands::authentication::authenticate(
+            "admin", "admin",
+        ))
+        .await
+        .expect("authenticate should succeed");
+
+    let error = client
+        .call(get_agents(Default::default()))
+        .await
+        .expect_err("22.7 should reject next-only agent commands");
+
+    assert!(matches!(
+        error,
+        GvmError::UnsupportedCommand {
+            command,
+            version: GmpVersion(22, 7),
+            required: "22.8",
+        } if command == "get_agents"
+    ));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn next_client_agent_commands_round_trip() {
+    let Some(server) = stateful_server(MockVersion::V22_8).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpVersioned::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .call(gvm_gmp::commands::authentication::authenticate(
+            "admin", "admin",
+        ))
+        .await
+        .expect("authenticate should succeed");
+
+    let mut client = match client {
+        GmpVersioned::Next(client) => client,
+        other => panic!("expected Next client, got {other:?}"),
+    };
+
+    let agents = client
+        .get_agents(GetAgentsOpts {
+            filter_string: Some("scanner=agent-controller".into()),
+            ..Default::default()
+        })
+        .await
+        .expect("get_agents should succeed");
+    assert_eq!(agents.status_code(), Some(200));
+
+    let missing_agent = client
+        .get_agent(&id("ffffffff-ffff-ffff-ffff-ffffffffffff"))
+        .await
+        .expect_err("unseeded agent should not be found");
+    assert!(matches!(
+        missing_agent,
+        GvmError::Server { status: 404, .. }
+    ));
+
+    let agent_ids = [id("00000000-0000-0000-0000-000000000002")];
+    let modify = client
+        .modify_agent(
+            &agent_ids,
+            ModifyAgentOpts {
+                authorized: Some(true),
+                update_to_latest: Some(true),
+                comment: Some("managed from versioned client".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("modify_agent should succeed");
+    assert_eq!(modify.status_code(), Some(200));
+
+    let sync = client
+        .sync_agents()
+        .await
+        .expect("sync_agents should succeed");
+    assert_eq!(sync.status_code(), Some(200));
+
+    let control_config = client
+        .modify_agent_control_scan_config(
+            &id("00000000-0000-0000-0000-000000000003"),
+            ModifyAgentControlScanConfigOpts {
+                update_to_latest: Some(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("modify_agent_control_scan_config should succeed");
+    assert_eq!(control_config.status_code(), Some(200));
+
+    let instruction = client
+        .get_agent_installer_instruction(
+            &id("00000000-0000-0000-0000-000000000004"),
+            AgentInstallerLanguage::En,
+            "https://gvmd.example",
+        )
+        .await
+        .expect("get_agent_installer_instruction should succeed");
+    let instruction_xml = instruction.as_str().expect("valid UTF-8 XML");
+    assert!(instruction_xml.contains("<language>en</language>"));
+    assert!(instruction_xml.contains("<instruction>"));
+
+    let bundle = client
+        .get_agent_support_bundle(&agent_ids[0], Some(7))
+        .await
+        .expect("get_agent_support_bundle should succeed");
+    let bundle_xml = bundle.as_str().expect("valid UTF-8 XML");
+    assert!(bundle_xml.contains("<content_type>application/octet-stream</content_type>"));
+    assert!(bundle_xml.contains("<content encoding=\"base64\">"));
+
+    let delete = client
+        .delete_agent(&agent_ids)
+        .await
+        .expect("delete_agent should succeed");
+    assert_eq!(delete.status_code(), Some(200));
 
     server.shutdown().await;
 }
