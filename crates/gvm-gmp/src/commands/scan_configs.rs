@@ -88,6 +88,21 @@ pub fn create_scan_config(
     })
 }
 
+/// Build a `create_config` request that imports scan-config XML.
+///
+/// # Errors
+/// Returns an error if `scan_config_xml` is not a single well-formed XML
+/// document rooted at `get_configs_response`.
+pub fn import_scan_config(scan_config_xml: &str) -> Result<impl Request, ParseError> {
+    validate_scan_config_import_xml(scan_config_xml)?;
+    let mut request =
+        Vec::with_capacity("<create_config></create_config>".len() + scan_config_xml.len());
+    request.extend_from_slice(b"<create_config>");
+    request.extend_from_slice(scan_config_xml.as_bytes());
+    request.extend_from_slice(b"</create_config>");
+    Ok(request)
+}
+
 /// Build a `get_scan_configs` request.
 #[must_use]
 pub fn get_scan_configs(opts: GetScanConfigsOpts) -> impl Request {
@@ -473,6 +488,88 @@ fn validate_policy_import_root(root: &[u8]) -> Result<(), ParseError> {
 fn invalid_policy_xml<T>(value: &str) -> Result<T, ParseError> {
     Err(ParseError::InvalidValue {
         field: "policy_xml".to_string(),
+        value: value.to_string(),
+    })
+}
+
+fn validate_scan_config_import_xml(xml: &str) -> Result<(), ParseError> {
+    let mut reader = Reader::from_str(xml);
+    reader.config_mut().trim_text(true);
+    reader.config_mut().check_comments = true;
+    let mut depth = 0usize;
+    let mut saw_root = false;
+    let mut completed_root = false;
+
+    loop {
+        match reader.read_event()? {
+            Event::Start(event) => {
+                if completed_root {
+                    return invalid_scan_config_xml("multiple root elements");
+                }
+                if !saw_root {
+                    validate_scan_config_import_root(event.name().as_ref())?;
+                    saw_root = true;
+                }
+                depth += 1;
+            }
+            Event::Empty(event) => {
+                if completed_root {
+                    return invalid_scan_config_xml("multiple root elements");
+                }
+                if !saw_root {
+                    validate_scan_config_import_root(event.name().as_ref())?;
+                    saw_root = true;
+                }
+                completed_root = true;
+            }
+            Event::End(_) => {
+                if depth == 0 {
+                    return invalid_scan_config_xml("unmatched end tag");
+                }
+                depth -= 1;
+                if depth == 0 {
+                    completed_root = true;
+                }
+            }
+            Event::Text(event) => {
+                if depth == 0 && !std::str::from_utf8(event.as_ref())?.trim().is_empty() {
+                    return invalid_scan_config_xml(if completed_root {
+                        "text after root element"
+                    } else {
+                        "text before root element"
+                    });
+                }
+            }
+            Event::CData(_) | Event::GeneralRef(_) if depth == 0 => {
+                return invalid_scan_config_xml("content outside root element");
+            }
+            Event::Decl(_) => return invalid_scan_config_xml("XML declaration is not allowed"),
+            Event::DocType(_) => return invalid_scan_config_xml("DOCTYPE is not allowed"),
+            Event::Eof => {
+                if saw_root && depth == 0 {
+                    return Ok(());
+                }
+                return Err(ParseError::MissingElement(
+                    "get_configs_response".to_string(),
+                ));
+            }
+            _ => {}
+        }
+    }
+}
+
+fn validate_scan_config_import_root(root: &[u8]) -> Result<(), ParseError> {
+    let root = std::str::from_utf8(root)?;
+    if root == "get_configs_response" {
+        Ok(())
+    } else {
+        invalid_scan_config_xml("root element must be get_configs_response")
+    }
+}
+
+fn invalid_scan_config_xml<T>(value: &str) -> Result<T, ParseError> {
+    Err(ParseError::InvalidValue {
+        field: "scan_config_xml".to_string(),
         value: value.to_string(),
     })
 }

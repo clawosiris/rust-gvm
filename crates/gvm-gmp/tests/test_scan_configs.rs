@@ -32,6 +32,44 @@ fn test_create_scan_config_with_copy_and_options() {
 }
 
 #[test]
+fn test_import_scan_config_builds_create_config_xml() {
+    let scan_config_xml = concat!(
+        r#"<get_configs_response status="200" status_text="OK">"#,
+        r#"<config id="c4aa21e4-23e6-4064-ae49-c0d425738a98">"#,
+        "<name>Foobar</name>",
+        "<comment>Foobar config</comment>",
+        "</config>",
+        "</get_configs_response>"
+    );
+
+    assert_eq!(
+        xml(import_scan_config(scan_config_xml).expect("import request builds")),
+        format!("<create_config>{scan_config_xml}</create_config>")
+    );
+}
+
+#[test]
+fn test_import_scan_config_rejects_invalid_xml() {
+    for invalid_xml in [
+        "",
+        "abcdef",
+        "<get_configs_response>",
+        "<get_configs_response/><get_configs_response/>",
+        "<get_report_configs_response/>",
+        "before<get_configs_response/>",
+        "<get_configs_response/>after",
+        r#"<get_configs_response><!-- invalid -- comment --></get_configs_response>"#,
+        r#"<?xml version="1.0"?><get_configs_response/>"#,
+        r#"<!DOCTYPE get_configs_response><get_configs_response/>"#,
+    ] {
+        assert!(
+            import_scan_config(invalid_xml).is_err(),
+            "expected invalid import XML to fail: {invalid_xml}"
+        );
+    }
+}
+
+#[test]
 fn test_import_policy_builds_create_config_xml() {
     let policy_xml = concat!(
         r#"<get_configs_response status="200" status_text="OK">"#,
