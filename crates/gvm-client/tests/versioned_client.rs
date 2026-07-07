@@ -7,10 +7,10 @@
 use gvm_client::GmpNext;
 use gvm_client::{
     AgentInstallerLanguage, CreateAgentGroupOpts, CreateAgentGroupTaskOpts,
-    CreateOciImageTargetOpts, CreateWebApplicationTargetOpts, GetAgentsOpts, Gmp226Commands,
-    GmpNextCommands, GmpVersioned, GvmError, ModifyAgentControlScanConfigOpts,
-    ModifyAgentGroupOpts, ModifyAgentOpts, ModifyOciImageTargetOpts,
-    ModifyWebApplicationTargetOpts,
+    CreateOciImageTargetOpts, CreateOciImageTargetTaskOpts, CreateWebApplicationTargetOpts,
+    GetAgentsOpts, Gmp226Commands, GmpNextCommands, GmpVersioned, GvmError,
+    ModifyAgentControlScanConfigOpts, ModifyAgentGroupOpts, ModifyAgentOpts,
+    ModifyOciImageTargetOpts, ModifyWebApplicationTargetOpts,
 };
 use gvm_connection::{GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::agents::get_agents;
@@ -80,6 +80,44 @@ async fn assert_create_agent_group_task_round_trip<C>(
         format!(
             "<create_task><name>Client Agent Group Task</name><usage_type>scan</usage_type><agent_group id=\"{}\"/><scanner id=\"scanner-1\"/><comment>task through client</comment><alterable>1</alterable></create_task>",
             agent_group_id.as_str()
+        )
+    );
+}
+
+async fn assert_create_oci_image_target_task_round_trip<C>(
+    client: &mut GmpNext<C>,
+    server: &MockGmpServer,
+    oci_image_target_id: &EntityId,
+) where
+    C: GvmConnection + Send,
+{
+    server.clear_history();
+
+    let scanner_id = id("scanner-1");
+    let task_response = client
+        .create_container_image_task(
+            "Client OCI Target Task",
+            oci_image_target_id,
+            &scanner_id,
+            CreateOciImageTargetTaskOpts {
+                comment: Some("task through client".into()),
+                alterable: Some(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("create_container_image_task should succeed");
+    assert_eq!(task_response.status_code(), Some(201));
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 1);
+    let command = history.last().expect("create_task command recorded");
+    assert_eq!(command.command_name(), "create_task");
+    assert_eq!(
+        String::from_utf8(command.raw_xml().to_vec()).expect("history should be UTF-8"),
+        format!(
+            "<create_task><name>Client OCI Target Task</name><usage_type>scan</usage_type><oci_image_target id=\"{}\"/><scanner id=\"scanner-1\"/><comment>task through client</comment><alterable>1</alterable></create_task>",
+            oci_image_target_id.as_str()
         )
     );
 }
@@ -518,6 +556,8 @@ async fn next_client_oci_image_targets_round_trip() {
         .expect("create_oci_image_target should succeed");
     assert_eq!(create_response.status_code(), Some(201));
     let target_id = EntityId::new(create_response.id().expect("created id")).expect("valid id");
+
+    assert_create_oci_image_target_task_round_trip(&mut client, &server, &target_id).await;
 
     let get_response = client
         .get_oci_image_target(&target_id, Some(true))
