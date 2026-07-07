@@ -516,6 +516,41 @@ async fn stateful_secinfo_accepts_uppercase_type_and_info_id() {
 }
 
 #[tokio::test]
+async fn stateful_secinfo_renders_nvt_and_ovaldef_entries() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let nvt = send_recv(
+        &mut stream,
+        br#"<get_info details="0" name="Mock NVT one" type="NVT"/>"#,
+    )
+    .await;
+    assert_eq!(nvt.status_code(), Some(200));
+    let text = nvt.as_str().expect("utf8");
+    assert!(text.contains("<nvt id=\"1.3.6.1.4.1.25623.1\">"));
+    assert!(text.contains("Mock NVT one"));
+    assert!(text.contains("<nvt_count>1<filtered>1</filtered></nvt_count>"));
+    assert!(!text.contains("Mock NVT two"));
+
+    let oval = send_recv(
+        &mut stream,
+        br#"<get_info details="1" info_id="oval:org.example:def:1" type="OVALDEF"/>"#,
+    )
+    .await;
+    assert_eq!(oval.status_code(), Some(200));
+    let text = oval.as_str().expect("utf8");
+    assert!(text.contains("<ovaldef id=\"oval:org.example:def:1\">"));
+    assert!(text.contains("Mock OVAL definition one"));
+    assert!(text.contains("<ovaldef_count>1<filtered>1</filtered></ovaldef_count>"));
+    assert!(!text.contains("Mock OVAL definition two"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn stateful_audit_reports_filter_by_usage_type() {
     let Some(server) = stateful_server().await else {
         return;
