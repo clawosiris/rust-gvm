@@ -5,6 +5,8 @@
 
 use base64::Engine as _;
 use gvm_protocol::{xml_command::XmlElement, Request, XmlCommand};
+use quick_xml::events::Event;
+use quick_xml::Reader;
 
 use crate::commands::configs::{
     clone_config, create_config, delete_config, get_config, get_configs, modify_config,
@@ -13,6 +15,7 @@ use crate::commands::configs::{
 };
 use crate::commands::usage_type::UsageType;
 use crate::common::bool_str;
+use crate::responses::ParseError;
 use crate::types::EntityId;
 
 /// Optional fields for scan-configuration create and modify requests.
@@ -323,6 +326,22 @@ pub fn create_policy(name: &str, opts: ConfigOpts) -> impl Request {
     })
 }
 
+/// Build a `create_config` request that imports policy XML.
+///
+/// # Errors
+/// Returns an error if `policy_xml` is not a single well-formed XML document
+/// rooted at `get_configs_response`.
+pub fn import_policy(policy_xml: &str) -> Result<impl Request, ParseError> {
+    validate_policy_import_xml(policy_xml)?;
+    let policy_xml = strip_leading_xml_declaration(policy_xml);
+    let mut request =
+        Vec::with_capacity("<create_config></create_config>".len() + policy_xml.len());
+    request.extend_from_slice(b"<create_config>");
+    request.extend_from_slice(policy_xml.as_bytes());
+    request.extend_from_slice(b"</create_config>");
+    Ok(request)
+}
+
 /// Build a `get_configs` request scoped to policies.
 #[must_use]
 pub fn get_policies(opts: GetScanConfigsOpts) -> impl Request {
@@ -364,6 +383,98 @@ pub fn modify_policy(config_id: &EntityId, opts: ConfigOpts) -> impl Request {
 
 fn normalize_optional_text(value: Option<String>) -> Option<String> {
     value.filter(|value| !value.is_empty())
+}
+
+fn validate_policy_import_xml(xml: &str) -> Result<(), ParseError> {
+    let mut reader = Reader::from_str(xml);
+    reader.config_mut().trim_text(true);
+    reader.config_mut().check_comments = true;
+    let mut depth = 0usize;
+    let mut saw_root = false;
+    let mut completed_root = false;
+
+    loop {
+        match reader.read_event()? {
+            Event::Start(event) => {
+                if completed_root {
+                    return invalid_policy_xml("multiple root elements");
+                }
+                if !saw_root {
+                    validate_policy_import_root(event.name().as_ref())?;
+                    saw_root = true;
+                }
+                depth += 1;
+            }
+            Event::Empty(event) => {
+                if depth == 0 {
+                    if completed_root {
+                        return invalid_policy_xml("multiple root elements");
+                    }
+                    completed_root = true;
+                    saw_root = true;
+                    validate_policy_import_root(event.name().as_ref())?;
+                }
+            }
+            Event::End(_) => {
+                depth = depth.checked_sub(1).ok_or(ParseError::InvalidValue {
+                    field: "policy_xml".to_string(),
+                    value: "unmatched end tag".to_string(),
+                })?;
+                if depth == 0 {
+                    completed_root = true;
+                }
+            }
+            Event::Text(event) => {
+                if depth == 0 && !std::str::from_utf8(event.as_ref())?.trim().is_empty() {
+                    return invalid_policy_xml(if completed_root {
+                        "text after root element"
+                    } else {
+                        "text before root element"
+                    });
+                }
+            }
+            Event::CData(_) | Event::GeneralRef(_) if depth == 0 => {
+                return invalid_policy_xml("content outside root element");
+            }
+            Event::Decl(_) => {
+                if saw_root || completed_root || depth != 0 {
+                    return invalid_policy_xml("XML declaration outside document prolog");
+                }
+            }
+            Event::DocType(_) => return invalid_policy_xml("DOCTYPE is not allowed"),
+            Event::Eof => {
+                if saw_root && depth == 0 {
+                    return Ok(());
+                }
+                return Err(ParseError::MissingElement(
+                    "get_configs_response".to_string(),
+                ));
+            }
+            _ => {}
+        }
+    }
+}
+
+fn strip_leading_xml_declaration(xml: &str) -> &str {
+    xml.strip_prefix("<?xml")
+        .and_then(|rest| rest.find("?>").map(|end| &rest[end + 2..]))
+        .unwrap_or(xml)
+}
+
+fn validate_policy_import_root(root: &[u8]) -> Result<(), ParseError> {
+    let root = std::str::from_utf8(root)?;
+    if root == "get_configs_response" {
+        Ok(())
+    } else {
+        invalid_policy_xml("root element must be get_configs_response")
+    }
+}
+
+fn invalid_policy_xml<T>(value: &str) -> Result<T, ParseError> {
+    Err(ParseError::InvalidValue {
+        field: "policy_xml".to_string(),
+        value: value.to_string(),
+    })
 }
 
 /// Build a `modify_config` request that sets a policy NVT preference.
