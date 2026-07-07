@@ -2198,18 +2198,14 @@ mod tests {
             )
             .expect_err("credential-store modify is gated before 22.8");
 
-        match error {
+        assert!(matches!(
+            error,
             GvmError::UnsupportedCommand {
-                command,
-                version,
-                required,
-            } => {
-                assert_eq!(command, "modify_credential_store_credential");
-                assert_eq!(version, GmpVersion(22, 7));
-                assert_eq!(required, "22.8");
-            }
-            other => panic!("unexpected error: {other:?}"),
-        }
+                ref command,
+                version: GmpVersion(22, 7),
+                required: "22.8",
+            } if command == "modify_credential_store_credential"
+        ));
 
         let error = client
             .ensure_command_supported(
