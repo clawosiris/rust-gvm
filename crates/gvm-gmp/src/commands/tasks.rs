@@ -34,6 +34,25 @@ pub struct CreateTaskOpts {
     pub preferences: Vec<(String, String)>,
 }
 
+/// Optional fields for `create_agent_group_task` requests.
+#[derive(Debug, Clone, Default)]
+pub struct CreateAgentGroupTaskOpts {
+    /// Optional comment text included in the request.
+    pub comment: Option<String>,
+    /// Whether the task should be alterable.
+    pub alterable: Option<bool>,
+    /// Optional schedule identifier.
+    pub schedule_id: Option<EntityId>,
+    /// Alert identifiers associated with the request.
+    pub alert_ids: Vec<EntityId>,
+    /// Optional schedule period count.
+    pub schedule_periods: Option<u32>,
+    /// Observer names associated with the task.
+    pub observers: Vec<String>,
+    /// Preference key/value pairs to include.
+    pub preferences: Vec<(String, String)>,
+}
+
 /// Options for `get_tasks` requests.
 #[derive(Debug, Clone, Default)]
 pub struct GetTasksOpts {
@@ -102,6 +121,37 @@ pub fn create_import_task(name: &str, comment: Option<&str>) -> impl Request {
 #[must_use]
 pub fn create_container_task(name: &str, comment: Option<&str>) -> impl Request {
     create_import_task(name, comment)
+}
+
+/// Build a `create_task` request for an agent-group scan task.
+#[must_use]
+pub fn create_agent_group_task(
+    name: &str,
+    agent_group_id: &EntityId,
+    scanner_id: &EntityId,
+    opts: CreateAgentGroupTaskOpts,
+) -> impl Request {
+    let mut cmd = XmlCommand::new("create_task");
+    cmd.add_element_with_text("name", name);
+    cmd.add_element_with_text("usage_type", UsageType::Scan.as_gmp_str());
+    add_id_element(&mut cmd, "agent_group", agent_group_id);
+    add_id_element(&mut cmd, "scanner", scanner_id);
+    add_text_element(&mut cmd, "comment", opts.comment.as_deref());
+    if let Some(alterable) = opts.alterable {
+        cmd.add_element_with_text("alterable", bool_str(alterable));
+    }
+    for alert_id in &opts.alert_ids {
+        add_id_element(&mut cmd, "alert", alert_id);
+    }
+    if let Some(schedule_id) = opts.schedule_id.as_ref() {
+        add_id_element(&mut cmd, "schedule", schedule_id);
+        if let Some(schedule_periods) = opts.schedule_periods {
+            cmd.add_element_with_text("schedule_periods", &schedule_periods.to_string());
+        }
+    }
+    add_string_list(&mut cmd, "observers", "observer", &opts.observers);
+    add_preferences(&mut cmd, &opts.preferences);
+    cmd
 }
 
 /// Build a `create_task` request.

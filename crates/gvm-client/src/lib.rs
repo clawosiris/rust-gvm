@@ -48,6 +48,7 @@ use gvm_gmp::commands::reports::{
     get_report_vulns,
 };
 use gvm_gmp::commands::system::get_timezones;
+use gvm_gmp::commands::tasks::create_agent_group_task;
 use gvm_gmp::commands::version::get_version;
 use gvm_gmp::commands::web_application_targets::{
     clone_web_application_target, create_web_application_target, delete_web_application_target,
@@ -73,6 +74,7 @@ pub use gvm_gmp::commands::oci_image_targets::{
 };
 pub use gvm_gmp::commands::report_configs::ModifyReportConfigOpts;
 pub use gvm_gmp::commands::reports::{GetReportDetailsOpts, GetReportExportOpts, ImportReportOpts};
+pub use gvm_gmp::commands::tasks::CreateAgentGroupTaskOpts;
 pub use gvm_gmp::commands::web_application_targets::{
     CreateWebApplicationTargetOpts, GetWebApplicationTargetsOpts, ModifyWebApplicationTargetOpts,
 };
@@ -955,6 +957,15 @@ pub trait GmpNextCommands {
         opts: CreateAgentGroupOpts,
     ) -> Result<Response, GvmError>;
 
+    /// Create a task that scans an agent group.
+    async fn create_agent_group_task(
+        &mut self,
+        name: &str,
+        agent_group_id: &EntityId,
+        scanner_id: &EntityId,
+        opts: CreateAgentGroupTaskOpts,
+    ) -> Result<Response, GvmError>;
+
     /// Clone an agent group.
     async fn clone_agent_group(&mut self, agent_group_id: &EntityId) -> Result<Response, GvmError>;
 
@@ -1371,6 +1382,23 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
     ) -> Result<Response, GvmError> {
         self.0
             .create_agent_group(name, agent_ids, scheduler_cron_time, opts)
+            .await
+    }
+
+    async fn create_agent_group_task(
+        &mut self,
+        name: &str,
+        agent_group_id: &EntityId,
+        scanner_id: &EntityId,
+        opts: CreateAgentGroupTaskOpts,
+    ) -> Result<Response, GvmError> {
+        self.0
+            .call(create_agent_group_task(
+                name,
+                agent_group_id,
+                scanner_id,
+                opts,
+            ))
             .await
     }
 
