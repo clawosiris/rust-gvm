@@ -2053,18 +2053,14 @@ mod tests {
             .ensure_command_supported(b"<create_credential><type>cs_up</type></create_credential>")
             .expect_err("credential-store create is gated before 22.8");
 
-        match error {
+        assert!(matches!(
+            error,
             GvmError::UnsupportedCommand {
-                command,
-                version,
-                required,
-            } => {
-                assert_eq!(command, "create_credential_store_credential");
-                assert_eq!(version, GmpVersion(22, 7));
-                assert_eq!(required, "22.8");
-            }
-            other => panic!("unexpected error: {other:?}"),
-        }
+                ref command,
+                version: GmpVersion(22, 7),
+                required: "22.8",
+            } if command == "create_credential_store_credential"
+        ));
 
         let client = GmpClient {
             connection: ScriptedConnection::new(std::iter::empty::<&str>()),
