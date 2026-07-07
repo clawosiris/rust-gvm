@@ -374,6 +374,15 @@ gmp_enum!(CredentialType {
     UsernamePassword => "up",
     UsernameSshKey => "usk"
 });
+gmp_enum!(CredentialStoreCredentialType {
+    ClientCertificate => "cs_cc",
+    PasswordOnly => "cs_pw",
+    PgpEncryptionKey => "cs_pgp",
+    SmimeCertificate => "cs_smime",
+    Snmp => "cs_snmp",
+    UsernamePassword => "cs_up",
+    UsernameSshKey => "cs_usk"
+});
 gmp_enum!(EntityType {
     Alert => "alert",
     Asset => "asset",
@@ -827,6 +836,12 @@ mod tests {
         CredentialType,
         UsernamePassword,
         "up"
+    );
+    enum_round_trip_test!(
+        credential_store_credential_type_round_trip,
+        CredentialStoreCredentialType,
+        UsernamePassword,
+        "cs_up"
     );
     enum_round_trip_test!(entity_type_round_trip, EntityType, Task, "task");
     enum_round_trip_test!(resource_type_round_trip, ResourceType, Task, "TASK");

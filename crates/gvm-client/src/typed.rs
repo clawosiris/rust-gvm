@@ -15,8 +15,9 @@ use gvm_connection::GvmConnection;
 use gvm_gmp::commands::alerts::{create_alert, get_alerts, AlertOpts, GetAlertsOpts};
 use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::credentials::{
-    create_credential, get_credential_store, get_credential_stores,
-    get_credential_stores_with_opts, get_credentials, verify_credential_store, CredentialOpts,
+    create_credential, create_credential_store_credential, get_credential_store,
+    get_credential_stores, get_credential_stores_with_opts, get_credentials,
+    verify_credential_store, CredentialOpts, CredentialStoreCredentialOpts,
     GetCredentialStoresOpts, GetCredentialsOpts,
 };
 use gvm_gmp::commands::feed::get_feeds;
@@ -122,6 +123,7 @@ use gvm_gmp::responses::{
     VerifyCredentialStoreResponse, VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
+use gvm_gmp::CredentialStoreCredentialType;
 
 use crate::{GmpClient, GvmError};
 
@@ -1189,6 +1191,31 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         opts: CredentialOpts,
     ) -> Result<CreateCredentialResponse, GvmError> {
         let response = self.send(create_credential(name, opts)).await?;
+        CreateCredentialResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a credential-store-backed `create_credential` request and return a
+    /// typed [`CreateCredentialResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn create_credential_store_credential(
+        &mut self,
+        name: &str,
+        credential_type: CredentialStoreCredentialType,
+        vault_id: &str,
+        host_identifier: &str,
+        opts: CredentialStoreCredentialOpts,
+    ) -> Result<CreateCredentialResponse, GvmError> {
+        let response = self
+            .send(create_credential_store_credential(
+                name,
+                credential_type,
+                vault_id,
+                host_identifier,
+                opts,
+            ))
+            .await?;
         CreateCredentialResponse::from_response(&response).map_err(GvmError::Parse)
     }
 

@@ -8,10 +8,10 @@ use gvm_client::GmpNext;
 use gvm_client::{
     AgentInstallerLanguage, CreateAgentGroupOpts, CreateAgentGroupTaskOpts,
     CreateOciImageTargetOpts, CreateOciImageTargetTaskOpts, CreateWebApplicationTargetOpts,
-    CreateWebApplicationTaskOpts, GetAgentsOpts, GetCredentialStoresOpts, Gmp226Commands,
-    GmpNextCommands, GmpVersioned, GvmError, ModifyAgentControlScanConfigOpts,
-    ModifyAgentGroupOpts, ModifyAgentOpts, ModifyOciImageTargetOpts,
-    ModifyWebApplicationTargetOpts,
+    CreateWebApplicationTaskOpts, CredentialStoreCredentialOpts, CredentialStoreCredentialType,
+    GetAgentsOpts, GetCredentialStoresOpts, Gmp226Commands, GmpNextCommands, GmpVersioned,
+    GvmError, ModifyAgentControlScanConfigOpts, ModifyAgentGroupOpts, ModifyAgentOpts,
+    ModifyOciImageTargetOpts, ModifyWebApplicationTargetOpts,
 };
 use gvm_connection::{GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::agents::get_agents;
@@ -316,6 +316,58 @@ async fn next_client_credential_store_helpers_send_expected_commands() {
     assert_eq!(
         std::str::from_utf8(history[0].raw_xml()).expect("valid UTF-8 request"),
         "<get_credential_stores details=\"0\" filt_id=\"filter-1\" filter=\"name=Local\"/>"
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn next_client_create_credential_store_credential_round_trip() {
+    let Some(server) = stateful_server(MockVersion::V22_8).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpVersioned::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .call(gvm_gmp::commands::authentication::authenticate(
+            "admin", "admin",
+        ))
+        .await
+        .expect("authenticate should succeed");
+
+    let mut client = match client {
+        GmpVersioned::Next(client) => client,
+        other => panic!("expected Next client, got {other:?}"),
+    };
+
+    server.clear_history();
+    let create_response = client
+        .create_credential_store_credential(
+            "Client Store Credential",
+            CredentialStoreCredentialType::UsernamePassword,
+            "vault-1",
+            "host-1",
+            CredentialStoreCredentialOpts {
+                comment: Some("stored credential".into()),
+                credential_store_id: Some(id("credential-store-1")),
+            },
+        )
+        .await
+        .expect("create_credential_store_credential should succeed");
+    assert_eq!(create_response.status_code(), Some(201));
+    assert!(create_response.id().is_some());
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 1);
+    let command = history.last().expect("create command recorded");
+    assert_eq!(command.command_name(), "create_credential");
+    let raw_xml = String::from_utf8(command.raw_xml().to_vec()).expect("valid utf8");
+    assert_eq!(
+        raw_xml,
+        "<create_credential><name>Client Store Credential</name><type>cs_up</type><comment>stored credential</comment><credential_store_id>credential-store-1</credential_store_id><vault_id>vault-1</vault_id><host_identifier>host-1</host_identifier></create_credential>"
     );
 
     server.shutdown().await;
