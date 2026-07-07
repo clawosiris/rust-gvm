@@ -2,6 +2,12 @@
 
 Last updated: 2026-05-25
 
+## Support Direction
+
+rust-gvm is intended to track current GMP/GVMD behavior directly. python-gvm compatibility remains useful for migration, interoperability, and validation, but it is a secondary target rather than the project's product boundary.
+
+See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility policy, known coverage gaps, and follow-up work.
+
 ## Crate Status
 
 | Crate | Status | Lines | Tests | Description |
