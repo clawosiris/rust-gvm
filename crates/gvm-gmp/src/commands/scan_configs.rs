@@ -513,20 +513,20 @@ fn validate_scan_config_import_xml(xml: &str) -> Result<(), ParseError> {
                 depth += 1;
             }
             Event::Empty(event) => {
-                if completed_root {
-                    return invalid_scan_config_xml("multiple root elements");
-                }
-                if !saw_root {
-                    validate_scan_config_import_root(event.name().as_ref())?;
+                if depth == 0 {
+                    if completed_root {
+                        return invalid_scan_config_xml("multiple root elements");
+                    }
+                    completed_root = true;
                     saw_root = true;
+                    validate_scan_config_import_root(event.name().as_ref())?;
                 }
-                completed_root = true;
             }
             Event::End(_) => {
-                if depth == 0 {
-                    return invalid_scan_config_xml("unmatched end tag");
-                }
-                depth -= 1;
+                depth = depth.checked_sub(1).ok_or(ParseError::InvalidValue {
+                    field: "scan_config_xml".to_string(),
+                    value: "unmatched end tag".to_string(),
+                })?;
                 if depth == 0 {
                     completed_root = true;
                 }
