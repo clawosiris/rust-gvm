@@ -312,6 +312,20 @@ async fn version_22_7_rejects_next_commands() {
     assert_eq!(response.status_code(), Some(400));
     assert!(response.status_text().unwrap().contains("GMP 22.8"));
 
+    let response = send_recv(
+        &mut stream,
+        modify_credential_store_credential(
+            &id("credential-1"),
+            ModifyCredentialStoreCredentialOpts {
+                host_identifier: Some("host-1".into()),
+                ..Default::default()
+            },
+        ),
+    )
+    .await;
+    assert_eq!(response.status_code(), Some(400));
+    assert!(response.status_text().unwrap().contains("GMP 22.8"));
+
     server.shutdown().await;
 }
 

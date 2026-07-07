@@ -2114,6 +2114,38 @@ mod tests {
     }
 
     #[test]
+    fn credential_store_modify_semantic_detection_matches_next_shape() {
+        for field in ["credential_store_id", "vault_id", "host_identifier"] {
+            let request = format!(
+                "<modify_credential credential_id=\"credential-1\"><{field}>value</{field}></modify_credential>"
+            );
+            assert_eq!(
+                next_only_semantic_command("modify_credential", request.as_bytes()),
+                Some("modify_credential_store_credential")
+            );
+            assert!(request_contains_credential_store_modify_field(
+                request.as_bytes()
+            ));
+        }
+
+        assert_eq!(
+            next_only_semantic_command(
+                "modify_credential",
+                b"<modify_credential credential_id=\"credential-1\"><comment>keep</comment></modify_credential>",
+            ),
+            None
+        );
+        assert_eq!(
+            next_only_semantic_command(
+                "create_credential",
+                b"<create_credential><vault_id>vault-1</vault_id></create_credential>",
+            ),
+            None
+        );
+        assert!(!request_contains_credential_store_modify_field(b"\xff"));
+    }
+
+    #[test]
     fn credential_store_create_semantic_gate_uses_next_version() {
         let client = GmpClient {
             connection: ScriptedConnection::new(std::iter::empty::<&str>()),
@@ -2121,7 +2153,10 @@ mod tests {
             wire_trace: None,
         };
         let error = client
-            .ensure_command_supported(b"<create_credential><type>cs_up</type></create_credential>")
+            .ensure_command_supported(
+                b"<create_credential><type>cs_up</type></create_credential>",
+                None,
+            )
             .expect_err("credential-store create is gated before 22.8");
 
         assert!(matches!(
@@ -2139,11 +2174,72 @@ mod tests {
             wire_trace: None,
         };
         client
-            .ensure_command_supported(b"<create_credential><type>cs_up</type></create_credential>")
+            .ensure_command_supported(
+                b"<create_credential><type>cs_up</type></create_credential>",
+                None,
+            )
             .expect("credential-store create is available in 22.8");
         client
-            .ensure_command_supported(b"<get_version/>")
+            .ensure_command_supported(b"<get_version/>", None)
             .expect("normal supported command still passes");
+    }
+
+    #[test]
+    fn credential_store_modify_semantic_gate_uses_next_version() {
+        let client = GmpClient {
+            connection: ScriptedConnection::new(std::iter::empty::<&str>()),
+            version: GmpVersion(22, 7),
+            wire_trace: None,
+        };
+        let error = client
+            .ensure_command_supported(
+                b"<modify_credential credential_id=\"credential-1\"><vault_id>vault-1</vault_id></modify_credential>",
+                None,
+            )
+            .expect_err("credential-store modify is gated before 22.8");
+
+        match error {
+            GvmError::UnsupportedCommand {
+                command,
+                version,
+                required,
+            } => {
+                assert_eq!(command, "modify_credential_store_credential");
+                assert_eq!(version, GmpVersion(22, 7));
+                assert_eq!(required, "22.8");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+
+        let error = client
+            .ensure_command_supported(
+                b"<modify_credential credential_id=\"credential-1\"/>",
+                Some("modify_credential_store_credential"),
+            )
+            .expect_err("semantic request metadata is gated before 22.8");
+        assert!(matches!(
+            error,
+            GvmError::UnsupportedCommand { command, .. }
+                if command == "modify_credential_store_credential"
+        ));
+        assert!(client
+            .ensure_semantic_command_supported("modify_credential_store_credential")
+            .is_err());
+
+        let client = GmpClient {
+            connection: ScriptedConnection::new(std::iter::empty::<&str>()),
+            version: GmpVersion(22, 8),
+            wire_trace: None,
+        };
+        client
+            .ensure_command_supported(
+                b"<modify_credential credential_id=\"credential-1\"><vault_id>vault-1</vault_id></modify_credential>",
+                None,
+            )
+            .expect("credential-store modify is available in 22.8");
+        client
+            .ensure_semantic_command_supported("modify_credential_store_credential")
+            .expect("semantic helper is available in 22.8");
     }
 
     #[tokio::test]
@@ -2170,6 +2266,32 @@ mod tests {
             .expect("request succeeds");
 
         assert_eq!(response.status_code(), Some(201));
+    }
+
+    #[tokio::test]
+    async fn next_trait_modify_credential_store_credential_sends_request() {
+        let mut connection = ScriptedConnection::new([
+            r#"<modify_credential_response status="200" status_text="OK"/>"#,
+        ]);
+        connection.connect().await.expect("connection opens");
+        let mut client = GmpNext(GmpClient {
+            connection,
+            version: GmpVersion(22, 8),
+            wire_trace: None,
+        });
+
+        let response = client
+            .modify_credential_store_credential(
+                &EntityId::new("credential-1").expect("valid id"),
+                ModifyCredentialStoreCredentialOpts {
+                    vault_id: Some("vault-1".into()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("request succeeds");
+
+        assert_eq!(response.status_code(), Some(200));
     }
 
     #[test]
