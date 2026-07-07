@@ -86,14 +86,22 @@ pub fn clone_task(task_id: &EntityId) -> impl Request {
     XmlCommand::new("create_task").child_with_text("copy", task_id.as_str())
 }
 
-/// Build a `create_task` request for a container task.
+/// Build a `create_task` request for an import task.
 #[must_use]
-pub fn create_container_task(name: &str, comment: Option<&str>) -> impl Request {
+pub fn create_import_task(name: &str, comment: Option<&str>) -> impl Request {
     let mut cmd = XmlCommand::new("create_task");
     cmd.add_element_with_text("name", name);
-    add_text_element(&mut cmd, "comment", comment);
     cmd.add_element("target").set_attribute("id", "0");
+    add_text_element(&mut cmd, "comment", comment);
     cmd
+}
+
+/// Build a `create_task` request for an import task.
+///
+/// This is a compatibility alias for [`create_import_task`].
+#[must_use]
+pub fn create_container_task(name: &str, comment: Option<&str>) -> impl Request {
+    create_import_task(name, comment)
 }
 
 /// Build a `create_task` request.
