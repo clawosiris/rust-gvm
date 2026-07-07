@@ -8,9 +8,10 @@ use gvm_client::GmpNext;
 use gvm_client::{
     AgentInstallerLanguage, CreateAgentGroupOpts, CreateAgentGroupTaskOpts,
     CreateOciImageTargetOpts, CreateOciImageTargetTaskOpts, CreateWebApplicationTargetOpts,
-    CreateWebApplicationTaskOpts, GetAgentsOpts, Gmp226Commands, GmpNextCommands, GmpVersioned,
-    GvmError, ModifyAgentControlScanConfigOpts, ModifyAgentGroupOpts, ModifyAgentOpts,
-    ModifyOciImageTargetOpts, ModifyWebApplicationTargetOpts,
+    CreateWebApplicationTaskOpts, GetAgentsOpts, GetCredentialStoresOpts, Gmp226Commands,
+    GmpNextCommands, GmpVersioned, GvmError, ModifyAgentControlScanConfigOpts,
+    ModifyAgentGroupOpts, ModifyAgentOpts, ModifyOciImageTargetOpts,
+    ModifyWebApplicationTargetOpts,
 };
 use gvm_connection::{GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::agents::get_agents;
@@ -251,6 +252,70 @@ async fn next_client_verify_credential_store_round_trip() {
     assert_eq!(
         std::str::from_utf8(history[0].raw_xml()).expect("valid UTF-8 request"),
         "<verify_credential_store credential_store_id=\"credential-store-1\"/>"
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn next_client_credential_store_helpers_send_expected_commands() {
+    let Some(server) = stateful_server(MockVersion::V22_8).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpVersioned::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .call(gvm_gmp::commands::authentication::authenticate(
+            "admin", "admin",
+        ))
+        .await
+        .expect("authenticate should succeed");
+
+    let mut client = match client {
+        GmpVersioned::Next(client) => client,
+        other => panic!("expected Next client, got {other:?}"),
+    };
+
+    server.clear_history();
+    let credential_store_id = EntityId::new("local").expect("valid id");
+    let response = client
+        .get_credential_store(&credential_store_id, Some(true))
+        .await
+        .expect("get_credential_store should succeed");
+    assert_eq!(response.status_code(), Some(200));
+    assert!(response
+        .as_str()
+        .expect("valid UTF-8 XML")
+        .contains("Local credential store"));
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].command_name(), "get_credential_stores");
+    assert_eq!(
+        std::str::from_utf8(history[0].raw_xml()).expect("valid UTF-8 request"),
+        "<get_credential_stores details=\"1\"><credential_store_id>local</credential_store_id></get_credential_stores>"
+    );
+
+    server.clear_history();
+    let response = client
+        .get_credential_stores_with_opts(GetCredentialStoresOpts {
+            filter_string: Some("name=Local".into()),
+            filter_id: Some(EntityId::new("filter-1").expect("valid id")),
+            details: Some(false),
+        })
+        .await
+        .expect("get_credential_stores_with_opts should succeed");
+    assert_eq!(response.status_code(), Some(200));
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].command_name(), "get_credential_stores");
+    assert_eq!(
+        std::str::from_utf8(history[0].raw_xml()).expect("valid UTF-8 request"),
+        "<get_credential_stores details=\"0\" filt_id=\"filter-1\" filter=\"name=Local\"/>"
     );
 
     server.shutdown().await;

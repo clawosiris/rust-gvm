@@ -5,8 +5,8 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_client::{
-    CreateOciImageTargetOpts, CreateWebApplicationTargetOpts, GmpClient, GmpNextCommands,
-    GmpVersioned, GvmError, ImportReportOpts, ModifyOciImageTargetOpts,
+    CreateOciImageTargetOpts, CreateWebApplicationTargetOpts, GetCredentialStoresOpts, GmpClient,
+    GmpNextCommands, GmpVersioned, GvmError, ImportReportOpts, ModifyOciImageTargetOpts,
     ModifyWebApplicationTargetOpts, WireTraceDirection, WireTraceEvent,
 };
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
@@ -652,11 +652,49 @@ async fn typed_rest_support_gap_helpers_parse_fixture_responses() {
         .iter()
         .any(|timezone| timezone.name == "UTC"));
 
+    server.clear_history();
+
     let stores = client
         .get_credential_stores()
         .await
         .expect("credential stores should parse");
     assert_eq!(stores.items[0].name, "Local credential store");
+
+    let store_id = EntityId::new("local").expect("valid id");
+    let store = client
+        .get_credential_store(&store_id, Some(true))
+        .await
+        .expect("credential store should parse");
+    assert_eq!(store.items[0].name, "Local credential store");
+
+    let filtered_stores = client
+        .get_credential_stores_with_opts(GetCredentialStoresOpts {
+            filter_string: Some("name=Local".into()),
+            filter_id: Some(EntityId::new("filter-1").expect("valid id")),
+            details: Some(false),
+        })
+        .await
+        .expect("filtered credential stores should parse");
+    assert_eq!(filtered_stores.items[0].name, "Local credential store");
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 3);
+    assert!(history
+        .iter()
+        .all(|record| record.command_name() == "get_credential_stores"));
+    let commands = history
+        .iter()
+        .map(|record| String::from_utf8(record.raw_xml().to_vec()).expect("xml is utf-8"))
+        .collect::<Vec<_>>();
+    assert_eq!(commands[0], "<get_credential_stores/>");
+    assert_eq!(
+        commands[1],
+        "<get_credential_stores details=\"1\"><credential_store_id>local</credential_store_id></get_credential_stores>"
+    );
+    assert_eq!(
+        commands[2],
+        "<get_credential_stores details=\"0\" filt_id=\"filter-1\" filter=\"name=Local\"/>"
+    );
 
     server.shutdown().await;
 }
