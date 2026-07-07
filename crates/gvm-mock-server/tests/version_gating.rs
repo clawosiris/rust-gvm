@@ -13,7 +13,8 @@
 use gvm_gmp::commands::agent_groups::{create_agent_group, get_agent_groups, CreateAgentGroupOpts};
 use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::credentials::{
-    create_credential_store_credential, verify_credential_store, CredentialStoreCredentialOpts,
+    create_credential_store_credential, modify_credential_store_credential,
+    verify_credential_store, CredentialStoreCredentialOpts, ModifyCredentialStoreCredentialOpts,
 };
 use gvm_gmp::commands::features::get_features;
 use gvm_gmp::commands::integration_configs::{
@@ -297,6 +298,20 @@ async fn version_22_7_rejects_next_commands() {
     assert_eq!(response.status_code(), Some(400));
     assert!(response.status_text().unwrap().contains("GMP 22.8"));
 
+    let response = send_recv(
+        &mut stream,
+        modify_credential_store_credential(
+            &id("credential-1"),
+            ModifyCredentialStoreCredentialOpts {
+                vault_id: Some("vault-1".into()),
+                ..Default::default()
+            },
+        ),
+    )
+    .await;
+    assert_eq!(response.status_code(), Some(400));
+    assert!(response.status_text().unwrap().contains("GMP 22.8"));
+
     server.shutdown().await;
 }
 
@@ -387,6 +402,7 @@ async fn version_22_8_accepts_next_commands() {
     assert_credential_store_verify_works_on_next(&mut stream).await;
     assert_credential_store_credentials_work_on_next(&mut stream).await;
     assert_web_application_targets_and_tasks_work_on_next(&mut stream).await;
+    assert_credential_store_credentials_work_on_next(&mut stream).await;
     assert_oci_image_targets_work_on_next(&mut stream).await;
 
     server.shutdown().await;
@@ -435,7 +451,7 @@ async fn assert_credential_store_verify_works_on_next(stream: &mut UnixStream) {
 }
 
 async fn assert_credential_store_credentials_work_on_next(stream: &mut UnixStream) {
-    let response = send_recv(
+    let create = send_recv(
         stream,
         create_credential_store_credential(
             "Version Gated Store Credential",
@@ -446,7 +462,23 @@ async fn assert_credential_store_credentials_work_on_next(stream: &mut UnixStrea
         ),
     )
     .await;
-    assert_eq!(response.status_code(), Some(201));
+    assert_eq!(create.status_code(), Some(201));
+    let credential_id = id(&create.id().expect("created id"));
+
+    let response = send_recv(
+        stream,
+        modify_credential_store_credential(
+            &credential_id,
+            ModifyCredentialStoreCredentialOpts {
+                credential_store_id: Some(id("credential-store-gate")),
+                vault_id: Some("vault-gate".into()),
+                host_identifier: Some("host-gate".into()),
+                ..Default::default()
+            },
+        ),
+    )
+    .await;
+    assert_eq!(response.status_code(), Some(200));
 }
 
 async fn assert_oci_image_targets_work_on_next(stream: &mut UnixStream) {

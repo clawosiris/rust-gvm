@@ -97,3 +97,27 @@ fn test_credential_get_modify_delete() {
         "<delete_credential credential_id=\"c1\" ultimate=\"1\"/>"
     );
 }
+
+#[test]
+fn test_modify_credential_store_credential() {
+    assert_eq!(
+        xml(modify_credential_store_credential(
+            &id("c1"),
+            ModifyCredentialStoreCredentialOpts::default(),
+        )),
+        "<modify_credential credential_id=\"c1\"/>"
+    );
+    assert_eq!(
+        xml(modify_credential_store_credential(
+            &id("c1"),
+            ModifyCredentialStoreCredentialOpts {
+                name: Some("foo_name".into()),
+                comment: Some("foo_comment".into()),
+                credential_store_id: Some(id("foo_csid")),
+                vault_id: Some("foo_vid".into()),
+                host_identifier: Some("foo_hid".into()),
+            },
+        )),
+        "<modify_credential credential_id=\"c1\"><name>foo_name</name><comment>foo_comment</comment><credential_store_id>foo_csid</credential_store_id><vault_id>foo_vid</vault_id><host_identifier>foo_hid</host_identifier></modify_credential>"
+    );
+}

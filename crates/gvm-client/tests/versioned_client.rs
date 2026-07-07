@@ -11,11 +11,11 @@ use gvm_client::{
     CreateWebApplicationTaskOpts, CredentialStoreCredentialOpts, CredentialStoreCredentialType,
     GetAgentsOpts, GetCredentialStoresOpts, Gmp226Commands, GmpNextCommands, GmpVersioned,
     GvmError, ModifyAgentControlScanConfigOpts, ModifyAgentGroupOpts, ModifyAgentOpts,
-    ModifyOciImageTargetOpts, ModifyWebApplicationTargetOpts,
+    ModifyCredentialStoreCredentialOpts, ModifyOciImageTargetOpts, ModifyWebApplicationTargetOpts,
 };
 use gvm_connection::{GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::agents::get_agents;
-use gvm_gmp::commands::credentials::verify_credential_store;
+use gvm_gmp::commands::credentials::{create_credential, verify_credential_store, CredentialOpts};
 use gvm_gmp::commands::oci_image_targets::get_oci_image_targets;
 use gvm_gmp::{EntityId, GmpVersion};
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
@@ -368,6 +368,70 @@ async fn next_client_create_credential_store_credential_round_trip() {
     assert_eq!(
         raw_xml,
         "<create_credential><name>Client Store Credential</name><type>cs_up</type><comment>stored credential</comment><credential_store_id>credential-store-1</credential_store_id><vault_id>vault-1</vault_id><host_identifier>host-1</host_identifier></create_credential>"
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn next_client_modify_credential_store_credential_round_trip() {
+    let Some(server) = stateful_server(MockVersion::V22_8).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpVersioned::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .call(gvm_gmp::commands::authentication::authenticate(
+            "admin", "admin",
+        ))
+        .await
+        .expect("authenticate should succeed");
+
+    let create_response = client
+        .call(create_credential(
+            "Next Store Credential",
+            CredentialOpts::default(),
+        ))
+        .await
+        .expect("create credential should succeed");
+    let credential_id = id(&create_response.id().expect("created id"));
+
+    let mut client = match client {
+        GmpVersioned::Next(client) => client,
+        other => panic!("expected Next client, got {other:?}"),
+    };
+
+    server.clear_history();
+
+    let response = client
+        .modify_credential_store_credential(
+            &credential_id,
+            ModifyCredentialStoreCredentialOpts {
+                name: Some("Next Updated Store Credential".into()),
+                credential_store_id: Some(id("credential-store-next")),
+                vault_id: Some("vault-next".into()),
+                host_identifier: Some("host-next".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("modify_credential_store_credential should succeed");
+    assert_eq!(response.status_code(), Some(200));
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 1);
+    let command = history.last().expect("modify command recorded");
+    assert_eq!(command.command_name(), "modify_credential");
+    let raw_xml = String::from_utf8(command.raw_xml().to_vec()).expect("valid utf8");
+    assert_eq!(
+        raw_xml,
+        format!(
+            "<modify_credential credential_id=\"{}\"><name>Next Updated Store Credential</name><credential_store_id>credential-store-next</credential_store_id><vault_id>vault-next</vault_id><host_identifier>host-next</host_identifier></modify_credential>",
+            credential_id.as_str()
+        )
     );
 
     server.shutdown().await;

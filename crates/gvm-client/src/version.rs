@@ -42,6 +42,7 @@ pub fn minimum_version_for_command(command_name: &str) -> Option<GmpVersion> {
         | "get_report_export"
         | "get_credential_stores"
         | "verify_credential_store"
+        | "modify_credential_store_credential"
         | "create_oci_image_target"
         | "delete_oci_image_target"
         | "get_oci_image_targets"

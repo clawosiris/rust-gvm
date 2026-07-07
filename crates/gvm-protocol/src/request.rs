@@ -7,6 +7,12 @@
 pub trait Request: Send {
     /// Serialize this request to GMP XML bytes.
     fn to_bytes(&self) -> Vec<u8>;
+
+    /// Return a semantic command name when a helper shares a wire command name
+    /// with older GMP behavior.
+    fn semantic_command_name(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 /// Blanket implementation: anything that is a `Request` can be converted to bytes.

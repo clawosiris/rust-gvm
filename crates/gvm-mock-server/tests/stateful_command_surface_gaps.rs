@@ -18,8 +18,9 @@ use gvm_gmp::commands::agents::{
     GetAgentsOpts, ModifyAgentControlScanConfigOpts, ModifyAgentOpts,
 };
 use gvm_gmp::commands::credentials::{
-    create_credential_store_credential, modify_credential_store, verify_credential_store,
-    CredentialStoreCredentialOpts, ModifyCredentialStoreOpts,
+    create_credential, create_credential_store_credential, get_credential, modify_credential_store,
+    modify_credential_store_credential, verify_credential_store, CredentialOpts,
+    CredentialStoreCredentialOpts, ModifyCredentialStoreCredentialOpts, ModifyCredentialStoreOpts,
 };
 use gvm_gmp::commands::hosts::{create_host, get_host, get_hosts, HostOpts};
 use gvm_gmp::commands::system::{modify_auth, modify_license};
@@ -302,6 +303,50 @@ async fn stateful_credential_store_create_credential_uses_gvmd_builder_shape() {
         .status_text()
         .unwrap()
         .contains("host_identifier"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn stateful_credential_store_modify_credential_uses_gvmd_builder_shape() {
+    let Some(server) = stateful_server_with_version(GmpVersion::V22_8).await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let create = send_request(
+        &mut stream,
+        create_credential("Store Credential", CredentialOpts::default()),
+    )
+    .await;
+    assert_eq!(create.status_code(), Some(201));
+    let credential_id = EntityId::new(extract_id(&create)).expect("created credential id");
+
+    let modify = send_request(
+        &mut stream,
+        modify_credential_store_credential(
+            &credential_id,
+            ModifyCredentialStoreCredentialOpts {
+                name: Some("Updated Store Credential".into()),
+                comment: Some("from credential store".into()),
+                credential_store_id: Some(id("credential-store-1")),
+                vault_id: Some("vault-1".into()),
+                host_identifier: Some("host-1".into()),
+            },
+        ),
+    )
+    .await;
+    assert_eq!(modify.status_code(), Some(200));
+
+    let get = send_request(&mut stream, get_credential(&credential_id)).await;
+    assert_eq!(get.status_code(), Some(200));
+    let get_xml = get.as_str().expect("utf8");
+    assert!(get_xml.contains("Updated Store Credential"));
+    assert!(get_xml.contains("<comment>from credential store</comment>"));
+    assert!(get_xml.contains("<credential_store_id>credential-store-1</credential_store_id>"));
+    assert!(get_xml.contains("<vault_id>vault-1</vault_id>"));
+    assert!(get_xml.contains("<host_identifier>host-1</host_identifier>"));
 
     server.shutdown().await;
 }

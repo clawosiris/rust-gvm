@@ -21,8 +21,9 @@ use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::credentials::{
     create_credential, create_credential_store_credential, get_credential_store,
     get_credential_stores, get_credential_stores_with_opts, get_credentials,
-    verify_credential_store, CredentialOpts, CredentialStoreCredentialOpts,
-    GetCredentialStoresOpts, GetCredentialsOpts,
+    modify_credential_store_credential, verify_credential_store, CredentialOpts,
+    CredentialStoreCredentialOpts, GetCredentialStoresOpts, GetCredentialsOpts,
+    ModifyCredentialStoreCredentialOpts,
 };
 use gvm_gmp::commands::feed::get_feeds;
 use gvm_gmp::commands::filters::{create_filter, get_filters, FilterOpts, GetFiltersOpts};
@@ -122,7 +123,7 @@ use gvm_gmp::responses::{
     GetSchedulesResponse, GetSettingsResponse, GetTagsResponse, GetTargetsResponse,
     GetTasksResponse, GetTicketsResponse, GetTimezonesResponse, GetTlsCertificatesResponse,
     GetUsersResponse, GetVersionResponse, GetVulnerabilitiesResponse,
-    GetWebApplicationTargetsResponse, HelpResponse, ModifyAssetResponse,
+    GetWebApplicationTargetsResponse, HelpResponse, ModifyAssetResponse, ModifyCredentialResponse,
     ModifyOciImageTargetResponse, ModifyScanConfigResponse, ModifyScannerResponse,
     ModifyWebApplicationTargetResponse, ReportExport, RestoreResponse, ResumeTaskResponse,
     StartTaskResponse, SyncConfigResponse, VerifyCredentialStoreResponse, VerifyScannerResponse,
@@ -1222,6 +1223,23 @@ impl<C: GvmConnection + Send> GmpClient<C> {
             ))
             .await?;
         CreateCredentialResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a credential-store-backed `modify_credential` request and return a
+    /// typed [`ModifyCredentialResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_credential_store_credential(
+        &mut self,
+        credential_id: &EntityId,
+        opts: ModifyCredentialStoreCredentialOpts,
+    ) -> Result<ModifyCredentialResponse, GvmError> {
+        self.ensure_semantic_command_supported("modify_credential_store_credential")?;
+        let response = self
+            .send(modify_credential_store_credential(credential_id, opts))
+            .await?;
+        ModifyCredentialResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     // ── Filters ───────────────────────────────────────────────────────────────
