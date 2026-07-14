@@ -12,7 +12,7 @@ use gvm_gmp::commands::hosts::*;
 fn test_create_host_basic() {
     assert_eq!(
         xml(create_host(Default::default())),
-        "<create_asset><asset_type>host</asset_type></create_asset>"
+        "<create_asset><asset><type>host</type><name></name></asset></create_asset>"
     );
 }
 
@@ -20,7 +20,15 @@ fn test_create_host_basic() {
 fn test_create_host_with_value_and_comment() {
     assert_eq!(
         xml(create_host(HostOpts { comment: Some("c".into()), value: Some("1.1.1.1".into()) })),
-        "<create_asset><asset_type>host</asset_type><comment>c</comment><value>1.1.1.1</value></create_asset>"
+        "<create_asset><asset><type>host</type><name>1.1.1.1</name><comment>c</comment></asset></create_asset>"
+    );
+}
+
+#[test]
+fn test_create_host_named_constructor() {
+    assert_eq!(
+        xml(create_host(HostOpts::named("2001:db8::1"))),
+        "<create_asset><asset><type>host</type><name>2001:db8::1</name></asset></create_asset>"
     );
 }
 
@@ -28,10 +36,10 @@ fn test_create_host_with_value_and_comment() {
 fn test_host_get_modify_delete() {
     assert_eq!(
         xml(get_host(&id("h1"))),
-        "<get_assets asset_id=\"h1\" asset_type=\"host\" details=\"1\" type=\"host\"/>"
+        "<get_assets asset_id=\"h1\" details=\"1\" type=\"host\"/>"
     );
     assert_eq!(
         xml(delete_host(&id("h1"), false)),
-        "<delete_asset asset_id=\"h1\" ultimate=\"0\"/>"
+        "<delete_asset asset_id=\"h1\"/>"
     );
 }

@@ -11,6 +11,9 @@ use gvm_client::{
 };
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::alerts::{trigger_alert, TriggerAlertOpts};
+use gvm_gmp::commands::assets::{
+    AssetType, CreateAssetOpts, DeleteAssetOpts, GetAssetsOpts, ModifyAssetOpts,
+};
 use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::feed::get_feed;
 use gvm_gmp::commands::nvts::{
@@ -31,7 +34,7 @@ use gvm_gmp::commands::targets::{
     create_target, delete_target, get_targets, CreateTargetOpts, GetTargetsOpts,
 };
 use gvm_gmp::commands::tasks::{create_task, delete_task, get_task, start_task, stop_task};
-use gvm_gmp::responses::{CreateScanConfigResponse, GetScanConfigsResponse};
+use gvm_gmp::responses::{Asset, CreateScanConfigResponse, GetScanConfigsResponse};
 use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
 use gvm_gmp::FeedType;
@@ -360,7 +363,7 @@ async fn operating_system_helpers_send_asset_commands() {
     let response = client
         .call(get_operating_systems(GetOperatingSystemsOpts {
             filter_string: Some("name=Debian".into()),
-            filter_id: Some(EntityId::new("filter-1").expect("valid id")),
+            filter_id: Some(EntityId::new("0").expect("valid id")),
             details: Some(true),
         }))
         .await
@@ -373,8 +376,162 @@ async fn operating_system_helpers_send_asset_commands() {
     assert_eq!(command.command_name(), "get_assets");
     assert_eq!(
         std::str::from_utf8(command.raw_xml()).expect("valid UTF-8 command"),
-        "<get_assets details=\"1\" filt_id=\"filter-1\" filter=\"name=Debian\" type=\"os\"/>"
+        "<get_assets details=\"1\" filt_id=\"0\" filter=\"name=Debian\" type=\"os\"/>"
     );
+
+    server.shutdown().await;
+}
+
+async fn typed_host_asset_lifecycle(client: &mut GmpClient<UnixSocketConnection>) {
+    let mut create_opts = CreateAssetOpts::host("192.0.2.10");
+    create_opts.comment = Some("created through typed client".into());
+    let created = client
+        .create_asset(create_opts)
+        .await
+        .expect("create_asset should succeed");
+    let asset_id = created
+        .id
+        .expect("direct host creation should return an id");
+
+    let fetched = client
+        .get_assets(GetAssetsOpts {
+            asset_id: Some(asset_id.clone()),
+            type_: Some(AssetType::Host),
+            ..Default::default()
+        })
+        .await
+        .expect("get_assets should return the created host");
+    assert_eq!(fetched.items.len(), 1);
+    assert_eq!(fetched.counts.total, Some(1));
+    assert_eq!(fetched.counts.filtered, Some(1));
+    assert_eq!(fetched.counts.page, Some(1));
+    let Asset::Host(host) = &fetched.items[0] else {
+        panic!("created asset should be a host");
+    };
+    assert_eq!(host.meta.id, asset_id);
+    assert_eq!(host.meta.name, "192.0.2.10");
+    assert_eq!(
+        host.meta.comment.as_deref(),
+        Some("created through typed client")
+    );
+
+    client
+        .modify_asset(
+            &asset_id,
+            ModifyAssetOpts {
+                comment: Some("updated through typed client".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("modify_asset should succeed");
+
+    let updated = client
+        .get_assets(GetAssetsOpts {
+            asset_id: Some(asset_id.clone()),
+            type_: Some(AssetType::Host),
+            ..Default::default()
+        })
+        .await
+        .expect("get_assets should return the updated host");
+    let Asset::Host(host) = &updated.items[0] else {
+        panic!("updated asset should be a host");
+    };
+    assert_eq!(
+        host.meta.comment.as_deref(),
+        Some("updated through typed client")
+    );
+
+    client
+        .modify_asset(&asset_id, ModifyAssetOpts::default())
+        .await
+        .expect("modify_asset without a comment should clear it");
+    let cleared = client
+        .get_assets(GetAssetsOpts {
+            asset_id: Some(asset_id.clone()),
+            type_: Some(AssetType::Host),
+            ..Default::default()
+        })
+        .await
+        .expect("get_assets should return the host with a cleared comment");
+    let Asset::Host(host) = &cleared.items[0] else {
+        panic!("cleared asset should be a host");
+    };
+    assert_eq!(host.meta.comment, None);
+
+    client
+        .delete_asset(&asset_id, DeleteAssetOpts::default())
+        .await
+        .expect("delete_asset should succeed");
+    let remaining = client
+        .get_assets(GetAssetsOpts {
+            type_: Some(AssetType::Host),
+            ..Default::default()
+        })
+        .await
+        .expect("get_assets should succeed after deletion");
+    assert!(remaining.items.is_empty());
+    assert_eq!(remaining.counts.total, Some(0));
+    assert_eq!(remaining.counts.filtered, Some(0));
+    assert_eq!(remaining.counts.page, Some(0));
+}
+
+async fn typed_operating_system_get(client: &mut GmpClient<UnixSocketConnection>) {
+    let operating_systems = client
+        .get_assets(GetAssetsOpts {
+            type_: Some(AssetType::OperatingSystem),
+            ..Default::default()
+        })
+        .await
+        .expect("get_assets should parse operating-system assets");
+    assert_eq!(operating_systems.items.len(), 1);
+    let Asset::OperatingSystem(operating_system) = &operating_systems.items[0] else {
+        panic!("seeded asset should be an operating system");
+    };
+    assert_eq!(operating_system.title, "Example Linux");
+    assert_eq!(operating_system.installs, 0);
+    assert_eq!(operating_system.all_installs, 0);
+    assert_eq!(operating_system.host_count, 0);
+    assert!(operating_system.hosts.is_empty());
+    assert_eq!(operating_system.latest_severity.as_deref(), Some("6.1"));
+}
+
+#[tokio::test]
+async fn typed_asset_helpers_cover_host_lifecycle_over_unix_transport() {
+    let server = match MockGmpServer::builder()
+        .mode(ServerMode::Stateful)
+        .version(MockVersion::V22_5)
+        .unix_socket_auto()
+        .seed(|store| {
+            let mut operating_system = Resource::new("asset", "cpe:/o:example:linux");
+            operating_system.set_attr("type", "os");
+            operating_system.set_attr("title", "Example Linux");
+            operating_system.set_attr("installs", "0");
+            operating_system.set_attr("all_installs", "0");
+            operating_system.set_attr("latest_severity", "6.1");
+            operating_system.set_attr("highest_severity", "9.8");
+            operating_system.set_attr("average_severity", "7.95");
+            store.seed(operating_system);
+        })
+        .build()
+        .await
+    {
+        Ok(server) => server,
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return,
+        Err(error) => panic!("server should start: {error}"),
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    typed_host_asset_lifecycle(&mut client).await;
+    typed_operating_system_get(&mut client).await;
 
     server.shutdown().await;
 }

@@ -92,6 +92,29 @@ def main() -> int:
             state: dict[str, str] = {}
 
             with GMP(connection=conn, transform=transform) as gmp:
+                def require_host(comment: str) -> None:
+                    response = gmp.get_host(
+                        host_id=state["host_id"], details=True
+                    )
+                    asset = response.find("asset")
+                    require(asset is not None, "created host asset was not returned")
+                    require(
+                        asset.get("id") == state["host_id"],
+                        "returned host asset had the wrong id",
+                    )
+                    require(
+                        asset.findtext("type") == "host",
+                        "host asset did not use the canonical type element",
+                    )
+                    require(
+                        asset.find("host") is not None,
+                        "host asset did not include the canonical host payload",
+                    )
+                    require(
+                        asset.findtext("comment") == comment,
+                        "host asset comment did not match",
+                    )
+
                 checks = [
                     (
                         "authenticate",
@@ -118,6 +141,33 @@ def main() -> int:
                             ),
                             "created target not returned by get_targets",
                         ),
+                    ),
+                    (
+                        "create_host",
+                        lambda: state.setdefault(
+                            "host_id",
+                            response_id(
+                                gmp.create_host(
+                                    name="192.0.2.20",
+                                    comment="created through python-gvm",
+                                )
+                            ),
+                        ),
+                    ),
+                    (
+                        "get_host_canonical",
+                        lambda: require_host("created through python-gvm"),
+                    ),
+                    (
+                        "modify_host",
+                        lambda: gmp.modify_host(
+                            host_id=state["host_id"],
+                            comment="updated through python-gvm",
+                        ),
+                    ),
+                    (
+                        "get_host_modified",
+                        lambda: require_host("updated through python-gvm"),
                     ),
                     (
                         "create_task",
@@ -199,6 +249,20 @@ def main() -> int:
                     (
                         "delete_note",
                         lambda: gmp.delete_note(note_id=state["note_id"]),
+                    ),
+                    (
+                        "delete_host",
+                        lambda: gmp.delete_host(host_id=state["host_id"]),
+                    ),
+                    (
+                        "get_hosts_after_delete",
+                        lambda: require(
+                            all(
+                                host.get("id") != state["host_id"]
+                                for host in gmp.get_hosts().findall("asset")
+                            ),
+                            "deleted host was still returned by get_hosts",
+                        ),
                     ),
                     (
                         "delete_task",

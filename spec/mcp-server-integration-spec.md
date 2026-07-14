@@ -76,10 +76,12 @@ Extracted from `clawosiris/openvas-mcp-server` service layer:
 
 ### 2.2 Gaps to Address
 
-#### Gap 1: `get_assets` command
-The MCP server calls `gmp.get_assets(asset_type="host")` and `gmp.get_assets(asset_type="os")`. The mock server's `handle_get` treats this like any `get_*` but `get_assets` uses `asset_type` attribute, not the standard `type_id` pattern.
-
-**Fix:** Add special-case handling in `handle_get` for `get_assets` — route by `asset_type` attribute.
+#### Gap 1: `get_assets` command (resolved)
+Current gvmd and python-gvm use the canonical `type="host|os"` attribute and
+nested asset payloads. The stateful mock now follows that behavior by default,
+including host lifecycle semantics and canonical host/OS responses. Historical
+flat `asset_type`/`value` inputs remain available only through the explicit
+`AssetInputProfile::LegacyFlatCompatibility` profile.
 
 #### Gap 2: `get_results` command
 Called by compliance service: `gmp.get_results(filter_string=...)`. Results are nested inside reports in real GMP but can also be queried directly.
@@ -206,11 +208,12 @@ reports = client.execute(lambda gmp: gmp.get_reports())
 ## 4. Implementation Plan
 
 ### Phase 1: Mock Server Gaps (Rust)
-1. Add special-case handlers for `get_assets`, `get_results`, `get_nvts`
-2. Add `create_note`/`create_override`/`create_ticket` with correct element parsing
-3. Add `modify_ticket` with status support
-4. Improve `get_report` XML structure (nested results)
-5. Ensure per-connection session isolation (already works — verify)
+1. ✅ Add a gvmd-conformant stateful `get_assets` and host lifecycle handler
+2. Add special-case handlers for `get_results` and `get_nvts`
+3. Add `create_note`/`create_override`/`create_ticket` with correct element parsing
+4. Add `modify_ticket` with status support
+5. Improve `get_report` XML structure (nested results)
+6. Ensure per-connection session isolation (already works — verify)
 
 ### Phase 2: Integration Test Harness (Python)
 1. Python test script that starts mock server binary

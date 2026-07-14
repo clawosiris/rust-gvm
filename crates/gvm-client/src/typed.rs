@@ -13,6 +13,10 @@
 
 use gvm_connection::GvmConnection;
 use gvm_gmp::commands::alerts::{create_alert, get_alerts, AlertOpts, GetAlertsOpts};
+use gvm_gmp::commands::assets::{
+    create_asset, delete_asset, get_assets, modify_asset, CreateAssetOpts, DeleteAssetOpts,
+    GetAssetsOpts, ModifyAssetOpts,
+};
 use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::credentials::{
     create_credential, get_credential_stores, get_credentials, verify_credential_store,
@@ -95,16 +99,17 @@ use gvm_gmp::commands::web_application_targets::{
     CreateWebApplicationTargetOpts, GetWebApplicationTargetsOpts, ModifyWebApplicationTargetOpts,
 };
 use gvm_gmp::responses::{
-    AuthenticateResponse, CreateAlertResponse, CreateCredentialResponse, CreateFilterResponse,
-    CreateGroupResponse, CreateHostResponse, CreateNoteResponse, CreateOciImageTargetResponse,
-    CreateOverrideResponse, CreatePermissionResponse, CreatePortListResponse,
-    CreateReportConfigResponse, CreateReportFormatResponse, CreateReportResponse,
-    CreateRoleResponse, CreateScanConfigResponse, CreateScannerResponse, CreateScheduleResponse,
-    CreateTagResponse, CreateTargetResponse, CreateTaskResponse, CreateTicketResponse,
-    CreateTlsCertificateResponse, CreateUserResponse, CreateWebApplicationTargetResponse,
-    DeleteOciImageTargetResponse, DeleteScanConfigResponse, DeleteScannerResponse,
-    DeleteWebApplicationTargetResponse, DescribeAuthResponse, EmptyTrashcanResponse,
-    GetAlertsResponse, GetCertBundAdvisoriesResponse, GetCpesResponse, GetCredentialStoresResponse,
+    AuthenticateResponse, CreateAlertResponse, CreateAssetResponse, CreateCredentialResponse,
+    CreateFilterResponse, CreateGroupResponse, CreateHostResponse, CreateNoteResponse,
+    CreateOciImageTargetResponse, CreateOverrideResponse, CreatePermissionResponse,
+    CreatePortListResponse, CreateReportConfigResponse, CreateReportFormatResponse,
+    CreateReportResponse, CreateRoleResponse, CreateScanConfigResponse, CreateScannerResponse,
+    CreateScheduleResponse, CreateTagResponse, CreateTargetResponse, CreateTaskResponse,
+    CreateTicketResponse, CreateTlsCertificateResponse, CreateUserResponse,
+    CreateWebApplicationTargetResponse, DeleteAssetResponse, DeleteOciImageTargetResponse,
+    DeleteScanConfigResponse, DeleteScannerResponse, DeleteWebApplicationTargetResponse,
+    DescribeAuthResponse, EmptyTrashcanResponse, GetAlertsResponse, GetAssetsResponse,
+    GetCertBundAdvisoriesResponse, GetCpesResponse, GetCredentialStoresResponse,
     GetCredentialsResponse, GetCvesResponse, GetDfnCertAdvisoriesResponse, GetFeedsResponse,
     GetFiltersResponse, GetGroupsResponse, GetHostsResponse, GetNotesResponse,
     GetNvtFamiliesResponse, GetNvtsResponse, GetOciImageTargetsResponse, GetOverridesResponse,
@@ -115,10 +120,10 @@ use gvm_gmp::responses::{
     GetSchedulesResponse, GetSettingsResponse, GetTagsResponse, GetTargetsResponse,
     GetTasksResponse, GetTicketsResponse, GetTimezonesResponse, GetTlsCertificatesResponse,
     GetUsersResponse, GetVersionResponse, GetVulnerabilitiesResponse,
-    GetWebApplicationTargetsResponse, HelpResponse, ModifyOciImageTargetResponse,
-    ModifyScanConfigResponse, ModifyScannerResponse, ModifyWebApplicationTargetResponse,
-    ReportExport, RestoreResponse, ResumeTaskResponse, StartTaskResponse, SyncConfigResponse,
-    VerifyCredentialStoreResponse, VerifyScannerResponse,
+    GetWebApplicationTargetsResponse, HelpResponse, ModifyAssetResponse,
+    ModifyOciImageTargetResponse, ModifyScanConfigResponse, ModifyScannerResponse,
+    ModifyWebApplicationTargetResponse, ReportExport, RestoreResponse, ResumeTaskResponse,
+    StartTaskResponse, SyncConfigResponse, VerifyCredentialStoreResponse, VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
 
@@ -1434,6 +1439,55 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     pub async fn create_host(&mut self, opts: HostOpts) -> Result<CreateHostResponse, GvmError> {
         let response = self.send(create_host(opts)).await?;
         CreateHostResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    // ── Assets ──────────────────────────────────────────────────────────────────
+
+    /// Send a `get_assets` request and return a typed [`GetAssetsResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_assets(&mut self, opts: GetAssetsOpts) -> Result<GetAssetsResponse, GvmError> {
+        let response = self.send(get_assets(opts)).await?;
+        GetAssetsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `create_asset` request and return a typed [`CreateAssetResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn create_asset(
+        &mut self,
+        opts: CreateAssetOpts,
+    ) -> Result<CreateAssetResponse, GvmError> {
+        let response = self.send(create_asset(opts)).await?;
+        CreateAssetResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `modify_asset` request and return a typed [`ModifyAssetResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_asset(
+        &mut self,
+        asset_id: &EntityId,
+        opts: ModifyAssetOpts,
+    ) -> Result<ModifyAssetResponse, GvmError> {
+        let response = self.send(modify_asset(asset_id, opts)).await?;
+        ModifyAssetResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `delete_asset` request and return a typed [`DeleteAssetResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn delete_asset(
+        &mut self,
+        asset_id: &EntityId,
+        opts: DeleteAssetOpts,
+    ) -> Result<DeleteAssetResponse, GvmError> {
+        let response = self.send(delete_asset(asset_id, opts)).await?;
+        DeleteAssetResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     // ── TLS Certificates ──────────────────────────────────────────────────────

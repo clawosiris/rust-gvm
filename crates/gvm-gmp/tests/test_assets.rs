@@ -23,7 +23,7 @@ fn test_create_asset_xml() {
             comment: Some("c".into()),
             value: Some("1.1.1.1".into()),
         })),
-        "<create_asset><asset_type>host</asset_type><comment>c</comment><value>1.1.1.1</value></create_asset>"
+        "<create_asset><asset><type>host</type><name>1.1.1.1</name><comment>c</comment></asset></create_asset>"
     );
 }
 
@@ -40,6 +40,25 @@ fn test_get_assets_with_custom_type_xml() {
 }
 
 #[test]
+fn test_asset_type_alias_emits_only_canonical_type() {
+    assert_eq!(
+        xml(get_assets(GetAssetsOpts {
+            asset_type: Some(AssetType::Host),
+            ..Default::default()
+        })),
+        "<get_assets type=\"host\"/>"
+    );
+    assert_eq!(
+        xml(get_assets(GetAssetsOpts {
+            asset_type: Some(AssetType::Host),
+            type_: Some(AssetType::OperatingSystem),
+            ..Default::default()
+        })),
+        "<get_assets type=\"os\"/>"
+    );
+}
+
+#[test]
 fn test_modify_delete_asset_xml() {
     assert_eq!(
         xml(modify_asset(
@@ -49,7 +68,7 @@ fn test_modify_delete_asset_xml() {
                 value: Some("v".into()),
             },
         )),
-        "<modify_asset asset_id=\"a1\"><comment>updated</comment><value>v</value></modify_asset>"
+        "<modify_asset asset_id=\"a1\"><comment>updated</comment></modify_asset>"
     );
     assert_eq!(
         xml(delete_asset(
@@ -58,7 +77,7 @@ fn test_modify_delete_asset_xml() {
                 ultimate: Some(false),
             },
         )),
-        "<delete_asset asset_id=\"a1\" ultimate=\"0\"/>"
+        "<delete_asset asset_id=\"a1\"/>"
     );
 }
 
@@ -81,7 +100,6 @@ fn test_host_wrappers_match_generic_xml() {
         xml(get_host(&id("h1"))),
         xml(get_assets(GetAssetsOpts {
             asset_id: Some(id("h1")),
-            asset_type: Some(AssetType::Host),
             type_: Some(AssetType::Host),
             details: Some(true),
             ..Default::default()
@@ -94,18 +112,13 @@ fn test_host_wrappers_match_generic_xml() {
             &id("h1"),
             ModifyAssetOpts {
                 comment: create_opts.comment,
-                value: create_opts.value,
+                value: None,
             },
         ))
     );
     assert_eq!(
         xml(delete_host(&id("h1"), true)),
-        xml(delete_asset(
-            &id("h1"),
-            DeleteAssetOpts {
-                ultimate: Some(true),
-            },
-        ))
+        xml(delete_asset(&id("h1"), DeleteAssetOpts { ultimate: None },))
     );
 }
 
@@ -137,6 +150,6 @@ fn test_operating_system_wrapper_xml_regression() {
 fn test_get_hosts_wrapper_regression() {
     assert_eq!(
         xml(get_hosts(Default::default())),
-        "<get_assets asset_type=\"host\" type=\"host\"/>"
+        "<get_assets type=\"host\"/>"
     );
 }

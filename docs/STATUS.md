@@ -132,7 +132,7 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 |---------|--------|-------|
 | get_version (pre-auth) | ✅ | Always allowed without authentication |
 | authenticate (credential validation) | ✅ | Per-session state |
-| get_assets (asset_type filtering) | ✅ | MCP server compatible |
+| direct-host asset lifecycle and canonical `get_assets` | ✅ | Strict gvmd behavior by default; legacy flat inputs are explicit opt-in; report-import/bulk-delete paths are not modeled |
 | get_report (nested results XML) | ✅ | Proper `<report><report><results>` nesting |
 | create_note/override (text + nvt_oid) | ✅ | Non-standard element parsing |
 | create_ticket (result_id + comment) | ✅ | Non-standard element parsing |

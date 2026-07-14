@@ -9,7 +9,7 @@
 )]
 #![cfg(feature = "unix-socket-tests")]
 
-use gvm_mock_server::{GmpVersion, MockGmpServer, Resource, ServerMode};
+use gvm_mock_server::{AssetInputProfile, GmpVersion, MockGmpServer, Resource, ServerMode};
 use gvm_protocol::Response;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
@@ -39,6 +39,7 @@ async fn stateful_server() -> Option<MockGmpServer> {
             .mode(ServerMode::Stateful)
             .version(GmpVersion::V22_5)
             .credentials("admin", "admin")
+            .asset_input_profile(AssetInputProfile::LegacyFlatCompatibility)
             .unix_socket_auto(),
     )
     .await
@@ -73,7 +74,7 @@ async fn get_assets_filters_by_asset_type() {
 
     let os_resp = send_recv(
         &mut stream,
-        b"<create_asset asset_type=\"os\"><name>Ubuntu</name></create_asset>",
+        b"<create_asset><asset_type>os</asset_type><value>Ubuntu</value></create_asset>",
     )
     .await;
     assert_eq!(os_resp.status_code(), Some(201));
