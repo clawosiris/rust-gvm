@@ -1114,6 +1114,42 @@ async fn full_crud_lifecycle_succeeds() {
 }
 
 #[tokio::test]
+async fn typed_create_import_task_uses_import_task_shape() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    server.clear_history();
+
+    let response = client
+        .create_import_task("Import Task", Some("Imported reports"))
+        .await
+        .expect("create_import_task should succeed");
+
+    assert_eq!(response.status, 201);
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 1);
+    let command = history.last().expect("create_task command recorded");
+    assert_eq!(command.command_name(), "create_task");
+    assert_eq!(
+        String::from_utf8(command.raw_xml().to_vec()).expect("history should be UTF-8"),
+        "<create_task><name>Import Task</name><target id=\"0\"/><comment>Imported reports</comment></create_task>"
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn typed_trashcan_helpers_restore_deleted_task() {
     let Some(server) = stateful_server().await else {
         return;
