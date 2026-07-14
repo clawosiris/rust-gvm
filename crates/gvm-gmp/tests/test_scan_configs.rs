@@ -32,6 +32,78 @@ fn test_create_scan_config_with_copy_and_options() {
 }
 
 #[test]
+fn test_import_policy_builds_create_config_xml() {
+    let policy_xml = concat!(
+        r#"<get_configs_response status="200" status_text="OK">"#,
+        r#"<config id="c4aa21e4-23e6-4064-ae49-c0d425738a98">"#,
+        "<name>Foobar</name>",
+        "<comment>Foobar policy</comment>",
+        "<usage_type>policy</usage_type>",
+        "</config>",
+        "</get_configs_response>"
+    );
+
+    assert_eq!(
+        xml(import_policy(policy_xml).expect("policy import request builds")),
+        format!("<create_config>{policy_xml}</create_config>")
+    );
+}
+
+#[test]
+fn test_import_policy_accepts_self_closing_and_comment_payloads() {
+    assert_eq!(
+        xml(import_policy("<get_configs_response/>").expect("self-closing import builds")),
+        "<create_config><get_configs_response/></create_config>"
+    );
+    assert_eq!(
+        xml(
+            import_policy(r#"<?xml version="1.0"?><get_configs_response/>"#)
+                .expect("XML declaration import builds")
+        ),
+        "<create_config><get_configs_response/></create_config>"
+    );
+
+    let policy_xml = concat!(
+        r#"<get_configs_response status="200" status_text="OK">"#,
+        "<!-- exported policy follows -->",
+        r#"<config id="c4aa21e4-23e6-4064-ae49-c0d425738a98">"#,
+        "<scanner/>",
+        "<name>Foobar</name>",
+        "</config>",
+        "</get_configs_response>"
+    );
+    assert_eq!(
+        xml(import_policy(policy_xml).expect("comment import builds")),
+        format!("<create_config>{policy_xml}</create_config>")
+    );
+}
+
+#[test]
+fn test_import_policy_rejects_invalid_xml() {
+    for invalid_xml in [
+        "",
+        "abcdef",
+        "<get_configs_response>",
+        "<get_configs_response/><get_configs_response></get_configs_response>",
+        "<get_configs_response/><get_configs_response/>",
+        "<get_configs_response/></unexpected>",
+        "<get_configs_response><config/></unexpected>",
+        "<get_report_configs_response/>",
+        "<![CDATA[before]]><get_configs_response/>",
+        "before<get_configs_response/>",
+        "<get_configs_response/>after",
+        r#"<get_configs_response/><?xml version="1.0"?>"#,
+        r#"<get_configs_response><!-- invalid -- comment --></get_configs_response>"#,
+        r#"<!DOCTYPE get_configs_response><get_configs_response/>"#,
+    ] {
+        assert!(
+            import_policy(invalid_xml).is_err(),
+            "expected invalid import XML to fail: {invalid_xml}"
+        );
+    }
+}
+
+#[test]
 fn test_scan_config_get_delete_sync() {
     assert_eq!(
         xml(clone_scan_config(&id("c1"))),

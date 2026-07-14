@@ -982,6 +982,79 @@ async fn typed_policy_getters_filter_stateful_mock_resources() {
 }
 
 #[tokio::test]
+async fn typed_policy_import_uses_stateful_mock_server_create_command() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    server.clear_history();
+
+    let policy_xml = concat!(
+        r#"<get_configs_response status="200" status_text="OK">"#,
+        r#"<config id="c4aa21e4-23e6-4064-ae49-c0d425738a98">"#,
+        "<owner><name>admin</name></owner>",
+        "<name>Imported policy</name>",
+        "<comment>Imported policy comment</comment>",
+        "<usage_type>policy</usage_type>",
+        "</config>",
+        "</get_configs_response>"
+    );
+    let policy = client
+        .import_policy(policy_xml)
+        .await
+        .expect("policy import should succeed");
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].command_name(), "create_config");
+    assert_eq!(
+        String::from_utf8(history[0].raw_xml().to_vec()).expect("xml is utf-8"),
+        format!("<create_config>{policy_xml}</create_config>")
+    );
+
+    let fetched = client
+        .get_policy(&policy.id, GetPolicyOpts { audits: Some(true) })
+        .await
+        .expect("imported policy should be fetched");
+    assert_eq!(fetched.items.len(), 1);
+    assert_eq!(fetched.items[0].meta.id, policy.id);
+    assert_eq!(fetched.items[0].meta.name, "Imported policy");
+    assert_eq!(
+        fetched.items[0].meta.comment.as_deref(),
+        Some("Imported policy comment")
+    );
+    assert_eq!(fetched.items[0].usage_type.as_deref(), Some("policy"));
+
+    let multi_policy_xml = concat!(
+        r#"<get_configs_response status="200" status_text="OK">"#,
+        r#"<config id="c4aa21e4-23e6-4064-ae49-c0d425738a98">"#,
+        "<name>First policy</name>",
+        "<usage_type>policy</usage_type>",
+        "</config>",
+        r#"<config id="d5aa21e4-23e6-4064-ae49-c0d425738a99">"#,
+        "<name>Second policy</name>",
+        "<usage_type>policy</usage_type>",
+        "</config>",
+        "</get_configs_response>"
+    );
+    assert!(
+        client.import_policy(multi_policy_xml).await.is_err(),
+        "stateful mock should reject multi-config policy imports instead of truncating"
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn typed_report_format_import_and_clone_use_mock_server_create_command() {
     let Some(server) = echo_server(MockVersion::V22_5).await else {
         return;
