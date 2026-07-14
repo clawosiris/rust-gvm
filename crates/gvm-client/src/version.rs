@@ -17,9 +17,16 @@ pub fn minimum_version_for_command(command_name: &str) -> Option<GmpVersion> {
         | "modify_report_config"
         | "get_features" => Some(GmpVersion(22, 6)),
         "create_agent_group"
+        | "delete_agent"
         | "delete_agent_group"
+        | "get_agents"
         | "get_agent_groups"
+        | "get_agent_installer_instruction"
+        | "get_agent_support_bundle"
+        | "modify_agent"
+        | "modify_agent_control_scan_config"
         | "modify_agent_group"
+        | "sync_agents"
         | "get_integration_configs"
         | "modify_integration_config"
         | "get_report_hosts"
@@ -213,6 +220,32 @@ mod tests {
         assert!(command_supported("get_agent_groups", GmpVersion(22, 8)));
         assert_eq!(
             minimum_version_for_command("create_agent_group"),
+            Some(GmpVersion(22, 8))
+        );
+        assert!(!command_supported("get_agents", GmpVersion(22, 7)));
+        assert!(command_supported("get_agents", GmpVersion(22, 8)));
+        assert_eq!(
+            minimum_version_for_command("modify_agent"),
+            Some(GmpVersion(22, 8))
+        );
+        assert_eq!(
+            minimum_version_for_command("delete_agent"),
+            Some(GmpVersion(22, 8))
+        );
+        assert_eq!(
+            minimum_version_for_command("sync_agents"),
+            Some(GmpVersion(22, 8))
+        );
+        assert_eq!(
+            minimum_version_for_command("modify_agent_control_scan_config"),
+            Some(GmpVersion(22, 8))
+        );
+        assert_eq!(
+            minimum_version_for_command("get_agent_installer_instruction"),
+            Some(GmpVersion(22, 8))
+        );
+        assert_eq!(
+            minimum_version_for_command("get_agent_support_bundle"),
             Some(GmpVersion(22, 8))
         );
         assert!(!command_supported(
