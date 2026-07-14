@@ -12,7 +12,9 @@ use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::alerts::{trigger_alert, TriggerAlertOpts};
 use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::feed::get_feed;
-use gvm_gmp::commands::nvts::{get_nvt_preference, get_nvt_preferences, GetNvtPreferencesOpts};
+use gvm_gmp::commands::nvts::{
+    get_nvt_preference, get_nvt_preferences, GetNvtPreferencesOpts, GetNvtsOpts,
+};
 use gvm_gmp::commands::operating_systems::{get_operating_systems, GetOperatingSystemsOpts};
 use gvm_gmp::commands::reports::{
     get_report_hosts, get_report_vulnerabilities, get_reports, GetReportsOpts,
@@ -31,7 +33,7 @@ use gvm_gmp::responses::{CreateScanConfigResponse, GetScanConfigsResponse};
 use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
 use gvm_gmp::FeedType;
-use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
+use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, Resource, ServerMode};
 use std::sync::{Arc, Mutex};
 
 async fn stateful_server() -> Option<MockGmpServer> {
@@ -893,6 +895,95 @@ async fn preference_getters_send_expected_mock_server_commands() {
     assert_eq!(
         commands[3],
         "<get_preferences nvt_oid=\"1.3.6.1\" preference=\"timeout\"/>"
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_scan_config_nvt_helpers_use_stateful_mock_server_filters() {
+    let wanted_oid = "1.3.6.1.4.1.25623.1.0.90001";
+    let other_oid = "1.3.6.1.4.1.25623.1.0.90002";
+    let server = match MockGmpServer::builder()
+        .mode(ServerMode::Stateful)
+        .version(MockVersion::V22_5)
+        .unix_socket_auto()
+        .seed(move |store| {
+            let mut wanted = Resource::new("nvt", "Config-scoped NVT");
+            wanted.set_attr("oid", wanted_oid);
+            wanted.set_attr("config_id", "config-1");
+            wanted.set_attr("preferences_config_id", "prefs-1");
+            wanted.set_attr("family", "General");
+            store.seed(wanted);
+
+            let mut other = Resource::new("nvt", "Other NVT");
+            other.set_attr("oid", other_oid);
+            other.set_attr("config_id", "config-2");
+            other.set_attr("preferences_config_id", "prefs-2");
+            other.set_attr("family", "Other");
+            store.seed(other);
+        })
+        .build()
+        .await
+    {
+        Ok(server) => server,
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return,
+        Err(error) => panic!("server should start: {error}"),
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+    server.clear_history();
+
+    let listed = client
+        .get_scan_config_nvts(GetNvtsOpts {
+            details: Some(true),
+            preferences: Some(true),
+            preference_count: Some(true),
+            timeout: Some(false),
+            config_id: Some(EntityId::new("config-1").expect("valid id")),
+            preferences_config_id: Some(EntityId::new("prefs-1").expect("valid id")),
+            family: Some("General".into()),
+            sort_order: Some("ascending".into()),
+            sort_field: Some("name".into()),
+            ..Default::default()
+        })
+        .await
+        .expect("scan-config NVT list request should succeed");
+    assert_eq!(listed.items.len(), 1);
+    assert_eq!(listed.items[0].oid, wanted_oid);
+    assert_eq!(listed.items[0].name, "Config-scoped NVT");
+    assert_eq!(listed.items[0].family.as_deref(), Some("General"));
+
+    let single = client
+        .get_scan_config_nvt(wanted_oid)
+        .await
+        .expect("scan-config NVT request should succeed");
+    assert_eq!(single.items.len(), 1);
+    assert_eq!(single.items[0].oid, wanted_oid);
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 2);
+    assert!(history
+        .iter()
+        .all(|record| record.command_name() == "get_nvts"));
+    let commands = history
+        .iter()
+        .map(|record| String::from_utf8(record.raw_xml().to_vec()).expect("xml is utf-8"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        commands[0],
+        "<get_nvts config_id=\"config-1\" details=\"1\" family=\"General\" preference_count=\"1\" preferences=\"1\" preferences_config_id=\"prefs-1\" sort_field=\"name\" sort_order=\"ascending\" timeout=\"0\"/>"
+    );
+    assert_eq!(
+        commands[1],
+        "<get_nvts details=\"1\" nvt_oid=\"1.3.6.1.4.1.25623.1.0.90001\" preference_count=\"1\" preferences=\"1\"/>"
     );
 
     server.shutdown().await;
