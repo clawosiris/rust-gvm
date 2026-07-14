@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use uuid::Uuid;
 
-use crate::command_parser::{parse_command, parse_element_text, ParsedCommand};
+use crate::command_parser::{parse_command, parse_element_text, ParsedCommand, ParsedElement};
 use crate::fault::{FaultAction, FaultEngine};
 use crate::fixtures::FixtureStore;
 use crate::history::CommandHistory;
@@ -260,6 +260,12 @@ impl SessionHandler {
 
     fn handle_create(&self, cmd: &ParsedCommand, raw_xml: &[u8], store: &ResourceStore) -> Vec<u8> {
         let resource_type = cmd.name.strip_prefix("create_").unwrap_or("unknown");
+        let has_config_import_payload = resource_type == "config" && has_config_import_payload(cmd);
+        let imported_config = if resource_type == "config" {
+            imported_config_element(cmd)
+        } else {
+            None
+        };
 
         // Check for clone (copy element)
         if let Some(copy_id) = parse_element_text(raw_xml, "copy") {
@@ -300,6 +306,10 @@ impl SessionHandler {
                 .or_else(|| asset_value.clone())
                 .or_else(|| asset_type.as_ref().map(|ty| format!("{ty} asset")))
                 .unwrap_or_else(|| "asset".to_string()),
+            "config" if has_config_import_payload => imported_config
+                .and_then(|config| element_child_text(config, "name").map(ToOwned::to_owned))
+                .unwrap_or_default(),
+            "config" => parse_element_text(raw_xml, "name").unwrap_or_default(),
             _ => parse_element_text(raw_xml, "name").unwrap_or_default(),
         };
         let requires_name = !matches!(
@@ -313,7 +323,13 @@ impl SessionHandler {
         let mut resource = Resource::new(resource_type, &name);
 
         // Extract comment
-        if let Some(comment) = parse_element_text(raw_xml, "comment") {
+        let comment = if has_config_import_payload {
+            imported_config
+                .and_then(|config| element_child_text(config, "comment").map(ToOwned::to_owned))
+        } else {
+            parse_element_text(raw_xml, "comment")
+        };
+        if let Some(comment) = comment {
             resource.comment = comment;
         }
         if let Some(scheduler_cron_time) = parse_element_text(raw_xml, "scheduler_cron_time") {
@@ -340,7 +356,14 @@ impl SessionHandler {
         }
 
         if matches!(resource_type, "config" | "task") {
-            if let Some(usage_type) = parse_element_text(raw_xml, "usage_type") {
+            let usage_type = if has_config_import_payload {
+                imported_config.and_then(|config| {
+                    element_child_text(config, "usage_type").map(ToOwned::to_owned)
+                })
+            } else {
+                parse_element_text(raw_xml, "usage_type")
+            };
+            if let Some(usage_type) = usage_type {
                 resource.set_attr("usage_type", &usage_type);
             }
         }
@@ -1111,6 +1134,32 @@ fn has_agent_ids(cmd: &ParsedCommand) -> bool {
                 .iter()
                 .any(|agent| agent.name == "agent" && agent.attributes.contains_key("id"))
         })
+}
+
+fn has_config_import_payload(cmd: &ParsedCommand) -> bool {
+    cmd.children
+        .iter()
+        .any(|child| child.name == "get_configs_response")
+}
+
+fn imported_config_element(cmd: &ParsedCommand) -> Option<&ParsedElement> {
+    let mut configs = cmd
+        .children
+        .iter()
+        .find(|child| child.name == "get_configs_response")
+        .into_iter()
+        .flat_map(|response| response.children.iter())
+        .filter(|child| child.name == "config");
+    let config = configs.next()?;
+    configs.next().is_none().then_some(config)
+}
+
+fn element_child_text<'a>(element: &'a ParsedElement, name: &str) -> Option<&'a str> {
+    element
+        .children
+        .iter()
+        .find(|child| child.name == name)
+        .and_then(|child| child.text.as_deref())
 }
 
 fn usage_type_matches(resource: &Resource, requested_usage_type: Option<&str>) -> bool {
