@@ -52,7 +52,11 @@ fn test_task_mutation_and_actions() {
     );
     assert_eq!(
         xml(create_container_task("foo", Some("bar"))),
-        "<create_task><name>foo</name><comment>bar</comment><target id=\"0\"/></create_task>"
+        "<create_task><name>foo</name><target id=\"0\"/><comment>bar</comment></create_task>"
+    );
+    assert_eq!(
+        xml(create_import_task("foo", Some("bar"))),
+        "<create_task><name>foo</name><target id=\"0\"/><comment>bar</comment></create_task>"
     );
     assert_eq!(
         xml(get_task(&id("a1"))),

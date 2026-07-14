@@ -70,7 +70,8 @@ use gvm_gmp::commands::system::{
 use gvm_gmp::commands::tags::{create_tag, get_tags, GetTagsOpts, TagOpts};
 use gvm_gmp::commands::targets::{create_target, get_targets, CreateTargetOpts, GetTargetsOpts};
 use gvm_gmp::commands::tasks::{
-    create_task, get_tasks, resume_task, start_task, CreateTaskOpts, GetTasksOpts,
+    create_import_task, create_task, get_tasks, resume_task, start_task, CreateTaskOpts,
+    GetTasksOpts,
 };
 use gvm_gmp::commands::tickets::{create_ticket, get_tickets, GetTicketsOpts, TicketOpts};
 use gvm_gmp::commands::tls_certificates::{
@@ -478,6 +479,19 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         let response = self
             .send(create_task(name, config_id, target_id, scanner_id, opts))
             .await?;
+        CreateTaskResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `create_task` import-task request and return a typed [`CreateTaskResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn create_import_task(
+        &mut self,
+        name: &str,
+        comment: Option<&str>,
+    ) -> Result<CreateTaskResponse, GvmError> {
+        let response = self.send(create_import_task(name, comment)).await?;
         CreateTaskResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
