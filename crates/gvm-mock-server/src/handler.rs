@@ -126,6 +126,7 @@ impl SessionHandler {
     fn normal_response(&self, cmd: &ParsedCommand, xml: &[u8]) -> Vec<u8> {
         match self.mode {
             ServerMode::Echo => echo_response(&cmd.name, self.version.as_str()),
+            ServerMode::Fixture if cmd.name == "get_info" => render_secinfo_response(cmd),
             ServerMode::Fixture => self.handle_fixture(&cmd.name),
             ServerMode::Stateful => self.handle_stateful(cmd, xml),
             ServerMode::Scenario => self.handle_scenario(cmd),
@@ -1268,6 +1269,20 @@ fn render_secinfo_response(cmd: &ParsedCommand) -> Vec<u8> {
                 ("DFN-2026-002", "DFN-CERT advisory two"),
             ],
         ),
+        "NVT" | "nvt" => (
+            "nvt",
+            vec![
+                ("1.3.6.1.4.1.25623.1", "Mock NVT one"),
+                ("1.3.6.1.4.1.25623.2", "Mock NVT two"),
+            ],
+        ),
+        "OVALDEF" | "ovaldef" => (
+            "ovaldef",
+            vec![
+                ("oval:org.example:def:1", "Mock OVAL definition one"),
+                ("oval:org.example:def:2", "Mock OVAL definition two"),
+            ],
+        ),
         "os" => (
             "os",
             vec![("os-1", "Debian GNU/Linux"), ("os-2", "Ubuntu Linux")],
@@ -1283,9 +1298,11 @@ fn render_secinfo_response(cmd: &ParsedCommand) -> Vec<u8> {
     };
 
     let info_id = cmd.attr("info_id");
+    let name = cmd.attr("name");
     let entries: Vec<_> = entries
         .into_iter()
         .filter(|(id, _)| info_id.is_none_or(|wanted| wanted == *id))
+        .filter(|(id, entry_name)| name.is_none_or(|wanted| wanted == *id || wanted == *entry_name))
         .collect();
     let count = entries.len();
     let items: String = entries

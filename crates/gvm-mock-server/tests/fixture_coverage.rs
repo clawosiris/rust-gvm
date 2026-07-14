@@ -116,6 +116,33 @@ async fn fixture_get_filters() {
 }
 
 #[tokio::test]
+async fn fixture_get_info_respects_secinfo_type_and_filters() {
+    let Some((server, mut s)) = server().await else {
+        return;
+    };
+
+    let r = send_recv(&mut s, br#"<get_info name="Mock NVT one" type="NVT"/>"#).await;
+    assert!(r.is_success());
+    let body = r.as_str().expect("fixture response should be utf8");
+    assert!(body.contains("<nvt id=\"1.3.6.1.4.1.25623.1\">"));
+    assert!(body.contains("<nvt_count>1<filtered>1</filtered></nvt_count>"));
+    assert!(!body.contains("Mock NVT two"));
+
+    let r = send_recv(
+        &mut s,
+        br#"<get_info info_id="oval:org.example:def:1" type="OVALDEF"/>"#,
+    )
+    .await;
+    assert!(r.is_success());
+    let body = r.as_str().expect("fixture response should be utf8");
+    assert!(body.contains("<ovaldef id=\"oval:org.example:def:1\">"));
+    assert!(body.contains("<ovaldef_count>1<filtered>1</filtered></ovaldef_count>"));
+    assert!(!body.contains("Mock OVAL definition two"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn fixture_get_reports() {
     let Some((server, mut s)) = server().await else {
         return;

@@ -24,6 +24,7 @@ use gvm_gmp::commands::scan_configs::{
     ConfigOpts, GetPolicyOpts, GetScanConfigPreferencesOpts, GetScanConfigsOpts,
 };
 use gvm_gmp::commands::scanners::ScannerOpts;
+use gvm_gmp::commands::secinfo::{get_info, get_info_list, GenericInfoType, GetInfoListOpts};
 use gvm_gmp::commands::system::get_timezones;
 use gvm_gmp::commands::targets::{
     create_target, delete_target, get_targets, CreateTargetOpts, GetTargetsOpts,
@@ -724,6 +725,69 @@ async fn typed_vulnerability_helpers_parse_stateful_mock_response() {
     assert_eq!(vulnerability.items[0].id, "vuln-1");
     assert_eq!(vulnerability.items[0].name, "Outdated package");
     assert_eq!(vulnerability.counts.total, Some(1));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn generic_secinfo_helpers_use_stateful_mock_server_path() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    server.clear_history();
+
+    let nvt = client
+        .call(get_info_list(
+            GenericInfoType::Nvt,
+            GetInfoListOpts {
+                filter: Some("family=General".into()),
+                filter_id: Some("filter-1".into()),
+                name: Some("Mock NVT one".into()),
+                details: Some(false),
+            },
+        ))
+        .await
+        .expect("NVT secinfo list should succeed");
+    let text = nvt.as_str().expect("response should be UTF-8");
+    assert!(text.contains("<nvt id=\"1.3.6.1.4.1.25623.1\">"));
+    assert!(text.contains("Mock NVT one"));
+    assert!(text.contains("<nvt_count>1<filtered>1</filtered></nvt_count>"));
+    assert!(!text.contains("Mock NVT two"));
+
+    let oval = client
+        .call(get_info("oval:org.example:def:1", GenericInfoType::Ovaldef))
+        .await
+        .expect("OVALDEF secinfo lookup should succeed");
+    let text = oval.as_str().expect("response should be UTF-8");
+    assert!(text.contains("<ovaldef id=\"oval:org.example:def:1\">"));
+    assert!(text.contains("Mock OVAL definition one"));
+    assert!(text.contains("<ovaldef_count>1<filtered>1</filtered></ovaldef_count>"));
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 2);
+    let commands = history
+        .iter()
+        .map(|command| {
+            String::from_utf8(command.raw_xml().to_vec()).expect("history should be UTF-8")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        commands,
+        [
+            "<get_info details=\"0\" filt_id=\"filter-1\" filter=\"family=General\" name=\"Mock NVT one\" type=\"NVT\"/>",
+            "<get_info details=\"1\" info_id=\"oval:org.example:def:1\" type=\"OVALDEF\"/>",
+        ]
+    );
 
     server.shutdown().await;
 }
