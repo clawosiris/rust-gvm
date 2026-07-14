@@ -8,7 +8,7 @@ use std::sync::{Arc, RwLock};
 
 use uuid::Uuid;
 
-use crate::util::{now_iso, xml_escape};
+use crate::util::{now_iso, xml_escape, xml_escape_attr};
 
 /// Task status in the lifecycle state machine.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,14 +103,23 @@ impl Resource {
         } else {
             "name"
         };
+        let oid_attr = if self.resource_type == "nvt" {
+            self.attr("oid")
+                .or_else(|| self.attr("nvt_oid"))
+                .map(|oid| format!(" oid=\"{}\"", xml_escape_attr(oid)))
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
         let mut xml = format!(
-            "<{type} id=\"{id}\">\
+            "<{type} id=\"{id}\"{oid_attr}>\
              <{name_tag}>{name}</{name_tag}>\
              <comment>{comment}</comment>\
              <creation_time>{ct}</creation_time>\
              <modification_time>{mt}</modification_time>",
             type = self.resource_type,
             id = self.id,
+            oid_attr = oid_attr,
             name_tag = name_tag,
             name = xml_escape(&self.name),
             comment = xml_escape(&self.comment),
@@ -119,6 +128,14 @@ impl Resource {
         );
         // Add type-specific attributes
         for (k, v) in &self.attrs {
+            if self.resource_type == "nvt"
+                && matches!(
+                    k.as_str(),
+                    "oid" | "nvt_oid" | "config_id" | "preferences_config_id"
+                )
+            {
+                continue;
+            }
             xml.push_str(&format!("<{k}>{}</{k}>", xml_escape(v)));
         }
         xml.push_str(&format!("</{}>", self.resource_type));
