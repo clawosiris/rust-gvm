@@ -43,7 +43,7 @@ use gvm_gmp::commands::report_formats::{
 use gvm_gmp::commands::reports::{
     get_report_closed_cves, get_report_errors, get_report_export, get_report_export_with_opts,
     get_report_tls_certificates, get_report_vulnerabilities, get_report_vulns, get_reports,
-    GetReportDetailsOpts, GetReportExportOpts, GetReportsOpts,
+    import_report, GetReportDetailsOpts, GetReportExportOpts, GetReportsOpts, ImportReportOpts,
 };
 use gvm_gmp::commands::results::{get_results, GetResultsOpts};
 use gvm_gmp::commands::roles::{create_role, get_roles, GetRolesOpts, RoleOpts};
@@ -84,7 +84,7 @@ use gvm_gmp::responses::{
     AuthenticateResponse, CreateAlertResponse, CreateCredentialResponse, CreateFilterResponse,
     CreateGroupResponse, CreateHostResponse, CreateNoteResponse, CreateOverrideResponse,
     CreatePermissionResponse, CreatePortListResponse, CreateReportConfigResponse,
-    CreateReportFormatResponse, CreateRoleResponse, CreateScanConfigResponse,
+    CreateReportFormatResponse, CreateReportResponse, CreateRoleResponse, CreateScanConfigResponse,
     CreateScannerResponse, CreateScheduleResponse, CreateTagResponse, CreateTargetResponse,
     CreateTaskResponse, CreateTicketResponse, CreateTlsCertificateResponse, CreateUserResponse,
     DeleteScanConfigResponse, DeleteScannerResponse, DescribeAuthResponse, EmptyTrashcanResponse,
@@ -1239,6 +1239,25 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         let request = import_report_format(report_format_xml)?;
         let response = self.send(request).await?;
         CreateReportFormatResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    // ── Reports ───────────────────────────────────────────────────────────────
+
+    /// Send a `create_report` request that imports report XML and return a typed
+    /// [`CreateReportResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if request construction fails, the request fails, or
+    /// response parsing fails.
+    pub async fn import_report(
+        &mut self,
+        report_xml: &str,
+        task_id: &EntityId,
+        opts: ImportReportOpts,
+    ) -> Result<CreateReportResponse, GvmError> {
+        let request = import_report(report_xml, task_id, opts)?;
+        let response = self.send(request).await?;
+        CreateReportResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     // ── Report Configs ────────────────────────────────────────────────────────

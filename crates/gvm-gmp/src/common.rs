@@ -2,7 +2,10 @@
 // SPDX-FileCopyrightText: 2026 Greenbone AG
 
 use gvm_protocol::XmlCommand;
+use quick_xml::events::Event;
+use quick_xml::Reader;
 
+use crate::responses::ParseError;
 use crate::types::EntityId;
 
 pub(crate) fn bool_str(value: bool) -> &'static str {
@@ -63,6 +66,112 @@ pub(crate) fn add_string_list(cmd: &mut XmlCommand, parent: &str, child: &str, v
     for value in values {
         root.add_child_with_text(child, value);
     }
+}
+
+pub(crate) fn validate_single_xml_document(
+    xml: &str,
+    field: &str,
+    expected_root: Option<&str>,
+) -> Result<(), ParseError> {
+    let mut reader = Reader::from_str(xml);
+    reader.config_mut().trim_text(true);
+    let mut depth = 0usize;
+    let mut saw_root = false;
+    let mut completed_root = false;
+
+    loop {
+        match reader.read_event()? {
+            Event::Start(event) => {
+                if completed_root {
+                    return Err(ParseError::InvalidValue {
+                        field: field.to_string(),
+                        value: "multiple root elements".to_string(),
+                    });
+                }
+                if depth == 0 {
+                    validate_root_name(event.name().as_ref(), field, expected_root)?;
+                }
+                saw_root = true;
+                depth += 1;
+            }
+            Event::Empty(event) => {
+                if completed_root {
+                    return Err(ParseError::InvalidValue {
+                        field: field.to_string(),
+                        value: "multiple root elements".to_string(),
+                    });
+                }
+                if depth == 0 {
+                    validate_root_name(event.name().as_ref(), field, expected_root)?;
+                }
+                saw_root = true;
+                completed_root = true;
+            }
+            Event::End(_) => {
+                if depth == 0 {
+                    return Err(ParseError::InvalidValue {
+                        field: field.to_string(),
+                        value: "unmatched end tag".to_string(),
+                    });
+                }
+                depth -= 1;
+                if depth == 0 {
+                    completed_root = true;
+                }
+            }
+            Event::Text(event) => {
+                if depth == 0 && !std::str::from_utf8(event.as_ref())?.trim().is_empty() {
+                    return Err(ParseError::InvalidValue {
+                        field: field.to_string(),
+                        value: if completed_root {
+                            "text after root element"
+                        } else {
+                            "text before root element"
+                        }
+                        .to_string(),
+                    });
+                }
+            }
+            Event::CData(_) | Event::GeneralRef(_) if depth == 0 => {
+                return Err(ParseError::InvalidValue {
+                    field: field.to_string(),
+                    value: "content outside root element".to_string(),
+                });
+            }
+            Event::Eof => {
+                if saw_root && depth == 0 {
+                    return Ok(());
+                }
+                return Err(ParseError::MissingElement("root".to_string()));
+            }
+            Event::Decl(_) | Event::DocType(_) => {
+                return Err(ParseError::InvalidValue {
+                    field: field.to_string(),
+                    value: "XML declarations and doctypes are not valid embedded command XML"
+                        .to_string(),
+                });
+            }
+            Event::PI(_) | Event::Comment(_) | Event::CData(_) | Event::GeneralRef(_) => {}
+        }
+    }
+}
+
+fn validate_root_name(
+    actual: &[u8],
+    field: &str,
+    expected_root: Option<&str>,
+) -> Result<(), ParseError> {
+    let Some(expected_root) = expected_root else {
+        return Ok(());
+    };
+    let actual = std::str::from_utf8(actual)?;
+    if actual == expected_root {
+        return Ok(());
+    }
+    Err(ParseError::InvalidValue {
+        field: field.to_string(),
+        value: format!("expected <{expected_root}> root element, got <{actual}>"),
+    })
 }
 
 #[cfg(test)]

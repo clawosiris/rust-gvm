@@ -72,7 +72,7 @@ pub use gvm_gmp::commands::oci_image_targets::{
     CreateOciImageTargetOpts, GetOciImageTargetsOpts, ModifyOciImageTargetOpts,
 };
 pub use gvm_gmp::commands::report_configs::ModifyReportConfigOpts;
-pub use gvm_gmp::commands::reports::{GetReportDetailsOpts, GetReportExportOpts};
+pub use gvm_gmp::commands::reports::{GetReportDetailsOpts, GetReportExportOpts, ImportReportOpts};
 pub use gvm_gmp::commands::web_application_targets::{
     CreateWebApplicationTargetOpts, GetWebApplicationTargetsOpts, ModifyWebApplicationTargetOpts,
 };
