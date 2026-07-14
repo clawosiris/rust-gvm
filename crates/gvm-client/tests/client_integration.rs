@@ -710,6 +710,8 @@ async fn typed_vulnerability_helpers_parse_stateful_mock_response() {
         .await
         .expect("authenticate should succeed");
 
+    server.clear_history();
+
     let vulnerabilities = client
         .get_vulnerabilities(Default::default())
         .await
@@ -725,6 +727,19 @@ async fn typed_vulnerability_helpers_parse_stateful_mock_response() {
     assert_eq!(vulnerability.items[0].id, "vuln-1");
     assert_eq!(vulnerability.items[0].name, "Outdated package");
     assert_eq!(vulnerability.counts.total, Some(1));
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 2);
+    let commands = history
+        .iter()
+        .map(|command| {
+            String::from_utf8(command.raw_xml().to_vec()).expect("history should be UTF-8")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        commands,
+        ["<get_vulns/>", "<get_vulns vuln_id=\"vuln-1\"/>",]
+    );
 
     server.shutdown().await;
 }

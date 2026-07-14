@@ -222,6 +222,12 @@ pub fn get_vuln(vuln_id: &str) -> impl Request {
     XmlCommand::new("get_vulns").attribute("vuln_id", vuln_id)
 }
 
+/// Build a `get_vulns` request using python-gvm's descriptive helper name.
+#[must_use]
+pub fn get_vulnerability(vulnerability_id: &str) -> impl Request {
+    get_vuln(vulnerability_id)
+}
+
 /// Build a `get_license` request.
 #[must_use]
 pub fn get_license() -> impl Request {
@@ -329,6 +335,10 @@ mod tests {
             "<get_vulns filt_id=\"filter-1\" filter=\"severity&gt;5\"/>"
         );
         assert_eq!(xml(get_vuln("vuln-1")), "<get_vulns vuln_id=\"vuln-1\"/>");
+        assert_eq!(
+            xml(get_vulnerability("vuln-1")),
+            "<get_vulns vuln_id=\"vuln-1\"/>"
+        );
         assert_eq!(xml(modify_auth(true)), "<modify_auth enabled=\"1\"/>");
         assert_eq!(
             xml(modify_license("abc")),

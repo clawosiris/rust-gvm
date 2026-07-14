@@ -67,7 +67,8 @@ use gvm_gmp::commands::secinfo::{
     get_dfn_cert_advisories, get_dfn_cert_advisory, GetSecInfoOpts,
 };
 use gvm_gmp::commands::system::{
-    describe_auth, get_settings, get_timezones, get_vuln, get_vulns, FilteredGetOpts,
+    describe_auth, get_settings, get_timezones, get_vulnerability as get_vulnerability_cmd,
+    get_vulns, FilteredGetOpts,
 };
 use gvm_gmp::commands::tags::{create_tag, get_tags, GetTagsOpts, TagOpts};
 use gvm_gmp::commands::targets::{create_target, get_targets, CreateTargetOpts, GetTargetsOpts};
@@ -869,7 +870,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         vulnerability_id: &str,
     ) -> Result<GetVulnerabilitiesResponse, GvmError> {
-        let response = self.send(get_vuln(vulnerability_id)).await?;
+        let response = self.send(get_vulnerability_cmd(vulnerability_id)).await?;
         GetVulnerabilitiesResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
