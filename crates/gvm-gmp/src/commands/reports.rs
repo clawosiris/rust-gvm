@@ -6,7 +6,11 @@
 use gvm_protocol::{Request, XmlCommand};
 
 use crate::commands::usage_type::UsageType;
-use crate::common::{add_filter_attrs, add_optional_id_element, bool_str, set_optional_bool_attr};
+use crate::common::{
+    add_filter_attrs, add_optional_id_element, bool_str, set_optional_bool_attr,
+    validate_single_xml_document,
+};
+use crate::responses::ParseError;
 use crate::types::EntityId;
 
 /// Optional fields for `create_report` requests.
@@ -18,6 +22,13 @@ pub struct CreateReportOpts {
     pub filter_id: Option<EntityId>,
     /// Whether pagination should be ignored.
     pub ignore_pagination: Option<bool>,
+}
+
+/// Optional fields for `import_report` requests.
+#[derive(Debug, Clone, Default)]
+pub struct ImportReportOpts {
+    /// Whether to import assets embedded in the report XML.
+    pub in_assets: Option<bool>,
 }
 
 /// Options for `get_reports` requests.
@@ -89,6 +100,39 @@ pub fn create_report(task_id: &EntityId, opts: CreateReportOpts) -> impl Request
         cmd.set_attribute("ignore_pagination", bool_str(ignore_pagination));
     }
     cmd
+}
+
+/// Build a `create_report` request that imports existing report XML.
+///
+/// # Errors
+/// Returns an error if `report_xml` is not a single well-formed XML document.
+pub fn import_report(
+    report_xml: &str,
+    task_id: &EntityId,
+    opts: ImportReportOpts,
+) -> Result<impl Request, ParseError> {
+    validate_single_xml_document(report_xml, "report_xml", Some("report"))?;
+    let in_assets_len = opts
+        .in_assets
+        .map(|_| "<in_assets>0</in_assets>".len())
+        .unwrap_or_default();
+    let mut request = Vec::with_capacity(
+        "<create_report><task id=\"\"/></create_report>".len()
+            + task_id.as_str().len()
+            + in_assets_len
+            + report_xml.len(),
+    );
+    request.extend_from_slice(b"<create_report><task id=\"");
+    request.extend_from_slice(task_id.as_str().as_bytes());
+    request.extend_from_slice(b"\"/>");
+    if let Some(in_assets) = opts.in_assets {
+        request.extend_from_slice(b"<in_assets>");
+        request.extend_from_slice(bool_str(in_assets).as_bytes());
+        request.extend_from_slice(b"</in_assets>");
+    }
+    request.extend_from_slice(report_xml.as_bytes());
+    request.extend_from_slice(b"</create_report>");
+    Ok(request)
 }
 
 /// Build a `get_reports` request.

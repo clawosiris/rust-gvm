@@ -563,3 +563,40 @@ async fn stateful_audit_reports_filter_by_usage_type() {
 
     server.shutdown().await;
 }
+
+#[tokio::test]
+async fn stateful_import_report_persists_task_and_in_assets() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let create = send_recv(
+        &mut stream,
+        br#"<create_report><task id="task-import"/><report id="imported-report"><name>Imported</name><in_assets>0</in_assets></report><in_assets>1</in_assets></create_report>"#,
+    )
+    .await;
+    let create_text = create.as_str().expect("response XML should be UTF-8");
+    assert!(create_text.contains(r#"status="201""#), "{create_text}");
+
+    let report_id = extract_id(&create);
+    let listed = send_recv(&mut stream, br#"<get_reports details="1"/>"#).await;
+    let listed_text = listed.as_str().expect("response XML should be UTF-8");
+
+    assert!(
+        listed_text.contains("<task_id>task-import</task_id>"),
+        "{listed_text}"
+    );
+    assert!(
+        listed_text.contains(&format!(r#"id="{report_id}""#)),
+        "{listed_text}"
+    );
+    assert!(
+        listed_text.contains("<in_assets>1</in_assets>"),
+        "{listed_text}"
+    );
+
+    server.shutdown().await;
+}

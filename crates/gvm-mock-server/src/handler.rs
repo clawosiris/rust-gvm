@@ -370,6 +370,9 @@ impl SessionHandler {
                     }
                 }
             }
+            if let Some(in_assets) = cmd.child_text("in_assets") {
+                resource.set_attr("in_assets", in_assets);
+            }
         }
 
         // Target-specific
