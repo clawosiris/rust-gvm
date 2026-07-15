@@ -33,6 +33,39 @@ pub(crate) enum DeleteAssetResult {
     NotFound,
 }
 
+pub(crate) const DEFAULT_CONFIG_ID: Uuid =
+    Uuid::from_u128(0xdaba_56c8_73ec_11df_a475_0022_6476_4cea);
+pub(crate) const DEFAULT_SCANNER_ID: Uuid =
+    Uuid::from_u128(0x08b6_9003_5fc2_4037_a479_93b4_4021_1c73);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StoreError {
+    NotFound(&'static str),
+    InUse(&'static str),
+    InvalidState(&'static str),
+    Inconsistent(&'static str),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TaskReferences {
+    pub target: Option<Uuid>,
+    pub config: Option<Uuid>,
+    pub scanner: Option<Uuid>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct TaskReferenceUpdates {
+    pub target: Option<Uuid>,
+    pub config: Option<Uuid>,
+    pub scanner: Option<Uuid>,
+}
+
+impl TaskReferenceUpdates {
+    fn is_empty(self) -> bool {
+        self.target.is_none() && self.config.is_none() && self.scanner.is_none()
+    }
+}
+
 /// Task status in the lifecycle state machine.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TaskStatus {
@@ -48,6 +81,8 @@ pub enum TaskStatus {
     Stopped,
     /// Completed successfully.
     Done,
+    /// Interrupted before completion and eligible for resumption.
+    Interrupted,
 }
 
 impl TaskStatus {
@@ -60,6 +95,7 @@ impl TaskStatus {
             Self::StopRequested => "Stop Requested",
             Self::Stopped => "Stopped",
             Self::Done => "Done",
+            Self::Interrupted => "Interrupted",
         }
     }
 }
@@ -340,7 +376,69 @@ fn default_resources() -> HashMap<Uuid, Resource> {
     integration_config.set_attr("oidc_provider_client_secret", "mock-client-secret");
     resources.insert(integration_config.id, integration_config);
 
+    let mut config = Resource::with_id("config", "Full and fast", DEFAULT_CONFIG_ID);
+    config.comment = "Mock default scan config".to_string();
+    config.set_attr("usage_type", "scan");
+    resources.insert(config.id, config);
+
+    let mut scanner = Resource::with_id("scanner", "OpenVAS Default", DEFAULT_SCANNER_ID);
+    scanner.comment = "Mock default scanner".to_string();
+    scanner.set_attr("type", "OpenVAS");
+    resources.insert(scanner.id, scanner);
+
     resources
+}
+
+fn active_typed_resource<'a>(
+    inner: &'a StoreInner,
+    id: &Uuid,
+    resource_type: &'static str,
+) -> Result<&'a Resource, StoreError> {
+    inner
+        .resources
+        .get(id)
+        .filter(|resource| !resource.trashed && resource.resource_type == resource_type)
+        .ok_or(StoreError::NotFound(resource_type))
+}
+
+fn validate_task_reference(
+    inner: &StoreInner,
+    id: &Uuid,
+    resource_type: &'static str,
+) -> Result<(), StoreError> {
+    active_typed_resource(inner, id, resource_type).map(|_| ())
+}
+
+fn stored_task_reference(
+    task: &Resource,
+    key: &'static str,
+    resource_type: &'static str,
+) -> Result<Uuid, StoreError> {
+    task.attr(key)
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .ok_or(StoreError::Inconsistent(resource_type))
+}
+
+fn validate_stored_task_references(inner: &StoreInner, task: &Resource) -> Result<(), StoreError> {
+    if task.attr("import_task") == Some("1") {
+        return Ok(());
+    }
+    for (key, resource_type) in [
+        ("target_id", "target"),
+        ("config_id", "config"),
+        ("scanner_id", "scanner"),
+    ] {
+        let id = stored_task_reference(task, key, resource_type)?;
+        validate_task_reference(inner, &id, resource_type)?;
+    }
+    Ok(())
+}
+
+fn task_is_active(task: &Resource) -> bool {
+    matches!(
+        task.attr("status"),
+        Some("Requested" | "Running" | "Stop Requested")
+    )
 }
 
 impl ResourceStore {
@@ -407,10 +505,61 @@ impl ResourceStore {
         id
     }
 
+    pub(crate) fn create_task(
+        &self,
+        mut task: Resource,
+        references: TaskReferences,
+    ) -> Result<Uuid, StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        if let Some(target) = references.target {
+            validate_task_reference(&inner, &target, "target")?;
+            task.set_attr("target_id", &target.to_string());
+        }
+        if let Some(config) = references.config {
+            validate_task_reference(&inner, &config, "config")?;
+            task.set_attr("config_id", &config.to_string());
+        }
+        if let Some(scanner) = references.scanner {
+            validate_task_reference(&inner, &scanner, "scanner")?;
+            task.set_attr("scanner_id", &scanner.to_string());
+        }
+        if references.target.is_none() {
+            task.set_attr("import_task", "1");
+            task.set_attr("status", TaskStatus::Done.as_str());
+        } else {
+            task.set_attr("status", TaskStatus::New.as_str());
+        }
+        task.modification_time = now_iso();
+        let id = task.id;
+        inner.resources.insert(id, task);
+        Ok(id)
+    }
+
+    pub(crate) fn create_linked_report(
+        &self,
+        mut report: Resource,
+        task_id: Option<Uuid>,
+    ) -> Result<Uuid, StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        if let Some(task_id) = task_id {
+            active_typed_resource(&inner, &task_id, "task")?;
+            report.set_attr("task_id", &task_id.to_string());
+        }
+        report.modification_time = now_iso();
+        let id = report.id;
+        inner.resources.insert(id, report);
+        Ok(id)
+    }
+
     /// Get a resource by UUID.
     pub fn get(&self, id: &Uuid) -> Option<Resource> {
         let inner = self.inner.read().expect("store lock poisoned");
         inner.resources.get(id).filter(|r| !r.trashed).cloned()
+    }
+
+    pub(crate) fn get_typed(&self, id: &Uuid, resource_type: &str) -> Option<Resource> {
+        self.get(id)
+            .filter(|resource| resource.resource_type == resource_type)
     }
 
     /// Get all resources of a given type (non-trashed).
@@ -470,6 +619,71 @@ impl ResourceStore {
         true
     }
 
+    pub(crate) fn modify_typed<F>(&self, id: &Uuid, resource_type: &str, f: F) -> bool
+    where
+        F: FnOnce(&mut Resource),
+    {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let Some(resource) = inner
+            .resources
+            .get_mut(id)
+            .filter(|resource| !resource.trashed && resource.resource_type == resource_type)
+        else {
+            return false;
+        };
+        f(resource);
+        resource.modification_time = now_iso();
+        true
+    }
+
+    pub(crate) fn modify_task<F>(
+        &self,
+        id: &Uuid,
+        references: TaskReferenceUpdates,
+        f: F,
+    ) -> Result<(), StoreError>
+    where
+        F: FnOnce(&mut Resource),
+    {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let status = active_typed_resource(&inner, id, "task")?
+            .attr("status")
+            .ok_or(StoreError::Inconsistent("task status"))?
+            .to_string();
+
+        if !references.is_empty() && status != TaskStatus::New.as_str() {
+            return Err(StoreError::InvalidState(
+                "Task references can only be changed while the task is New",
+            ));
+        }
+        if let Some(target) = references.target {
+            validate_task_reference(&inner, &target, "target")?;
+        }
+        if let Some(config) = references.config {
+            validate_task_reference(&inner, &config, "config")?;
+        }
+        if let Some(scanner) = references.scanner {
+            validate_task_reference(&inner, &scanner, "scanner")?;
+        }
+
+        let task = inner
+            .resources
+            .get_mut(id)
+            .expect("validated task should remain present while locked");
+        if let Some(target) = references.target {
+            task.set_attr("target_id", &target.to_string());
+        }
+        if let Some(config) = references.config {
+            task.set_attr("config_id", &config.to_string());
+        }
+        if let Some(scanner) = references.scanner {
+            task.set_attr("scanner_id", &scanner.to_string());
+        }
+        f(task);
+        task.modification_time = now_iso();
+        Ok(())
+    }
+
     /// Delete a resource (move to trash or permanently).
     pub fn delete(&self, id: &Uuid, ultimate: bool) -> bool {
         let mut inner = self.inner.write().expect("store lock poisoned");
@@ -504,6 +718,135 @@ impl ResourceStore {
         DeleteAssetResult::Deleted
     }
 
+    pub(crate) fn delete_typed(
+        &self,
+        id: &Uuid,
+        resource_type: &str,
+        ultimate: bool,
+    ) -> Result<(), StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let resource = inner
+            .resources
+            .get(id)
+            .filter(|resource| resource.resource_type == resource_type)
+            .cloned()
+            .ok_or(StoreError::NotFound("resource"))?;
+
+        if resource.trashed && !ultimate {
+            return Ok(());
+        }
+
+        let task_reference = match resource_type {
+            "target" => Some(("target_id", "target")),
+            "config" => Some(("config_id", "config")),
+            "scanner" => Some(("scanner_id", "scanner")),
+            _ => None,
+        };
+        if let Some((reference_key, referenced_type)) = task_reference {
+            let id = id.to_string();
+            let referenced = inner.resources.values().any(|candidate| {
+                candidate.resource_type == "task"
+                    && candidate.attr(reference_key) == Some(id.as_str())
+                    && (ultimate || !candidate.trashed)
+            });
+            if referenced {
+                return Err(StoreError::InUse(referenced_type));
+            }
+        }
+
+        if resource_type == "task" && !resource.trashed && task_is_active(&resource) {
+            if let Some(report_id) = resource
+                .attr("report_id")
+                .and_then(|report_id| Uuid::parse_str(report_id).ok())
+            {
+                if let Some(report) = inner.resources.get_mut(&report_id) {
+                    report.set_attr("status", TaskStatus::Stopped.as_str());
+                    report.modification_time = now_iso();
+                }
+            }
+            if let Some(task) = inner.resources.get_mut(id) {
+                task.set_attr("status", TaskStatus::Stopped.as_str());
+                task.modification_time = now_iso();
+            }
+        }
+
+        if resource_type == "report" {
+            let report_id = id.to_string();
+            let linked_tasks: Vec<Uuid> = inner
+                .resources
+                .values()
+                .filter(|candidate| {
+                    candidate.resource_type == "task"
+                        && candidate.attr("report_id") == Some(report_id.as_str())
+                })
+                .map(|candidate| candidate.id)
+                .collect();
+            if linked_tasks.iter().any(|task_id| {
+                inner
+                    .resources
+                    .get(task_id)
+                    .is_some_and(|task| !task.trashed && task_is_active(task))
+            }) {
+                return Err(StoreError::InUse("report"));
+            }
+            for task_id in linked_tasks {
+                if let Some(task) = inner.resources.get_mut(&task_id) {
+                    task.attrs.remove("report_id");
+                    task.set_attr("status", TaskStatus::New.as_str());
+                    task.modification_time = now_iso();
+                }
+            }
+        }
+
+        if resource_type == "task" {
+            let task_id = id.to_string();
+            let report_ids: Vec<Uuid> = inner
+                .resources
+                .values()
+                .filter(|candidate| {
+                    candidate.resource_type == "report"
+                        && candidate.attr("task_id") == Some(task_id.as_str())
+                })
+                .map(|candidate| candidate.id)
+                .collect();
+            let report_id_strings: Vec<String> = report_ids.iter().map(Uuid::to_string).collect();
+            let result_ids: Vec<Uuid> = inner
+                .resources
+                .values()
+                .filter(|candidate| {
+                    candidate.resource_type == "result"
+                        && candidate.attr("report_id").is_some_and(|candidate_id| {
+                            report_id_strings
+                                .iter()
+                                .any(|report_id| report_id == candidate_id)
+                        })
+                })
+                .map(|candidate| candidate.id)
+                .collect();
+
+            if ultimate {
+                for dependent_id in report_ids.into_iter().chain(result_ids) {
+                    inner.resources.remove(&dependent_id);
+                }
+            } else {
+                for dependent_id in report_ids.into_iter().chain(result_ids) {
+                    if let Some(dependent) = inner.resources.get_mut(&dependent_id) {
+                        dependent.trashed = true;
+                        dependent.modification_time = now_iso();
+                    }
+                }
+            }
+        }
+
+        if ultimate {
+            inner.resources.remove(id);
+        } else if let Some(resource) = inner.resources.get_mut(id) {
+            resource.trashed = true;
+            resource.modification_time = now_iso();
+        }
+        Ok(())
+    }
+
     /// Restore a trashed resource.
     pub fn restore(&self, id: &Uuid) -> bool {
         let mut inner = self.inner.write().expect("store lock poisoned");
@@ -514,6 +857,58 @@ impl ResourceStore {
             }
         }
         false
+    }
+
+    pub(crate) fn restore_checked(&self, id: &Uuid) -> Result<(), StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let resource = inner
+            .resources
+            .get(id)
+            .filter(|resource| resource.trashed)
+            .cloned()
+            .ok_or(StoreError::NotFound("resource"))?;
+
+        if resource.resource_type == "task" {
+            validate_stored_task_references(&inner, &resource)?;
+            let task_id = id.to_string();
+            let report_ids: Vec<Uuid> = inner
+                .resources
+                .values()
+                .filter(|candidate| {
+                    candidate.resource_type == "report"
+                        && candidate.attr("task_id") == Some(task_id.as_str())
+                })
+                .map(|candidate| candidate.id)
+                .collect();
+            let report_id_strings: Vec<String> = report_ids.iter().map(Uuid::to_string).collect();
+            let result_ids: Vec<Uuid> = inner
+                .resources
+                .values()
+                .filter(|candidate| {
+                    candidate.resource_type == "result"
+                        && candidate.attr("report_id").is_some_and(|report_id| {
+                            report_id_strings
+                                .iter()
+                                .any(|candidate_id| candidate_id == report_id)
+                        })
+                })
+                .map(|candidate| candidate.id)
+                .collect();
+            for dependent_id in report_ids.into_iter().chain(result_ids) {
+                if let Some(dependent) = inner.resources.get_mut(&dependent_id) {
+                    dependent.trashed = false;
+                    dependent.modification_time = now_iso();
+                }
+            }
+        }
+
+        let resource = inner
+            .resources
+            .get_mut(id)
+            .expect("validated resource should remain present while locked");
+        resource.trashed = false;
+        resource.modification_time = now_iso();
+        Ok(())
     }
 
     /// Empty the trashcan (permanently remove all trashed resources).
@@ -538,6 +933,161 @@ impl ResourceStore {
         let new_id = copy.id;
         inner.resources.insert(new_id, copy);
         Some(new_id)
+    }
+
+    pub(crate) fn clone_typed(&self, id: &Uuid, resource_type: &str) -> Result<Uuid, StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let original = inner
+            .resources
+            .get(id)
+            .filter(|resource| !resource.trashed && resource.resource_type == resource_type)
+            .cloned()
+            .ok_or(StoreError::NotFound("resource"))?;
+        if resource_type == "task" {
+            validate_stored_task_references(&inner, &original)?;
+        }
+        if let Some(task_id) = original
+            .attr("task_id")
+            .filter(|_| resource_type == "report")
+        {
+            let task_id =
+                Uuid::parse_str(task_id).map_err(|_| StoreError::Inconsistent("report task"))?;
+            active_typed_resource(&inner, &task_id, "task")?;
+        }
+
+        let mut copy = original;
+        copy.id = Uuid::new_v4();
+        if resource_type == "task" {
+            let status = if copy.attr("import_task") == Some("1") {
+                TaskStatus::Done
+            } else {
+                TaskStatus::New
+            };
+            copy.set_attr("status", status.as_str());
+            copy.attrs.remove("report_id");
+        }
+        let now = now_iso();
+        copy.creation_time = now.clone();
+        copy.modification_time = now;
+        let new_id = copy.id;
+        inner.resources.insert(new_id, copy);
+        Ok(new_id)
+    }
+
+    pub(crate) fn start_task(&self, id: &Uuid) -> Result<Uuid, StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let task = active_typed_resource(&inner, id, "task")?.clone();
+        if task.attr("import_task") == Some("1") {
+            return Err(StoreError::InvalidState("Import tasks cannot be started"));
+        }
+        validate_stored_task_references(&inner, &task)?;
+
+        match task.attr("status") {
+            Some("New" | "Stopped" | "Done" | "Interrupted") => {}
+            Some("Running" | "Requested") => {
+                return Err(StoreError::InvalidState("Task is already running"));
+            }
+            Some(_) => {
+                return Err(StoreError::InvalidState(
+                    "Task cannot be started in current state",
+                ));
+            }
+            None => return Err(StoreError::Inconsistent("task status")),
+        }
+
+        let report_id = Uuid::new_v4();
+        let mut report =
+            Resource::with_id("report", &format!("Report for {}", task.name), report_id);
+        report.set_attr("task_id", &id.to_string());
+        report.set_attr("status", TaskStatus::Running.as_str());
+        if let Some(usage_type) = task.attr("usage_type") {
+            report.set_attr("usage_type", usage_type);
+        }
+        inner.resources.insert(report_id, report);
+
+        let task = inner
+            .resources
+            .get_mut(id)
+            .expect("validated task should remain present while locked");
+        task.set_attr("status", TaskStatus::Running.as_str());
+        task.set_attr("report_id", &report_id.to_string());
+        task.modification_time = now_iso();
+        Ok(report_id)
+    }
+
+    pub(crate) fn stop_task(&self, id: &Uuid) -> Result<(), StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let task = active_typed_resource(&inner, id, "task")?.clone();
+        match task.attr("status") {
+            Some("Running" | "Requested") => {}
+            Some("Stopped") => return Err(StoreError::InvalidState("Task is already stopped")),
+            Some(_) => {
+                return Err(StoreError::InvalidState(
+                    "Task cannot be stopped in current state",
+                ));
+            }
+            None => return Err(StoreError::Inconsistent("task status")),
+        }
+
+        let report_id = stored_task_reference(&task, "report_id", "report")?;
+        let report = active_typed_resource(&inner, &report_id, "report")?;
+        let task_id = id.to_string();
+        if report.attr("task_id") != Some(task_id.as_str()) {
+            return Err(StoreError::Inconsistent("task report"));
+        }
+
+        let report = inner
+            .resources
+            .get_mut(&report_id)
+            .expect("validated report should remain present while locked");
+        report.set_attr("status", TaskStatus::Stopped.as_str());
+        report.modification_time = now_iso();
+        let task = inner
+            .resources
+            .get_mut(id)
+            .expect("validated task should remain present while locked");
+        task.set_attr("status", TaskStatus::Stopped.as_str());
+        task.modification_time = now_iso();
+        Ok(())
+    }
+
+    pub(crate) fn resume_task(&self, id: &Uuid) -> Result<Uuid, StoreError> {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let task = active_typed_resource(&inner, id, "task")?.clone();
+        validate_stored_task_references(&inner, &task)?;
+        match task.attr("status") {
+            Some("Stopped" | "Interrupted") => {}
+            Some("Running" | "Requested") => {
+                return Err(StoreError::InvalidState("Task is already running"));
+            }
+            Some(_) => {
+                return Err(StoreError::InvalidState(
+                    "Task can only be resumed from Stopped or Interrupted state",
+                ));
+            }
+            None => return Err(StoreError::Inconsistent("task status")),
+        }
+
+        let report_id = stored_task_reference(&task, "report_id", "report")?;
+        let report = active_typed_resource(&inner, &report_id, "report")?;
+        let task_id = id.to_string();
+        if report.attr("task_id") != Some(task_id.as_str()) {
+            return Err(StoreError::Inconsistent("task report"));
+        }
+
+        let report = inner
+            .resources
+            .get_mut(&report_id)
+            .expect("validated report should remain present while locked");
+        report.set_attr("status", TaskStatus::Running.as_str());
+        report.modification_time = now_iso();
+        let task = inner
+            .resources
+            .get_mut(id)
+            .expect("validated task should remain present while locked");
+        task.set_attr("status", TaskStatus::Running.as_str());
+        task.modification_time = now_iso();
+        Ok(report_id)
     }
 
     /// List resources of a type, filtered by a simple `name=value` filter string.
@@ -605,6 +1155,20 @@ mod tests {
     use std::sync::{Arc, Barrier};
     use std::thread;
 
+    fn create_valid_task(store: &ResourceStore, name: &str) -> Uuid {
+        let target_id = store.create(Resource::new("target", &format!("{name} Target")));
+        store
+            .create_task(
+                Resource::new("task", name),
+                TaskReferences {
+                    target: Some(target_id),
+                    config: Some(DEFAULT_CONFIG_ID),
+                    scanner: Some(DEFAULT_SCANNER_ID),
+                },
+            )
+            .expect("valid task graph")
+    }
+
     #[test]
     fn test_create_and_get() {
         let store = ResourceStore::new();
@@ -624,7 +1188,7 @@ mod tests {
 
         assert_eq!(store.list("task").len(), 2);
         assert_eq!(store.list("target").len(), 1);
-        assert_eq!(store.list("config").len(), 0);
+        assert_eq!(store.list("config").len(), 1);
     }
 
     #[test]
@@ -894,5 +1458,216 @@ mod tests {
             .iter()
             .all(|resource| resource.resource_type == "task"));
         assert!(tasks.iter().any(|resource| resource.id == id));
+    }
+
+    #[test]
+    fn typed_task_modification_updates_and_validates_every_reference() {
+        let store = ResourceStore::new();
+        let task_id = create_valid_task(&store, "Mutable");
+        let target_id = store.create(Resource::new("target", "Replacement Target"));
+        let config_id = store.create(Resource::new("config", "Replacement Config"));
+        let scanner_id = store.create(Resource::new("scanner", "Replacement Scanner"));
+
+        store
+            .modify_task(
+                &task_id,
+                TaskReferenceUpdates {
+                    target: Some(target_id),
+                    config: Some(config_id),
+                    scanner: Some(scanner_id),
+                },
+                |_| {},
+            )
+            .expect("New task references should be replaceable");
+
+        let task = store.get(&task_id).expect("task");
+        assert_eq!(task.attr("target_id"), Some(target_id.to_string().as_str()));
+        assert_eq!(task.attr("config_id"), Some(config_id.to_string().as_str()));
+        assert_eq!(
+            task.attr("scanner_id"),
+            Some(scanner_id.to_string().as_str())
+        );
+        assert!(!store.modify_typed(&target_id, "task", |_| {}));
+    }
+
+    #[test]
+    fn task_delete_and_restore_cascade_to_reports_and_results() {
+        let store = ResourceStore::new();
+        let task_id = create_valid_task(&store, "Cascading");
+        let report_id = store.start_task(&task_id).expect("start task");
+        let mut result = Resource::new("result", "Linked Result");
+        result.set_attr("report_id", &report_id.to_string());
+        let result_id = store.create(result);
+        store.stop_task(&task_id).expect("stop task");
+
+        store
+            .delete_typed(&task_id, "task", false)
+            .expect("trash task");
+        store
+            .delete_typed(&task_id, "task", false)
+            .expect("trashing an already trashed task is idempotent");
+        assert!(store
+            .list_trashed("report")
+            .iter()
+            .any(|r| r.id == report_id));
+        assert!(store
+            .list_trashed("result")
+            .iter()
+            .any(|r| r.id == result_id));
+
+        store.restore_checked(&task_id).expect("restore task graph");
+        assert!(store.get(&report_id).is_some());
+        assert!(store.get(&result_id).is_some());
+
+        store
+            .delete_typed(&task_id, "task", true)
+            .expect("delete task graph");
+        assert!(store.get(&report_id).is_none());
+        assert!(store.get(&result_id).is_none());
+    }
+
+    #[test]
+    fn deleting_an_active_task_tolerates_a_missing_report_reference() {
+        let store = ResourceStore::new();
+        let task_id = create_valid_task(&store, "Active Without Report");
+        assert!(store.modify(&task_id, |task| {
+            task.set_attr("status", TaskStatus::Running.as_str());
+            task.attrs.remove("report_id");
+        }));
+
+        store
+            .delete_typed(&task_id, "task", true)
+            .expect("synchronous mock deletion should still remove the task");
+        assert!(store.get(&task_id).is_none());
+    }
+
+    #[test]
+    fn cloning_validates_linked_reports_and_preserves_import_task_state() {
+        let store = ResourceStore::new();
+        let task_id = create_valid_task(&store, "Report Owner");
+        let report_id = store
+            .create_linked_report(Resource::new("report", "Linked"), Some(task_id))
+            .expect("linked report");
+        let report_copy = store
+            .clone_typed(&report_id, "report")
+            .expect("clone linked report");
+        assert_eq!(
+            store
+                .get(&report_copy)
+                .expect("report copy")
+                .attr("task_id"),
+            Some(task_id.to_string().as_str())
+        );
+
+        let mut malformed_report = Resource::new("report", "Malformed Link");
+        malformed_report.set_attr("task_id", "not-a-uuid");
+        let malformed_report_id = store.create(malformed_report);
+        assert_eq!(
+            store.clone_typed(&malformed_report_id, "report"),
+            Err(StoreError::Inconsistent("report task"))
+        );
+
+        let mut missing_task_report = Resource::new("report", "Missing Task");
+        missing_task_report.set_attr("task_id", &Uuid::new_v4().to_string());
+        let missing_task_report_id = store.create(missing_task_report);
+        assert_eq!(
+            store.clone_typed(&missing_task_report_id, "report"),
+            Err(StoreError::NotFound("task"))
+        );
+
+        let import_task_id = store
+            .create_task(
+                Resource::new("task", "Imported"),
+                TaskReferences {
+                    target: None,
+                    config: None,
+                    scanner: None,
+                },
+            )
+            .expect("import task");
+        let import_copy = store
+            .clone_typed(&import_task_id, "task")
+            .expect("clone import task");
+        assert_eq!(
+            store.get(&import_copy).expect("import copy").attr("status"),
+            Some(TaskStatus::Done.as_str())
+        );
+        assert_eq!(
+            store.start_task(&import_task_id),
+            Err(StoreError::InvalidState("Import tasks cannot be started"))
+        );
+    }
+
+    #[test]
+    fn lifecycle_rejects_corrupt_or_inapplicable_states_atomically() {
+        let store = ResourceStore::new();
+
+        let invalid_state_id = create_valid_task(&store, "Invalid State");
+        assert!(store.modify(&invalid_state_id, |task| {
+            task.set_attr("status", "Paused");
+        }));
+        assert_eq!(
+            store.start_task(&invalid_state_id),
+            Err(StoreError::InvalidState(
+                "Task cannot be started in current state"
+            ))
+        );
+        assert_eq!(
+            store.stop_task(&invalid_state_id),
+            Err(StoreError::InvalidState(
+                "Task cannot be stopped in current state"
+            ))
+        );
+        assert_eq!(
+            store.resume_task(&invalid_state_id),
+            Err(StoreError::InvalidState(
+                "Task can only be resumed from Stopped or Interrupted state"
+            ))
+        );
+
+        let missing_status_id = create_valid_task(&store, "Missing Status");
+        assert!(store.modify(&missing_status_id, |task| {
+            task.attrs.remove("status");
+        }));
+        for result in [
+            store.start_task(&missing_status_id).map(|_| ()),
+            store.stop_task(&missing_status_id),
+            store.resume_task(&missing_status_id).map(|_| ()),
+        ] {
+            assert_eq!(result, Err(StoreError::Inconsistent("task status")));
+        }
+
+        let mismatched_report_id = create_valid_task(&store, "Mismatched Report");
+        let report_id = store.start_task(&mismatched_report_id).expect("start task");
+        assert!(store.modify(&report_id, |report| {
+            report.set_attr("task_id", &Uuid::new_v4().to_string());
+        }));
+        assert_eq!(
+            store.stop_task(&mismatched_report_id),
+            Err(StoreError::Inconsistent("task report"))
+        );
+        assert!(store.modify(&report_id, |report| {
+            report.set_attr("task_id", &mismatched_report_id.to_string());
+        }));
+        store.stop_task(&mismatched_report_id).expect("stop task");
+        assert!(store.modify(&report_id, |report| {
+            report.set_attr("task_id", &Uuid::new_v4().to_string());
+        }));
+        assert_eq!(
+            store.resume_task(&mismatched_report_id),
+            Err(StoreError::Inconsistent("task report"))
+        );
+        assert!(store.modify(&report_id, |report| {
+            report.set_attr("task_id", &mismatched_report_id.to_string());
+        }));
+        assert!(store.modify(&mismatched_report_id, |task| {
+            task.set_attr("status", TaskStatus::Interrupted.as_str());
+        }));
+        assert_eq!(
+            store
+                .resume_task(&mismatched_report_id)
+                .expect("resume interrupted task"),
+            report_id
+        );
     }
 }

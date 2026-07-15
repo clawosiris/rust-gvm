@@ -51,6 +51,24 @@ async fn connect_and_auth(server: &MockGmpServer) -> UnixStream {
     stream
 }
 
+async fn create_task(stream: &mut UnixStream, name: &str) -> Response {
+    let target = send_recv(
+        stream,
+        format!(
+            "<create_target><name>{name} Target</name><hosts>127.0.0.1</hosts></create_target>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    let target_id = target.id().expect("target should have id");
+    send_recv(
+        stream,
+        format!("<create_task><name>{name}</name><target id=\"{target_id}\"/></create_task>")
+            .as_bytes(),
+    )
+    .await
+}
+
 // STATE-001: Command before auth returns 401
 #[tokio::test]
 async fn stateful_command_before_auth_returns_401() {
@@ -151,10 +169,20 @@ async fn stateful_create_task() {
     };
     let mut stream = connect_and_auth(&server).await;
 
+    let target = send_recv(
+        &mut stream,
+        b"<create_target><name>Test Target</name><hosts>127.0.0.1</hosts></create_target>",
+    )
+    .await;
+    let target_id = target.id().expect("target should have id");
     let resp = send_recv(
         &mut stream,
-        br#"<create_task><name>Test Task</name><target id="t1"/><config id="c1"/><scanner id="s1"/></create_task>"#,
-    ).await;
+        format!(
+            "<create_task><name>Test Task</name><target id=\"{target_id}\"/><config id=\"daba56c8-73ec-11df-a475-002264764cea\"/><scanner id=\"08b69003-5fc2-4037-a479-93b440211c73\"/></create_task>"
+        )
+        .as_bytes(),
+    )
+    .await;
     assert_eq!(resp.status_code(), Some(201));
     assert!(resp.id().is_some());
 
@@ -269,11 +297,7 @@ async fn stateful_create_then_get_task() {
     };
     let mut stream = connect_and_auth(&server).await;
 
-    let create_resp = send_recv(
-        &mut stream,
-        b"<create_task><name>My Task</name><target id=\"t1\"/></create_task>",
-    )
-    .await;
+    let create_resp = create_task(&mut stream, "My Task").await;
     let task_id = create_resp.id().expect("should have id");
 
     let get_resp = send_recv(
@@ -297,16 +321,8 @@ async fn stateful_list_tasks() {
     };
     let mut stream = connect_and_auth(&server).await;
 
-    send_recv(
-        &mut stream,
-        b"<create_task><name>Task A</name><target id=\"t1\"/></create_task>",
-    )
-    .await;
-    send_recv(
-        &mut stream,
-        b"<create_task><name>Task B</name><target id=\"t1\"/></create_task>",
-    )
-    .await;
+    create_task(&mut stream, "Task A").await;
+    create_task(&mut stream, "Task B").await;
 
     let resp = send_recv(&mut stream, b"<get_tasks/>").await;
     assert_eq!(resp.status_code(), Some(200));
@@ -343,11 +359,7 @@ async fn stateful_modify_task() {
     };
     let mut stream = connect_and_auth(&server).await;
 
-    let create_resp = send_recv(
-        &mut stream,
-        b"<create_task><name>Old Name</name><target id=\"t1\"/></create_task>",
-    )
-    .await;
+    let create_resp = create_task(&mut stream, "Old Name").await;
     let task_id = create_resp.id().expect("should have id");
 
     let modify_resp = send_recv(
@@ -377,11 +389,7 @@ async fn stateful_delete_task_to_trash() {
     };
     let mut stream = connect_and_auth(&server).await;
 
-    let create_resp = send_recv(
-        &mut stream,
-        b"<create_task><name>Doomed</name><target id=\"t1\"/></create_task>",
-    )
-    .await;
+    let create_resp = create_task(&mut stream, "Doomed").await;
     let task_id = create_resp.id().expect("should have id");
 
     let delete_resp = send_recv(
@@ -446,11 +454,7 @@ async fn stateful_clone_task() {
     };
     let mut stream = connect_and_auth(&server).await;
 
-    let create_resp = send_recv(
-        &mut stream,
-        b"<create_task><name>Original</name><target id=\"t1\"/></create_task>",
-    )
-    .await;
+    let create_resp = create_task(&mut stream, "Original").await;
     let task_id = create_resp.id().expect("should have id");
 
     let clone_resp = send_recv(
@@ -488,11 +492,7 @@ async fn stateful_start_task() {
     };
     let mut stream = connect_and_auth(&server).await;
 
-    let create_resp = send_recv(
-        &mut stream,
-        b"<create_task><name>Runnable</name><target id=\"t1\"/></create_task>",
-    )
-    .await;
+    let create_resp = create_task(&mut stream, "Runnable").await;
     let task_id = create_resp.id().expect("should have id");
 
     let start_resp = send_recv(
@@ -526,11 +526,7 @@ async fn stateful_stop_task() {
     };
     let mut stream = connect_and_auth(&server).await;
 
-    let create_resp = send_recv(
-        &mut stream,
-        b"<create_task><name>Stoppable</name><target id=\"t1\"/></create_task>",
-    )
-    .await;
+    let create_resp = create_task(&mut stream, "Stoppable").await;
     let task_id = create_resp.id().expect("should have id");
 
     send_recv(
@@ -565,11 +561,7 @@ async fn stateful_resume_task() {
     };
     let mut stream = connect_and_auth(&server).await;
 
-    let create_resp = send_recv(
-        &mut stream,
-        b"<create_task><name>Resumable</name><target id=\"t1\"/></create_task>",
-    )
-    .await;
+    let create_resp = create_task(&mut stream, "Resumable").await;
     let task_id = create_resp.id().expect("should have id");
 
     send_recv(
@@ -609,11 +601,7 @@ async fn stateful_start_running_task_conflict() {
     };
     let mut stream = connect_and_auth(&server).await;
 
-    let create_resp = send_recv(
-        &mut stream,
-        b"<create_task><name>Running</name><target id=\"t1\"/></create_task>",
-    )
-    .await;
+    let create_resp = create_task(&mut stream, "Running").await;
     let task_id = create_resp.id().expect("should have id");
 
     send_recv(
@@ -676,11 +664,7 @@ async fn stateful_trash_and_restore() {
     };
     let mut stream = connect_and_auth(&server).await;
 
-    let create_resp = send_recv(
-        &mut stream,
-        b"<create_task><name>Trashed</name><target id=\"t1\"/></create_task>",
-    )
-    .await;
+    let create_resp = create_task(&mut stream, "Trashed").await;
     let task_id = create_resp.id().expect("should have id");
 
     // Delete to trash

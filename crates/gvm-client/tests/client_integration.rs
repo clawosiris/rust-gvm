@@ -2204,7 +2204,12 @@ async fn typed_report_import_uses_mock_server_stateful_create_command() {
         .expect("authenticate should succeed");
     server.clear_history();
 
-    let task_id = EntityId::new("task-import").expect("valid id");
+    let import_task = client
+        .create_import_task("Report Import Task", None)
+        .await
+        .expect("import task should succeed");
+    let task_id = import_task.id;
+    server.clear_history();
     let report_xml = r#"<report id="imported-report"><name>Imported</name></report>"#;
     let created = client
         .import_report(
@@ -2227,7 +2232,7 @@ async fn typed_report_import_uses_mock_server_stateful_create_command() {
         .expect("get_reports should succeed");
     let readback_xml = readback.as_str().expect("response XML should be UTF-8");
     assert!(readback_xml.contains(&format!("id=\"{}\"", created.id)));
-    assert!(readback_xml.contains("<task_id>task-import</task_id>"));
+    assert!(readback_xml.contains(&format!("<task_id>{task_id}</task_id>")));
     assert!(readback_xml.contains("<in_assets>1</in_assets>"));
 
     let history = server.command_history();
@@ -2239,7 +2244,7 @@ async fn typed_report_import_uses_mock_server_stateful_create_command() {
     assert_eq!(
         import_command,
         format!(
-            r#"<create_report><task id="task-import"/><in_assets>1</in_assets>{report_xml}</create_report>"#
+            r#"<create_report><task id="{task_id}"/><in_assets>1</in_assets>{report_xml}</create_report>"#
         )
     );
 
@@ -2332,10 +2337,10 @@ async fn full_crud_lifecycle_succeeds() {
         .expect("create_target should succeed");
     let target_id = target_response.id().expect("target id");
 
-    let config_id = "550e8400-e29b-41d4-a716-446655440001"
+    let config_id = "daba56c8-73ec-11df-a475-002264764cea"
         .parse()
         .expect("entity id");
-    let scanner_id = "550e8400-e29b-41d4-a716-446655440002"
+    let scanner_id = "08b69003-5fc2-4037-a479-93b440211c73"
         .parse()
         .expect("entity id");
     let target_entity_id = target_id.parse().expect("entity id");
@@ -2457,10 +2462,10 @@ async fn typed_trashcan_helpers_restore_deleted_task() {
         .await
         .expect("create_target should succeed");
     let target_id = target_response.id;
-    let config_id = "550e8400-e29b-41d4-a716-446655440001"
+    let config_id = "daba56c8-73ec-11df-a475-002264764cea"
         .parse()
         .expect("entity id");
-    let scanner_id = "550e8400-e29b-41d4-a716-446655440002"
+    let scanner_id = "08b69003-5fc2-4037-a479-93b440211c73"
         .parse()
         .expect("entity id");
 
@@ -2525,10 +2530,10 @@ async fn typed_resume_task_returns_report_id() {
         .expect("create_target should succeed");
     let target_id = target_response.id;
 
-    let config_id = "550e8400-e29b-41d4-a716-446655440001"
+    let config_id = "daba56c8-73ec-11df-a475-002264764cea"
         .parse()
         .expect("entity id");
-    let scanner_id = "550e8400-e29b-41d4-a716-446655440002"
+    let scanner_id = "08b69003-5fc2-4037-a479-93b440211c73"
         .parse()
         .expect("entity id");
 

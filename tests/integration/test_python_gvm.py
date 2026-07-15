@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Callable
 
 from gvm.connections import UnixSocketConnection
+from gvm.errors import GvmError
 from gvm.protocols.gmp import GMP
 from gvm.transforms import EtreeCheckCommandTransform
 
@@ -50,6 +51,14 @@ def response_id(response) -> str:
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
+
+
+def require_gvm_error(fn: Callable[[], None], message: str) -> None:
+    try:
+        fn()
+    except GvmError:
+        return
+    raise AssertionError(message)
 
 
 def run_step(name: str, fn: Callable[[], None]) -> bool:
@@ -213,6 +222,31 @@ def main() -> int:
                                 for task in gmp.get_tasks().findall("task")
                             ),
                             "task status was not Stopped after stop_task",
+                        ),
+                    ),
+                    (
+                        "resume_task",
+                        lambda: state.setdefault(
+                            "resumed_report_id",
+                            gmp.resume_task(task_id=state["task_id"]).findtext("report_id") or "",
+                        ),
+                    ),
+                    (
+                        "resume_reuses_report",
+                        lambda: require(
+                            state["resumed_report_id"] == state["report_id"],
+                            "resume_task did not reuse the stopped report",
+                        ),
+                    ),
+                    (
+                        "stop_resumed_task",
+                        lambda: gmp.stop_task(task_id=state["task_id"]),
+                    ),
+                    (
+                        "referenced_target_delete_rejected",
+                        lambda: require_gvm_error(
+                            lambda: gmp.delete_target(target_id=state["target_id"]),
+                            "delete_target should reject a target referenced by a live task",
                         ),
                     ),
                     (
