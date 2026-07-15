@@ -104,7 +104,7 @@ pub async fn run_tcp_listener(listener: TcpListener, state: Arc<ListenerState>) 
 }
 
 /// Handle a single client connection (works for both Unix and TCP streams).
-async fn handle_stream<S>(mut stream: S, state: &ListenerState)
+pub(crate) async fn handle_stream<S>(mut stream: S, state: &ListenerState)
 where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {

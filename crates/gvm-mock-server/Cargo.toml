@@ -16,7 +16,14 @@ path = "src/main.rs"
 [features]
 default = []
 unix-socket-tests = []
-tls = ["dep:tokio-rustls", "dep:rustls", "dep:rustls-pemfile"]
+tls = [
+    "dep:tokio-rustls",
+    "dep:rustls",
+    "dep:rustls-pemfile",
+    "dep:x509-cert",
+    "dep:p256",
+    "dep:sha2",
+]
 ssh = ["dep:russh"]
 
 [dependencies]
@@ -33,6 +40,9 @@ clap.workspace = true
 tokio-rustls = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
 rustls-pemfile = { workspace = true, optional = true }
+x509-cert = { workspace = true, optional = true }
+p256 = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
 russh = { workspace = true, optional = true }
 getrandom.workspace = true
 
@@ -43,8 +53,10 @@ pretty_assertions.workspace = true
 rstest.workspace = true
 tokio-test.workspace = true
 
+# `sha2` is a feature-only dependency: its `oid` feature lets the X.509
+# builder encode the P-256 signature algorithm identifier.
 [package.metadata.cargo-machete]
-ignored = ["rustls", "rustls-pemfile", "tokio-rustls"]  # TLS feature-gated, not yet implemented
+ignored = ["sha2"]
 
 [lints]
 workspace = true

@@ -38,7 +38,7 @@ Rather than waiting for Greenbone to change gvmd itself, we can build a gateway 
 
 `rust-gvm` already provides the main backend building blocks:
 
-- `gvm-connection`: Unix socket and SSH transports, with TLS planned
+- `gvm-connection`: Unix socket, verified TLS, and SSH transports
 - `gvm-client`: async client with version negotiation and authentication
 - `gvm-gmp`: typed GMP command builders
 - `gvm-protocol`: response parsing and XML extraction

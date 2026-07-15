@@ -18,7 +18,7 @@ The main client path is:
 2. `gvm-client` negotiates version with `get_version`, checks version gates, and calls typed or raw GMP requests.
 3. `gvm-gmp` builds typed GMP XML commands and parses typed response models.
 4. `gvm-protocol` serializes commands, parses raw responses, and frames XML messages from byte streams.
-5. `gvm-connection` sends and reads bytes over Unix sockets or SSH tunnels.
+5. `gvm-connection` sends and reads bytes over Unix sockets, verified TLS, or SSH tunnels.
 6. `gvm-mock-server` can stand in for gvmd in unit/integration tests.
 
 ## Crate Ownership
@@ -26,7 +26,7 @@ The main client path is:
 - `crates/gvm-protocol`: XML command builder, raw response parser, `Request` trait, streaming XML completeness detection.
 - `crates/gvm-gmp`: GMP domain command builders, protocol enums, shared option types, typed response models.
 - `crates/gvm-client`: high-level async API, version negotiation, `GmpVersioned`, version-gated traits, typed convenience methods.
-- `crates/gvm-connection`: transport abstraction and concrete Unix/SSH connections.
+- `crates/gvm-connection`: transport abstraction and concrete Unix/TLS/SSH connections.
 - `crates/gvm-mock-server`: programmable mock gvmd with echo, fixture, stateful, scenario, fault, history, and version behavior.
 
 ## Common Edit Paths
@@ -62,6 +62,7 @@ Changing transport behavior:
 - `crates/gvm-connection/src/connection.rs`: transport trait.
 - `crates/gvm-connection/src/unix.rs`: Unix socket transport.
 - `crates/gvm-connection/src/ssh.rs`: SSH streamlocal tunnel transport.
+- `crates/gvm-connection/src/tls.rs`: verified TLS transport and optional client identity.
 - `crates/gvm-connection/src/error.rs`: transport error mapping.
 - Tests live under `crates/gvm-connection/tests/`.
 

@@ -31,12 +31,16 @@ pub struct MockGmpServerBuilder {
     large_report: Option<LargeReportConfig>,
     max_request_bytes: Option<usize>,
     asset_input_profile: AssetInputProfile,
+    #[cfg(feature = "tls")]
+    client_ca_certificate: Option<PathBuf>,
 }
 
 enum Transport {
     UnixSocket(PathBuf),
     UnixSocketAuto,
     Tcp(String),
+    #[cfg(feature = "tls")]
+    Tls(String),
     #[cfg(feature = "ssh")]
     Ssh(String),
     None,
@@ -57,6 +61,8 @@ impl MockGmpServerBuilder {
             large_report: None,
             max_request_bytes: Some(DEFAULT_MAX_REQUEST_BYTES),
             asset_input_profile: AssetInputProfile::GvmdStrict,
+            #[cfg(feature = "tls")]
+            client_ca_certificate: None,
         }
     }
 
@@ -100,6 +106,29 @@ impl MockGmpServerBuilder {
     #[must_use]
     pub fn tcp(mut self, addr: impl Into<String>) -> Self {
         self.transport = Transport::Tcp(addr.into());
+        self
+    }
+
+    /// Listen with TLS on a TCP address using a generated self-signed server certificate.
+    ///
+    /// The running server exposes the certificate through
+    /// [`MockGmpServer::tls_certificate_pem`](crate::MockGmpServer::tls_certificate_pem)
+    /// so clients can pin it as a root certificate.
+    #[cfg(feature = "tls")]
+    #[must_use]
+    pub fn tls(mut self, addr: impl Into<String>) -> Self {
+        self.transport = Transport::Tls(addr.into());
+        self
+    }
+
+    /// Require clients to present a certificate signed by a CA in the PEM file.
+    ///
+    /// Without this option, TLS still encrypts the transport and presents the
+    /// server certificate, but client-certificate authentication is disabled.
+    #[cfg(feature = "tls")]
+    #[must_use]
+    pub fn require_client_cert(mut self, ca_certificate_path: impl Into<PathBuf>) -> Self {
+        self.client_ca_certificate = Some(ca_certificate_path.into());
         self
     }
 
@@ -201,12 +230,22 @@ impl MockGmpServerBuilder {
             large_report,
             max_request_bytes,
             asset_input_profile,
+            #[cfg(feature = "tls")]
+            client_ca_certificate,
         } = self;
 
         if max_request_bytes == Some(0) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "max_request_bytes must be greater than zero or None",
+            ));
+        }
+
+        #[cfg(feature = "tls")]
+        if client_ca_certificate.is_some() && !matches!(&transport, Transport::Tls(_)) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "require_client_cert() can only be used with tls()",
             ));
         }
 
@@ -300,6 +339,20 @@ impl MockGmpServerBuilder {
                 )
                 .await
             }
+            #[cfg(feature = "tls")]
+            Transport::Tls(addr) => {
+                MockGmpServer::start_tls(
+                    &addr,
+                    client_ca_certificate.as_deref(),
+                    mode,
+                    version,
+                    fixtures,
+                    store,
+                    fault_engine,
+                    options,
+                )
+                .await
+            }
             #[cfg(feature = "ssh")]
             Transport::Ssh(addr) => {
                 MockGmpServer::start_ssh(
@@ -315,7 +368,7 @@ impl MockGmpServerBuilder {
             }
             Transport::None => Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "No transport configured. Use .unix_socket(), .unix_socket_auto(), .tcp(), or .ssh()",
+                "No transport configured. Use .unix_socket(), .unix_socket_auto(), .tcp(), .tls(), or .ssh()",
             )),
         }
     }
