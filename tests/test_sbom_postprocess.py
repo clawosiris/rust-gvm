@@ -5,8 +5,15 @@ import unittest
 from pathlib import Path
 
 from scripts.sbom_postprocess import (
+    ensure_build_lifecycle,
     ensure_dependency_completeness,
+    ensure_metadata_license,
+    infer_supplier,
+    iter_components,
+    load_workspace_supplier,
+    looks_first_party,
     main,
+    normalize_spec_version,
     transform_sbom,
 )
 
@@ -16,6 +23,66 @@ FIXTURE = ROOT / "tests" / "fixtures" / "sbom" / "minimal.cdx.json"
 
 
 class SbomPostprocessTests(unittest.TestCase):
+    def test_workspace_supplier_and_spec_version_fallbacks(self) -> None:
+        temp_dir = Path(tempfile.mkdtemp(prefix="sbom-workspace-"))
+        self.addCleanup(shutil.rmtree, temp_dir)
+        cargo_toml = temp_dir / "Cargo.toml"
+        cargo_toml.write_text(
+            '[workspace]\n[workspace.package]\nrepository = "https://example.com/repo"\n'
+        )
+
+        self.assertEqual(load_workspace_supplier(temp_dir / "missing.toml"), "clawosiris")
+        self.assertEqual(load_workspace_supplier(cargo_toml), "clawosiris")
+        self.assertEqual(normalize_spec_version(None), "1.5")
+        self.assertEqual(normalize_spec_version("1.6"), "1.6")
+
+    def test_metadata_license_and_lifecycle_preserve_or_append(self) -> None:
+        existing = {
+            "licenses": [None, {}, {"license": {"id": "CC0-1.0"}}],
+            "lifecycles": [None, {"phase": "build"}],
+        }
+        ensure_metadata_license(existing)
+        ensure_build_lifecycle(existing)
+        self.assertEqual(len(existing["licenses"]), 3)
+        self.assertEqual(len(existing["lifecycles"]), 2)
+
+        missing = {
+            "licenses": [None, {}, {"license": {"id": "MIT"}}],
+            "lifecycles": [None, {"phase": "runtime"}],
+        }
+        ensure_metadata_license(missing)
+        ensure_build_lifecycle(missing)
+        self.assertEqual(missing["licenses"][-1], {"license": {"id": "CC0-1.0"}})
+        self.assertEqual(missing["lifecycles"][-1], {"phase": "build"})
+
+    def test_first_party_and_supplier_fallback_paths(self) -> None:
+        repository_url = "https://github.com/clawosiris/rust-gvm"
+        self.assertTrue(
+            looks_first_party(
+                {
+                    "externalReferences": [
+                        None,
+                        {"type": "vcs", "url": repository_url},
+                    ]
+                },
+                repository_url,
+            )
+        )
+        self.assertFalse(
+            looks_first_party(
+                {"externalReferences": [{"type": "website", "url": repository_url}]},
+                repository_url,
+            )
+        )
+        self.assertIsNone(
+            infer_supplier(
+                {"supplier": {"name": "existing"}}, "clawosiris", repository_url
+            )
+        )
+        self.assertIsNone(
+            infer_supplier({"purl": "pkg:generic/example"}, "clawosiris", repository_url)
+        )
+
     def test_transform_injects_metadata_and_suppliers(self) -> None:
         document = json.loads(FIXTURE.read_text())
 
@@ -97,6 +164,19 @@ class SbomPostprocessTests(unittest.TestCase):
             ["component-existing", "component-a"],
         )
 
+    def test_completeness_adds_scope_when_existing_complete_has_no_dependencies(self) -> None:
+        document = {
+            "dependencies": [{"ref": "component-a", "dependsOn": []}],
+            "compositions": [{"aggregate": "complete", "assemblies": ["component-a"]}],
+        }
+
+        ensure_dependency_completeness(document)
+
+        self.assertEqual(
+            document["compositions"][1],
+            {"aggregate": "complete", "dependencies": ["component-a"]},
+        )
+
     def test_completeness_ignores_missing_or_unusable_dependency_graphs(self) -> None:
         documents = [
             {},
@@ -122,6 +202,41 @@ class SbomPostprocessTests(unittest.TestCase):
         self.assertEqual(
             transformed["metadata"]["supplier"], {"name": "Existing Supplier"}
         )
+
+    def test_transform_supports_missing_primary_component_and_non_vcs_references(self) -> None:
+        without_primary = {
+            "specVersion": "1.6",
+            "metadata": {},
+            "components": [{"name": "generic", "purl": "pkg:generic/example"}],
+        }
+        self.assertEqual(
+            iter_components(without_primary),
+            [{"name": "generic", "purl": "pkg:generic/example"}],
+        )
+        transformed = transform_sbom(without_primary, workspace_supplier="clawosiris")
+        self.assertNotIn("supplier", transformed["components"][0])
+
+        invalid_primary_metadata = {
+            "metadata": {
+                "component": {
+                    "name": "generic",
+                    "licenses": "invalid",
+                    "supplier": {"name": "existing"},
+                    "externalReferences": [None, {"type": "website"}],
+                }
+            }
+        }
+        transformed = transform_sbom(
+            invalid_primary_metadata, workspace_supplier="clawosiris"
+        )
+        self.assertEqual(
+            transformed["metadata"]["component"]["supplier"],
+            {"name": "existing"},
+        )
+
+    def test_transform_rejects_non_object_metadata(self) -> None:
+        with self.assertRaisesRegex(ValueError, "metadata must be a JSON object"):
+            transform_sbom({"metadata": []}, workspace_supplier="clawosiris")
 
     def test_script_overwrites_input_file(self) -> None:
         temp_dir = Path(tempfile.mkdtemp(prefix="sbom-postprocess-"))
