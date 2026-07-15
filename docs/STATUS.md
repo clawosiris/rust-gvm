@@ -12,13 +12,13 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 
 | Crate | Status | Lines | Tests | Description |
 |-------|--------|-------|-------|-------------|
-| `gvm-protocol` | ✅ Implemented | ~2,190 | 67 | XML command builder, response parser, streaming reader |
+| `gvm-protocol` | ✅ Implemented | ~2,330 | 67 | XML command builder, response parser, streaming reader |
 | `gvm-mock-server` | ✅ Implemented | ~5,850 | 266 | Programmable mock GMP server |
 | `gvm-connection` | ✅ Unix + SSH done | ~1,070 | 45 | Async transport layer (Unix socket + SSH implemented) |
 | `gvm-gmp` | ✅ Implemented | ~19,800 | 838 | Typed GMP command builders and response models |
 | `gvm-client` | ✅ Implemented | ~3,590 | 62 | High-level async client with version negotiation and typed methods |
 
-**Total: ~32,500 lines of Rust, 1,278 tests**
+**Total: ~32,640 lines of Rust, 1,278 tests**
 
 ---
 
