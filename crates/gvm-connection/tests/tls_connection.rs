@@ -486,6 +486,109 @@ async fn response_timeout_and_size_limit_are_reported() {
 }
 
 #[tokio::test]
+async fn coalesced_tls_responses_are_returned_one_frame_at_a_time() {
+    let server = MockGmpServer::builder()
+        .mode(ServerMode::Fixture)
+        .version(GmpVersion::V22_5)
+        .override_response("get_version", "<first_response/><second_response/>")
+        .tls("127.0.0.1:0")
+        .build()
+        .await
+        .expect("TLS mock server");
+    let mut connection = TlsConnection::new(config_for(&server));
+    connection.connect().await.expect("connect");
+    connection
+        .send(b"<get_version/>")
+        .await
+        .expect("send get_version");
+
+    assert_eq!(
+        connection.read().await.expect("first response"),
+        b"<first_response/>"
+    );
+    assert_eq!(
+        connection.read().await.expect("second response"),
+        b"<second_response/>"
+    );
+
+    connection.disconnect().await.expect("disconnect");
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn tls_reconnect_discards_a_pending_response_tail() {
+    let server = MockGmpServer::builder()
+        .mode(ServerMode::Fixture)
+        .version(GmpVersion::V22_5)
+        .override_response("get_version", "<current_response/><stale_response/>")
+        .tls("127.0.0.1:0")
+        .build()
+        .await
+        .expect("TLS mock server");
+    let mut connection = TlsConnection::new(config_for(&server));
+    connection.connect().await.expect("first connect");
+    connection
+        .send(b"<get_version/>")
+        .await
+        .expect("first request");
+    assert_eq!(
+        connection.read().await.expect("current response"),
+        b"<current_response/>"
+    );
+    connection.disconnect().await.expect("first disconnect");
+
+    connection.connect().await.expect("second connect");
+    connection
+        .send(b"<get_version/>")
+        .await
+        .expect("second request");
+    assert_eq!(
+        connection.read().await.expect("fresh response"),
+        b"<current_response/>"
+    );
+
+    connection.disconnect().await.expect("second disconnect");
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn tls_response_limit_is_applied_independently_to_coalesced_frames() {
+    let first = b"<first_response/>";
+    let server = MockGmpServer::builder()
+        .mode(ServerMode::Fixture)
+        .version(GmpVersion::V22_5)
+        .override_response(
+            "get_version",
+            "<first_response/><oversized-response-without-close",
+        )
+        .tls("127.0.0.1:0")
+        .build()
+        .await
+        .expect("TLS mock server");
+    let config = config_for(&server).with_max_response_bytes(Some(first.len()));
+    let mut connection = TlsConnection::new(config);
+    connection.connect().await.expect("connect");
+    connection
+        .send(b"<get_version/>")
+        .await
+        .expect("send get_version");
+
+    assert_eq!(connection.read().await.expect("first response"), first);
+    let error = connection
+        .read()
+        .await
+        .expect_err("oversized second response");
+    assert!(matches!(
+        error,
+        ConnectionError::ReadFailed(ref source)
+            if source.kind() == std::io::ErrorKind::InvalidData
+    ));
+    assert!(!connection.is_connected());
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn malformed_tls_response_is_a_read_error() {
     let server = MockGmpServer::builder()
         .mode(ServerMode::Fixture)
@@ -506,6 +609,7 @@ async fn malformed_tls_response_is_a_read_error() {
         connection.read().await,
         Err(ConnectionError::ReadFailed(_))
     ));
+    assert!(!connection.is_connected());
     connection.disconnect().await.expect("disconnect");
     server.shutdown().await;
 }

@@ -247,6 +247,8 @@ impl TlsConfig {
 pub struct TlsConnection {
     config: TlsConfig,
     stream: Option<TlsStream<TcpStream>>,
+    response_reader: gvm_protocol::XmlReader,
+    pending_read: Vec<u8>,
 }
 
 impl fmt::Debug for TlsConnection {
@@ -263,10 +265,25 @@ impl TlsConnection {
     /// Create a TLS connection from verified settings.
     #[must_use]
     pub fn new(config: TlsConfig) -> Self {
+        let response_reader = gvm_protocol::XmlReader::with_buffer_limit(config.max_response_bytes);
+        let pending_read = Vec::with_capacity(config.read_buffer_size);
         Self {
             config,
             stream: None,
+            response_reader,
+            pending_read,
         }
+    }
+
+    fn invalidate_protocol_read(&mut self, error: &gvm_protocol::ProtocolError) -> ConnectionError {
+        self.invalidate_connection();
+        protocol_read_error(error)
+    }
+
+    fn invalidate_connection(&mut self) {
+        self.stream.take();
+        self.response_reader.reset();
+        self.pending_read.clear();
     }
 }
 
@@ -276,6 +293,9 @@ impl GvmConnection for TlsConnection {
         if self.stream.is_some() {
             return Err(ConnectionError::AlreadyConnected);
         }
+
+        self.response_reader.reset();
+        self.pending_read.clear();
 
         let client_config = self.config.client_config()?;
         let server_name = ServerName::try_from(self.config.server_name.clone())
@@ -307,6 +327,8 @@ impl GvmConnection for TlsConnection {
     }
 
     async fn disconnect(&mut self) -> Result<()> {
+        self.response_reader.reset();
+        self.pending_read.clear();
         if let Some(mut stream) = self.stream.take() {
             stream
                 .shutdown()
@@ -325,33 +347,57 @@ impl GvmConnection for TlsConnection {
     }
 
     async fn read(&mut self) -> Result<Vec<u8>> {
-        let stream = self.stream.as_mut().ok_or(ConnectionError::NotConnected)?;
+        if self.stream.is_none() {
+            return Err(ConnectionError::NotConnected);
+        }
+
+        if !self.pending_read.is_empty() {
+            let consumed = match self.response_reader.feed_frame(&self.pending_read) {
+                Ok(consumed) => consumed,
+                Err(error) => return Err(self.invalidate_protocol_read(&error)),
+            };
+            self.pending_read.drain(..consumed);
+            let frame = match self.response_reader.take_frame() {
+                Ok(frame) => frame,
+                Err(error) => return Err(self.invalidate_protocol_read(&error)),
+            };
+            if let Some(frame) = frame {
+                return Ok(frame);
+            }
+            debug_assert!(self.pending_read.is_empty());
+        }
+
         let mut buffer = vec![0_u8; self.config.read_buffer_size];
-        let mut xml_reader =
-            gvm_protocol::XmlReader::with_buffer_limit(self.config.max_response_bytes);
 
         loop {
+            let stream = self.stream.as_mut().ok_or(ConnectionError::NotConnected)?;
             let read = tokio::time::timeout(self.config.timeout, stream.read(&mut buffer))
                 .await
                 .map_err(|_| ConnectionError::Timeout(self.config.timeout))?
                 .map_err(ConnectionError::ReadFailed)?;
 
             if read == 0 {
+                self.invalidate_connection();
                 return Err(ConnectionError::ReadFailed(std::io::Error::new(
                     std::io::ErrorKind::UnexpectedEof,
                     "TLS connection closed before a complete response",
                 )));
             }
 
-            xml_reader.feed(&buffer[..read]).map_err(|error| {
-                ConnectionError::ReadFailed(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    error.to_string(),
-                ))
-            })?;
+            let consumed = match self.response_reader.feed_frame(&buffer[..read]) {
+                Ok(consumed) => consumed,
+                Err(error) => return Err(self.invalidate_protocol_read(&error)),
+            };
+            if consumed < read {
+                self.pending_read.extend_from_slice(&buffer[consumed..read]);
+            }
 
-            if xml_reader.is_complete() {
-                return Ok(xml_reader.into_data());
+            let frame = match self.response_reader.take_frame() {
+                Ok(frame) => frame,
+                Err(error) => return Err(self.invalidate_protocol_read(&error)),
+            };
+            if let Some(frame) = frame {
+                return Ok(frame);
             }
         }
     }
@@ -359,6 +405,13 @@ impl GvmConnection for TlsConnection {
     fn is_connected(&self) -> bool {
         self.stream.is_some()
     }
+}
+
+fn protocol_read_error(error: &gvm_protocol::ProtocolError) -> ConnectionError {
+    ConnectionError::ReadFailed(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        error.to_string(),
+    ))
 }
 
 fn parse_certificates(
