@@ -6,15 +6,22 @@
 #![allow(clippy::print_stdout, missing_docs)]
 
 use std::collections::BTreeSet;
-use std::env;
 use std::error::Error;
 use std::fs::File;
-use std::io::{self, BufReader};
-use std::path::Path;
+use std::io::BufReader;
+use std::path::{Path, PathBuf};
 
+use clap::Parser;
 use gvm_gmp::capabilities::{GvmdEvidence, COMMAND_CAPABILITIES};
 use quick_xml::events::Event;
 use quick_xml::Reader;
+
+#[derive(Debug, Parser)]
+#[command(about = "Audit a public gvmd GMP.xml.in against the command registry")]
+struct Args {
+    /// Path to the public gvmd GMP.xml.in file to audit.
+    schema: PathBuf,
+}
 
 fn schema_commands(path: &Path) -> Result<BTreeSet<String>, Box<dyn Error>> {
     let mut reader = Reader::from_reader(BufReader::new(File::open(path)?));
@@ -57,16 +64,8 @@ fn schema_commands(path: &Path) -> Result<BTreeSet<String>, Box<dyn Error>> {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // The argument selects a local input file; it is not used as a security
-    // identity or trusted executable path.
-    // nosemgrep: rust.lang.security.args.args
-    let path = env::args().nth(1).ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "usage: cargo run -p gvm-gmp --example audit_gmp_schema -- /path/to/GMP.xml.in",
-        )
-    })?;
-    let schema = schema_commands(Path::new(&path))?;
+    let args = Args::parse();
+    let schema = schema_commands(&args.schema)?;
     let expected: BTreeSet<_> = COMMAND_CAPABILITIES
         .iter()
         .filter(|capability| capability.gvmd_evidence == GvmdEvidence::PinnedSchema)
@@ -77,7 +76,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let registry_only: Vec<_> = expected.difference(&schema).cloned().collect();
 
     if !schema_only.is_empty() || !registry_only.is_empty() {
-        return Err(io::Error::other(format!(
+        return Err(std::io::Error::other(format!(
             "GMP schema drift detected; schema-only={schema_only:?}, registry-only={registry_only:?}"
         ))
         .into());
@@ -86,7 +85,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!(
         "GMP schema audit passed: {} qualified schema commands match {}",
         schema.len(),
-        Path::new(&path).display()
+        args.schema.display()
     );
     Ok(())
 }

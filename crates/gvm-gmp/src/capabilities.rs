@@ -42,20 +42,6 @@ pub struct CommandCapability {
 }
 
 impl CommandCapability {
-    const fn new(
-        name: &'static str,
-        support: MockSupport,
-        min_version: Option<GmpVersion>,
-        gvmd_evidence: GvmdEvidence,
-    ) -> Self {
-        Self {
-            name,
-            support,
-            min_version,
-            gvmd_evidence,
-        }
-    }
-
     /// Return whether this command is available in the negotiated GMP version.
     #[must_use]
     pub fn available_in(self, version: GmpVersion) -> bool {
@@ -67,12 +53,12 @@ macro_rules! command_capabilities {
     ($(($name:literal, $support:ident, $min_version:expr, $evidence:ident),)+) => {
         /// Authoritative, name-sorted command capability registry.
         pub static COMMAND_CAPABILITIES: &[CommandCapability] = &[
-            $(CommandCapability::new(
-                $name,
-                MockSupport::$support,
-                $min_version,
-                GvmdEvidence::$evidence,
-            ),)+
+            $(CommandCapability {
+                name: $name,
+                support: MockSupport::$support,
+                min_version: $min_version,
+                gvmd_evidence: GvmdEvidence::$evidence,
+            },)+
         ];
 
         /// Name-only projection of `COMMAND_CAPABILITIES`.
