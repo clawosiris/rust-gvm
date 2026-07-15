@@ -11,10 +11,12 @@ use crate::fault::{Fault, FaultEngine};
 use crate::fixtures::FixtureStore;
 use crate::response_gen::LargeReportConfig;
 use crate::scenario::{ScenarioMode, ScenarioStep};
-use crate::server::{MockGmpServer, UnixSocketBinding};
+use crate::server::{MockGmpServer, ServerOptions, UnixSocketBinding};
 use crate::store::ResourceStore;
 use crate::version::GmpVersion;
 use crate::ServerMode;
+
+const DEFAULT_MAX_REQUEST_BYTES: usize = 64 * 1024 * 1024;
 
 /// Builder for [`MockGmpServer`].
 pub struct MockGmpServerBuilder {
@@ -27,6 +29,7 @@ pub struct MockGmpServerBuilder {
     faults: Vec<Fault>,
     scenario_config: Option<(ScenarioMode, Vec<ScenarioStep>)>,
     large_report: Option<LargeReportConfig>,
+    max_request_bytes: Option<usize>,
 }
 
 enum Transport {
@@ -51,6 +54,7 @@ impl MockGmpServerBuilder {
             faults: Vec::new(),
             scenario_config: None,
             large_report: None,
+            max_request_bytes: Some(DEFAULT_MAX_REQUEST_BYTES),
         }
     }
 
@@ -157,6 +161,16 @@ impl MockGmpServerBuilder {
         self
     }
 
+    /// Set the maximum size of one XML request.
+    ///
+    /// The default is 64 MiB. Pass `None` to disable the per-request byte
+    /// limit. XML nesting remains independently bounded to 256 elements.
+    #[must_use]
+    pub fn with_max_request_bytes(mut self, max_request_bytes: Option<usize>) -> Self {
+        self.max_request_bytes = max_request_bytes;
+        self
+    }
+
     /// Build and start the mock server.
     ///
     /// # Errors
@@ -172,7 +186,15 @@ impl MockGmpServerBuilder {
             faults,
             scenario_config,
             large_report,
+            max_request_bytes,
         } = self;
+
+        if max_request_bytes == Some(0) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "max_request_bytes must be greater than zero or None",
+            ));
+        }
 
         let fixtures = if mode == ServerMode::Fixture || !fixture_overrides.is_empty() {
             let mut store = FixtureStore::new(version);
@@ -208,6 +230,12 @@ impl MockGmpServerBuilder {
             None
         };
 
+        let options = ServerOptions {
+            scenario_config,
+            large_report,
+            max_request_bytes,
+        };
+
         match transport {
             Transport::UnixSocket(path) => {
                 MockGmpServer::start_unix(
@@ -220,8 +248,7 @@ impl MockGmpServerBuilder {
                     fixtures,
                     store,
                     fault_engine,
-                    scenario_config,
-                    large_report,
+                    options,
                 )
                 .await
             }
@@ -242,8 +269,7 @@ impl MockGmpServerBuilder {
                     fixtures,
                     store,
                     fault_engine,
-                    scenario_config,
-                    large_report,
+                    options,
                 )
                 .await
             }
@@ -255,8 +281,7 @@ impl MockGmpServerBuilder {
                     fixtures,
                     store,
                     fault_engine,
-                    scenario_config,
-                    large_report,
+                    options,
                 )
                 .await
             }
@@ -269,8 +294,7 @@ impl MockGmpServerBuilder {
                     fixtures,
                     store,
                     fault_engine,
-                    scenario_config,
-                    large_report,
+                    options,
                 )
                 .await
             }

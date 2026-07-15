@@ -14,7 +14,7 @@ use crate::fault::FaultEngine;
 use crate::fixtures::FixtureStore;
 use crate::handler::{HandleResult, SessionHandler};
 use crate::history::CommandHistory;
-use crate::response_gen::LargeReportConfig;
+use crate::response_gen::{error_response, LargeReportConfig};
 use crate::scenario::{ScenarioMode, ScenarioStep};
 use crate::store::ResourceStore;
 use crate::version::GmpVersion;
@@ -38,6 +38,8 @@ pub struct ListenerState {
     pub(crate) scenario_config: Option<(ScenarioMode, Vec<ScenarioStep>)>,
     /// Large synthetic report configuration.
     pub(crate) large_report: Option<LargeReportConfig>,
+    /// Maximum size of one XML request.
+    pub(crate) max_request_bytes: Option<usize>,
     /// Fault injection engine.
     pub(crate) fault_engine: FaultEngine,
     /// Shutdown signal.
@@ -120,7 +122,7 @@ where
     );
 
     let mut buf = vec![0u8; 16 * 1024];
-    let mut xml_buf = Vec::new();
+    let mut xml_reader = gvm_protocol::XmlReader::with_buffer_limit(state.max_request_bytes);
 
     loop {
         let n = match stream.read(&mut buf).await {
@@ -132,11 +134,13 @@ where
             }
         };
 
-        xml_buf.extend_from_slice(&buf[..n]);
+        let mut offset = 0;
+        while offset < n {
+            let (consumed, result) =
+                try_extract_command(&mut xml_reader, &buf[offset..n], &handler);
+            offset = offset.saturating_add(consumed);
 
-        // Try to find complete XML commands in the buffer.
-        loop {
-            match try_extract_command(&mut xml_buf, &handler) {
+            match result {
                 CommandResult::Response { bytes, delay } => {
                     if let Some(d) = delay {
                         tokio::time::sleep(d).await;
@@ -149,6 +153,11 @@ where
                 CommandResult::NeedMore => break,
                 CommandResult::Disconnect => {
                     tracing::debug!("Fault: disconnecting session {session_id}");
+                    return;
+                }
+                CommandResult::Reject { bytes, reason } => {
+                    tracing::debug!("Rejecting session {session_id} input: {reason}");
+                    let _ = stream.write_all(&bytes).await;
                     return;
                 }
             }
@@ -167,34 +176,46 @@ pub(crate) enum CommandResult {
     NeedMore,
     /// Disconnect (fault injection).
     Disconnect,
+    /// Reject malformed or oversized XML and close the session.
+    Reject { bytes: Vec<u8>, reason: String },
 }
 
 /// Try to extract a complete XML command from the buffer.
-pub(crate) fn try_extract_command(buf: &mut Vec<u8>, handler: &SessionHandler) -> CommandResult {
-    // Simple approach: look for a complete XML element.
-    // We use a quick heuristic — find the root element close.
-    // For self-closing elements: />
-    // For elements with children: find matching close tag.
-
-    let Ok(text) = std::str::from_utf8(buf) else {
-        return CommandResult::NeedMore;
-    };
-    if text.trim_start().is_empty() {
-        return CommandResult::NeedMore;
-    }
-
-    let mut reader = gvm_protocol::XmlReader::new();
-    // TODO: detect malformed XML explicitly instead of waiting for a complete element.
-    let _ = reader.feed(buf);
-
-    if reader.is_complete() {
-        let command_xml = buf.clone();
-        buf.clear();
-        match handler.handle_command(&command_xml) {
-            HandleResult::Respond { bytes, delay } => CommandResult::Response { bytes, delay },
-            HandleResult::Disconnect => CommandResult::Disconnect,
+pub(crate) fn try_extract_command(
+    reader: &mut gvm_protocol::XmlReader,
+    data: &[u8],
+    handler: &SessionHandler,
+) -> (usize, CommandResult) {
+    let consumed = match reader.feed_frame(data) {
+        Ok(consumed) => consumed,
+        Err(error) => {
+            return (
+                0,
+                CommandResult::Reject {
+                    bytes: error_response("unknown", 400, "Malformed or oversized XML request"),
+                    reason: error.to_string(),
+                },
+            );
         }
-    } else {
-        CommandResult::NeedMore
-    }
+    };
+
+    let command_xml = match reader.take_frame() {
+        Ok(Some(command_xml)) => command_xml,
+        Ok(None) => return (consumed, CommandResult::NeedMore),
+        Err(error) => {
+            return (
+                consumed,
+                CommandResult::Reject {
+                    bytes: error_response("unknown", 400, "Malformed or oversized XML request"),
+                    reason: error.to_string(),
+                },
+            );
+        }
+    };
+
+    let result = match handler.handle_command(&command_xml) {
+        HandleResult::Respond { bytes, delay } => CommandResult::Response { bytes, delay },
+        HandleResult::Disconnect => CommandResult::Disconnect,
+    };
+    (consumed, result)
 }

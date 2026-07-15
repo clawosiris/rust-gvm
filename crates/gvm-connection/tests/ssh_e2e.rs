@@ -9,7 +9,7 @@ use std::io::ErrorKind;
 use gvm_connection::{
     ConnectionError, GvmConnection, SshAuth, SshConfig, SshConnection, SshHostKeyPolicy,
 };
-use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
+use gvm_mock_server::{GmpVersion, MockGmpServer, ScenarioMode, ScenarioStep, ServerMode};
 use gvm_protocol::{Request, Response, XmlCommand};
 
 async fn start_mock() -> Option<MockGmpServer> {
@@ -182,6 +182,229 @@ async fn ssh_rejects_wrong_fingerprint() {
 
     let error = conn.connect().await.expect_err("connect should fail");
     assert!(matches!(error, ConnectionError::ConnectFailed(_)));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn ssh_coalesced_commands_are_processed_in_order() {
+    let server = start_mock().await;
+    let Some(server) = server else {
+        return;
+    };
+    let mut connection = SshConnection::new(config_for(&server));
+    connection.connect().await.expect("connect");
+
+    connection
+        .send(b"<get_version/><get_tasks/>")
+        .await
+        .expect("coalesced send");
+    let version = Response::new(connection.read().await.expect("version response"));
+    let tasks = Response::new(connection.read().await.expect("tasks response"));
+
+    assert_eq!(
+        version.root_element_name().as_deref(),
+        Some("get_version_response")
+    );
+    assert_eq!(
+        tasks.root_element_name().as_deref(),
+        Some("get_tasks_response")
+    );
+    let history = server.command_history();
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[0].raw_xml(), b"<get_version/>");
+    assert_eq!(history[1].raw_xml(), b"<get_tasks/>");
+
+    connection.disconnect().await.expect("disconnect");
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn ssh_coalesced_responses_are_returned_one_frame_at_a_time() {
+    let server = match MockGmpServer::builder()
+        .scenario(
+            ScenarioMode::Strict,
+            vec![ScenarioStep {
+                expect_command: "get_version".to_string(),
+                respond_xml: Some("<first_response/><second_response/>".to_string()),
+            }],
+        )
+        .ssh("127.0.0.1:0")
+        .build()
+        .await
+    {
+        Ok(server) => server,
+        Err(error) if error.kind() == ErrorKind::PermissionDenied => return,
+        Err(error) => panic!("mock server start failed: {error}"),
+    };
+    let mut connection = SshConnection::new(config_for(&server));
+    connection.connect().await.expect("connect");
+    connection.send(b"<get_version/>").await.expect("send");
+
+    assert_eq!(
+        connection.read().await.expect("first response"),
+        b"<first_response/>"
+    );
+    assert_eq!(
+        connection.read().await.expect("second response"),
+        b"<second_response/>"
+    );
+
+    connection.disconnect().await.expect("disconnect");
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn ssh_reconnect_on_same_connection_discards_pending_response_tail() {
+    let server = match MockGmpServer::builder()
+        .scenario(
+            ScenarioMode::Strict,
+            vec![ScenarioStep {
+                expect_command: "get_version".to_string(),
+                respond_xml: Some("<current_response/><stale_response/>".to_string()),
+            }],
+        )
+        .ssh("127.0.0.1:0")
+        .build()
+        .await
+    {
+        Ok(server) => server,
+        Err(error) if error.kind() == ErrorKind::PermissionDenied => return,
+        Err(error) => panic!("mock server start failed: {error}"),
+    };
+    let mut connection = SshConnection::new(config_for(&server));
+
+    connection.connect().await.expect("first connect");
+    connection
+        .send(b"<get_version/>")
+        .await
+        .expect("first send");
+    assert_eq!(
+        connection.read().await.expect("current response"),
+        b"<current_response/>"
+    );
+    connection.disconnect().await.expect("disconnect");
+
+    connection.connect().await.expect("second connect");
+    connection
+        .send(b"<get_version/>")
+        .await
+        .expect("second send");
+    assert_eq!(
+        connection.read().await.expect("fresh current response"),
+        b"<current_response/>"
+    );
+
+    connection.disconnect().await.expect("disconnect");
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn ssh_malformed_response_invalidates_connection() {
+    let server = match MockGmpServer::builder()
+        .scenario(
+            ScenarioMode::Strict,
+            vec![ScenarioStep {
+                expect_command: "get_version".to_string(),
+                respond_xml: Some("<response></wrong>".to_string()),
+            }],
+        )
+        .ssh("127.0.0.1:0")
+        .build()
+        .await
+    {
+        Ok(server) => server,
+        Err(error) if error.kind() == ErrorKind::PermissionDenied => return,
+        Err(error) => panic!("mock server start failed: {error}"),
+    };
+    let mut connection = SshConnection::new(config_for(&server));
+    connection.connect().await.expect("connect");
+    connection.send(b"<get_version/>").await.expect("send");
+
+    let error = connection.read().await.expect_err("malformed response");
+    assert!(matches!(
+        error,
+        ConnectionError::ReadFailed(ref source)
+            if source.kind() == ErrorKind::InvalidData
+    ));
+    assert!(!connection.is_connected());
+    assert!(matches!(
+        connection.send(b"<get_version/>").await,
+        Err(ConnectionError::NotConnected)
+    ));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn ssh_response_limit_is_applied_independently_to_coalesced_frames() {
+    let first = b"<first_response/>";
+    let server = match MockGmpServer::builder()
+        .scenario(
+            ScenarioMode::Strict,
+            vec![ScenarioStep {
+                expect_command: "get_version".to_string(),
+                respond_xml: Some("<first_response/><oversized-response-without-close".to_string()),
+            }],
+        )
+        .ssh("127.0.0.1:0")
+        .build()
+        .await
+    {
+        Ok(server) => server,
+        Err(error) if error.kind() == ErrorKind::PermissionDenied => return,
+        Err(error) => panic!("mock server start failed: {error}"),
+    };
+    let config = config_for(&server).with_max_response_bytes(Some(first.len()));
+    let mut connection = SshConnection::new(config);
+    connection.connect().await.expect("connect");
+    connection.send(b"<get_version/>").await.expect("send");
+
+    assert_eq!(connection.read().await.expect("first response"), first);
+    let error = connection
+        .read()
+        .await
+        .expect_err("oversized second response");
+    assert!(matches!(
+        error,
+        ConnectionError::ReadFailed(ref source)
+            if source.kind() == ErrorKind::InvalidData
+    ));
+    assert!(!connection.is_connected());
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn ssh_mock_rejects_malformed_request_then_closes_channel() {
+    let server = match MockGmpServer::builder()
+        .mode(ServerMode::Echo)
+        .version(GmpVersion::V22_5)
+        .ssh("127.0.0.1:0")
+        .build()
+        .await
+    {
+        Ok(server) => server,
+        Err(error) if error.kind() == ErrorKind::PermissionDenied => return,
+        Err(error) => panic!("mock server start failed: {error}"),
+    };
+    let mut connection = SshConnection::new(config_for(&server));
+    connection.connect().await.expect("connect");
+    connection
+        .send(b"<get_version></wrong>")
+        .await
+        .expect("send malformed command");
+
+    let response = Response::new(connection.read().await.expect("rejection response"));
+    assert_eq!(response.status_code(), Some(400));
+    let error = connection.read().await.expect_err("closed SSH channel");
+    assert!(matches!(
+        error,
+        ConnectionError::ReadFailed(ref source)
+            if source.kind() == ErrorKind::UnexpectedEof
+    ));
+    assert!(!connection.is_connected());
+    assert_eq!(server.command_count(), 0);
 
     server.shutdown().await;
 }

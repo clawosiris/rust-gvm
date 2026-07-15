@@ -205,6 +205,8 @@ pub struct SshConnection {
     config: SshConfig,
     session: Option<client::Handle<SshServerKeyVerifier>>,
     channel: Option<Channel<client::Msg>>,
+    response_reader: gvm_protocol::XmlReader,
+    pending_read: Vec<u8>,
 }
 
 impl std::fmt::Debug for SshConnection {
@@ -220,10 +222,14 @@ impl SshConnection {
     /// Create a new SSH connection with the given config.
     #[must_use]
     pub fn new(config: SshConfig) -> Self {
+        let response_reader = gvm_protocol::XmlReader::with_buffer_limit(config.max_response_bytes);
+        let pending_read = Vec::with_capacity(config.read_buffer_size);
         Self {
             config,
             session: None,
             channel: None,
+            response_reader,
+            pending_read,
         }
     }
 
@@ -237,6 +243,18 @@ impl SshConnection {
 
     fn disconnect_error(error: impl std::fmt::Display) -> ConnectionError {
         ConnectionError::DisconnectFailed(error.to_string())
+    }
+
+    fn invalidate_protocol_read(&mut self, error: &gvm_protocol::ProtocolError) -> ConnectionError {
+        self.invalidate_connection();
+        protocol_read_error(error)
+    }
+
+    fn invalidate_connection(&mut self) {
+        self.channel.take();
+        self.session.take();
+        self.response_reader.reset();
+        self.pending_read.clear();
     }
 
     async fn authenticate(
@@ -354,6 +372,9 @@ impl GvmConnection for SshConnection {
             return Err(ConnectionError::AlreadyConnected);
         }
 
+        self.response_reader.reset();
+        self.pending_read.clear();
+
         let ssh_config = Arc::new(client::Config {
             nodelay: true,
             ..client::Config::default()
@@ -392,6 +413,8 @@ impl GvmConnection for SshConnection {
     }
 
     async fn disconnect(&mut self) -> Result<()> {
+        self.response_reader.reset();
+        self.pending_read.clear();
         if let Some(channel) = self.channel.take() {
             channel.close().await.map_err(Self::disconnect_error)?;
         }
@@ -426,31 +449,52 @@ impl GvmConnection for SshConnection {
     }
 
     async fn read(&mut self) -> Result<Vec<u8>> {
-        let channel = self.channel.as_mut().ok_or(ConnectionError::NotConnected)?;
-        let mut xml_reader =
-            gvm_protocol::XmlReader::with_buffer_limit(self.config.max_response_bytes);
-        let mut response = Vec::with_capacity(self.config.read_buffer_size);
+        if self.channel.is_none() {
+            return Err(ConnectionError::NotConnected);
+        }
+
+        if !self.pending_read.is_empty() {
+            let consumed = match self.response_reader.feed_frame(&self.pending_read) {
+                Ok(consumed) => consumed,
+                Err(error) => return Err(self.invalidate_protocol_read(&error)),
+            };
+            self.pending_read.drain(..consumed);
+            let frame = match self.response_reader.take_frame() {
+                Ok(frame) => frame,
+                Err(error) => return Err(self.invalidate_protocol_read(&error)),
+            };
+            if let Some(frame) = frame {
+                return Ok(frame);
+            }
+            debug_assert!(self.pending_read.is_empty());
+        }
 
         loop {
+            let channel = self.channel.as_mut().ok_or(ConnectionError::NotConnected)?;
             let message = tokio::time::timeout(self.config.timeout, channel.wait())
                 .await
                 .map_err(|_| ConnectionError::Timeout(self.config.timeout))?;
 
             match message {
                 Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
-                    response.extend_from_slice(&data);
-                    xml_reader.feed(&data).map_err(|error| {
-                        ConnectionError::ReadFailed(std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            error.to_string(),
-                        ))
-                    })?;
+                    let consumed = match self.response_reader.feed_frame(&data) {
+                        Ok(consumed) => consumed,
+                        Err(error) => return Err(self.invalidate_protocol_read(&error)),
+                    };
+                    if consumed < data.len() {
+                        self.pending_read.extend_from_slice(&data[consumed..]);
+                    }
 
-                    if xml_reader.is_complete() {
-                        return Ok(response);
+                    let frame = match self.response_reader.take_frame() {
+                        Ok(frame) => frame,
+                        Err(error) => return Err(self.invalidate_protocol_read(&error)),
+                    };
+                    if let Some(frame) = frame {
+                        return Ok(frame);
                     }
                 }
                 Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => {
+                    self.invalidate_connection();
                     return Err(ConnectionError::ReadFailed(std::io::Error::new(
                         std::io::ErrorKind::UnexpectedEof,
                         "ssh channel closed",
@@ -474,6 +518,13 @@ impl GvmConnection for SshConnection {
     fn is_connected(&self) -> bool {
         self.session.is_some() && self.channel.is_some()
     }
+}
+
+fn protocol_read_error(error: &gvm_protocol::ProtocolError) -> ConnectionError {
+    ConnectionError::ReadFailed(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        error.to_string(),
+    ))
 }
 
 #[cfg(test)]

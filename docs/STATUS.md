@@ -196,6 +196,8 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 | `--version 22.4\|22.5\|22.6\|22.7` | ✅ |
 | `--socket <path>` | ✅ |
 | `--tcp <addr:port>` | ✅ |
+| `--max-request-bytes <bytes>` | ✅ (64 MiB default) |
+| XML nesting limit | ✅ (256 elements) |
 | Cross-platform binaries | ✅ (5 targets in CI) |
 | GHCR release image | ✅ `ghcr.io/clawosiris/gvm-mock-server:<tag>` |
 

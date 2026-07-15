@@ -4,9 +4,11 @@
 #![allow(clippy::print_stdout, clippy::unwrap_used, missing_docs)]
 #![cfg(feature = "unix-socket-tests")]
 
-use gvm_connection::{GvmConnection, UnixSocketConfig, UnixSocketConnection};
+use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConfig, UnixSocketConnection};
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
 use gvm_protocol::{Request, Response, XmlCommand};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::UnixListener;
 
 async fn start_mock() -> Option<MockGmpServer> {
     match MockGmpServer::builder()
@@ -157,4 +159,147 @@ async fn double_connect_errors() {
 
     conn.disconnect().await.expect("disconnect failed");
     server.shutdown().await;
+}
+
+#[tokio::test]
+async fn coalesced_responses_are_returned_one_frame_at_a_time() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let socket_path = directory.path().join("coalesced.sock");
+    let listener = UnixListener::bind(&socket_path).expect("bind socket");
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("accept connection");
+        let mut request = [0_u8; 64];
+        let _ = stream.read(&mut request).await.expect("read request");
+        stream
+            .write_all(b"<first_response/><second_response/>")
+            .await
+            .expect("write responses");
+    });
+
+    let mut connection = UnixSocketConnection::new(UnixSocketConfig::new(&socket_path));
+    connection.connect().await.expect("connect");
+    connection.send(b"<request/>").await.expect("send");
+
+    assert_eq!(
+        connection.read().await.expect("first response"),
+        b"<first_response/>"
+    );
+    assert_eq!(
+        connection.read().await.expect("second response"),
+        b"<second_response/>"
+    );
+
+    server.await.expect("server task");
+}
+
+#[tokio::test]
+async fn reconnect_discards_a_pending_response_tail() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let socket_path = directory.path().join("reconnect-tail.sock");
+    let listener = UnixListener::bind(&socket_path).expect("bind socket");
+    let server = tokio::spawn(async move {
+        let (mut first, _) = listener.accept().await.expect("first connection");
+        let mut request = [0_u8; 64];
+        let _ = first.read(&mut request).await.expect("first request");
+        first
+            .write_all(b"<current_response/><stale_response/>")
+            .await
+            .expect("first responses");
+        drop(first);
+
+        let (mut second, _) = listener.accept().await.expect("second connection");
+        let _ = second.read(&mut request).await.expect("second request");
+        second
+            .write_all(b"<fresh_response/>")
+            .await
+            .expect("fresh response");
+    });
+
+    let mut connection = UnixSocketConnection::new(UnixSocketConfig::new(&socket_path));
+    connection.connect().await.expect("first connect");
+    connection.send(b"<request/>").await.expect("first send");
+    assert_eq!(
+        connection.read().await.expect("current response"),
+        b"<current_response/>"
+    );
+    connection.disconnect().await.expect("disconnect");
+
+    connection.connect().await.expect("second connect");
+    connection.send(b"<request/>").await.expect("second send");
+    assert_eq!(
+        connection.read().await.expect("fresh response"),
+        b"<fresh_response/>"
+    );
+
+    server.await.expect("server task");
+}
+
+#[tokio::test]
+async fn malformed_response_fails_without_waiting_for_eof() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let socket_path = directory.path().join("malformed.sock");
+    let listener = UnixListener::bind(&socket_path).expect("bind socket");
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("accept connection");
+        let mut request = [0_u8; 64];
+        let _ = stream.read(&mut request).await.expect("read request");
+        stream
+            .write_all(b"<response></wrong>")
+            .await
+            .expect("write response");
+    });
+
+    let mut connection = UnixSocketConnection::new(UnixSocketConfig::new(&socket_path));
+    connection.connect().await.expect("connect");
+    connection.send(b"<request/>").await.expect("send");
+
+    let error = connection.read().await.expect_err("malformed response");
+    assert!(matches!(
+        error,
+        ConnectionError::ReadFailed(ref source)
+            if source.kind() == std::io::ErrorKind::InvalidData
+    ));
+    assert!(!connection.is_connected());
+    assert!(matches!(
+        connection.send(b"<request/>").await,
+        Err(ConnectionError::NotConnected)
+    ));
+
+    server.await.expect("server task");
+}
+
+#[tokio::test]
+async fn response_limit_is_applied_independently_to_coalesced_frames() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let socket_path = directory.path().join("per-frame-limit.sock");
+    let listener = UnixListener::bind(&socket_path).expect("bind socket");
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("accept connection");
+        let mut request = [0_u8; 64];
+        let _ = stream.read(&mut request).await.expect("read request");
+        stream
+            .write_all(b"<first_response/><oversized-response-without-close")
+            .await
+            .expect("write responses");
+    });
+
+    let first = b"<first_response/>";
+    let config = UnixSocketConfig::new(&socket_path).with_max_response_bytes(Some(first.len()));
+    let mut connection = UnixSocketConnection::new(config);
+    connection.connect().await.expect("connect");
+    connection.send(b"<request/>").await.expect("send");
+
+    assert_eq!(connection.read().await.expect("first response"), first);
+    let error = connection
+        .read()
+        .await
+        .expect_err("oversized second response");
+    assert!(matches!(
+        error,
+        ConnectionError::ReadFailed(ref source)
+            if source.kind() == std::io::ErrorKind::InvalidData
+    ));
+    assert!(!connection.is_connected());
+
+    server.await.expect("server task");
 }
