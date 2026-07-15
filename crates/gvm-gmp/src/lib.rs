@@ -5,6 +5,8 @@
 
 //! Typed GMP command builders.
 
+/// Authoritative GMP command capability registry.
+pub mod capabilities;
 /// GMP command-builder modules.
 pub mod commands;
 mod common;

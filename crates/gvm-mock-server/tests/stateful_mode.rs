@@ -104,6 +104,27 @@ async fn stateful_auth_success() {
     server.shutdown().await;
 }
 
+#[tokio::test]
+async fn stateful_rejects_unknown_prefixed_commands() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut stream = connect_and_auth(&server).await;
+
+    for command in [
+        b"<create_not_a_gmp_resource><name>test</name></create_not_a_gmp_resource>".as_slice(),
+        b"<get_not_a_gmp_resource/>".as_slice(),
+        b"<modify_not_a_gmp_resource not_a_gmp_resource_id=\"id\"/>".as_slice(),
+        b"<delete_not_a_gmp_resource not_a_gmp_resource_id=\"id\"/>".as_slice(),
+    ] {
+        let response = send_recv(&mut stream, command).await;
+        assert_eq!(response.status_code(), Some(400));
+        assert_eq!(response.status_text().as_deref(), Some("Unknown command"));
+    }
+
+    server.shutdown().await;
+}
+
 // STATE-004: Invalid credentials rejected
 #[tokio::test]
 async fn stateful_auth_failure() {

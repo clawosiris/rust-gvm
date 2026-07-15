@@ -139,7 +139,8 @@ fn version_gated_commands_declare_minimum_version() {
         let first_available = versions
             .iter()
             .copied()
-            .find(|version| command_available(entry.name, *version));
+            .find(|version| command_available(entry.name, *version))
+            .map(Into::into);
         assert!(
             first_available == Some(min_version),
             "{} declares minimum GMP version {}, but first becomes available at {:?}",

@@ -38,68 +38,24 @@ impl std::fmt::Display for GmpVersion {
     }
 }
 
-/// Commands only available in GMP 22.6+.
-const GMP_22_6_COMMANDS: &[&str] = &[
-    "create_report_config",
-    "delete_report_config",
-    "get_report_configs",
-    "modify_report_config",
-    "get_features",
-];
-
-/// Commands only available in GMP 22.8+ / GMP Next.
-const GMP_22_8_COMMANDS: &[&str] = &[
-    "create_agent_group",
-    "delete_agent",
-    "delete_agent_group",
-    "get_agents",
-    "get_agent_groups",
-    "get_agent_installer_instruction",
-    "get_agent_support_bundle",
-    "get_integration_configs",
-    "modify_agent",
-    "modify_agent_control_scan_config",
-    "modify_integration_config",
-    "modify_agent_group",
-    "get_report_hosts",
-    "get_report_ports",
-    "get_report_applications",
-    "get_report_operating_systems",
-    "get_report_cves",
-    "get_report_vulns",
-    "get_report_tls_certificates",
-    "get_report_errors",
-    "get_report_closed_cves",
-    "get_timezones",
-    "get_credential_stores",
-    "modify_credential_store",
-    "verify_credential_store",
-    "create_oci_image_target",
-    "delete_oci_image_target",
-    "get_oci_image_targets",
-    "modify_oci_image_target",
-    "create_web_application_target",
-    "delete_web_application_target",
-    "get_web_application_targets",
-    "modify_web_application_target",
-    "sync_agents",
-];
-
-/// Check if a command is available in the given GMP version.
+/// Check whether a known command is available in the given GMP version.
 #[must_use]
 pub fn command_available(command_name: &str, version: GmpVersion) -> bool {
-    if GMP_22_8_COMMANDS.contains(&command_name) {
-        return matches!(version, GmpVersion::V22_8);
-    }
-    if GMP_22_6_COMMANDS.contains(&command_name) {
-        return matches!(
-            version,
-            GmpVersion::V22_6 | GmpVersion::V22_7 | GmpVersion::V22_8
-        );
-    }
-    true
+    gvm_gmp::capabilities::command_capability(command_name)
+        .is_some_and(|capability| capability.available_in(version.into()))
 }
 
+impl From<GmpVersion> for gvm_gmp::GmpVersion {
+    fn from(version: GmpVersion) -> Self {
+        match version {
+            GmpVersion::V22_4 => Self(22, 4),
+            GmpVersion::V22_5 => Self(22, 5),
+            GmpVersion::V22_6 => Self(22, 6),
+            GmpVersion::V22_7 => Self(22, 7),
+            GmpVersion::V22_8 => Self(22, 8),
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
