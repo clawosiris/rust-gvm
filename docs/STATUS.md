@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-05-25
+Last updated: 2026-07-15
 
 ## Support Direction
 
@@ -12,13 +12,13 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 
 | Crate | Status | Lines | Tests | Description |
 |-------|--------|-------|-------|-------------|
-| `gvm-protocol` | ✅ Implemented | ~860 | 37 | XML command builder, response parser, streaming reader |
-| `gvm-mock-server` | ✅ Implemented | ~3,600 | 198 | Programmable mock GMP server |
-| `gvm-connection` | ✅ Unix + SSH done | ~640 | 20 | Async transport layer (Unix socket + SSH implemented) |
-| `gvm-gmp` | ✅ Implemented | ~4,430 | 480 | Typed GMP command builders (29 modules, 23 enums, full rustdoc) |
-| `gvm-client` | ✅ Implemented | ~950 | 10 | High-level async client with version negotiation and typed methods |
+| `gvm-protocol` | ✅ Implemented | ~2,190 | 67 | XML command builder, response parser, streaming reader |
+| `gvm-mock-server` | ✅ Implemented | ~5,850 | 266 | Programmable mock GMP server |
+| `gvm-connection` | ✅ Unix + SSH done | ~1,070 | 45 | Async transport layer (Unix socket + SSH implemented) |
+| `gvm-gmp` | ✅ Implemented | ~19,800 | 838 | Typed GMP command builders and response models |
+| `gvm-client` | ✅ Implemented | ~3,590 | 62 | High-level async client with version negotiation and typed methods |
 
-**Total: ~10,500 lines of Rust, 633+ tests**
+**Total: ~32,500 lines of Rust, 1,278 tests**
 
 ---
 
@@ -57,6 +57,10 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 | Elements with children | ✅ | `<get_tasks_response>...</get_tasks_response>` |
 | Chunked delivery | ✅ | Feed partial data, detect completion |
 | Nested same-name elements | ✅ | `<report><report>...</report></report>` |
+| Exact frame boundaries | ✅ | Preserve coalesced bytes for the next response |
+| Input size limit | ✅ | 64 MiB per frame by default; configurable |
+| Nesting limit | ✅ | 256 elements per frame by default; configurable |
+| Strict XML 1.0 checks | ✅ | Reject malformed declarations, names, references, and forbidden literals |
 | Reset for reuse | ✅ | `reader.reset()` |
 
 ---
@@ -197,7 +201,7 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 | `--socket <path>` | ✅ |
 | `--tcp <addr:port>` | ✅ |
 | `--max-request-bytes <bytes>` | ✅ (64 MiB default) |
-| XML nesting limit | ✅ (256 elements) |
+| XML nesting limit | ✅ (256 elements per frame; enforced across protocol, client, and mock readers) |
 | Cross-platform binaries | ✅ (5 targets in CI) |
 | GHCR release image | ✅ `ghcr.io/clawosiris/gvm-mock-server:<tag>` |
 

@@ -17,6 +17,252 @@ const DEFAULT_MAX_BUFFER_BYTES: usize = 64 * 1024 * 1024;
 const DEFAULT_MAX_DEPTH: usize = 256;
 const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
 
+#[derive(Debug)]
+enum PendingToken {
+    Tag {
+        scan_offset: usize,
+        quote: Option<u8>,
+    },
+    Sequence {
+        scan_offset: usize,
+        terminator: TokenTerminator,
+        matched: usize,
+    },
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TokenTerminator {
+    ProcessingInstruction,
+    Comment,
+    CData,
+    Reference,
+}
+
+impl PendingToken {
+    fn from_error(error: &XmlError, scan_offset: usize) -> Option<Self> {
+        match error {
+            XmlError::Syntax(
+                SyntaxError::UnclosedTag
+                | SyntaxError::UnclosedSingleQuotedAttributeValue
+                | SyntaxError::UnclosedDoubleQuotedAttributeValue,
+            ) => Some(Self::Tag {
+                scan_offset,
+                quote: None,
+            }),
+            XmlError::Syntax(SyntaxError::UnclosedPI | SyntaxError::UnclosedXmlDecl) => {
+                Some(Self::Sequence {
+                    scan_offset,
+                    terminator: TokenTerminator::ProcessingInstruction,
+                    matched: 0,
+                })
+            }
+            XmlError::Syntax(SyntaxError::UnclosedComment) => Some(Self::Sequence {
+                scan_offset,
+                terminator: TokenTerminator::Comment,
+                matched: 0,
+            }),
+            XmlError::Syntax(SyntaxError::UnclosedCData) => Some(Self::Sequence {
+                scan_offset,
+                terminator: TokenTerminator::CData,
+                matched: 0,
+            }),
+            XmlError::IllFormed(IllFormedError::UnclosedReference) => Some(Self::Sequence {
+                scan_offset,
+                terminator: TokenTerminator::Reference,
+                matched: 0,
+            }),
+            _ => None,
+        }
+    }
+
+    fn scan_until_ready(&mut self, buffer: &[u8]) -> bool {
+        match self {
+            Self::Tag { scan_offset, quote } => {
+                for byte in &buffer[*scan_offset..] {
+                    *scan_offset += 1;
+                    match (*quote, *byte) {
+                        (None, b'\'' | b'"') => *quote = Some(*byte),
+                        (Some(active), current) if active == current => *quote = None,
+                        (None, b'>') => return true,
+                        _ => {}
+                    }
+                }
+                false
+            }
+            Self::Sequence {
+                scan_offset,
+                terminator,
+                matched,
+            } => {
+                let needle = terminator.bytes();
+                for byte in &buffer[*scan_offset..] {
+                    *scan_offset += 1;
+                    while *matched > 0 && needle[*matched] != *byte {
+                        *matched = terminator.fallback(*matched);
+                    }
+                    if needle[*matched] == *byte {
+                        *matched += 1;
+                        if *matched == needle.len() {
+                            return true;
+                        }
+                    }
+                }
+                false
+            }
+        }
+    }
+}
+
+impl TokenTerminator {
+    fn bytes(self) -> &'static [u8] {
+        match self {
+            Self::ProcessingInstruction => b"?>",
+            Self::Comment => b"-->",
+            Self::CData => b"]]>",
+            Self::Reference => b";",
+        }
+    }
+
+    fn fallback(self, matched: usize) -> usize {
+        match (self, matched) {
+            (Self::Comment | Self::CData, 2) => 1,
+            _ => 0,
+        }
+    }
+}
+
+struct FrameProgress<'a> {
+    max_depth: usize,
+    complete: &'a mut bool,
+    seen_start: &'a mut bool,
+    declaration_allowed: &'a mut bool,
+    resume_offset: &'a mut usize,
+    frame_end: &'a mut Option<usize>,
+    element_names: &'a mut Vec<Vec<u8>>,
+    trailing_text_brackets: &'a mut u8,
+    pending_token: &'a mut Option<PendingToken>,
+}
+
+impl FrameProgress<'_> {
+    fn accept_start(&mut self, element: &BytesStart<'_>) -> Result<(), ProtocolError> {
+        *self.trailing_text_brackets = 0;
+        open_element(element, self.seen_start, self.element_names, self.max_depth)
+    }
+
+    fn accept_end(
+        &mut self,
+        element: &BytesEnd<'_>,
+        buffer: &[u8],
+        parsed_len: usize,
+    ) -> Result<bool, ProtocolError> {
+        *self.trailing_text_brackets = 0;
+        let Some(end) = closing_frame_end(
+            element,
+            self.element_names,
+            buffer,
+            *self.resume_offset,
+            parsed_len,
+        )?
+        else {
+            return Ok(false);
+        };
+        *self.complete = true;
+        *self.frame_end = Some(end);
+        Ok(true)
+    }
+
+    fn accept_empty(
+        &mut self,
+        element: &BytesStart<'_>,
+        buffer: &[u8],
+        parsed_len: usize,
+    ) -> Result<bool, ProtocolError> {
+        *self.trailing_text_brackets = 0;
+        let Some(end) = empty_frame_end(
+            element,
+            *self.seen_start,
+            self.element_names.len(),
+            self.max_depth,
+            buffer,
+            *self.resume_offset,
+            parsed_len,
+        )?
+        else {
+            return Ok(false);
+        };
+        *self.seen_start = true;
+        *self.complete = true;
+        *self.frame_end = Some(end);
+        Ok(true)
+    }
+
+    fn accept_text(
+        &mut self,
+        text: &BytesText<'_>,
+        parsed_len: usize,
+    ) -> Result<bool, ProtocolError> {
+        if !validate_text(
+            text,
+            *self.seen_start,
+            self.declaration_allowed,
+            self.trailing_text_brackets,
+        )? {
+            return Ok(false);
+        }
+        *self.resume_offset += parsed_len;
+        Ok(true)
+    }
+
+    fn accept_declaration(&mut self, declaration: &BytesDecl<'_>) -> Result<(), ProtocolError> {
+        *self.trailing_text_brackets = 0;
+        accept_declaration(declaration, *self.seen_start, self.declaration_allowed)
+    }
+
+    fn accept_comment(&mut self, comment: &[u8]) -> Result<(), ProtocolError> {
+        *self.trailing_text_brackets = 0;
+        validate_misc(comment, *self.seen_start, self.declaration_allowed)
+    }
+
+    fn accept_processing_instruction(&mut self, instruction: &[u8]) -> Result<(), ProtocolError> {
+        *self.trailing_text_brackets = 0;
+        validate_processing_instruction(instruction, *self.seen_start, self.declaration_allowed)
+    }
+
+    fn accept_reference(&mut self, reference: &BytesRef<'_>) -> Result<(), ProtocolError> {
+        *self.trailing_text_brackets = 0;
+        if !*self.seen_start {
+            return Err(xml_parse_error("entity reference before root element"));
+        }
+        validate_reference(reference)
+    }
+
+    fn suspend_eof(&mut self, parsed_len: usize) {
+        *self.resume_offset += parsed_len;
+    }
+
+    fn suspend_incomplete_token(
+        &mut self,
+        error: &XmlError,
+        parsed_len: usize,
+        buffer: &[u8],
+    ) -> Result<(), ProtocolError> {
+        if matches!(error, XmlError::Syntax(SyntaxError::UnclosedDoctype)) {
+            return Err(xml_parse_error("DOCTYPE declarations are not supported"));
+        }
+        if !is_incomplete_xml_error(error) {
+            return Err(xml_parse_error(error));
+        }
+
+        *self.resume_offset += parsed_len;
+        if let Some(mut token) = PendingToken::from_error(error, *self.resume_offset) {
+            let ready = token.scan_until_ready(buffer);
+            debug_assert!(!ready, "quick-xml reported a complete token as incomplete");
+            *self.pending_token = Some(token);
+        }
+        Ok(())
+    }
+}
+
 /// Streaming XML reader that detects when a complete XML root element has been received.
 ///
 /// Feed data incrementally via [`XmlReader::feed`] and check [`XmlReader::is_complete`] to know when
@@ -31,6 +277,8 @@ pub struct XmlReader {
     resume_offset: usize,
     frame_end: Option<usize>,
     element_names: Vec<Vec<u8>>,
+    trailing_text_brackets: u8,
+    pending_token: Option<PendingToken>,
 }
 
 impl std::fmt::Debug for XmlReader {
@@ -43,6 +291,7 @@ impl std::fmt::Debug for XmlReader {
             .field("complete", &self.complete)
             .field("frame_end", &self.frame_end)
             .field("depth", &self.element_names.len())
+            .field("pending_token", &self.pending_token.is_some())
             .finish()
     }
 }
@@ -79,6 +328,8 @@ impl XmlReader {
             resume_offset: 0,
             frame_end: None,
             element_names: Vec::new(),
+            trailing_text_brackets: 0,
+            pending_token: None,
         }
     }
 
@@ -218,6 +469,38 @@ impl XmlReader {
         self.resume_offset = 0;
         self.frame_end = None;
         self.element_names.clear();
+        self.trailing_text_brackets = 0;
+        self.pending_token = None;
+    }
+
+    fn frame_progress(&mut self) -> (&[u8], FrameProgress<'_>) {
+        let Self {
+            buffer,
+            max_depth,
+            complete,
+            seen_start,
+            declaration_allowed,
+            resume_offset,
+            frame_end,
+            element_names,
+            trailing_text_brackets,
+            pending_token,
+            ..
+        } = self;
+        (
+            buffer,
+            FrameProgress {
+                max_depth: *max_depth,
+                complete,
+                seen_start,
+                declaration_allowed,
+                resume_offset,
+                frame_end,
+                element_names,
+                trailing_text_brackets,
+                pending_token,
+            },
+        )
     }
 
     fn check_complete(&mut self) -> Result<(), ProtocolError> {
@@ -225,101 +508,74 @@ impl XmlReader {
             return Ok(());
         }
 
-        let unparsed = &self.buffer[self.resume_offset..];
-        let bom_len =
-            usize::from(self.resume_offset == 0 && unparsed.starts_with(UTF8_BOM)) * UTF8_BOM.len();
+        if let Some(token) = &mut self.pending_token {
+            if !token.scan_until_ready(&self.buffer) {
+                return Ok(());
+            }
+            self.pending_token = None;
+        }
+
+        let (buffer, mut progress) = self.frame_progress();
+        let unparsed = &buffer[*progress.resume_offset..];
+        let bom_len = usize::from(*progress.resume_offset == 0 && unparsed.starts_with(UTF8_BOM))
+            * UTF8_BOM.len();
         let mut reader = configured_reader(unparsed);
         let (mut event_buf, mut parsed_len) = (Vec::new(), 0_usize);
 
         loop {
             match reader.read_event_into(&mut event_buf) {
                 Ok(Event::Start(element)) => {
-                    open_element(
-                        &element,
-                        &mut self.seen_start,
-                        &mut self.element_names,
-                        self.max_depth,
-                    )?;
                     parsed_len = bom_len + reader.buffer_position() as usize;
+                    progress.accept_start(&element)?;
                 }
                 Ok(Event::End(element)) => {
                     parsed_len = bom_len + reader.buffer_position() as usize;
-                    if close_element(&element, &mut self.element_names)? {
-                        let frame_end =
-                            validated_frame_end(&self.buffer, self.resume_offset, parsed_len)?;
-                        self.complete = true;
-                        self.frame_end = Some(frame_end);
+                    if progress.accept_end(&element, buffer, parsed_len)? {
                         return Ok(());
                     }
                 }
                 Ok(Event::Empty(element)) => {
                     parsed_len = bom_len + reader.buffer_position() as usize;
-                    validate_empty_element(&element, self.element_names.len(), self.max_depth)?;
-                    if !self.seen_start {
-                        let frame_end =
-                            validated_frame_end(&self.buffer, self.resume_offset, parsed_len)?;
-                        self.seen_start = true;
-                        self.complete = true;
-                        self.frame_end = Some(frame_end);
+                    if progress.accept_empty(&element, buffer, parsed_len)? {
                         return Ok(());
                     }
                 }
                 Ok(Event::Text(text)) => {
-                    if validate_text(&text, self.seen_start, &mut self.declaration_allowed)? {
-                        self.resume_offset += parsed_len;
+                    if progress.accept_text(&text, parsed_len)? {
                         return Ok(());
                     }
                     parsed_len = bom_len + reader.buffer_position() as usize;
                 }
                 Ok(Event::CData(data)) => {
-                    validate_cdata(data.as_ref(), self.seen_start)?;
+                    *progress.trailing_text_brackets = 0;
+                    validate_cdata(data.as_ref(), *progress.seen_start)?;
                     parsed_len = bom_len + reader.buffer_position() as usize;
                 }
                 Ok(Event::DocType(_)) => {
                     return Err(xml_parse_error("DOCTYPE declarations are not supported"));
                 }
                 Ok(Event::Decl(declaration)) => {
-                    accept_declaration(
-                        &declaration,
-                        self.seen_start,
-                        &mut self.declaration_allowed,
-                    )?;
+                    progress.accept_declaration(&declaration)?;
                     parsed_len = bom_len + reader.buffer_position() as usize;
                 }
                 Ok(Event::Comment(comment)) => {
-                    validate_misc(
-                        comment.as_ref(),
-                        self.seen_start,
-                        &mut self.declaration_allowed,
-                    )?;
+                    progress.accept_comment(comment.as_ref())?;
                     parsed_len = bom_len + reader.buffer_position() as usize;
                 }
                 Ok(Event::PI(instruction)) => {
-                    validate_processing_instruction(
-                        instruction.as_ref(),
-                        self.seen_start,
-                        &mut self.declaration_allowed,
-                    )?;
+                    progress.accept_processing_instruction(instruction.as_ref())?;
                     parsed_len = bom_len + reader.buffer_position() as usize;
                 }
                 Ok(Event::GeneralRef(reference)) => {
-                    if !self.seen_start {
-                        return Err(xml_parse_error("entity reference before root element"));
-                    }
-                    validate_reference(&reference)?;
+                    progress.accept_reference(&reference)?;
                     parsed_len = bom_len + reader.buffer_position() as usize;
                 }
                 Ok(Event::Eof) => {
-                    self.resume_offset += parsed_len;
+                    progress.suspend_eof(parsed_len);
                     return Ok(());
                 }
                 Err(error) => {
-                    if !is_incomplete_xml_error(&error) {
-                        return Err(xml_parse_error(error));
-                    }
-
-                    self.resume_offset += parsed_len;
-                    return Ok(());
+                    return progress.suspend_incomplete_token(&error, parsed_len, buffer);
                 }
             }
 
@@ -421,6 +677,18 @@ fn close_element(
     Ok(element_names.is_empty())
 }
 
+fn closing_frame_end(
+    element: &BytesEnd<'_>,
+    element_names: &mut Vec<Vec<u8>>,
+    buffer: &[u8],
+    resume_offset: usize,
+    parsed_len: usize,
+) -> Result<Option<usize>, ProtocolError> {
+    close_element(element, element_names)?
+        .then(|| validated_frame_end(buffer, resume_offset, parsed_len))
+        .transpose()
+}
+
 fn validate_empty_element(
     element: &BytesStart<'_>,
     current_depth: usize,
@@ -435,10 +703,26 @@ fn validate_empty_element(
     Ok(())
 }
 
+fn empty_frame_end(
+    element: &BytesStart<'_>,
+    seen_start: bool,
+    current_depth: usize,
+    max_depth: usize,
+    buffer: &[u8],
+    resume_offset: usize,
+    parsed_len: usize,
+) -> Result<Option<usize>, ProtocolError> {
+    validate_empty_element(element, current_depth, max_depth)?;
+    (!seen_start)
+        .then(|| validated_frame_end(buffer, resume_offset, parsed_len))
+        .transpose()
+}
+
 fn validate_text(
     text: &BytesText<'_>,
     seen_start: bool,
     declaration_allowed: &mut bool,
+    trailing_brackets: &mut u8,
 ) -> Result<bool, ProtocolError> {
     let decoded = match std::str::from_utf8(text.as_ref()) {
         Ok(text) => text,
@@ -446,6 +730,7 @@ fn validate_text(
             let prefix = std::str::from_utf8(&text.as_ref()[..error.valid_up_to()])
                 .map_err(xml_parse_error)?;
             validate_xml_chars(prefix)?;
+            validate_character_data(prefix.as_bytes(), trailing_brackets)?;
             if !seen_start && !prefix.chars().all(is_xml_whitespace) {
                 return Err(xml_parse_error("non-whitespace text before root element"));
             }
@@ -458,6 +743,7 @@ fn validate_text(
     };
 
     validate_xml_chars(decoded)?;
+    validate_character_data(decoded.as_bytes(), trailing_brackets)?;
     if !seen_start {
         if !decoded.chars().all(is_xml_whitespace) {
             return Err(xml_parse_error("non-whitespace text before root element"));
@@ -473,6 +759,11 @@ fn validate_start(element: &BytesStart<'_>) -> Result<(), ProtocolError> {
     for attribute in element.attributes() {
         let attribute = attribute.map_err(xml_parse_error)?;
         validate_name(attribute.key.as_ref())?;
+        if attribute.value.contains(&b'<') {
+            return Err(xml_parse_error(
+                "attribute values cannot contain a literal '<'",
+            ));
+        }
         let value = attribute
             .normalized_value(XmlVersion::Implicit1_0)
             .map_err(xml_parse_error)?;
@@ -483,17 +774,70 @@ fn validate_start(element: &BytesStart<'_>) -> Result<(), ProtocolError> {
 
 fn validate_declaration(declaration: &BytesDecl<'_>) -> Result<(), ProtocolError> {
     validate_xml_bytes(declaration.as_ref())?;
-    declaration.xml_version().map_err(xml_parse_error)?;
-    if let Some(encoding) = declaration.encoding() {
-        let encoding = encoding.map_err(xml_parse_error)?;
-        if !encoding.eq_ignore_ascii_case(b"utf-8") {
-            return Err(xml_parse_error("only UTF-8 XML declarations are supported"));
+    let content = std::str::from_utf8(declaration.as_ref()).map_err(xml_parse_error)?;
+    let start = BytesStart::from_content(content, b"xml".len());
+    let mut fields = 0_usize;
+    let mut saw_encoding = false;
+
+    for attribute in start.attributes() {
+        let attribute = attribute.map_err(xml_parse_error)?;
+        if attribute.value.contains(&b'<') {
+            return Err(xml_parse_error(
+                "XML declaration values cannot contain a literal '<'",
+            ));
         }
+
+        match (fields, attribute.key.as_ref()) {
+            (0, b"version") if attribute.value.as_ref() == b"1.0" => {}
+            (0, b"version") => {
+                return Err(xml_parse_error("only XML version 1.0 is supported"));
+            }
+            (0, _) => {
+                return Err(xml_parse_error(
+                    "version must be the first XML declaration attribute",
+                ));
+            }
+            (1, b"encoding") if attribute.value.eq_ignore_ascii_case(b"utf-8") => {
+                saw_encoding = true;
+            }
+            (1, b"encoding") => {
+                return Err(xml_parse_error("only UTF-8 XML declarations are supported"));
+            }
+            (1, b"standalone") if matches!(attribute.value.as_ref(), b"yes" | b"no") => {}
+            (2, b"standalone")
+                if saw_encoding && matches!(attribute.value.as_ref(), b"yes" | b"no") => {}
+            (_, b"standalone") => {
+                return Err(xml_parse_error(
+                    "standalone must follow version and optional encoding and be 'yes' or 'no'",
+                ));
+            }
+            (_, b"encoding") => {
+                return Err(xml_parse_error(
+                    "encoding must follow version and precede standalone",
+                ));
+            }
+            (_, b"version") => {
+                return Err(xml_parse_error("version may appear only once"));
+            }
+            _ => return Err(xml_parse_error("unknown XML declaration attribute")),
+        }
+        fields += 1;
     }
-    if let Some(standalone) = declaration.standalone() {
-        let standalone = standalone.map_err(xml_parse_error)?;
-        if standalone.as_ref() != b"yes" && standalone.as_ref() != b"no" {
-            return Err(xml_parse_error("standalone must be 'yes' or 'no'"));
+
+    if fields == 0 {
+        return Err(xml_parse_error("XML declaration version is required"));
+    }
+    Ok(())
+}
+
+fn validate_character_data(data: &[u8], trailing_brackets: &mut u8) -> Result<(), ProtocolError> {
+    for byte in data {
+        match *byte {
+            b']' => *trailing_brackets = trailing_brackets.saturating_add(1).min(2),
+            b'>' if *trailing_brackets == 2 => {
+                return Err(xml_parse_error("character data cannot contain ']]>'"));
+            }
+            _ => *trailing_brackets = 0,
         }
     }
     Ok(())
@@ -603,6 +947,21 @@ fn is_incomplete_xml_error(error: &XmlError) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn assert_rejected_single_and_byte_chunks(xml: &[u8]) {
+        let mut single = XmlReader::new();
+        assert!(matches!(single.feed(xml), Err(ProtocolError::XmlParse(_))));
+
+        let mut chunked = XmlReader::new();
+        let mut error = None;
+        for byte in xml {
+            if let Err(found) = chunked.feed(&[*byte]) {
+                error = Some(found);
+                break;
+            }
+        }
+        assert!(matches!(error, Some(ProtocolError::XmlParse(_))));
+    }
 
     // XMLR-001
     #[test]
@@ -837,6 +1196,39 @@ mod tests {
     }
 
     #[test]
+    fn test_declaration_grammar_is_strict_across_chunks() {
+        for xml in [
+            br#"<?xml version="1.0" bogus="x"?><root/>"#.as_slice(),
+            br#"<?xml version="1.0" standalone="yes" encoding="UTF-8"?><root/>"#.as_slice(),
+            br#"<?xml version="1.0" version="1.1"?><root/>"#.as_slice(),
+            br#"<?xml version="1.1"?><root/>"#.as_slice(),
+        ] {
+            assert_rejected_single_and_byte_chunks(xml);
+        }
+
+        for xml in [
+            br#"<?xml version="1.0"?><root/>"#.as_slice(),
+            br#"<?xml version="1.0" encoding="UTF-8"?><root/>"#.as_slice(),
+            br#"<?xml version="1.0" standalone="no"?><root/>"#.as_slice(),
+            br#"<?xml version="1.0" encoding="utf-8" standalone="yes"?><root/>"#.as_slice(),
+        ] {
+            let mut reader = XmlReader::new();
+            reader.feed(xml).expect("valid XML 1.0 declaration");
+            assert!(reader.is_complete());
+        }
+    }
+
+    #[test]
+    fn test_forbidden_character_data_and_attribute_literals_are_rejected() {
+        for xml in [
+            b"<root>]]></root>".as_slice(),
+            br#"<root a="x<y"/>"#.as_slice(),
+        ] {
+            assert_rejected_single_and_byte_chunks(xml);
+        }
+    }
+
+    #[test]
     fn test_invalid_processing_instruction_targets_are_rejected() {
         for xml in [
             b"<?XML data?><root/>".as_slice(),
@@ -983,6 +1375,25 @@ mod tests {
             .feed_frame(b"<root>")
             .expect_err("incomplete frame at limit");
         assert!(matches!(error, ProtocolError::BufferOverflow { max: 6 }));
+    }
+
+    #[test]
+    fn test_incomplete_attribute_scanner_advances_only_over_new_bytes() {
+        let mut reader = XmlReader::new();
+        reader.feed(br#"<root value=""#).expect("incomplete tag");
+
+        for _ in 0..1_024 {
+            reader.feed(&[b'a'; 64]).expect("incomplete attribute");
+            let scan_offset = match reader.pending_token.as_ref() {
+                Some(PendingToken::Tag { scan_offset, .. }) => *scan_offset,
+                token => panic!("expected pending tag, got {token:?}"),
+            };
+            assert_eq!(scan_offset, reader.buffer.len());
+        }
+
+        reader.feed(br#""/>"#).expect("completed tag");
+        assert!(reader.is_complete());
+        assert!(reader.pending_token.is_none());
     }
 
     #[test]
