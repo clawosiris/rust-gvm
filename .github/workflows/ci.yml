@@ -114,13 +114,23 @@ jobs:
         with:
           components: llvm-tools-preview
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
       - uses: taiki-e/install-action@4684b8405694ae9dd42c9f39ba901a70ae83f4a3 # v2
         with:
           tool: cargo-llvm-cov
       - run: cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
+      - name: Measure Python policy helper coverage
+        run: |
+          python -m pip install coverage==7.15.1
+          python -m coverage run --branch \
+            -m unittest tests.test_sbom_postprocess tests.test_sbom_quality
+          python -m coverage xml -o python-coverage.xml
       - uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
-          files: lcov.info
+          files: lcov.info,python-coverage.xml
+          disable_search: true
           fail_ci_if_error: false
 
   integration:

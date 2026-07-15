@@ -21,6 +21,11 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_CYCLONEDX_VERSION: "0.5.9"
+  SBOMQS_VERSION: "v2.0.5"
+  SBOM_QUALITY_THRESHOLD: "8.3"
+
 jobs:
   # Rust advisory database check
   cargo-audit:
@@ -66,6 +71,56 @@ jobs:
           tool: cargo-vet
       - name: Run cargo-vet
         run: cargo vet
+
+  # Generate, enrich, and enforce the release SBOM quality policy before tags.
+  sbom-quality:
+    name: SBOM Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: taiki-e/install-action@4684b8405694ae9dd42c9f39ba901a70ae83f4a3 # v2
+        with:
+          tool: cargo-cyclonedx@${{ env.CARGO_CYCLONEDX_VERSION }}
+
+      - name: Test SBOM policy helpers
+        run: python3 -B -m unittest tests.test_sbom_postprocess tests.test_sbom_quality -q
+
+      - name: Generate CycloneDX SBOMs
+        run: >-
+          cargo cyclonedx --format json --all --all-features --target all
+          --spec-version 1.5
+
+      - name: Collect and post-process SBOMs
+        shell: bash
+        run: |
+          mkdir -p sbom-artifacts
+          find crates -name '*.cdx.json' -exec cp {} sbom-artifacts/ \;
+          python3 scripts/sbom_postprocess.py \
+            --cargo-toml Cargo.toml \
+            --declare-dependency-complete \
+            sbom-artifacts/*.cdx.json
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: stable
+
+      - name: Install sbomqs
+        run: |
+          go install github.com/interlynk-io/sbomqs/v2@${{ env.SBOMQS_VERSION }}
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Enforce SBOM quality
+        shell: bash
+        run: |
+          sbomqs score --json sbom-artifacts/*.cdx.json > sbomqs-results.json
+          python3 scripts/check_sbom_quality.py \
+            --threshold "$SBOM_QUALITY_THRESHOLD" \
+            sbomqs-results.json
 
   # Non-blocking dependency unsafe usage report
   cargo-geiger-report:
@@ -176,6 +231,7 @@ jobs:
       - cargo-audit
       - cargo-machete
       - cargo-vet
+      - sbom-quality
       - cargo-geiger-report
       - cargo-geiger-workspace-gate
       - semgrep
@@ -185,6 +241,7 @@ jobs:
           CARGO_AUDIT_RESULT: ${{ needs.cargo-audit.result }}
           CARGO_MACHETE_RESULT: ${{ needs.cargo-machete.result }}
           CARGO_VET_RESULT: ${{ needs.cargo-vet.result }}
+          SBOM_QUALITY_RESULT: ${{ needs.sbom-quality.result }}
           CARGO_GEIGER_REPORT_RESULT: ${{ needs.cargo-geiger-report.result }}
           CARGO_GEIGER_WORKSPACE_GATE_RESULT: ${{ needs.cargo-geiger-workspace-gate.result }}
           SEMGREP_RESULT: ${{ needs.semgrep.result }}
@@ -192,6 +249,7 @@ jobs:
           test "$CARGO_AUDIT_RESULT" = success
           test "$CARGO_MACHETE_RESULT" = success
           test "$CARGO_VET_RESULT" = success
+          test "$SBOM_QUALITY_RESULT" = success
           test "$CARGO_GEIGER_REPORT_RESULT" = success
           test "$CARGO_GEIGER_WORKSPACE_GATE_RESULT" = success
           test "$SEMGREP_RESULT" = success
