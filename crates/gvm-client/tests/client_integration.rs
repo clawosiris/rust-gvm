@@ -5,8 +5,9 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_client::{
-    GmpClient, GmpNextCommands, GmpVersioned, GvmError, ImportReportOpts, WireTraceDirection,
-    WireTraceEvent,
+    CreateOciImageTargetOpts, CreateWebApplicationTargetOpts, GmpClient, GmpNextCommands,
+    GmpVersioned, GvmError, ImportReportOpts, ModifyOciImageTargetOpts,
+    ModifyWebApplicationTargetOpts, WireTraceDirection, WireTraceEvent,
 };
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::alerts::{trigger_alert, TriggerAlertOpts};
@@ -1599,6 +1600,144 @@ async fn typed_resume_task_returns_report_id() {
         .call(delete_target(&target_id, true))
         .await
         .expect("delete_target should succeed");
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_oci_image_target_lifecycle_succeeds() {
+    let Some(server) = stateful_server_with_version(MockVersion::V22_8).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let created = client
+        .create_oci_image_target_parsed(
+            "OCI Target",
+            &["registry.example/app:1".to_string()],
+            CreateOciImageTargetOpts {
+                comment: Some("created".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("create_oci_image_target should succeed");
+
+    let fetched = client
+        .get_oci_image_target_parsed(&created.id, Some(true))
+        .await
+        .expect("get_oci_image_target should succeed");
+    assert_eq!(fetched.items.len(), 1);
+    assert_eq!(fetched.items[0].meta.id, created.id);
+    assert_eq!(
+        fetched.items[0].image_references,
+        vec!["registry.example/app:1".to_string()]
+    );
+
+    let modified = client
+        .modify_oci_image_target_parsed(
+            &created.id,
+            ModifyOciImageTargetOpts {
+                name: Some("OCI Target Updated".to_string()),
+                image_references: vec!["registry.example/app:2".to_string()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("modify_oci_image_target should succeed");
+    assert_eq!(modified.status, 200);
+
+    let cloned = client
+        .clone_oci_image_target_parsed(&created.id)
+        .await
+        .expect("clone_oci_image_target should succeed");
+    assert_eq!(cloned.status, 201);
+
+    let deleted = client
+        .delete_oci_image_target_parsed(&created.id, true)
+        .await
+        .expect("delete_oci_image_target should succeed");
+    assert_eq!(deleted.status, 200);
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_web_application_target_lifecycle_succeeds() {
+    let Some(server) = stateful_server_with_version(MockVersion::V22_8).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let created = client
+        .create_web_application_target_parsed(
+            "Web Target",
+            &["https://example.com".to_string()],
+            CreateWebApplicationTargetOpts {
+                comment: Some("created".to_string()),
+                exclude_urls: vec!["https://example.com/logout".to_string()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("create_web_application_target should succeed");
+
+    let fetched = client
+        .get_web_application_target_parsed(&created.id, Some(true))
+        .await
+        .expect("get_web_application_target should succeed");
+    assert_eq!(fetched.items.len(), 1);
+    assert_eq!(fetched.items[0].meta.id, created.id);
+    assert_eq!(
+        fetched.items[0].urls,
+        vec!["https://example.com".to_string()]
+    );
+    assert_eq!(
+        fetched.items[0].exclude_urls,
+        vec!["https://example.com/logout".to_string()]
+    );
+
+    let modified = client
+        .modify_web_application_target_parsed(
+            &created.id,
+            ModifyWebApplicationTargetOpts {
+                name: Some("Web Target Updated".to_string()),
+                urls: vec!["https://example.com/app".to_string()],
+                exclude_urls: vec!["https://example.com/logout".to_string()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("modify_web_application_target should succeed");
+    assert_eq!(modified.status, 200);
+
+    let cloned = client
+        .clone_web_application_target_parsed(&created.id)
+        .await
+        .expect("clone_web_application_target should succeed");
+    assert_eq!(cloned.status, 201);
+
+    let deleted = client
+        .delete_web_application_target_parsed(&created.id, true)
+        .await
+        .expect("delete_web_application_target should succeed");
+    assert_eq!(deleted.status, 200);
 
     server.shutdown().await;
 }
