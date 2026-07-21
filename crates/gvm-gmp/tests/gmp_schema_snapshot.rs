@@ -60,7 +60,13 @@ fn non_schema_qualifications_are_absent_from_pinned_schema() {
 
 #[test]
 fn published_matrix_counts_are_registry_derived() {
-    let matrix = include_str!("../../../docs/SUPPORT_MATRIX.md");
+    let matrix_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/SUPPORT_MATRIX.md");
+    let Ok(matrix) = std::fs::read_to_string(matrix_path) else {
+        // The workspace-level matrix is intentionally absent from the
+        // published gvm-gmp package; this consistency check is workspace-only.
+        return;
+    };
 
     for (version, label, client, mock) in [
         (GmpVersion(22, 4), "22.4", "Gmp224", "V22_4"),
