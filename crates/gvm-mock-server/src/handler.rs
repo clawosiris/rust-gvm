@@ -206,7 +206,7 @@ impl SessionHandler {
             );
         }
         if cmd.name == "modify_credential"
-            && has_credential_store_credential_modify_field(&cmd)
+            && has_credential_store_credential_modify_field(cmd)
             && self.version != GmpVersion::V22_8
         {
             return error_response(
