@@ -14,10 +14,16 @@
 use gvm_connection::GvmConnection;
 use gvm_gmp::commands::alerts::{create_alert, get_alerts, AlertOpts, GetAlertsOpts};
 use gvm_gmp::commands::assets::{
-    create_asset, delete_asset, get_assets, modify_asset, CreateAssetOpts, DeleteAssetOpts,
-    GetAssetsOpts, ModifyAssetOpts,
+    create_asset, delete_asset, get_assets, modify_asset, AssetType, CreateAssetOpts,
+    DeleteAssetOpts, GetAssetsOpts, ModifyAssetOpts,
 };
 use gvm_gmp::commands::authentication::authenticate;
+use gvm_gmp::commands::configs::{
+    clone_config as clone_config_cmd, create_config as create_config_cmd,
+    delete_config as delete_config_cmd, get_config as get_config_cmd, get_configs,
+    modify_config as modify_config_cmd, CloneConfigOpts, CreateConfigOpts, DeleteConfigOpts,
+    GetConfigOpts, GetConfigsOpts, ModifyConfigOpts,
+};
 use gvm_gmp::commands::credentials::{
     create_credential, create_credential_store_credential, get_credential_store,
     get_credential_stores, get_credential_stores_with_opts, get_credentials,
@@ -43,6 +49,9 @@ use gvm_gmp::commands::oci_image_targets::{
     clone_oci_image_target, create_oci_image_target, delete_oci_image_target, get_oci_image_target,
     get_oci_image_targets, modify_oci_image_target, CreateOciImageTargetOpts,
     GetOciImageTargetsOpts, ModifyOciImageTargetOpts,
+};
+use gvm_gmp::commands::operating_systems::{
+    get_operating_system, get_operating_systems, GetOperatingSystemsOpts,
 };
 use gvm_gmp::commands::overrides::{
     create_override, get_overrides, GetOverridesOpts, OverrideOpts,
@@ -109,34 +118,35 @@ use gvm_gmp::commands::web_application_targets::{
     CreateWebApplicationTargetOpts, GetWebApplicationTargetsOpts, ModifyWebApplicationTargetOpts,
 };
 use gvm_gmp::responses::{
-    AuthenticateResponse, CreateAlertResponse, CreateAssetResponse, CreateCredentialResponse,
-    CreateFilterResponse, CreateGroupResponse, CreateHostResponse, CreateNoteResponse,
-    CreateOciImageTargetResponse, CreateOverrideResponse, CreatePermissionResponse,
-    CreatePortListResponse, CreateReportConfigResponse, CreateReportFormatResponse,
-    CreateReportResponse, CreateRoleResponse, CreateScanConfigResponse, CreateScannerResponse,
-    CreateScheduleResponse, CreateTagResponse, CreateTargetResponse, CreateTaskResponse,
-    CreateTicketResponse, CreateTlsCertificateResponse, CreateUserResponse,
-    CreateWebApplicationTargetResponse, DeleteAssetResponse, DeleteOciImageTargetResponse,
-    DeleteScanConfigResponse, DeleteScannerResponse, DeleteWebApplicationTargetResponse,
-    DescribeAuthResponse, EmptyTrashcanResponse, GetAlertsResponse, GetAssetsResponse,
-    GetCertBundAdvisoriesResponse, GetCpesResponse, GetCredentialStoresResponse,
-    GetCredentialsResponse, GetCvesResponse, GetDfnCertAdvisoriesResponse, GetFeaturesResponse,
-    GetFeedsResponse, GetFiltersResponse, GetGroupsResponse, GetHostsResponse,
-    GetIntegrationConfigsResponse, GetNotesResponse, GetNvtFamiliesResponse, GetNvtsResponse,
-    GetOciImageTargetsResponse, GetOverridesResponse, GetPermissionsResponse, GetPortListsResponse,
-    GetReportApplicationsResponse, GetReportClosedCvesResponse, GetReportConfigsResponse,
-    GetReportCvesResponse, GetReportErrorsResponse, GetReportFormatsResponse,
-    GetReportHostsResponse, GetReportOperatingSystemsResponse, GetReportPortsResponse,
-    GetReportTlsCertificatesResponse, GetReportVulnsResponse, GetReportsResponse,
-    GetResultsResponse, GetRolesResponse, GetScanConfigsResponse, GetScannersResponse,
-    GetSchedulesResponse, GetSettingsResponse, GetTagsResponse, GetTargetsResponse,
-    GetTasksResponse, GetTicketsResponse, GetTimezonesResponse, GetTlsCertificatesResponse,
-    GetUsersResponse, GetVersionResponse, GetVulnerabilitiesResponse,
-    GetWebApplicationTargetsResponse, HelpResponse, ModifyAssetResponse, ModifyCredentialResponse,
-    ModifyIntegrationConfigResponse, ModifyOciImageTargetResponse, ModifyScanConfigResponse,
-    ModifyScannerResponse, ModifyWebApplicationTargetResponse, ReportExport, RestoreResponse,
-    ResumeTaskResponse, StartTaskResponse, SyncConfigResponse, VerifyCredentialStoreResponse,
-    VerifyScannerResponse,
+    AuthenticateResponse, CreateAlertResponse, CreateAssetResponse, CreateConfigResponse,
+    CreateCredentialResponse, CreateFilterResponse, CreateGroupResponse, CreateHostResponse,
+    CreateNoteResponse, CreateOciImageTargetResponse, CreateOverrideResponse,
+    CreatePermissionResponse, CreatePortListResponse, CreateReportConfigResponse,
+    CreateReportFormatResponse, CreateReportResponse, CreateRoleResponse, CreateScanConfigResponse,
+    CreateScannerResponse, CreateScheduleResponse, CreateTagResponse, CreateTargetResponse,
+    CreateTaskResponse, CreateTicketResponse, CreateTlsCertificateResponse, CreateUserResponse,
+    CreateWebApplicationTargetResponse, DeleteAssetResponse, DeleteConfigResponse,
+    DeleteOciImageTargetResponse, DeleteScanConfigResponse, DeleteScannerResponse,
+    DeleteWebApplicationTargetResponse, DescribeAuthResponse, EmptyTrashcanResponse,
+    GetAlertsResponse, GetAssetsResponse, GetCertBundAdvisoriesResponse, GetConfigsResponse,
+    GetCpesResponse, GetCredentialStoresResponse, GetCredentialsResponse, GetCvesResponse,
+    GetDfnCertAdvisoriesResponse, GetFeaturesResponse, GetFeedsResponse, GetFiltersResponse,
+    GetGroupsResponse, GetHostsResponse, GetIntegrationConfigsResponse, GetNotesResponse,
+    GetNvtFamiliesResponse, GetNvtsResponse, GetOciImageTargetsResponse,
+    GetOperatingSystemAssetsResponse, GetOverridesResponse, GetPermissionsResponse,
+    GetPortListsResponse, GetReportApplicationsResponse, GetReportClosedCvesResponse,
+    GetReportConfigsResponse, GetReportCvesResponse, GetReportErrorsResponse,
+    GetReportFormatsResponse, GetReportHostsResponse, GetReportOperatingSystemsResponse,
+    GetReportPortsResponse, GetReportTlsCertificatesResponse, GetReportVulnsResponse,
+    GetReportsResponse, GetResultsResponse, GetRolesResponse, GetScanConfigsResponse,
+    GetScannersResponse, GetSchedulesResponse, GetSettingsResponse, GetTagsResponse,
+    GetTargetsResponse, GetTasksResponse, GetTicketsResponse, GetTimezonesResponse,
+    GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse, GetVulnerabilitiesResponse,
+    GetWebApplicationTargetsResponse, HelpResponse, ModifyAssetResponse, ModifyConfigResponse,
+    ModifyCredentialResponse, ModifyIntegrationConfigResponse, ModifyOciImageTargetResponse,
+    ModifyScanConfigResponse, ModifyScannerResponse, ModifyWebApplicationTargetResponse,
+    ReportExport, RestoreResponse, ResumeTaskResponse, StartTaskResponse, SyncConfigResponse,
+    VerifyCredentialStoreResponse, VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::CredentialStoreCredentialType;
@@ -1677,6 +1687,26 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         GetAssetsResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
+    /// Send a single-asset `get_assets` request and return a typed response.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_asset(
+        &mut self,
+        asset_id: &EntityId,
+        asset_type: AssetType,
+    ) -> Result<GetAssetsResponse, GvmError> {
+        let response = self
+            .send(get_assets(GetAssetsOpts {
+                asset_id: Some(asset_id.clone()),
+                type_: Some(asset_type),
+                details: Some(true),
+                ..Default::default()
+            }))
+            .await?;
+        GetAssetsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
     /// Send a `create_asset` request and return a typed [`CreateAssetResponse`].
     ///
     /// # Errors
@@ -1713,6 +1743,111 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ) -> Result<DeleteAssetResponse, GvmError> {
         let response = self.send(delete_asset(asset_id, opts)).await?;
         DeleteAssetResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `get_assets type="os"` request and return typed operating-system assets.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_operating_system_assets(
+        &mut self,
+        opts: GetOperatingSystemsOpts,
+    ) -> Result<GetOperatingSystemAssetsResponse, GvmError> {
+        let response = self.send(get_operating_systems(opts)).await?;
+        GetOperatingSystemAssetsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a single operating-system asset request and return a typed response.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_operating_system_asset(
+        &mut self,
+        operating_system_id: &EntityId,
+        details: Option<bool>,
+    ) -> Result<GetOperatingSystemAssetsResponse, GvmError> {
+        let response = self
+            .send(get_operating_system(operating_system_id, details))
+            .await?;
+        GetOperatingSystemAssetsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    // ── Generic Configs ──────────────────────────────────────────────────────
+
+    /// Send a generic `get_configs` request and return typed generic configs.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_configs(
+        &mut self,
+        opts: GetConfigsOpts,
+    ) -> Result<GetConfigsResponse, GvmError> {
+        let response = self.send(get_configs(opts)).await?;
+        GetConfigsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a generic single-config `get_configs` request and return typed generic configs.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_config(
+        &mut self,
+        config_id: &EntityId,
+        opts: GetConfigOpts,
+    ) -> Result<GetConfigsResponse, GvmError> {
+        let response = self.send(get_config_cmd(config_id, opts)).await?;
+        GetConfigsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a generic `create_config` request and return a typed response.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn create_config(
+        &mut self,
+        opts: CreateConfigOpts,
+    ) -> Result<CreateConfigResponse, GvmError> {
+        let response = self.send(create_config_cmd(opts)).await?;
+        CreateConfigResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a generic config clone request and return a typed response.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn clone_config(
+        &mut self,
+        config_id: &EntityId,
+        opts: CloneConfigOpts,
+    ) -> Result<CreateConfigResponse, GvmError> {
+        let response = self.send(clone_config_cmd(config_id, opts)).await?;
+        CreateConfigResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a generic `modify_config` request and return a typed response.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_config(
+        &mut self,
+        config_id: &EntityId,
+        opts: ModifyConfigOpts,
+    ) -> Result<ModifyConfigResponse, GvmError> {
+        let response = self.send(modify_config_cmd(config_id, opts)).await?;
+        ModifyConfigResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a generic `delete_config` request and return a typed response.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn delete_config(
+        &mut self,
+        config_id: &EntityId,
+        opts: DeleteConfigOpts,
+    ) -> Result<DeleteConfigResponse, GvmError> {
+        let response = self.send(delete_config_cmd(config_id, opts)).await?;
+        DeleteConfigResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     // ── TLS Certificates ──────────────────────────────────────────────────────

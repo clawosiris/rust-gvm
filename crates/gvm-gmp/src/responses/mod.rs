@@ -13,6 +13,7 @@ pub mod alert;
 pub mod asset;
 pub mod auth;
 pub mod common;
+pub mod config;
 pub mod credential;
 pub mod features;
 pub mod feed;
@@ -64,11 +65,16 @@ pub use alert::{
     Alert, CreateAlertResponse, DeleteAlertResponse, GetAlertsResponse, ModifyAlertResponse,
 };
 pub use asset::{
-    Asset, CreateAssetResponse, DeleteAssetResponse, GetAssetsResponse, ModifyAssetResponse,
-    OperatingSystemAsset, OperatingSystemHost,
+    Asset, AssetIdentifier, AssetKind, CreateAssetResponse, DeleteAssetResponse, GenericAsset,
+    GetAssetsResponse, GetOperatingSystemAssetsResponse, ModifyAssetResponse, OperatingSystemAsset,
+    OperatingSystemHost,
 };
 pub use auth::AuthenticateResponse;
 pub use common::{ActionResponse, CountInfo, EntityMeta, NamedEntity, Owner, ParseError};
+pub use config::{
+    ConfigUsageKind, CreateConfigResponse, DeleteConfigResponse, GenericConfig, GetConfigsResponse,
+    ModifyConfigResponse,
+};
 pub use credential::{
     CreateCredentialResponse, Credential, CredentialStore, DeleteCredentialResponse,
     GetCredentialStoresResponse, GetCredentialsResponse, ModifyCredentialResponse,
