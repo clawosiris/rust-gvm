@@ -46,7 +46,10 @@ pub struct CreateAssetOpts {
     /// Asset type to create. Current gvmd accepts only [`AssetType::Host`]
     /// for direct asset creation.
     pub asset_type: AssetType,
-    /// Optional comment text included in the request.
+    /// Comment text included in the request.
+    ///
+    /// Current gvmd requires this element for `modify_asset`, so `None` is
+    /// serialized as an empty comment and clears any existing value.
     pub comment: Option<String>,
     /// Host name accepted by gvmd, which must be an IPv4 or IPv6 address.
     ///

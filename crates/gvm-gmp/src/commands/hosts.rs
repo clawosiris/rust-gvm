@@ -94,6 +94,9 @@ pub fn modify_host(host_id: &EntityId, opts: HostOpts) -> impl Request {
 }
 
 /// Build a `delete_host` request.
+///
+/// The `ultimate` argument is retained for API compatibility but is ignored:
+/// current gvmd does not accept an `ultimate` attribute for asset deletion.
 #[must_use]
 pub fn delete_host(host_id: &EntityId, _ultimate: bool) -> impl Request {
     delete_asset(host_id, DeleteAssetOpts { ultimate: None })
