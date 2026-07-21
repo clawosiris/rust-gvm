@@ -334,11 +334,14 @@ impl SessionHandler {
                 "Credential-store-backed credentials require GMP 22.8",
             );
         }
-        if credential_store_type.is_some() && parse_element_text(raw_xml, "vault_id").is_none() {
+        if credential_store_type.is_some()
+            && parse_element_text(raw_xml, "vault_id").is_none_or(|value| value.trim().is_empty())
+        {
             return error_response(&cmd.name, 400, "Missing required element: vault_id");
         }
         if credential_store_type.is_some()
-            && parse_element_text(raw_xml, "host_identifier").is_none()
+            && parse_element_text(raw_xml, "host_identifier")
+                .is_none_or(|value| value.trim().is_empty())
         {
             return error_response(&cmd.name, 400, "Missing required element: host_identifier");
         }

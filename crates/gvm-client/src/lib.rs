@@ -1831,17 +1831,33 @@ fn request_contains_credential_store_type(request_bytes: &[u8]) -> bool {
     let Ok(request) = std::str::from_utf8(request_bytes) else {
         return false;
     };
-    [
-        "<type>cs_cc</type>",
-        "<type>cs_snmp</type>",
-        "<type>cs_up</type>",
-        "<type>cs_usk</type>",
-        "<type>cs_smime</type>",
-        "<type>cs_pgp</type>",
-        "<type>cs_pw</type>",
-    ]
-    .iter()
-    .any(|credential_type| request.contains(credential_type))
+    request_element_text(request, "type").is_some_and(|value| value.starts_with("cs_"))
+}
+
+fn request_element_text<'a>(request: &'a str, element_name: &str) -> Option<&'a str> {
+    let opening = format!("<{element_name}");
+    let closing = format!("</{element_name}>");
+    let mut search_from = 0;
+
+    while let Some(relative_start) = request[search_from..].find(&opening) {
+        let element_start = search_from + relative_start;
+        let after_name = element_start + opening.len();
+        let delimiter = request.as_bytes().get(after_name).copied()?;
+        if delimiter != b'>' && !delimiter.is_ascii_whitespace() {
+            search_from = after_name;
+            continue;
+        }
+
+        let opening_end = after_name + request[after_name..].find('>')?;
+        if request[..opening_end].trim_end().ends_with('/') {
+            return Some("");
+        }
+        let content_start = opening_end + 1;
+        let content_end = content_start + request[content_start..].find(&closing)?;
+        return Some(request[content_start..content_end].trim());
+    }
+
+    None
 }
 
 #[cfg(test)]
@@ -2040,6 +2056,9 @@ mod tests {
                 format!("<create_credential><type>{credential_type}</type></create_credential>");
             assert!(request_contains_credential_store_type(request.as_bytes()));
         }
+        assert!(request_contains_credential_store_type(
+            b"<create_credential><type>\n  cs_future \t</type></create_credential>"
+        ));
     }
 
     #[test]

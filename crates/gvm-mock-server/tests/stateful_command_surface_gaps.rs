@@ -273,6 +273,14 @@ async fn stateful_credential_store_create_credential_uses_gvmd_builder_shape() {
     assert_eq!(missing_vault.status_code(), Some(400));
     assert!(missing_vault.status_text().unwrap().contains("vault_id"));
 
+    let empty_vault = send_recv(
+        &mut stream,
+        b"<create_credential><name>Empty Vault</name><type>cs_up</type><vault_id/><host_identifier>host-1</host_identifier></create_credential>",
+    )
+    .await;
+    assert_eq!(empty_vault.status_code(), Some(400));
+    assert!(empty_vault.status_text().unwrap().contains("vault_id"));
+
     let missing_host = send_recv(
         &mut stream,
         b"<create_credential><name>Missing Host</name><type>cs_up</type><vault_id>vault-1</vault_id></create_credential>",
@@ -280,6 +288,17 @@ async fn stateful_credential_store_create_credential_uses_gvmd_builder_shape() {
     .await;
     assert_eq!(missing_host.status_code(), Some(400));
     assert!(missing_host
+        .status_text()
+        .unwrap()
+        .contains("host_identifier"));
+
+    let empty_host = send_recv(
+        &mut stream,
+        b"<create_credential><name>Empty Host</name><type>cs_up</type><vault_id>vault-1</vault_id><host_identifier>  </host_identifier></create_credential>",
+    )
+    .await;
+    assert_eq!(empty_host.status_code(), Some(400));
+    assert!(empty_host
         .status_text()
         .unwrap()
         .contains("host_identifier"));
