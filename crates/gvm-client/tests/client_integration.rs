@@ -1847,6 +1847,65 @@ async fn typed_report_import_uses_mock_server_stateful_create_command() {
 }
 
 #[tokio::test]
+async fn typed_report_drilldowns_parse_stateful_mock_responses() {
+    let Some(server) = stateful_server_with_version(MockVersion::V22_8).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let task_id = EntityId::new("task-drilldown").expect("valid id");
+    let created = client
+        .import_report(
+            r#"<report id="drilldown-report"><name>Drilldown</name></report>"#,
+            &task_id,
+            ImportReportOpts::default(),
+        )
+        .await
+        .expect("report import should succeed");
+
+    let hosts = client
+        .get_report_hosts(&created.id, Default::default())
+        .await
+        .expect("report hosts should parse");
+    assert_eq!(hosts.items.len(), 2);
+    assert_eq!(hosts.items[0].name.as_deref(), Some("192.0.2.10"));
+
+    let ports = client
+        .get_report_ports(&created.id, Default::default())
+        .await
+        .expect("report ports should parse");
+    assert_eq!(ports.items[0].name.as_deref(), Some("22/tcp"));
+
+    let applications = client
+        .get_report_applications(&created.id, Default::default())
+        .await
+        .expect("report applications should parse");
+    assert_eq!(applications.items[0].name.as_deref(), Some("OpenSSH"));
+
+    let operating_systems = client
+        .get_report_operating_systems(&created.id, Default::default())
+        .await
+        .expect("report operating systems should parse");
+    assert_eq!(operating_systems.items[0].name.as_deref(), Some("Debian"));
+
+    let cves = client
+        .get_report_cves(&created.id, Default::default())
+        .await
+        .expect("report cves should parse");
+    assert_eq!(cves.items[0].name.as_deref(), Some("CVE-2026-0001"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn full_crud_lifecycle_succeeds() {
     let Some(server) = stateful_server().await else {
         return;
