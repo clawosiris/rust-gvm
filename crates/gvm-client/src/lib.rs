@@ -59,10 +59,6 @@ use gvm_gmp::commands::web_application_targets::{
     clone_web_application_target, create_web_application_target, delete_web_application_target,
     get_web_application_target, get_web_application_targets, modify_web_application_target,
 };
-use gvm_gmp::responses::{
-    GetReportApplicationsResponse, GetReportCvesResponse, GetReportHostsResponse,
-    GetReportOperatingSystemsResponse, GetReportPortsResponse,
-};
 use gvm_gmp::types::{EntityId, GmpVersion};
 use gvm_protocol::{Request, Response};
 
@@ -737,9 +733,8 @@ impl<C: GvmConnection> GmpClient<C> {
         &mut self,
         report_id: &EntityId,
         opts: GetReportDetailsOpts,
-    ) -> Result<GetReportHostsResponse, GvmError> {
-        let response = self.call(get_report_hosts(report_id, opts)).await?;
-        GetReportHostsResponse::from_response(&response).map_err(GvmError::Parse)
+    ) -> Result<Response, GvmError> {
+        self.call(get_report_hosts(report_id, opts)).await
     }
 
     /// Get port summaries for a report.
@@ -751,9 +746,8 @@ impl<C: GvmConnection> GmpClient<C> {
         &mut self,
         report_id: &EntityId,
         opts: GetReportDetailsOpts,
-    ) -> Result<GetReportPortsResponse, GvmError> {
-        let response = self.call(get_report_ports(report_id, opts)).await?;
-        GetReportPortsResponse::from_response(&response).map_err(GvmError::Parse)
+    ) -> Result<Response, GvmError> {
+        self.call(get_report_ports(report_id, opts)).await
     }
 
     /// Get application summaries for a report.
@@ -765,9 +759,8 @@ impl<C: GvmConnection> GmpClient<C> {
         &mut self,
         report_id: &EntityId,
         opts: GetReportDetailsOpts,
-    ) -> Result<GetReportApplicationsResponse, GvmError> {
-        let response = self.call(get_report_applications(report_id, opts)).await?;
-        GetReportApplicationsResponse::from_response(&response).map_err(GvmError::Parse)
+    ) -> Result<Response, GvmError> {
+        self.call(get_report_applications(report_id, opts)).await
     }
 
     /// Get operating system summaries for a report.
@@ -779,11 +772,9 @@ impl<C: GvmConnection> GmpClient<C> {
         &mut self,
         report_id: &EntityId,
         opts: GetReportDetailsOpts,
-    ) -> Result<GetReportOperatingSystemsResponse, GvmError> {
-        let response = self
-            .call(get_report_operating_systems(report_id, opts))
-            .await?;
-        GetReportOperatingSystemsResponse::from_response(&response).map_err(GvmError::Parse)
+    ) -> Result<Response, GvmError> {
+        self.call(get_report_operating_systems(report_id, opts))
+            .await
     }
 
     /// Get CVE summaries for a report.
@@ -795,9 +786,8 @@ impl<C: GvmConnection> GmpClient<C> {
         &mut self,
         report_id: &EntityId,
         opts: GetReportDetailsOpts,
-    ) -> Result<GetReportCvesResponse, GvmError> {
-        let response = self.call(get_report_cves(report_id, opts)).await?;
-        GetReportCvesResponse::from_response(&response).map_err(GvmError::Parse)
+    ) -> Result<Response, GvmError> {
+        self.call(get_report_cves(report_id, opts)).await
     }
 
     fn raise_for_status(response: Response) -> Result<Response, GvmError> {

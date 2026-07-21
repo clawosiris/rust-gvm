@@ -1872,32 +1872,32 @@ async fn typed_report_drilldowns_parse_stateful_mock_responses() {
         .expect("report import should succeed");
 
     let hosts = client
-        .get_report_hosts(&created.id, Default::default())
+        .get_report_hosts_parsed(&created.id, Default::default())
         .await
         .expect("report hosts should parse");
     assert_eq!(hosts.items.len(), 2);
     assert_eq!(hosts.items[0].name.as_deref(), Some("192.0.2.10"));
 
     let ports = client
-        .get_report_ports(&created.id, Default::default())
+        .get_report_ports_parsed(&created.id, Default::default())
         .await
         .expect("report ports should parse");
     assert_eq!(ports.items[0].name.as_deref(), Some("22/tcp"));
 
     let applications = client
-        .get_report_applications(&created.id, Default::default())
+        .get_report_applications_parsed(&created.id, Default::default())
         .await
         .expect("report applications should parse");
     assert_eq!(applications.items[0].name.as_deref(), Some("OpenSSH"));
 
     let operating_systems = client
-        .get_report_operating_systems(&created.id, Default::default())
+        .get_report_operating_systems_parsed(&created.id, Default::default())
         .await
         .expect("report operating systems should parse");
     assert_eq!(operating_systems.items[0].name.as_deref(), Some("Debian"));
 
     let cves = client
-        .get_report_cves(&created.id, Default::default())
+        .get_report_cves_parsed(&created.id, Default::default())
         .await
         .expect("report cves should parse");
     assert_eq!(cves.items[0].name.as_deref(), Some("CVE-2026-0001"));
