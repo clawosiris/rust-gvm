@@ -83,7 +83,7 @@ pub struct CreateWebApplicationTaskOpts {
     pub alert_ids: Vec<EntityId>,
     /// Optional comment text included in the request.
     pub comment: Option<String>,
-    /// Optional schedule period count.
+    /// Optional schedule period count, serialized only when [`Self::schedule_id`] is set.
     pub schedule_periods: Option<u32>,
     /// Observer names associated with the task.
     pub observers: Vec<String>,

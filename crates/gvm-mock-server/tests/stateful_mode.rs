@@ -207,6 +207,17 @@ async fn stateful_create_web_application_task_preserves_target_id() {
     };
     let mut stream = connect_and_auth(&server).await;
 
+    let missing_id = send_recv(
+        &mut stream,
+        br#"<create_task><name>Invalid Web Task</name><web_application_target/><scanner id="s1"/></create_task>"#,
+    )
+    .await;
+    assert_eq!(missing_id.status_code(), Some(400));
+    assert!(missing_id
+        .status_text()
+        .expect("status text")
+        .contains("web_application_target id"));
+
     let create_resp = send_recv(
         &mut stream,
         br#"<create_task><name>Web Task</name><usage_type>scan</usage_type><web_application_target id="wt1"/><scanner id="s1"/></create_task>"#,
