@@ -51,10 +51,9 @@ use gvm_gmp::commands::results::{get_results, GetResultsOpts};
 use gvm_gmp::commands::roles::{create_role, get_roles, GetRolesOpts, RoleOpts};
 use gvm_gmp::commands::scan_configs::{
     clone_scan_config, create_scan_config, delete_scan_config, get_policies, get_policy,
-    get_scan_config, get_scan_configs, import_policy, import_scan_config,
-    modify_policy_set_comment, modify_policy_set_name, modify_scan_config,
-    modify_scan_config_set_comment, modify_scan_config_set_name, sync_config, ConfigOpts,
-    GetPolicyOpts, GetScanConfigsOpts,
+    get_scan_config, get_scan_configs, import_policy, modify_policy_set_comment,
+    modify_policy_set_name, modify_scan_config, modify_scan_config_set_comment,
+    modify_scan_config_set_name, sync_config, ConfigOpts, GetPolicyOpts, GetScanConfigsOpts,
 };
 use gvm_gmp::commands::scanners::{
     clone_scanner, create_scanner, delete_scanner, get_scanner, get_scanners, modify_scanner,
@@ -200,7 +199,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         scan_config_xml: &str,
     ) -> Result<CreateScanConfigResponse, GvmError> {
-        let request = import_scan_config(scan_config_xml)?;
+        let request = gvm_gmp::commands::scan_configs::import_scan_config(scan_config_xml)?;
         let response = self.send(request).await?;
         CreateScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
     }
