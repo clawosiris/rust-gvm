@@ -206,7 +206,7 @@ impl SessionHandler {
             );
         }
         if cmd.name == "modify_credential"
-            && has_credential_store_credential_modify_field(raw_xml)
+            && has_credential_store_credential_modify_field(&cmd)
             && self.version != GmpVersion::V22_8
         {
             return error_response(
@@ -1527,10 +1527,13 @@ fn is_credential_store_credential_type(credential_type: &str) -> bool {
     )
 }
 
-fn has_credential_store_credential_modify_field(raw_xml: &[u8]) -> bool {
-    parse_element_text(raw_xml, "credential_store_id").is_some()
-        || parse_element_text(raw_xml, "vault_id").is_some()
-        || parse_element_text(raw_xml, "host_identifier").is_some()
+fn has_credential_store_credential_modify_field(cmd: &ParsedCommand) -> bool {
+    cmd.children.iter().any(|child| {
+        matches!(
+            child.name.as_str(),
+            "credential_store_id" | "vault_id" | "host_identifier"
+        )
+    })
 }
 
 fn has_agent_ids(cmd: &ParsedCommand) -> bool {

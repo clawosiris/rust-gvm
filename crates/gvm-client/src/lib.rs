@@ -299,18 +299,15 @@ impl<C: GvmConnection> GmpClient<C> {
 
         let semantic_command_name = semantic_command_name
             .or_else(|| next_only_semantic_command(command_name, request_bytes));
-        if semantic_command_name.is_some() && self.version >= GmpVersion(22, 8) {
-            return Ok(());
-        }
-        if semantic_command_name.is_none() && version::command_supported(command_name, self.version)
+        let unsupported_semantic =
+            semantic_command_name.filter(|name| !version::command_supported(name, self.version));
+        if unsupported_semantic.is_none() && version::command_supported(command_name, self.version)
         {
             return Ok(());
         }
 
-        let command = semantic_command_name.unwrap_or(command_name);
-        let required = version::required_version_label(command)
-            .or_else(|| semantic_command_name.map(|_| "22.8"))
-            .unwrap_or("a newer GMP version");
+        let command = unsupported_semantic.unwrap_or(command_name);
+        let required = version::required_version_label(command).unwrap_or("a newer GMP version");
 
         Err(GvmError::UnsupportedCommand {
             command: command.to_string(),
@@ -1907,9 +1904,25 @@ fn request_contains_credential_store_modify_field(request_bytes: &[u8]) -> bool 
     let Ok(request) = std::str::from_utf8(request_bytes) else {
         return false;
     };
-    ["<credential_store_id>", "<vault_id>", "<host_identifier>"]
+    ["credential_store_id", "vault_id", "host_identifier"]
         .iter()
-        .any(|field| request.contains(field))
+        .any(|field| request_contains_element(request, field))
+}
+
+fn request_contains_element(request: &str, element_name: &str) -> bool {
+    let opening = format!("<{element_name}");
+    let mut search_from = 0;
+    while let Some(relative_start) = request[search_from..].find(&opening) {
+        let after_name = search_from + relative_start + opening.len();
+        let Some(delimiter) = request.as_bytes().get(after_name).copied() else {
+            return false;
+        };
+        if matches!(delimiter, b'>' | b'/') || delimiter.is_ascii_whitespace() {
+            return true;
+        }
+        search_from = after_name;
+    }
+    false
 }
 
 #[cfg(test)]
@@ -2143,6 +2156,12 @@ mod tests {
             None
         );
         assert!(!request_contains_credential_store_modify_field(b"\xff"));
+        assert!(request_contains_credential_store_modify_field(
+            b"<modify_credential><vault_id/></modify_credential>"
+        ));
+        assert!(request_contains_credential_store_modify_field(
+            b"<modify_credential><host_identifier ></host_identifier></modify_credential>"
+        ));
     }
 
     #[test]
