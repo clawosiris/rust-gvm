@@ -297,6 +297,10 @@ async fn stateful_create_then_get_task() {
     };
     let mut stream = connect_and_auth(&server).await;
 
+    let invalid_id = send_recv(&mut stream, b"<get_tasks task_id=\"not-a-uuid\"/>").await;
+    assert_eq!(invalid_id.status_code(), Some(400));
+    assert!(invalid_id.status_text().unwrap().contains("Invalid UUID"));
+
     let create_resp = create_task(&mut stream, "My Task").await;
     let task_id = create_resp.id().expect("should have id");
 

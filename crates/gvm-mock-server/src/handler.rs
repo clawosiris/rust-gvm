@@ -873,27 +873,28 @@ impl SessionHandler {
         // Check for single resource by ID
         let id_attr = format!("{resource_type}_id");
         if let Some(id_str) = cmd.attr(&id_attr) {
-            if let Ok(uuid) = Uuid::parse_str(id_str) {
-                if let Some(resource) = store.get_typed(&uuid, resource_type) {
-                    if !usage_type_matches(&resource, requested_usage_type) {
-                        return error_response(&cmd.name, 404, "Resource not found");
-                    }
-                    if cmd.name == "get_reports" {
-                        return self.render_single_report_response(cmd, &resource, store);
-                    }
-                    let xml = if cmd.name == "get_integration_configs" {
-                        resource.to_integration_config_xml(cmd.attr("details") == Some("1"))
-                    } else {
-                        resource.to_xml()
-                    };
-                    return format!(
-                        "<{}_response status=\"200\" status_text=\"OK\">\
-                         {xml}\
-                         </{}_response>",
-                        cmd.name, cmd.name
-                    )
-                    .into_bytes();
+            let Ok(uuid) = Uuid::parse_str(id_str) else {
+                return error_response(&cmd.name, 400, "Invalid UUID");
+            };
+            if let Some(resource) = store.get_typed(&uuid, resource_type) {
+                if !usage_type_matches(&resource, requested_usage_type) {
+                    return error_response(&cmd.name, 404, "Resource not found");
                 }
+                if cmd.name == "get_reports" {
+                    return self.render_single_report_response(cmd, &resource, store);
+                }
+                let xml = if cmd.name == "get_integration_configs" {
+                    resource.to_integration_config_xml(cmd.attr("details") == Some("1"))
+                } else {
+                    resource.to_xml()
+                };
+                return format!(
+                    "<{}_response status=\"200\" status_text=\"OK\">\
+                     {xml}\
+                     </{}_response>",
+                    cmd.name, cmd.name
+                )
+                .into_bytes();
             }
             return error_response(&cmd.name, 404, "Resource not found");
         }

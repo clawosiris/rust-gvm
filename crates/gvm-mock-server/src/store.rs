@@ -38,9 +38,9 @@ pub(crate) const DEFAULT_CONFIG_ID: Uuid =
 pub(crate) const DEFAULT_SCANNER_ID: Uuid =
     Uuid::from_u128(0x08b6_9003_5fc2_4037_a479_93b4_4021_1c73);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum StoreError {
-    NotFound(&'static str),
+    NotFound(String),
     InUse(&'static str),
     InvalidState(&'static str),
     Inconsistent(&'static str),
@@ -398,7 +398,7 @@ fn active_typed_resource<'a>(
         .resources
         .get(id)
         .filter(|resource| !resource.trashed && resource.resource_type == resource_type)
-        .ok_or(StoreError::NotFound(resource_type))
+        .ok_or_else(|| StoreError::NotFound(resource_type.to_string()))
 }
 
 fn validate_task_reference(
@@ -730,7 +730,7 @@ impl ResourceStore {
             .get(id)
             .filter(|resource| resource.resource_type == resource_type)
             .cloned()
-            .ok_or(StoreError::NotFound("resource"))?;
+            .ok_or_else(|| StoreError::NotFound(resource_type.to_string()))?;
 
         if resource.trashed && !ultimate {
             return Ok(());
@@ -866,7 +866,7 @@ impl ResourceStore {
             .get(id)
             .filter(|resource| resource.trashed)
             .cloned()
-            .ok_or(StoreError::NotFound("resource"))?;
+            .ok_or_else(|| StoreError::NotFound("resource".to_string()))?;
 
         if resource.resource_type == "task" {
             validate_stored_task_references(&inner, &resource)?;
@@ -942,7 +942,7 @@ impl ResourceStore {
             .get(id)
             .filter(|resource| !resource.trashed && resource.resource_type == resource_type)
             .cloned()
-            .ok_or(StoreError::NotFound("resource"))?;
+            .ok_or_else(|| StoreError::NotFound(resource_type.to_string()))?;
         if resource_type == "task" {
             validate_stored_task_references(&inner, &original)?;
         }
@@ -1572,7 +1572,7 @@ mod tests {
         let missing_task_report_id = store.create(missing_task_report);
         assert_eq!(
             store.clone_typed(&missing_task_report_id, "report"),
-            Err(StoreError::NotFound("task"))
+            Err(StoreError::NotFound("task".to_string()))
         );
 
         let import_task_id = store
