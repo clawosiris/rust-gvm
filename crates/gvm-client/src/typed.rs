@@ -119,18 +119,18 @@ use gvm_gmp::responses::{
     GetFiltersResponse, GetGroupsResponse, GetHostsResponse, GetNotesResponse,
     GetNvtFamiliesResponse, GetNvtsResponse, GetOciImageTargetsResponse, GetOverridesResponse,
     GetPermissionsResponse, GetPortListsResponse, GetReportApplicationsResponse,
-    GetReportClosedCvesResponse,
-    GetReportConfigsResponse, GetReportCvesResponse, GetReportErrorsResponse,
-    GetReportFormatsResponse, GetReportHostsResponse, GetReportOperatingSystemsResponse,
-    GetReportPortsResponse, GetReportTlsCertificatesResponse, GetReportVulnsResponse,
-    GetReportsResponse, GetResultsResponse, GetRolesResponse, GetScanConfigsResponse,
-    GetScannersResponse, GetSchedulesResponse, GetSettingsResponse, GetTagsResponse,
-    GetTargetsResponse, GetTasksResponse, GetTicketsResponse, GetTimezonesResponse,
-    GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse, GetVulnerabilitiesResponse,
-    GetWebApplicationTargetsResponse, HelpResponse, ModifyAssetResponse, ModifyCredentialResponse,
-    ModifyOciImageTargetResponse, ModifyScanConfigResponse, ModifyScannerResponse,
-    ModifyWebApplicationTargetResponse, ReportExport, RestoreResponse, ResumeTaskResponse,
-    StartTaskResponse, SyncConfigResponse, VerifyCredentialStoreResponse, VerifyScannerResponse,
+    GetReportClosedCvesResponse, GetReportConfigsResponse, GetReportCvesResponse,
+    GetReportErrorsResponse, GetReportFormatsResponse, GetReportHostsResponse,
+    GetReportOperatingSystemsResponse, GetReportPortsResponse, GetReportTlsCertificatesResponse,
+    GetReportVulnsResponse, GetReportsResponse, GetResultsResponse, GetRolesResponse,
+    GetScanConfigsResponse, GetScannersResponse, GetSchedulesResponse, GetSettingsResponse,
+    GetTagsResponse, GetTargetsResponse, GetTasksResponse, GetTicketsResponse,
+    GetTimezonesResponse, GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse,
+    GetVulnerabilitiesResponse, GetWebApplicationTargetsResponse, HelpResponse,
+    ModifyAssetResponse, ModifyCredentialResponse, ModifyOciImageTargetResponse,
+    ModifyScanConfigResponse, ModifyScannerResponse, ModifyWebApplicationTargetResponse,
+    ReportExport, RestoreResponse, ResumeTaskResponse, StartTaskResponse, SyncConfigResponse,
+    VerifyCredentialStoreResponse, VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::CredentialStoreCredentialType;
@@ -851,6 +851,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Send a `get_report_hosts` request and return a typed
     /// [`GetReportHostsResponse`].
     ///
+    /// The `_parsed` suffix distinguishes this helper from the raw
+    /// [`GmpClient::get_report_hosts`] method.
+    ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_report_hosts_parsed(
@@ -864,6 +867,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
 
     /// Send a `get_report_ports` request and return a typed
     /// [`GetReportPortsResponse`].
+    ///
+    /// The `_parsed` suffix distinguishes this helper from the raw
+    /// [`GmpClient::get_report_ports`] method.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
@@ -879,6 +885,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Send a `get_report_applications` request and return a typed
     /// [`GetReportApplicationsResponse`].
     ///
+    /// The `_parsed` suffix distinguishes this helper from the raw
+    /// [`GmpClient::get_report_applications`] method.
+    ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_report_applications_parsed(
@@ -892,6 +901,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
 
     /// Send a `get_report_operating_systems` request and return a typed
     /// [`GetReportOperatingSystemsResponse`].
+    ///
+    /// The `_parsed` suffix distinguishes this helper from the raw
+    /// [`GmpClient::get_report_operating_systems`] method.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
@@ -908,6 +920,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
 
     /// Send a `get_report_cves` request and return a typed
     /// [`GetReportCvesResponse`].
+    ///
+    /// The `_parsed` suffix distinguishes this helper from the raw
+    /// [`GmpClient::get_report_cves`] method.
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
