@@ -153,7 +153,10 @@ class SbomPostprocessTests(unittest.TestCase):
             "compositions": [
                 None,
                 {"aggregate": "incomplete"},
-                {"aggregate": "complete", "dependencies": ["component-existing"]},
+                {
+                    "aggregate": "complete",
+                    "dependencies": [None, "", 42, "component-existing"],
+                },
             ],
         }
 

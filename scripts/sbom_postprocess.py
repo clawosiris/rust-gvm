@@ -192,7 +192,12 @@ def ensure_dependency_completeness(document: dict[str, Any]) -> None:
         declared = composition.get("dependencies")
         if isinstance(declared, list):
             composition["dependencies"] = list(
-                dict.fromkeys([*(str(item) for item in declared), *dependency_refs])
+                dict.fromkeys(
+                    [
+                        *(item for item in declared if isinstance(item, str) and item),
+                        *dependency_refs,
+                    ]
+                )
             )
             return
 
