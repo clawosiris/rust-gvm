@@ -192,7 +192,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         CreateOciImageTargetResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
-    /// Send a clone `create_oci_image_target` request and return a typed
+    /// Send a `clone_oci_image_target` request and return a typed
     /// [`CreateOciImageTargetResponse`].
     ///
     /// # Errors
@@ -285,7 +285,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         CreateWebApplicationTargetResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
-    /// Send a clone `create_web_application_target` request and return a typed
+    /// Send a `clone_web_application_target` request and return a typed
     /// [`CreateWebApplicationTargetResponse`].
     ///
     /// # Errors
