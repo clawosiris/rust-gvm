@@ -368,7 +368,7 @@ impl MockGmpServerBuilder {
             }
             Transport::None => Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "No transport configured. Use .unix_socket(), .unix_socket_auto(), .tcp(), .tls(), or .ssh()",
+                "No transport configured. Use .unix_socket(), .unix_socket_auto(), .tcp(), or another transport method enabled for this build",
             )),
         }
     }

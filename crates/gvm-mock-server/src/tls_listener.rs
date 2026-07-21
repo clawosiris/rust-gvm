@@ -133,6 +133,7 @@ where
         if let Ok(connection) = accepted {
             return connection;
         }
+        tokio::time::sleep(Duration::from_millis(10)).await;
     }
 }
 
