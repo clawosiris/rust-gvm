@@ -191,7 +191,7 @@ impl AgentScriptExecutorConfig {
                 .map(|schedule| {
                     schedule
                         .children_named("item")
-                        .map(|item| item.text.clone())
+                        .map(|item| item.text.trim().to_owned())
                         .filter(|item| !item.is_empty())
                         .collect()
                 })
@@ -357,7 +357,11 @@ mod tests {
                             <bulk_size>20</bulk_size>
                             <bulk_throttle_time_in_ms>100</bulk_throttle_time_in_ms>
                             <indexer_dir_depth>4</indexer_dir_depth>
-                            <scheduler_cron_time><item>0 */6 * * *</item><item>30 */6 * * *</item></scheduler_cron_time>
+                            <scheduler_cron_time>
+                                <item> 0 */6 * * * </item>
+                                <item>30 */6 * * *</item>
+                                <item>   </item>
+                            </scheduler_cron_time>
                         </agent_script_executor>
                         <heartbeat>
                             <interval_in_seconds>60</interval_in_seconds>
