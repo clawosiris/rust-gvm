@@ -6,6 +6,8 @@
 #![allow(missing_docs)]
 #![allow(clippy::missing_errors_doc)]
 
+pub mod agent;
+pub mod agent_group;
 pub mod aggregates;
 pub mod alert;
 pub mod asset;
@@ -46,6 +48,16 @@ pub mod user_settings;
 pub mod version;
 pub mod web_application_target;
 
+pub use agent::{
+    Agent, AgentConfig, AgentControlConfig, AgentHeartbeatConfig, AgentRetryConfig,
+    AgentScriptExecutorConfig, AgentSupportBundle, DeleteAgentResponse,
+    GetAgentInstallerInstructionResponse, GetAgentSupportBundleResponse, GetAgentsResponse,
+    ModifyAgentControlScanConfigResponse, ModifyAgentResponse, SyncAgentsResponse,
+};
+pub use agent_group::{
+    AgentGroup, CloneAgentGroupResponse, CreateAgentGroupResponse, DeleteAgentGroupResponse,
+    GetAgentGroupsResponse, ModifyAgentGroupResponse,
+};
 pub use aggregates::{AggregateGroup, AggregateStats, AggregateSubgroup, GetAggregatesResponse};
 pub use alert::{
     Alert, CreateAlertResponse, DeleteAlertResponse, GetAlertsResponse, ModifyAlertResponse,
