@@ -29,7 +29,10 @@ use gvm_gmp::commands::agents::{
     delete_agent, get_agent, get_agent_installer_instruction, get_agent_support_bundle, get_agents,
     modify_agent, modify_agent_control_scan_config, sync_agents,
 };
-use gvm_gmp::commands::credentials::{get_credential_stores, verify_credential_store};
+use gvm_gmp::commands::credentials::{
+    get_credential_store, get_credential_stores, get_credential_stores_with_opts,
+    verify_credential_store,
+};
 use gvm_gmp::commands::features::get_features;
 use gvm_gmp::commands::integration_configs::{
     get_integration_config, get_integration_configs, modify_integration_config,
@@ -68,6 +71,7 @@ pub use gvm_gmp::commands::agents::{
     AgentRetryConfig, AgentScriptExecutorConfig, GetAgentsOpts, ModifyAgentControlScanConfigOpts,
     ModifyAgentOpts,
 };
+pub use gvm_gmp::commands::credentials::GetCredentialStoresOpts;
 pub use gvm_gmp::commands::integration_configs::{
     GetIntegrationConfigsOpts, ModifyIntegrationConfigOpts,
 };
@@ -1210,6 +1214,19 @@ pub trait GmpNextCommands {
         &mut self,
         credential_store_id: &EntityId,
     ) -> Result<Response, GvmError>;
+
+    /// List credential stores with optional filters.
+    async fn get_credential_stores_with_opts(
+        &mut self,
+        opts: GetCredentialStoresOpts,
+    ) -> Result<Response, GvmError>;
+
+    /// Get a single credential store.
+    async fn get_credential_store(
+        &mut self,
+        credential_store_id: &EntityId,
+        details: Option<bool>,
+    ) -> Result<Response, GvmError>;
 }
 
 macro_rules! impl_gmp226_commands {
@@ -1733,6 +1750,23 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
     ) -> Result<Response, GvmError> {
         self.0
             .call(verify_credential_store(credential_store_id))
+            .await
+    }
+
+    async fn get_credential_stores_with_opts(
+        &mut self,
+        opts: GetCredentialStoresOpts,
+    ) -> Result<Response, GvmError> {
+        self.0.call(get_credential_stores_with_opts(opts)).await
+    }
+
+    async fn get_credential_store(
+        &mut self,
+        credential_store_id: &EntityId,
+        details: Option<bool>,
+    ) -> Result<Response, GvmError> {
+        self.0
+            .call(get_credential_store(credential_store_id, details))
             .await
     }
 }
