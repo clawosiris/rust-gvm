@@ -73,6 +73,7 @@ const GMP_22_8_COMMANDS: &[&str] = &[
     "get_timezones",
     "get_credential_stores",
     "modify_credential_store",
+    "verify_credential_store",
     "create_oci_image_target",
     "delete_oci_image_target",
     "get_oci_image_targets",
@@ -190,6 +191,14 @@ mod tests {
         assert!(command_available("get_report_vulns", GmpVersion::V22_8));
         assert!(command_available(
             "get_credential_stores",
+            GmpVersion::V22_8
+        ));
+        assert!(!command_available(
+            "verify_credential_store",
+            GmpVersion::V22_7
+        ));
+        assert!(command_available(
+            "verify_credential_store",
             GmpVersion::V22_8
         ));
         assert!(!command_available("get_agent_groups", GmpVersion::V22_7));

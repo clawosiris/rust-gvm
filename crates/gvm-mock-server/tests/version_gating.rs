@@ -12,6 +12,7 @@
 
 use gvm_gmp::commands::agent_groups::{create_agent_group, get_agent_groups, CreateAgentGroupOpts};
 use gvm_gmp::commands::authentication::authenticate;
+use gvm_gmp::commands::credentials::verify_credential_store;
 use gvm_gmp::commands::features::get_features;
 use gvm_gmp::commands::integration_configs::{
     get_integration_config, get_integration_configs, modify_integration_config,
@@ -238,6 +239,17 @@ async fn version_22_7_rejects_next_commands() {
 
     let response = send_recv(
         &mut stream,
+        verify_credential_store(&id("credential-store-1")),
+    )
+    .await;
+    assert_eq!(response.status_code(), Some(400));
+    assert!(response
+        .status_text()
+        .unwrap()
+        .contains("verify_credential_store"));
+
+    let response = send_recv(
+        &mut stream,
         create_oci_image_target(
             "Rejected OCI Target",
             &["registry.example/app:1".to_string()],
@@ -361,9 +373,15 @@ async fn version_22_8_accepts_next_commands() {
     assert!(web_target_xml.contains("<urls>https://example.com</urls>"));
     assert!(web_target_xml.contains("<credential_id>credential-web-gate</credential_id>"));
 
+    assert_credential_store_verify_works_on_next(&mut stream).await;
     assert_oci_image_targets_work_on_next(&mut stream).await;
 
     server.shutdown().await;
+}
+
+async fn assert_credential_store_verify_works_on_next(stream: &mut UnixStream) {
+    let response = send_recv(stream, verify_credential_store(&id("credential-store-1"))).await;
+    assert_eq!(response.status_code(), Some(200));
 }
 
 async fn assert_oci_image_targets_work_on_next(stream: &mut UnixStream) {

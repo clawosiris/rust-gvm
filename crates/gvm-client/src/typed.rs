@@ -15,7 +15,8 @@ use gvm_connection::GvmConnection;
 use gvm_gmp::commands::alerts::{create_alert, get_alerts, AlertOpts, GetAlertsOpts};
 use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::credentials::{
-    create_credential, get_credential_stores, get_credentials, CredentialOpts, GetCredentialsOpts,
+    create_credential, get_credential_stores, get_credentials, verify_credential_store,
+    CredentialOpts, GetCredentialsOpts,
 };
 use gvm_gmp::commands::feed::get_feeds;
 use gvm_gmp::commands::filters::{create_filter, get_filters, FilterOpts, GetFiltersOpts};
@@ -103,7 +104,7 @@ use gvm_gmp::responses::{
     GetTimezonesResponse, GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse,
     GetVulnerabilitiesResponse, HelpResponse, ModifyScanConfigResponse, ModifyScannerResponse,
     ReportExport, RestoreResponse, ResumeTaskResponse, StartTaskResponse, SyncConfigResponse,
-    VerifyScannerResponse,
+    VerifyCredentialStoreResponse, VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
 
@@ -710,6 +711,21 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     pub async fn get_credential_stores(&mut self) -> Result<GetCredentialStoresResponse, GvmError> {
         let response = self.send(get_credential_stores()).await?;
         GetCredentialStoresResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `verify_credential_store` request and return a typed
+    /// [`VerifyCredentialStoreResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn verify_credential_store(
+        &mut self,
+        credential_store_id: &EntityId,
+    ) -> Result<VerifyCredentialStoreResponse, GvmError> {
+        let response = self
+            .send(verify_credential_store(credential_store_id))
+            .await?;
+        VerifyCredentialStoreResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     // ── NVTs ──────────────────────────────────────────────────────────────────

@@ -114,6 +114,13 @@ pub fn get_credential_stores() -> impl Request {
     XmlCommand::new("get_credential_stores")
 }
 
+/// Build a `verify_credential_store` request.
+#[must_use]
+pub fn verify_credential_store(credential_store_id: &EntityId) -> impl Request {
+    XmlCommand::new("verify_credential_store")
+        .attribute("credential_store_id", credential_store_id.as_str())
+}
+
 /// Build a `modify_credential_store` request.
 #[must_use]
 pub fn modify_credential_store(
@@ -211,6 +218,10 @@ mod tests {
         assert!(rendered.contains("credential_id=\"c1\""));
         assert!(rendered.contains("details=\"1\""));
         assert_eq!(xml(get_credential_stores()), "<get_credential_stores/>");
+        assert_eq!(
+            xml(verify_credential_store(&id("cs1"))),
+            "<verify_credential_store credential_store_id=\"cs1\"/>"
+        );
         assert_eq!(
             xml(modify_credential_store(
                 &id("cs1"),

@@ -14,6 +14,7 @@ use gvm_client::{
 };
 use gvm_connection::{GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::agents::get_agents;
+use gvm_gmp::commands::credentials::verify_credential_store;
 use gvm_gmp::commands::oci_image_targets::get_oci_image_targets;
 use gvm_gmp::{EntityId, GmpVersion};
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
@@ -140,6 +141,47 @@ async fn next_client_exposes_next_trait_methods() {
         .await
         .expect("next-only command should succeed");
     assert_eq!(response.status_code(), Some(200));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn next_client_verify_credential_store_round_trip() {
+    let Some(server) = stateful_server(MockVersion::V22_8).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpVersioned::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .call(gvm_gmp::commands::authentication::authenticate(
+            "admin", "admin",
+        ))
+        .await
+        .expect("authenticate should succeed");
+
+    let mut client = match client {
+        GmpVersioned::Next(client) => client,
+        other => panic!("expected Next client, got {other:?}"),
+    };
+
+    server.clear_history();
+    let credential_store_id = EntityId::new("credential-store-1").expect("valid id");
+    let response = client
+        .verify_credential_store(&credential_store_id)
+        .await
+        .expect("verify_credential_store should succeed");
+    assert_eq!(response.status_code(), Some(200));
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].command_name(), "verify_credential_store");
+    assert_eq!(
+        std::str::from_utf8(history[0].raw_xml()).expect("valid UTF-8 request"),
+        "<verify_credential_store credential_store_id=\"credential-store-1\"/>"
+    );
 
     server.shutdown().await;
 }
@@ -281,6 +323,21 @@ async fn versioned_client_rejects_oci_image_targets_before_next() {
             version: GmpVersion(22, 7),
             required: "22.8",
         } if command == "get_oci_image_targets"
+    ));
+
+    let credential_store_id = EntityId::new("credential-store-1").expect("valid id");
+    let error = client
+        .call(verify_credential_store(&credential_store_id))
+        .await
+        .expect_err("22.7 should reject next-only credential store verify command");
+
+    assert!(matches!(
+        error,
+        GvmError::UnsupportedCommand {
+            command,
+            version: GmpVersion(22, 7),
+            required: "22.8",
+        } if command == "verify_credential_store"
     ));
 
     server.shutdown().await;
