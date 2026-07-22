@@ -166,6 +166,36 @@ async fn stateful_create_agent_group_task_preserves_agent_group_id() {
     server.shutdown().await;
 }
 
+#[tokio::test]
+async fn stateful_create_oci_image_target_task_preserves_target_id() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut stream = connect_and_auth(&server).await;
+
+    let create_resp = send_recv(
+        &mut stream,
+        br#"<create_task><name>OCI Target Task</name><usage_type>scan</usage_type><oci_image_target id="oci1"/><scanner id="s1"/></create_task>"#,
+    )
+    .await;
+    assert_eq!(create_resp.status_code(), Some(201));
+    let task_id = create_resp.id().expect("should have id");
+
+    let get_resp = send_recv(
+        &mut stream,
+        format!("<get_tasks task_id=\"{task_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(get_resp.status_code(), Some(200));
+
+    let text = get_resp.as_str().expect("valid utf8");
+    assert!(text.contains("OCI Target Task"));
+    assert!(text.contains("<oci_image_target_id>oci1</oci_image_target_id>"));
+    assert!(text.contains("<scanner_id>s1</scanner_id>"));
+
+    server.shutdown().await;
+}
+
 // CRUD-T002: Get created task by ID
 #[tokio::test]
 async fn stateful_create_then_get_task() {

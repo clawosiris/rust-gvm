@@ -378,6 +378,9 @@ impl SessionHandler {
             if let Some(agent_group_id) = cmd.child_attr("agent_group", "id") {
                 resource.set_attr("agent_group_id", agent_group_id);
             }
+            if let Some(oci_image_target_id) = cmd.child_attr("oci_image_target", "id") {
+                resource.set_attr("oci_image_target_id", oci_image_target_id);
+            }
             if let Some(config_id) = cmd.child_attr("config", "id") {
                 resource.set_attr("config_id", config_id);
             }
