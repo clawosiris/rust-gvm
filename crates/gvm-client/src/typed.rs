@@ -27,6 +27,11 @@ use gvm_gmp::commands::notes::{create_note, get_notes, GetNotesOpts, NoteOpts};
 use gvm_gmp::commands::nvts::{
     get_nvt_families, get_nvts, get_scan_config_nvt, get_scan_config_nvts, GetNvtsOpts,
 };
+use gvm_gmp::commands::oci_image_targets::{
+    clone_oci_image_target, create_oci_image_target, delete_oci_image_target, get_oci_image_target,
+    get_oci_image_targets, modify_oci_image_target, CreateOciImageTargetOpts,
+    GetOciImageTargetsOpts, ModifyOciImageTargetOpts,
+};
 use gvm_gmp::commands::overrides::{
     create_override, get_overrides, GetOverridesOpts, OverrideOpts,
 };
@@ -84,25 +89,34 @@ use gvm_gmp::commands::tls_certificates::{
 use gvm_gmp::commands::trashcan::{empty_trashcan, restore_from_trashcan};
 use gvm_gmp::commands::users::{create_user, get_users, GetUsersOpts, UserOpts};
 use gvm_gmp::commands::version::get_version;
+use gvm_gmp::commands::web_application_targets::{
+    clone_web_application_target, create_web_application_target, delete_web_application_target,
+    get_web_application_target, get_web_application_targets, modify_web_application_target,
+    CreateWebApplicationTargetOpts, GetWebApplicationTargetsOpts, ModifyWebApplicationTargetOpts,
+};
 use gvm_gmp::responses::{
     AuthenticateResponse, CreateAlertResponse, CreateCredentialResponse, CreateFilterResponse,
-    CreateGroupResponse, CreateHostResponse, CreateNoteResponse, CreateOverrideResponse,
-    CreatePermissionResponse, CreatePortListResponse, CreateReportConfigResponse,
-    CreateReportFormatResponse, CreateReportResponse, CreateRoleResponse, CreateScanConfigResponse,
-    CreateScannerResponse, CreateScheduleResponse, CreateTagResponse, CreateTargetResponse,
-    CreateTaskResponse, CreateTicketResponse, CreateTlsCertificateResponse, CreateUserResponse,
-    DeleteScanConfigResponse, DeleteScannerResponse, DescribeAuthResponse, EmptyTrashcanResponse,
+    CreateGroupResponse, CreateHostResponse, CreateNoteResponse, CreateOciImageTargetResponse,
+    CreateOverrideResponse, CreatePermissionResponse, CreatePortListResponse,
+    CreateReportConfigResponse, CreateReportFormatResponse, CreateReportResponse,
+    CreateRoleResponse, CreateScanConfigResponse, CreateScannerResponse, CreateScheduleResponse,
+    CreateTagResponse, CreateTargetResponse, CreateTaskResponse, CreateTicketResponse,
+    CreateTlsCertificateResponse, CreateUserResponse, CreateWebApplicationTargetResponse,
+    DeleteOciImageTargetResponse, DeleteScanConfigResponse, DeleteScannerResponse,
+    DeleteWebApplicationTargetResponse, DescribeAuthResponse, EmptyTrashcanResponse,
     GetAlertsResponse, GetCertBundAdvisoriesResponse, GetCpesResponse, GetCredentialStoresResponse,
     GetCredentialsResponse, GetCvesResponse, GetDfnCertAdvisoriesResponse, GetFeedsResponse,
     GetFiltersResponse, GetGroupsResponse, GetHostsResponse, GetNotesResponse,
-    GetNvtFamiliesResponse, GetNvtsResponse, GetOverridesResponse, GetPermissionsResponse,
-    GetPortListsResponse, GetReportClosedCvesResponse, GetReportConfigsResponse,
-    GetReportErrorsResponse, GetReportFormatsResponse, GetReportTlsCertificatesResponse,
-    GetReportVulnsResponse, GetReportsResponse, GetResultsResponse, GetRolesResponse,
-    GetScanConfigsResponse, GetScannersResponse, GetSchedulesResponse, GetSettingsResponse,
-    GetTagsResponse, GetTargetsResponse, GetTasksResponse, GetTicketsResponse,
-    GetTimezonesResponse, GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse,
-    GetVulnerabilitiesResponse, HelpResponse, ModifyScanConfigResponse, ModifyScannerResponse,
+    GetNvtFamiliesResponse, GetNvtsResponse, GetOciImageTargetsResponse, GetOverridesResponse,
+    GetPermissionsResponse, GetPortListsResponse, GetReportClosedCvesResponse,
+    GetReportConfigsResponse, GetReportErrorsResponse, GetReportFormatsResponse,
+    GetReportTlsCertificatesResponse, GetReportVulnsResponse, GetReportsResponse,
+    GetResultsResponse, GetRolesResponse, GetScanConfigsResponse, GetScannersResponse,
+    GetSchedulesResponse, GetSettingsResponse, GetTagsResponse, GetTargetsResponse,
+    GetTasksResponse, GetTicketsResponse, GetTimezonesResponse, GetTlsCertificatesResponse,
+    GetUsersResponse, GetVersionResponse, GetVulnerabilitiesResponse,
+    GetWebApplicationTargetsResponse, HelpResponse, ModifyOciImageTargetResponse,
+    ModifyScanConfigResponse, ModifyScannerResponse, ModifyWebApplicationTargetResponse,
     ReportExport, RestoreResponse, ResumeTaskResponse, StartTaskResponse, SyncConfigResponse,
     VerifyCredentialStoreResponse, VerifyScannerResponse,
 };
@@ -160,6 +174,198 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ) -> Result<CreateTargetResponse, GvmError> {
         let response = self.send(create_target(name, opts)).await?;
         CreateTargetResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `create_oci_image_target` request and return a typed
+    /// [`CreateOciImageTargetResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn create_oci_image_target_parsed(
+        &mut self,
+        name: &str,
+        image_references: &[String],
+        opts: CreateOciImageTargetOpts,
+    ) -> Result<CreateOciImageTargetResponse, GvmError> {
+        let response = self
+            .send(create_oci_image_target(name, image_references, opts))
+            .await?;
+        CreateOciImageTargetResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `clone_oci_image_target` request and return a typed
+    /// [`CreateOciImageTargetResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn clone_oci_image_target_parsed(
+        &mut self,
+        oci_image_target_id: &EntityId,
+    ) -> Result<CreateOciImageTargetResponse, GvmError> {
+        let response = self
+            .send(clone_oci_image_target(oci_image_target_id))
+            .await?;
+        CreateOciImageTargetResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `get_oci_image_targets` request for one target and return a typed
+    /// [`GetOciImageTargetsResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_oci_image_target_parsed(
+        &mut self,
+        oci_image_target_id: &EntityId,
+        tasks: Option<bool>,
+    ) -> Result<GetOciImageTargetsResponse, GvmError> {
+        let response = self
+            .send(get_oci_image_target(oci_image_target_id, tasks))
+            .await?;
+        GetOciImageTargetsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `get_oci_image_targets` request and return a typed
+    /// [`GetOciImageTargetsResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_oci_image_targets_parsed(
+        &mut self,
+        opts: GetOciImageTargetsOpts,
+    ) -> Result<GetOciImageTargetsResponse, GvmError> {
+        let response = self.send(get_oci_image_targets(opts)).await?;
+        GetOciImageTargetsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `modify_oci_image_target` request and return a typed
+    /// [`ModifyOciImageTargetResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_oci_image_target_parsed(
+        &mut self,
+        oci_image_target_id: &EntityId,
+        opts: ModifyOciImageTargetOpts,
+    ) -> Result<ModifyOciImageTargetResponse, GvmError> {
+        let response = self
+            .send(modify_oci_image_target(oci_image_target_id, opts))
+            .await?;
+        ModifyOciImageTargetResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `delete_oci_image_target` request and return a typed
+    /// [`DeleteOciImageTargetResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn delete_oci_image_target_parsed(
+        &mut self,
+        oci_image_target_id: &EntityId,
+        ultimate: bool,
+    ) -> Result<DeleteOciImageTargetResponse, GvmError> {
+        let response = self
+            .send(delete_oci_image_target(oci_image_target_id, ultimate))
+            .await?;
+        DeleteOciImageTargetResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `create_web_application_target` request and return a typed
+    /// [`CreateWebApplicationTargetResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn create_web_application_target_parsed(
+        &mut self,
+        name: &str,
+        urls: &[String],
+        opts: CreateWebApplicationTargetOpts,
+    ) -> Result<CreateWebApplicationTargetResponse, GvmError> {
+        let response = self
+            .send(create_web_application_target(name, urls, opts))
+            .await?;
+        CreateWebApplicationTargetResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `clone_web_application_target` request and return a typed
+    /// [`CreateWebApplicationTargetResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn clone_web_application_target_parsed(
+        &mut self,
+        web_application_target_id: &EntityId,
+    ) -> Result<CreateWebApplicationTargetResponse, GvmError> {
+        let response = self
+            .send(clone_web_application_target(web_application_target_id))
+            .await?;
+        CreateWebApplicationTargetResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `get_web_application_targets` request for one target and return a
+    /// typed [`GetWebApplicationTargetsResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_web_application_target_parsed(
+        &mut self,
+        web_application_target_id: &EntityId,
+        tasks: Option<bool>,
+    ) -> Result<GetWebApplicationTargetsResponse, GvmError> {
+        let response = self
+            .send(get_web_application_target(web_application_target_id, tasks))
+            .await?;
+        GetWebApplicationTargetsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `get_web_application_targets` request and return a typed
+    /// [`GetWebApplicationTargetsResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_web_application_targets_parsed(
+        &mut self,
+        opts: GetWebApplicationTargetsOpts,
+    ) -> Result<GetWebApplicationTargetsResponse, GvmError> {
+        let response = self.send(get_web_application_targets(opts)).await?;
+        GetWebApplicationTargetsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `modify_web_application_target` request and return a typed
+    /// [`ModifyWebApplicationTargetResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_web_application_target_parsed(
+        &mut self,
+        web_application_target_id: &EntityId,
+        opts: ModifyWebApplicationTargetOpts,
+    ) -> Result<ModifyWebApplicationTargetResponse, GvmError> {
+        let response = self
+            .send(modify_web_application_target(
+                web_application_target_id,
+                opts,
+            ))
+            .await?;
+        ModifyWebApplicationTargetResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `delete_web_application_target` request and return a typed
+    /// [`DeleteWebApplicationTargetResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn delete_web_application_target_parsed(
+        &mut self,
+        web_application_target_id: &EntityId,
+        ultimate: bool,
+    ) -> Result<DeleteWebApplicationTargetResponse, GvmError> {
+        let response = self
+            .send(delete_web_application_target(
+                web_application_target_id,
+                ultimate,
+            ))
+            .await?;
+        DeleteWebApplicationTargetResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     // ── Scan Configs ──────────────────────────────────────────────────────────

@@ -18,6 +18,7 @@ pub mod group;
 pub mod host;
 pub mod note;
 pub mod nvt;
+pub mod oci_image_target;
 pub mod override_;
 pub mod permission;
 pub mod port_list;
@@ -42,6 +43,7 @@ pub mod trashcan;
 pub mod user;
 pub mod user_settings;
 pub mod version;
+pub mod web_application_target;
 
 pub use aggregates::{AggregateGroup, AggregateStats, AggregateSubgroup, GetAggregatesResponse};
 pub use alert::{
@@ -69,6 +71,10 @@ pub use note::{
     CreateNoteResponse, DeleteNoteResponse, GetNotesResponse, ModifyNoteResponse, Note,
 };
 pub use nvt::{GetNvtFamiliesResponse, GetNvtsResponse, Nvt, NvtFamily};
+pub use oci_image_target::{
+    CreateOciImageTargetResponse, DeleteOciImageTargetResponse, GetOciImageTargetsResponse,
+    ModifyOciImageTargetResponse, OciImageTarget,
+};
 pub use override_::{
     CreateOverrideResponse, DeleteOverrideResponse, GetOverridesResponse, ModifyOverrideResponse,
     Override,
@@ -138,3 +144,7 @@ pub use user::{
 };
 pub use user_settings::{GetUserSettingsResponse, ModifyUserSettingResponse, UserSetting};
 pub use version::GetVersionResponse;
+pub use web_application_target::{
+    CreateWebApplicationTargetResponse, DeleteWebApplicationTargetResponse,
+    GetWebApplicationTargetsResponse, ModifyWebApplicationTargetResponse, WebApplicationTarget,
+};
