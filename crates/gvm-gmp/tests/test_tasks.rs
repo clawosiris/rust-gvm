@@ -150,6 +150,56 @@ fn test_create_oci_image_target_task_ignores_schedule_periods_without_schedule()
 }
 
 #[test]
+fn test_create_web_application_task_basic() {
+    assert_eq!(
+        xml(create_web_application_task(
+            "foo",
+            &id("wt1"),
+            &id("s1"),
+            Default::default()
+        )),
+        "<create_task><name>foo</name><usage_type>scan</usage_type><web_application_target id=\"wt1\"/><scanner id=\"s1\"/></create_task>"
+    );
+}
+
+#[test]
+fn test_create_web_application_task_with_optionals() {
+    assert_eq!(
+        xml(create_web_application_task(
+            "foo",
+            &id("wt1"),
+            &id("s1"),
+            CreateWebApplicationTaskOpts {
+                alterable: Some(true),
+                schedule_id: Some(id("sched1")),
+                alert_ids: vec![id("a1"), id("a2")],
+                comment: Some("bar".into()),
+                schedule_periods: Some(5),
+                observers: vec!["alice".into(), "bob".into()],
+                preferences: vec![("k".into(), "v".into())],
+            }
+        )),
+        "<create_task><name>foo</name><usage_type>scan</usage_type><web_application_target id=\"wt1\"/><scanner id=\"s1\"/><comment>bar</comment><alterable>1</alterable><alert id=\"a1\"/><alert id=\"a2\"/><schedule id=\"sched1\"/><schedule_periods>5</schedule_periods><observers><observer>alice</observer><observer>bob</observer></observers><preferences><preference><scanner_name>k</scanner_name><value>v</value></preference></preferences></create_task>"
+    );
+}
+
+#[test]
+fn test_create_web_application_task_omits_schedule_periods_without_schedule() {
+    assert_eq!(
+        xml(create_web_application_task(
+            "foo",
+            &id("wt1"),
+            &id("s1"),
+            CreateWebApplicationTaskOpts {
+                schedule_periods: Some(5),
+                ..Default::default()
+            }
+        )),
+        "<create_task><name>foo</name><usage_type>scan</usage_type><web_application_target id=\"wt1\"/><scanner id=\"s1\"/></create_task>"
+    );
+}
+
+#[test]
 fn test_task_mutation_and_actions() {
     assert_eq!(
         xml(clone_task(&id("a1"))),

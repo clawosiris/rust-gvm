@@ -72,6 +72,25 @@ pub struct CreateOciImageTargetTaskOpts {
     pub preferences: Vec<(String, String)>,
 }
 
+/// Optional fields for web application target `create_task` requests.
+#[derive(Debug, Clone, Default)]
+pub struct CreateWebApplicationTaskOpts {
+    /// Whether the task should be alterable.
+    pub alterable: Option<bool>,
+    /// Optional schedule identifier.
+    pub schedule_id: Option<EntityId>,
+    /// Alert identifiers associated with the request.
+    pub alert_ids: Vec<EntityId>,
+    /// Optional comment text included in the request.
+    pub comment: Option<String>,
+    /// Optional schedule period count, serialized only when [`Self::schedule_id`] is set.
+    pub schedule_periods: Option<u32>,
+    /// Observer names associated with the task.
+    pub observers: Vec<String>,
+    /// Preference key/value pairs to include.
+    pub preferences: Vec<(String, String)>,
+}
+
 /// Options for `get_tasks` requests.
 #[derive(Debug, Clone, Default)]
 pub struct GetTasksOpts {
@@ -264,6 +283,41 @@ fn create_task_with_usage(
     }
     for alert_id in &opts.alert_ids {
         add_id_element(&mut cmd, "alert", alert_id);
+    }
+    add_string_list(&mut cmd, "observers", "observer", &opts.observers);
+    add_preferences(&mut cmd, &opts.preferences);
+    cmd
+}
+
+/// Build a `create_task` request for a web application target.
+#[must_use]
+pub fn create_web_application_task(
+    name: &str,
+    web_application_target_id: &EntityId,
+    scanner_id: &EntityId,
+    opts: CreateWebApplicationTaskOpts,
+) -> impl Request {
+    let mut cmd = XmlCommand::new("create_task");
+    cmd.add_element_with_text("name", name);
+    cmd.add_element_with_text("usage_type", UsageType::Scan.as_gmp_str());
+    add_id_element(
+        &mut cmd,
+        "web_application_target",
+        web_application_target_id,
+    );
+    add_id_element(&mut cmd, "scanner", scanner_id);
+    add_text_element(&mut cmd, "comment", opts.comment.as_deref());
+    if let Some(alterable) = opts.alterable {
+        cmd.add_element_with_text("alterable", bool_str(alterable));
+    }
+    for alert_id in &opts.alert_ids {
+        add_id_element(&mut cmd, "alert", alert_id);
+    }
+    if let Some(schedule_id) = opts.schedule_id.as_ref() {
+        add_id_element(&mut cmd, "schedule", schedule_id);
+        if let Some(schedule_periods) = opts.schedule_periods {
+            cmd.add_element_with_text("schedule_periods", &schedule_periods.to_string());
+        }
     }
     add_string_list(&mut cmd, "observers", "observer", &opts.observers);
     add_preferences(&mut cmd, &opts.preferences);
@@ -492,6 +546,44 @@ mod tests {
         assert!(rendered.contains("<alert id=\"a1\"/>"));
         assert!(rendered.contains("<observer>alice</observer>"));
         assert!(rendered.contains("<scanner_name>k</scanner_name><value>v</value>"));
+    }
+
+    #[test]
+    fn create_web_application_task_builds_full_xml() {
+        let rendered = xml(create_web_application_task(
+            "web task",
+            &id("wt1"),
+            &id("s1"),
+            CreateWebApplicationTaskOpts {
+                alterable: Some(true),
+                schedule_id: Some(id("sched1")),
+                alert_ids: vec![id("a1"), id("a2")],
+                comment: Some("scan web app".into()),
+                schedule_periods: Some(5),
+                observers: vec!["alice".into(), "bob".into()],
+                preferences: vec![("k".into(), "v".into())],
+            },
+        ));
+        assert_eq!(
+            rendered,
+            "<create_task><name>web task</name><usage_type>scan</usage_type><web_application_target id=\"wt1\"/><scanner id=\"s1\"/><comment>scan web app</comment><alterable>1</alterable><alert id=\"a1\"/><alert id=\"a2\"/><schedule id=\"sched1\"/><schedule_periods>5</schedule_periods><observers><observer>alice</observer><observer>bob</observer></observers><preferences><preference><scanner_name>k</scanner_name><value>v</value></preference></preferences></create_task>"
+        );
+    }
+
+    #[test]
+    fn create_web_application_task_omits_schedule_periods_without_schedule() {
+        assert_eq!(
+            xml(create_web_application_task(
+                "web task",
+                &id("wt1"),
+                &id("s1"),
+                CreateWebApplicationTaskOpts {
+                    schedule_periods: Some(5),
+                    ..Default::default()
+                },
+            )),
+            "<create_task><name>web task</name><usage_type>scan</usage_type><web_application_target id=\"wt1\"/><scanner id=\"s1\"/></create_task>"
+        );
     }
 
     #[test]

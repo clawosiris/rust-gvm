@@ -8,8 +8,8 @@ use gvm_client::GmpNext;
 use gvm_client::{
     AgentInstallerLanguage, CreateAgentGroupOpts, CreateAgentGroupTaskOpts,
     CreateOciImageTargetOpts, CreateOciImageTargetTaskOpts, CreateWebApplicationTargetOpts,
-    GetAgentsOpts, Gmp226Commands, GmpNextCommands, GmpVersioned, GvmError,
-    ModifyAgentControlScanConfigOpts, ModifyAgentGroupOpts, ModifyAgentOpts,
+    CreateWebApplicationTaskOpts, GetAgentsOpts, Gmp226Commands, GmpNextCommands, GmpVersioned,
+    GvmError, ModifyAgentControlScanConfigOpts, ModifyAgentGroupOpts, ModifyAgentOpts,
     ModifyOciImageTargetOpts, ModifyWebApplicationTargetOpts,
 };
 use gvm_connection::{GvmConnection, UnixSocketConnection};
@@ -118,6 +118,38 @@ async fn assert_create_oci_image_target_task_round_trip<C>(
         format!(
             "<create_task><name>Client OCI Target Task</name><usage_type>scan</usage_type><oci_image_target id=\"{}\"/><scanner id=\"scanner-1\"/><comment>task through client</comment><alterable>1</alterable></create_task>",
             oci_image_target_id.as_str()
+        )
+    );
+}
+
+async fn assert_create_web_application_task_round_trip(
+    client: &mut GmpNext<UnixSocketConnection>,
+    server: &MockGmpServer,
+    target_id: &EntityId,
+) {
+    server.clear_history();
+    let scanner_id = EntityId::new("scanner-web-1").expect("valid id");
+    let task_response = client
+        .create_web_application_task(
+            "Client Web Task",
+            target_id,
+            &scanner_id,
+            CreateWebApplicationTaskOpts {
+                comment: Some("created from versioned client".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("create_web_application_task should succeed");
+    assert_eq!(task_response.status_code(), Some(201));
+    let history = server.command_history();
+    let command = history.last().expect("create task command recorded");
+    assert_eq!(command.command_name(), "create_task");
+    let raw_xml = String::from_utf8(command.raw_xml().to_vec()).expect("history should be utf8");
+    assert_eq!(
+        raw_xml,
+        format!(
+            "<create_task><name>Client Web Task</name><usage_type>scan</usage_type><web_application_target id=\"{target_id}\"/><scanner id=\"scanner-web-1\"/><comment>created from versioned client</comment></create_task>"
         )
     );
 }
@@ -677,6 +709,8 @@ async fn next_client_web_application_targets_round_trip() {
     assert!(get_xml.contains("<urls>https://example.com,https://example.com/app</urls>"));
     assert!(get_xml.contains("<exclude_urls>https://example.com/logout</exclude_urls>"));
     assert!(get_xml.contains("<credential_id>credential-web-1</credential_id>"));
+
+    assert_create_web_application_task_round_trip(&mut client, &server, &target_id).await;
 
     let clone_response = client
         .clone_web_application_target(&target_id)
