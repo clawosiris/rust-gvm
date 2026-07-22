@@ -49,6 +49,7 @@ use gvm_gmp::commands::reports::{
 };
 use gvm_gmp::commands::system::get_timezones;
 use gvm_gmp::commands::tasks::create_agent_group_task;
+use gvm_gmp::commands::tasks::create_oci_image_target_task as build_oci_image_target_task;
 use gvm_gmp::commands::version::get_version;
 use gvm_gmp::commands::web_application_targets::{
     clone_web_application_target, create_web_application_target, delete_web_application_target,
@@ -75,6 +76,7 @@ pub use gvm_gmp::commands::oci_image_targets::{
 pub use gvm_gmp::commands::report_configs::ModifyReportConfigOpts;
 pub use gvm_gmp::commands::reports::{GetReportDetailsOpts, GetReportExportOpts, ImportReportOpts};
 pub use gvm_gmp::commands::tasks::CreateAgentGroupTaskOpts;
+pub use gvm_gmp::commands::tasks::CreateOciImageTargetTaskOpts;
 pub use gvm_gmp::commands::web_application_targets::{
     CreateWebApplicationTargetOpts, GetWebApplicationTargetsOpts, ModifyWebApplicationTargetOpts,
 };
@@ -998,6 +1000,28 @@ pub trait GmpNextCommands {
         opts: CreateOciImageTargetOpts,
     ) -> Result<Response, GvmError>;
 
+    /// Create a task that scans an OCI image target.
+    async fn create_oci_image_target_task(
+        &mut self,
+        name: &str,
+        oci_image_target_id: &EntityId,
+        scanner_id: &EntityId,
+        opts: CreateOciImageTargetTaskOpts,
+    ) -> Result<Response, GvmError>;
+
+    /// Create a task that scans an OCI image target using python-gvm's
+    /// historical container-image helper name.
+    async fn create_container_image_task(
+        &mut self,
+        name: &str,
+        oci_image_target_id: &EntityId,
+        scanner_id: &EntityId,
+        opts: CreateOciImageTargetTaskOpts,
+    ) -> Result<Response, GvmError> {
+        self.create_oci_image_target_task(name, oci_image_target_id, scanner_id, opts)
+            .await
+    }
+
     /// Clone an OCI image target.
     async fn clone_oci_image_target(
         &mut self,
@@ -1447,6 +1471,23 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
     ) -> Result<Response, GvmError> {
         self.0
             .create_oci_image_target(name, image_references, opts)
+            .await
+    }
+
+    async fn create_oci_image_target_task(
+        &mut self,
+        name: &str,
+        oci_image_target_id: &EntityId,
+        scanner_id: &EntityId,
+        opts: CreateOciImageTargetTaskOpts,
+    ) -> Result<Response, GvmError> {
+        self.0
+            .call(build_oci_image_target_task(
+                name,
+                oci_image_target_id,
+                scanner_id,
+                opts,
+            ))
             .await
     }
 
