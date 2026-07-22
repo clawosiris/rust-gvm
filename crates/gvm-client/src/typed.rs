@@ -190,6 +190,21 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         CreateScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
+    /// Send a `create_config` request that imports scan-config XML and return a
+    /// typed [`CreateScanConfigResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the import XML is invalid, the request fails, or
+    /// response parsing fails.
+    pub async fn import_scan_config(
+        &mut self,
+        scan_config_xml: &str,
+    ) -> Result<CreateScanConfigResponse, GvmError> {
+        let request = gvm_gmp::commands::scan_configs::import_scan_config(scan_config_xml)?;
+        let response = self.send(request).await?;
+        CreateScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
     /// Send a `get_scan_config` request and return a typed [`GetScanConfigsResponse`].
     ///
     /// # Errors
