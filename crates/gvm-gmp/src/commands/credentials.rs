@@ -45,6 +45,17 @@ pub struct GetCredentialsOpts {
     pub details: Option<bool>,
 }
 
+/// Options for `get_credential_stores` requests.
+#[derive(Debug, Clone, Default)]
+pub struct GetCredentialStoresOpts {
+    /// Optional inline filter expression.
+    pub filter_string: Option<String>,
+    /// Optional saved filter identifier.
+    pub filter_id: Option<EntityId>,
+    /// Whether to request detailed output.
+    pub details: Option<bool>,
+}
+
 /// A credential-store preference update.
 #[derive(Debug, Clone, Default)]
 pub struct CredentialStorePreference {
@@ -111,7 +122,29 @@ pub fn get_credential(credential_id: &EntityId) -> impl Request {
 /// Build a `get_credential_stores` request.
 #[must_use]
 pub fn get_credential_stores() -> impl Request {
-    XmlCommand::new("get_credential_stores")
+    get_credential_stores_with_opts(GetCredentialStoresOpts::default())
+}
+
+/// Build a `get_credential_stores` request with optional filters.
+#[must_use]
+pub fn get_credential_stores_with_opts(opts: GetCredentialStoresOpts) -> impl Request {
+    let mut cmd = XmlCommand::new("get_credential_stores");
+    add_filter_attrs(
+        &mut cmd,
+        opts.filter_string.as_deref(),
+        opts.filter_id.as_ref(),
+    );
+    set_optional_bool_attr(&mut cmd, "details", opts.details);
+    cmd
+}
+
+/// Build a `get_credential_stores` request for a single credential store.
+#[must_use]
+pub fn get_credential_store(credential_store_id: &EntityId, details: Option<bool>) -> impl Request {
+    let mut cmd = XmlCommand::new("get_credential_stores");
+    cmd.add_element_with_text("credential_store_id", credential_store_id.as_str());
+    set_optional_bool_attr(&mut cmd, "details", details);
+    cmd
 }
 
 /// Build a `verify_credential_store` request.
@@ -221,6 +254,22 @@ mod tests {
         assert_eq!(
             xml(verify_credential_store(&id("cs1"))),
             "<verify_credential_store credential_store_id=\"cs1\"/>"
+        );
+        assert_eq!(
+            xml(get_credential_store(&id("cs1"), Some(true))),
+            "<get_credential_stores details=\"1\"><credential_store_id>cs1</credential_store_id></get_credential_stores>"
+        );
+        assert_eq!(
+            xml(get_credential_store(&id("cs1"), Some(false))),
+            "<get_credential_stores details=\"0\"><credential_store_id>cs1</credential_store_id></get_credential_stores>"
+        );
+        assert_eq!(
+            xml(get_credential_stores_with_opts(GetCredentialStoresOpts {
+                filter_string: Some("name=store".into()),
+                filter_id: Some(id("f1")),
+                details: Some(true),
+            })),
+            "<get_credential_stores details=\"1\" filt_id=\"f1\" filter=\"name=store\"/>"
         );
         assert_eq!(
             xml(modify_credential_store(

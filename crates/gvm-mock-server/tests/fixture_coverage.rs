@@ -185,6 +185,14 @@ async fn fixture_get_timezones_and_credential_stores() {
     assert!(r.is_success());
     assert!(r.as_str().expect("utf8").contains("Local credential store"));
 
+    let r = send_recv(
+        &mut s,
+        b"<get_credential_stores details=\"1\"><credential_store_id>local</credential_store_id></get_credential_stores>",
+    )
+    .await;
+    assert!(r.is_success());
+    assert!(r.as_str().expect("utf8").contains("Local credential store"));
+
     server.shutdown().await;
 }
 

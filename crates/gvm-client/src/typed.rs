@@ -15,8 +15,9 @@ use gvm_connection::GvmConnection;
 use gvm_gmp::commands::alerts::{create_alert, get_alerts, AlertOpts, GetAlertsOpts};
 use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::credentials::{
-    create_credential, get_credential_stores, get_credentials, verify_credential_store,
-    CredentialOpts, GetCredentialsOpts,
+    create_credential, get_credential_store, get_credential_stores,
+    get_credential_stores_with_opts, get_credentials, verify_credential_store, CredentialOpts,
+    GetCredentialStoresOpts, GetCredentialsOpts,
 };
 use gvm_gmp::commands::feed::get_feeds;
 use gvm_gmp::commands::filters::{create_filter, get_filters, FilterOpts, GetFiltersOpts};
@@ -947,6 +948,35 @@ impl<C: GvmConnection + Send> GmpClient<C> {
             .send(verify_credential_store(credential_store_id))
             .await?;
         VerifyCredentialStoreResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a filtered `get_credential_stores` request and return a typed
+    /// [`GetCredentialStoresResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_credential_stores_with_opts(
+        &mut self,
+        opts: GetCredentialStoresOpts,
+    ) -> Result<GetCredentialStoresResponse, GvmError> {
+        let response = self.send(get_credential_stores_with_opts(opts)).await?;
+        GetCredentialStoresResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a single-store `get_credential_stores` request and return a typed
+    /// [`GetCredentialStoresResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_credential_store(
+        &mut self,
+        credential_store_id: &EntityId,
+        details: Option<bool>,
+    ) -> Result<GetCredentialStoresResponse, GvmError> {
+        let response = self
+            .send(get_credential_store(credential_store_id, details))
+            .await?;
+        GetCredentialStoresResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     // ── NVTs ──────────────────────────────────────────────────────────────────
