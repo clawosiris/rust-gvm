@@ -41,7 +41,7 @@ cargo +nightly fuzz run fuzz_streaming_reader
 | `fuzz_xml_parser` | P0 | Tests `gvm-protocol::Response` construction from arbitrary bytes |
 | `fuzz_response_parser` | P0 | Tests typed response parsers in `gvm-gmp::responses` |
 | `fuzz_xml_node_builder` | P1 | Grammar-based fuzzing of `parse_document()` with structured XML |
-| `fuzz_streaming_reader` | P1 | Tests `XmlReader` with chunked input delivery patterns |
+| `fuzz_streaming_reader` | P1 | Checks exact frame extraction and single-vs-chunked equivalence for `XmlReader` |
 
 ## Corpus
 

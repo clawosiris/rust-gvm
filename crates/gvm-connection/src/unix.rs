@@ -62,19 +62,33 @@ impl UnixSocketConfig {
 }
 
 /// Unix socket connection to gvmd.
-#[derive(Debug)]
 pub struct UnixSocketConnection {
     config: UnixSocketConfig,
     stream: Option<UnixStream>,
+    response_reader: gvm_protocol::XmlReader,
+    pending_read: Vec<u8>,
+}
+
+impl std::fmt::Debug for UnixSocketConnection {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("UnixSocketConnection")
+            .field("config", &self.config)
+            .field("connected", &self.is_connected())
+            .finish()
+    }
 }
 
 impl UnixSocketConnection {
     /// Create a new Unix socket connection with the given config.
     #[must_use]
     pub fn new(config: UnixSocketConfig) -> Self {
+        let response_reader = gvm_protocol::XmlReader::with_buffer_limit(config.max_response_bytes);
         Self {
             config,
             stream: None,
+            response_reader,
+            pending_read: Vec::new(),
         }
     }
 
@@ -82,6 +96,17 @@ impl UnixSocketConnection {
     #[must_use]
     pub fn with_path(path: impl Into<PathBuf>) -> Self {
         Self::new(UnixSocketConfig::new(path))
+    }
+
+    fn invalidate_protocol_read(&mut self, error: &gvm_protocol::ProtocolError) -> ConnectionError {
+        self.invalidate_connection();
+        protocol_read_error(error)
+    }
+
+    fn invalidate_connection(&mut self) {
+        self.stream.take();
+        self.response_reader.reset();
+        self.pending_read.clear();
     }
 }
 
@@ -91,6 +116,9 @@ impl GvmConnection for UnixSocketConnection {
         if self.stream.is_some() {
             return Err(ConnectionError::AlreadyConnected);
         }
+
+        self.response_reader.reset();
+        self.pending_read.clear();
 
         if !self.config.path.exists() {
             return Err(ConnectionError::SocketNotFound(
@@ -110,6 +138,8 @@ impl GvmConnection for UnixSocketConnection {
     }
 
     async fn disconnect(&mut self) -> Result<()> {
+        self.response_reader.reset();
+        self.pending_read.clear();
         if let Some(mut stream) = self.stream.take() {
             let _ = stream.shutdown().await;
             tracing::debug!("disconnected from {}", self.config.path.display());
@@ -128,33 +158,57 @@ impl GvmConnection for UnixSocketConnection {
     }
 
     async fn read(&mut self) -> Result<Vec<u8>> {
-        let stream = self.stream.as_mut().ok_or(ConnectionError::NotConnected)?;
+        if self.stream.is_none() {
+            return Err(ConnectionError::NotConnected);
+        }
+
+        if !self.pending_read.is_empty() {
+            let consumed = match self.response_reader.feed_frame(&self.pending_read) {
+                Ok(consumed) => consumed,
+                Err(error) => return Err(self.invalidate_protocol_read(&error)),
+            };
+            self.pending_read.drain(..consumed);
+            let frame = match self.response_reader.take_frame() {
+                Ok(frame) => frame,
+                Err(error) => return Err(self.invalidate_protocol_read(&error)),
+            };
+            if let Some(frame) = frame {
+                return Ok(frame);
+            }
+            debug_assert!(self.pending_read.is_empty());
+        }
+
         let mut buf = vec![0_u8; self.config.read_buffer_size];
-        let mut xml_reader =
-            gvm_protocol::XmlReader::with_buffer_limit(self.config.max_response_bytes);
 
         loop {
+            let stream = self.stream.as_mut().ok_or(ConnectionError::NotConnected)?;
             let n = tokio::time::timeout(self.config.timeout, stream.read(&mut buf))
                 .await
                 .map_err(|_| ConnectionError::Timeout(self.config.timeout))?
                 .map_err(ConnectionError::ReadFailed)?;
 
             if n == 0 {
+                self.invalidate_connection();
                 return Err(ConnectionError::ReadFailed(std::io::Error::new(
                     std::io::ErrorKind::UnexpectedEof,
                     "connection closed",
                 )));
             }
 
-            xml_reader.feed(&buf[..n]).map_err(|error| {
-                ConnectionError::ReadFailed(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    error.to_string(),
-                ))
-            })?;
+            let consumed = match self.response_reader.feed_frame(&buf[..n]) {
+                Ok(consumed) => consumed,
+                Err(error) => return Err(self.invalidate_protocol_read(&error)),
+            };
+            if consumed < n {
+                self.pending_read.extend_from_slice(&buf[consumed..n]);
+            }
 
-            if xml_reader.is_complete() {
-                return Ok(xml_reader.into_data());
+            let frame = match self.response_reader.take_frame() {
+                Ok(frame) => frame,
+                Err(error) => return Err(self.invalidate_protocol_read(&error)),
+            };
+            if let Some(frame) = frame {
+                return Ok(frame);
             }
         }
     }
@@ -162,6 +216,13 @@ impl GvmConnection for UnixSocketConnection {
     fn is_connected(&self) -> bool {
         self.stream.is_some()
     }
+}
+
+fn protocol_read_error(error: &gvm_protocol::ProtocolError) -> ConnectionError {
+    ConnectionError::ReadFailed(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        error.to_string(),
+    ))
 }
 
 #[cfg(test)]
@@ -190,5 +251,17 @@ mod tests {
     fn test_with_path() {
         let conn = UnixSocketConnection::with_path("/tmp/test.sock");
         assert!(!conn.is_connected());
+    }
+
+    #[test]
+    fn test_connection_debug_redacts_pending_response() {
+        let mut conn = UnixSocketConnection::with_path("/tmp/test.sock");
+        conn.pending_read
+            .extend_from_slice(b"<secret>do-not-log</secret>");
+
+        let debug = format!("{conn:?}");
+        assert!(!debug.contains("secret"));
+        assert!(!debug.contains("do-not-log"));
+        assert!(debug.contains("connected"));
     }
 }

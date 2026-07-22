@@ -56,8 +56,7 @@ struct ChunkedXmlInput {
 }
 
 impl ChunkedXmlInput {
-    fn chunk_boundaries(&self) -> Vec<usize> {
-        let len = self.data.len();
+    fn chunk_boundaries(&self, len: usize) -> Vec<usize> {
         if len == 0 {
             return vec![0];
         }
@@ -89,50 +88,152 @@ impl ChunkedXmlInput {
     }
 }
 
-fuzz_target!(|input: ChunkedXmlInput| {
-    // Create reader with optional buffer limit
-    let mut reader = match input.max_buffer {
+#[derive(Debug, PartialEq, Eq)]
+enum ReaderOutcome {
+    Error,
+    Parsed {
+        frames: Vec<Vec<u8>>,
+        remainder: Vec<u8>,
+    },
+}
+
+fn new_reader(max_buffer: Option<usize>) -> XmlReader {
+    match max_buffer {
         Some(max) => XmlReader::with_max_buffer(max),
         None => XmlReader::new(),
-    };
+    }
+}
 
-    let boundaries = input.chunk_boundaries();
-    let mut prev = 0;
+fn run_aggregate_reader(input: &ChunkedXmlInput, boundaries: &[usize]) -> ReaderOutcome {
+    let mut reader = new_reader(input.max_buffer);
+    let mut previous = 0;
 
-    for boundary in boundaries {
-        if boundary > input.data.len() {
-            break;
+    for &boundary in boundaries {
+        if boundary > input.data.len() || boundary < previous {
+            return ReaderOutcome::Error;
         }
 
-        let chunk = &input.data[prev..boundary];
-        prev = boundary;
-
-        // Feed chunk — errors are expected for malformed XML or buffer overflow
-        match reader.feed(chunk) {
-            Ok(()) => {
-                // Check completion state — should never panic
-                let _ = reader.is_complete();
-            }
-            Err(_) => {
-                // Error is acceptable (malformed XML, buffer overflow, etc.)
-                // Just ensure we don't panic
-                break;
-            }
+        if reader.feed(&input.data[previous..boundary]).is_err() {
+            return ReaderOutcome::Error;
         }
+        previous = boundary;
 
-        // If complete, verify we can access data without panic
-        if reader.is_complete() {
-            let _ = reader.data();
-            break;
+        if let Some(frame_len) = reader.frame_len() {
+            assert!(frame_len <= reader.data().len());
+            assert_eq!(reader.frame().map(<[u8]>::len), Some(frame_len));
+            assert_eq!(
+                reader.tail().map(<[u8]>::len),
+                Some(reader.data().len() - frame_len)
+            );
         }
     }
 
-    // Final state checks — should never panic
-    let _ = reader.is_complete();
-    let _ = reader.data();
+    let mut frames = Vec::new();
+    loop {
+        match reader.take_frame() {
+            Ok(Some(frame)) => {
+                assert!(!frame.is_empty());
+                frames.push(frame);
+            }
+            Ok(None) => break,
+            Err(_) => return ReaderOutcome::Error,
+        }
+    }
 
-    // Test reset doesn't panic
+    let remainder = reader.data().to_vec();
+    let mut reconstructed = frames.concat();
+    reconstructed.extend_from_slice(&remainder);
+    assert_eq!(reconstructed, input.data);
+
     reader.reset();
     assert!(!reader.is_complete());
     assert!(reader.data().is_empty());
+
+    ReaderOutcome::Parsed { frames, remainder }
+}
+
+fn run_frame_reader(data: &[u8], max_buffer: Option<usize>, boundaries: &[usize]) -> ReaderOutcome {
+    let mut reader = new_reader(max_buffer);
+    let mut frames = Vec::new();
+    let mut previous = 0;
+
+    for &boundary in boundaries {
+        if boundary > data.len() || boundary < previous {
+            return ReaderOutcome::Error;
+        }
+
+        let mut offset = previous;
+        while offset < boundary {
+            let available = boundary - offset;
+            let consumed = match reader.feed_frame(&data[offset..boundary]) {
+                Ok(consumed) => consumed,
+                Err(_) => return ReaderOutcome::Error,
+            };
+            assert!(consumed <= available);
+            offset += consumed;
+
+            match reader.take_frame() {
+                Ok(Some(frame)) => {
+                    assert!(!frame.is_empty());
+                    assert!(consumed > 0, "a completed frame must make progress");
+                    frames.push(frame);
+                }
+                Ok(None) => {
+                    assert_eq!(
+                        offset, boundary,
+                        "an incomplete frame must consume the available chunk"
+                    );
+                }
+                Err(_) => return ReaderOutcome::Error,
+            }
+        }
+        previous = boundary;
+    }
+
+    let remainder = reader.data().to_vec();
+    let mut reconstructed = frames.concat();
+    reconstructed.extend_from_slice(&remainder);
+    assert_eq!(reconstructed, data);
+
+    ReaderOutcome::Parsed { frames, remainder }
+}
+
+fn well_formed_frames(seed: &[u8]) -> Vec<u8> {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+
+    if seed.is_empty() {
+        return b"<frame/>".to_vec();
+    }
+
+    let mut xml = Vec::with_capacity(seed.len().saturating_mul(2).saturating_add(512));
+    for chunk in seed.chunks(32) {
+        xml.extend_from_slice(b"<frame>");
+        for byte in chunk {
+            xml.push(HEX[(byte >> 4) as usize]);
+            xml.push(HEX[(byte & 0x0f) as usize]);
+        }
+        xml.extend_from_slice(b"</frame>");
+    }
+    xml
+}
+
+fuzz_target!(|input: ChunkedXmlInput| {
+    let raw_boundaries = input.chunk_boundaries(input.data.len());
+
+    // Arbitrary malformed input is a no-panic, bounds, and reconstruction
+    // exercise. A streaming parser may reject an incomplete malformed prefix
+    // earlier than a single-chunk parser, so error timing is not compared.
+    let _ = run_aggregate_reader(&input, &raw_boundaries);
+    let _ = run_aggregate_reader(&input, &[input.data.len()]);
+    let _ = run_frame_reader(&input.data, input.max_buffer, &raw_boundaries);
+    let _ = run_frame_reader(&input.data, input.max_buffer, &[input.data.len()]);
+
+    // For complete well-formed frame sequences, production `feed_frame`
+    // behavior must be independent of transport chunk boundaries.
+    let valid = well_formed_frames(&input.data);
+    let valid_boundaries = input.chunk_boundaries(valid.len());
+    let chunked = run_frame_reader(&valid, input.max_buffer, &valid_boundaries);
+    let single = run_frame_reader(&valid, input.max_buffer, &[valid.len()]);
+
+    assert_eq!(chunked, single);
 });

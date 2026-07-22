@@ -26,6 +26,10 @@ struct Args {
     /// TCP address (e.g., 127.0.0.1:9390)
     #[arg(long)]
     tcp: Option<String>,
+
+    /// Maximum size of one XML request in bytes
+    #[arg(long, default_value_t = 64 * 1024 * 1024)]
+    max_request_bytes: usize,
 }
 
 #[tokio::main]
@@ -56,7 +60,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let mut builder = MockGmpServer::builder().mode(mode).version(version);
+    let mut builder = MockGmpServer::builder()
+        .mode(mode)
+        .version(version)
+        .with_max_request_bytes(Some(args.max_request_bytes));
 
     if let Some(socket) = args.socket {
         builder = builder.unix_socket(socket);
