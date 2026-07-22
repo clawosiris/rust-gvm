@@ -19,7 +19,7 @@ use crate::response_gen::{
     generate_xml_report_export, LargeReportConfig, REPORT_EXPORT_XML_FORMAT_ID,
 };
 use crate::scenario::{ScenarioEngine, ScenarioMode, ScenarioOutcome, ScenarioStep};
-use crate::store::{AssetInputProfile, Resource, ResourceStore, TaskStatus};
+use crate::store::{AssetInputProfile, DeleteAssetResult, Resource, ResourceStore, TaskStatus};
 use crate::util::xml_escape;
 use crate::version::{command_available, GmpVersion};
 use crate::ServerMode;
@@ -516,25 +516,12 @@ impl SessionHandler {
             return error_response(&cmd.name, 400, "Invalid UUID");
         };
 
-        let Some(asset) = store
-            .get(&id)
-            .filter(|resource| resource.resource_type == "asset")
-        else {
-            return error_response(&cmd.name, 404, "Asset not found");
-        };
-        if asset.asset_type() == Some("os")
-            && asset
-                .attr("installs")
-                .and_then(|value| value.parse::<u32>().ok())
-                .is_some_and(|count| count > 0)
-        {
-            return error_response(&cmd.name, 400, "Asset is in use");
-        }
-
-        if store.delete_permanently_if_type(&id, "asset") {
-            b"<delete_asset_response status=\"200\" status_text=\"OK\"/>".to_vec()
-        } else {
-            error_response(&cmd.name, 404, "Asset not found")
+        match store.delete_asset_permanently(&id) {
+            DeleteAssetResult::Deleted => {
+                b"<delete_asset_response status=\"200\" status_text=\"OK\"/>".to_vec()
+            }
+            DeleteAssetResult::InUse => error_response(&cmd.name, 400, "Asset is in use"),
+            DeleteAssetResult::NotFound => error_response(&cmd.name, 404, "Asset not found"),
         }
     }
 

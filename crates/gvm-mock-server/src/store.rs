@@ -23,6 +23,16 @@ pub enum AssetInputProfile {
     LegacyFlatCompatibility,
 }
 
+/// Result of an atomic permanent asset deletion.
+pub(crate) enum DeleteAssetResult {
+    /// The asset was deleted.
+    Deleted,
+    /// The operating-system asset is still referenced.
+    InUse,
+    /// No live asset with the requested ID exists.
+    NotFound,
+}
+
 /// Task status in the lifecycle state machine.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TaskStatus {
@@ -442,14 +452,25 @@ impl ResourceStore {
         }
     }
 
-    /// Permanently delete a non-trashed resource only when its type matches.
-    pub(crate) fn delete_permanently_if_type(&self, id: &Uuid, resource_type: &str) -> bool {
+    /// Permanently delete an asset while checking its lifecycle atomically.
+    pub(crate) fn delete_asset_permanently(&self, id: &Uuid) -> DeleteAssetResult {
         let mut inner = self.inner.write().expect("store lock poisoned");
-        let matches = inner
-            .resources
-            .get(id)
-            .is_some_and(|resource| resource.resource_type == resource_type && !resource.trashed);
-        matches && inner.resources.remove(id).is_some()
+        let Some(resource) = inner.resources.get(id) else {
+            return DeleteAssetResult::NotFound;
+        };
+        if resource.resource_type != "asset" || resource.trashed {
+            return DeleteAssetResult::NotFound;
+        }
+        if resource.asset_type() == Some("os")
+            && resource
+                .attr("installs")
+                .and_then(|value| value.parse::<u32>().ok())
+                .is_some_and(|count| count > 0)
+        {
+            return DeleteAssetResult::InUse;
+        }
+        inner.resources.remove(id);
+        DeleteAssetResult::Deleted
     }
 
     /// Restore a trashed resource.
@@ -584,6 +605,63 @@ mod tests {
         });
         assert!(modified);
         assert_eq!(store.get(&id).unwrap().name, "New Name");
+    }
+
+    #[test]
+    fn asset_helpers_cover_unknown_rendering_and_missing_modification() {
+        let store = ResourceStore::new();
+        let missing = Uuid::new_v4();
+        assert!(!store.modify_host_asset_comment(&missing, "unused"));
+        assert!(matches!(
+            store.delete_asset_permanently(&missing),
+            DeleteAssetResult::NotFound
+        ));
+
+        let mut unknown = Resource::new("asset", "mystery");
+        unknown.set_attr("type", "firmware");
+        assert!(unknown
+            .to_asset_xml()
+            .contains("<type>firmware</type></asset>"));
+    }
+
+    #[test]
+    fn atomic_asset_delete_has_exactly_one_winner() {
+        let store = ResourceStore::new();
+        let mut host = Resource::new("asset", "192.0.2.10");
+        host.set_attr("type", "host");
+        let id = store.create(host);
+        let barrier = Arc::new(Barrier::new(3));
+
+        let handles: Vec<_> = (0..2)
+            .map(|_| {
+                let store = store.clone();
+                let barrier = Arc::clone(&barrier);
+                thread::spawn(move || {
+                    barrier.wait();
+                    store.delete_asset_permanently(&id)
+                })
+            })
+            .collect();
+        barrier.wait();
+        let results: Vec<_> = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("delete thread panicked"))
+            .collect();
+
+        assert_eq!(
+            results
+                .iter()
+                .filter(|result| matches!(result, DeleteAssetResult::Deleted))
+                .count(),
+            1
+        );
+        assert_eq!(
+            results
+                .iter()
+                .filter(|result| matches!(result, DeleteAssetResult::NotFound))
+                .count(),
+            1
+        );
     }
 
     #[test]

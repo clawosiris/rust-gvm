@@ -6,7 +6,7 @@
 #![cfg(feature = "unix-socket-tests")]
 #![allow(clippy::unwrap_used, missing_docs)]
 
-use gvm_mock_server::{GmpVersion, MockGmpServer, Resource, ServerMode};
+use gvm_mock_server::{AssetInputProfile, GmpVersion, MockGmpServer, Resource, ServerMode};
 use gvm_protocol::Response;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
@@ -282,6 +282,71 @@ async fn asset_filters_pagination_and_counts_are_applied_after_type_selection() 
 }
 
 #[tokio::test]
+async fn legacy_asset_errors_trash_filters_and_sorting_are_deterministic() {
+    let first_id = Uuid::new_v4();
+    let trashed_id = Uuid::new_v4();
+    let server = MockGmpServer::builder()
+        .mode(ServerMode::Stateful)
+        .version(GmpVersion::V22_5)
+        .credentials("admin", "admin")
+        .asset_input_profile(AssetInputProfile::LegacyFlatCompatibility)
+        .seed(move |store| {
+            for (id, name, comment, severity) in [
+                (first_id, "192.0.2.10", "zulu", "4.0"),
+                (Uuid::new_v4(), "192.0.2.20", "alpha", "7.0"),
+                (trashed_id, "192.0.2.30", "trash", "1.0"),
+            ] {
+                let mut host = Resource::with_id("asset", name, id);
+                host.comment = comment.to_string();
+                host.set_attr("type", "host");
+                host.set_attr("severity", severity);
+                store.seed(host);
+            }
+            assert!(store.delete(&trashed_id, false));
+        })
+        .unix_socket_auto()
+        .build()
+        .await
+        .expect("server start failed");
+    let mut stream = connect_and_auth(&server).await;
+
+    for request in [
+        b"<create_asset asset_type=\"\"><value>192.0.2.40</value></create_asset>".as_slice(),
+        b"<get_assets type=\"host\" asset_id=\"not-a-uuid\"/>",
+        b"<modify_asset/>",
+        b"<modify_asset asset_id=\"not-a-uuid\"/>",
+        b"<delete_asset/>",
+        b"<delete_asset report_id=\"report-1\"/>",
+        b"<delete_asset asset_id=\"not-a-uuid\"/>",
+    ] {
+        assert_eq!(
+            send_recv(&mut stream, request).await.status_code(),
+            Some(400)
+        );
+    }
+
+    let trashed = send_recv(&mut stream, b"<get_assets type=\"host\" trash=\"1\"/>").await;
+    assert!(response_text(&trashed).contains(&trashed_id.to_string()));
+
+    for filter in [
+        "ignored-token sort-reverse=comment",
+        "sort=type",
+        "sort=severity",
+        &format!("uuid={first_id}"),
+        "type=host",
+    ] {
+        let response = send_recv(
+            &mut stream,
+            format!("<get_assets type=\"host\" filter=\"{filter}\"/>").as_bytes(),
+        )
+        .await;
+        assert_eq!(response.status_code(), Some(200));
+    }
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn seeded_os_assets_render_the_canonical_nested_shape() {
     let os_id = Uuid::new_v4();
     let server = strict_server(move |store| {
@@ -344,6 +409,10 @@ async fn referenced_operating_system_assets_cannot_be_deleted() {
     })
     .await;
     let mut stream = connect_and_auth(&server).await;
+
+    let get = send_recv(&mut stream, b"<get_assets type=\"os\"/>").await;
+    assert_eq!(get.status_code(), Some(200));
+    assert!(response_text(&get).contains("<in_use>1</in_use>"));
 
     let delete = send_recv(
         &mut stream,

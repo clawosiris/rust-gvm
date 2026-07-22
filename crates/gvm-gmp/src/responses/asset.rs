@@ -184,6 +184,20 @@ mod tests {
 
     use super::*;
 
+    fn as_host(asset: &Asset) -> Option<&Host> {
+        match asset {
+            Asset::Host(host) => Some(host),
+            Asset::OperatingSystem(_) => None,
+        }
+    }
+
+    fn as_operating_system(asset: &Asset) -> Option<&OperatingSystemAsset> {
+        match asset {
+            Asset::OperatingSystem(os) => Some(os),
+            Asset::Host(_) => None,
+        }
+    }
+
     #[test]
     fn parses_current_runtime_host_asset() {
         let response = Response::from(
@@ -242,10 +256,8 @@ mod tests {
         );
 
         let parsed = GetAssetsResponse::from_response(&response).expect("asset response parses");
-        let Asset::Host(host) = &parsed.items[0] else {
-            panic!("expected host asset");
-        };
-
+        let host = as_host(&parsed.items[0]).expect("expected host asset");
+        assert!(as_operating_system(&parsed.items[0]).is_none());
         assert_eq!(host.meta.id.as_str(), "host-1");
         assert_eq!(host.ip.as_deref(), Some("192.0.2.10"));
         assert_eq!(host.hostname.as_deref(), Some("edge.example.test"));
@@ -297,10 +309,8 @@ mod tests {
         );
 
         let parsed = GetAssetsResponse::from_response(&response).expect("asset response parses");
-        let Asset::OperatingSystem(os) = &parsed.items[0] else {
-            panic!("expected operating-system asset");
-        };
-
+        let os = as_operating_system(&parsed.items[0]).expect("expected operating-system asset");
+        assert!(as_host(&parsed.items[0]).is_none());
         assert_eq!(os.meta.id.as_str(), "os-1");
         assert_eq!(os.title, "Example Linux");
         assert_eq!(os.installs, 2);
@@ -312,6 +322,26 @@ mod tests {
         assert_eq!(os.hosts.len(), 2);
         assert_eq!(os.hosts[0].id.as_str(), "host-1");
         assert_eq!(os.hosts[0].severity.as_deref(), Some("9.8"));
+    }
+
+    #[test]
+    fn rejects_missing_and_invalid_operating_system_host_ids() {
+        for host in [
+            "<asset><name>192.0.2.10</name></asset>",
+            "<asset id=\"not a valid id\"><name>192.0.2.10</name></asset>",
+        ] {
+            let response = Response::from(
+                format!(
+                    "<get_assets_response status=\"200\" status_text=\"OK\">\
+                     <asset id=\"os-1\"><name>cpe:/o:example:linux</name><type>os</type><os>\
+                     <title>Example Linux</title><installs>1</installs><all_installs>1</all_installs>\
+                     <hosts>1{host}</hosts></os></asset></get_assets_response>"
+                )
+                .into_bytes(),
+            );
+
+            assert!(GetAssetsResponse::from_response(&response).is_err());
+        }
     }
 
     #[test]
