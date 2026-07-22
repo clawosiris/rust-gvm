@@ -372,6 +372,31 @@ impl SessionHandler {
 
         // Task-specific: extract references
         if resource_type == "task" {
+            let has_web_application_target = cmd
+                .children
+                .iter()
+                .any(|child| child.name == "web_application_target");
+            if has_web_application_target && !matches!(self.version, GmpVersion::V22_8) {
+                return error_response(
+                    &cmd.name,
+                    400,
+                    &format!(
+                        "Web application target tasks are not available in GMP {}",
+                        self.version
+                    ),
+                );
+            }
+            if has_web_application_target
+                && cmd
+                    .child_attr("web_application_target", "id")
+                    .is_none_or(str::is_empty)
+            {
+                return error_response(
+                    &cmd.name,
+                    400,
+                    "Missing required attribute: web_application_target id",
+                );
+            }
             if let Some(target_id) = cmd.child_attr("target", "id") {
                 resource.set_attr("target_id", target_id);
             }
@@ -380,6 +405,10 @@ impl SessionHandler {
             }
             if let Some(oci_image_target_id) = cmd.child_attr("oci_image_target", "id") {
                 resource.set_attr("oci_image_target_id", oci_image_target_id);
+            }
+            if let Some(web_application_target_id) = cmd.child_attr("web_application_target", "id")
+            {
+                resource.set_attr("web_application_target_id", web_application_target_id);
             }
             if let Some(config_id) = cmd.child_attr("config", "id") {
                 resource.set_attr("config_id", config_id);

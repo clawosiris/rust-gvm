@@ -50,6 +50,7 @@ use gvm_gmp::commands::reports::{
 use gvm_gmp::commands::system::get_timezones;
 use gvm_gmp::commands::tasks::create_agent_group_task;
 use gvm_gmp::commands::tasks::create_oci_image_target_task as build_oci_image_target_task;
+use gvm_gmp::commands::tasks::create_web_application_task;
 use gvm_gmp::commands::version::get_version;
 use gvm_gmp::commands::web_application_targets::{
     clone_web_application_target, create_web_application_target, delete_web_application_target,
@@ -77,6 +78,7 @@ pub use gvm_gmp::commands::report_configs::ModifyReportConfigOpts;
 pub use gvm_gmp::commands::reports::{GetReportDetailsOpts, GetReportExportOpts, ImportReportOpts};
 pub use gvm_gmp::commands::tasks::CreateAgentGroupTaskOpts;
 pub use gvm_gmp::commands::tasks::CreateOciImageTargetTaskOpts;
+pub use gvm_gmp::commands::tasks::CreateWebApplicationTaskOpts;
 pub use gvm_gmp::commands::web_application_targets::{
     CreateWebApplicationTargetOpts, GetWebApplicationTargetsOpts, ModifyWebApplicationTargetOpts,
 };
@@ -1096,6 +1098,15 @@ pub trait GmpNextCommands {
         ultimate: bool,
     ) -> Result<Response, GvmError>;
 
+    /// Create a scan task for a web application target.
+    async fn create_web_application_task(
+        &mut self,
+        name: &str,
+        web_application_target_id: &EntityId,
+        scanner_id: &EntityId,
+        opts: CreateWebApplicationTaskOpts,
+    ) -> Result<Response, GvmError>;
+
     /// Get a single integration configuration.
     async fn get_integration_config(
         &mut self,
@@ -1587,6 +1598,23 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
     ) -> Result<Response, GvmError> {
         self.0
             .delete_web_application_target(web_application_target_id, ultimate)
+            .await
+    }
+
+    async fn create_web_application_task(
+        &mut self,
+        name: &str,
+        web_application_target_id: &EntityId,
+        scanner_id: &EntityId,
+        opts: CreateWebApplicationTaskOpts,
+    ) -> Result<Response, GvmError> {
+        self.0
+            .call(create_web_application_task(
+                name,
+                web_application_target_id,
+                scanner_id,
+                opts,
+            ))
             .await
     }
 

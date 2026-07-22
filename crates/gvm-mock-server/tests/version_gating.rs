@@ -24,6 +24,7 @@ use gvm_gmp::commands::oci_image_targets::{
 use gvm_gmp::commands::report_configs::{create_report_config, get_report_configs};
 use gvm_gmp::commands::reports::{get_report_cves, get_report_hosts};
 use gvm_gmp::commands::targets::{create_target, CreateTargetOpts};
+use gvm_gmp::commands::tasks::{create_web_application_task, CreateWebApplicationTaskOpts};
 use gvm_gmp::commands::web_application_targets::{
     create_web_application_target, get_web_application_targets, CreateWebApplicationTargetOpts,
 };
@@ -263,6 +264,22 @@ async fn version_22_7_rejects_next_commands() {
         .unwrap()
         .contains("create_oci_image_target"));
 
+    let response = send_recv(
+        &mut stream,
+        create_web_application_task(
+            "Rejected Web Application Task",
+            &id("web-target-1"),
+            &id("scanner-1"),
+            CreateWebApplicationTaskOpts::default(),
+        ),
+    )
+    .await;
+    assert_eq!(response.status_code(), Some(400));
+    assert!(response
+        .status_text()
+        .unwrap()
+        .contains("Web application target tasks"));
+
     server.shutdown().await;
 }
 
@@ -350,8 +367,16 @@ async fn version_22_8_accepts_next_commands() {
     .await;
     assert_eq!(report_helper.status_code(), Some(404));
 
+    assert_credential_store_verify_works_on_next(&mut stream).await;
+    assert_web_application_targets_and_tasks_work_on_next(&mut stream).await;
+    assert_oci_image_targets_work_on_next(&mut stream).await;
+
+    server.shutdown().await;
+}
+
+async fn assert_web_application_targets_and_tasks_work_on_next(stream: &mut UnixStream) {
     let web_target_response = send_recv(
-        &mut stream,
+        stream,
         create_web_application_target(
             "Version Gated Web Target",
             &["https://example.com".to_string()],
@@ -365,18 +390,25 @@ async fn version_22_8_accepts_next_commands() {
     .await;
     assert_eq!(web_target_response.status_code(), Some(201));
 
-    let web_target_list =
-        send_recv(&mut stream, get_web_application_targets(Default::default())).await;
+    let web_target_list = send_recv(stream, get_web_application_targets(Default::default())).await;
     assert_eq!(web_target_list.status_code(), Some(200));
     let web_target_xml = web_target_list.as_str().expect("utf8");
     assert!(web_target_xml.contains("Version Gated Web Target"));
     assert!(web_target_xml.contains("<urls>https://example.com</urls>"));
     assert!(web_target_xml.contains("<credential_id>credential-web-gate</credential_id>"));
 
-    assert_credential_store_verify_works_on_next(&mut stream).await;
-    assert_oci_image_targets_work_on_next(&mut stream).await;
-
-    server.shutdown().await;
+    let web_target_id = id(&web_target_response.id().expect("created web target id"));
+    let web_task_response = send_recv(
+        stream,
+        create_web_application_task(
+            "Version Gated Web Task",
+            &web_target_id,
+            &id("scanner-web-gate"),
+            CreateWebApplicationTaskOpts::default(),
+        ),
+    )
+    .await;
+    assert_eq!(web_task_response.status_code(), Some(201));
 }
 
 async fn assert_credential_store_verify_works_on_next(stream: &mut UnixStream) {

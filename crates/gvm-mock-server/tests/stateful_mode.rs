@@ -26,10 +26,14 @@ async fn send_recv(stream: &mut UnixStream, xml: &[u8]) -> Response {
 }
 
 async fn stateful_server() -> Option<MockGmpServer> {
+    stateful_server_with_version(GmpVersion::V22_5).await
+}
+
+async fn stateful_server_with_version(version: GmpVersion) -> Option<MockGmpServer> {
     build_server(
         MockGmpServer::builder()
             .mode(ServerMode::Stateful)
-            .version(GmpVersion::V22_5)
+            .version(version)
             .credentials("admin", "secret")
             .unix_socket_auto(),
     )
@@ -191,6 +195,46 @@ async fn stateful_create_oci_image_target_task_preserves_target_id() {
     let text = get_resp.as_str().expect("valid utf8");
     assert!(text.contains("OCI Target Task"));
     assert!(text.contains("<oci_image_target_id>oci1</oci_image_target_id>"));
+    assert!(text.contains("<scanner_id>s1</scanner_id>"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn stateful_create_web_application_task_preserves_target_id() {
+    let Some(server) = stateful_server_with_version(GmpVersion::V22_8).await else {
+        return;
+    };
+    let mut stream = connect_and_auth(&server).await;
+
+    let missing_id = send_recv(
+        &mut stream,
+        br#"<create_task><name>Invalid Web Task</name><web_application_target/><scanner id="s1"/></create_task>"#,
+    )
+    .await;
+    assert_eq!(missing_id.status_code(), Some(400));
+    assert!(missing_id
+        .status_text()
+        .expect("status text")
+        .contains("web_application_target id"));
+
+    let create_resp = send_recv(
+        &mut stream,
+        br#"<create_task><name>Web Task</name><usage_type>scan</usage_type><web_application_target id="wt1"/><scanner id="s1"/></create_task>"#,
+    )
+    .await;
+    assert_eq!(create_resp.status_code(), Some(201));
+    let task_id = create_resp.id().expect("should have id");
+
+    let get_resp = send_recv(
+        &mut stream,
+        format!("<get_tasks task_id=\"{task_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(get_resp.status_code(), Some(200));
+
+    let text = get_resp.as_str().expect("valid utf8");
+    assert!(text.contains("<web_application_target_id>wt1</web_application_target_id>"));
     assert!(text.contains("<scanner_id>s1</scanner_id>"));
 
     server.shutdown().await;
