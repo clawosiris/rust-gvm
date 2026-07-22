@@ -79,3 +79,21 @@ async fn builder_with_credentials() {
     };
     server.shutdown().await;
 }
+
+#[tokio::test]
+async fn builder_rejects_zero_request_limit() {
+    let result = MockGmpServer::builder()
+        .with_max_request_bytes(Some(0))
+        .unix_socket_auto()
+        .build()
+        .await;
+    let error = match result {
+        Ok(server) => {
+            server.shutdown().await;
+            panic!("zero request limit must be rejected");
+        }
+        Err(error) => error,
+    };
+
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+}

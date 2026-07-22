@@ -179,7 +179,13 @@ gvm-mock-server --mode stateful --version 22.5 --socket /tmp/gvmd.sock
 
 # Or on TCP
 gvm-mock-server --mode stateful --version 22.5 --tcp 127.0.0.1:9390
+
+# Override the default 64 MiB per-request XML limit
+gvm-mock-server --mode echo --tcp 127.0.0.1:9390 --max-request-bytes 1048576
 ```
+
+The request-size limit applies independently to each XML command. XML nesting
+is always limited to 256 elements, including when the byte limit is disabled.
 
 Then connect with python-gvm:
 

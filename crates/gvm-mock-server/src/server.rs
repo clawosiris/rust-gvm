@@ -29,6 +29,12 @@ pub(crate) struct UnixSocketBinding {
     pub(crate) temp_dir: Option<TempDir>,
 }
 
+pub(crate) struct ServerOptions {
+    pub(crate) scenario_config: Option<(ScenarioMode, Vec<ScenarioStep>)>,
+    pub(crate) large_report: Option<LargeReportConfig>,
+    pub(crate) max_request_bytes: Option<usize>,
+}
+
 /// A running mock GMP server.
 pub struct MockGmpServer {
     /// The Unix socket path (if using Unix transport).
@@ -65,9 +71,13 @@ impl MockGmpServer {
         fixtures: Option<FixtureStore>,
         store: Option<ResourceStore>,
         fault_engine: FaultEngine,
-        scenario_config: Option<(ScenarioMode, Vec<ScenarioStep>)>,
-        large_report: Option<LargeReportConfig>,
+        options: ServerOptions,
     ) -> Result<Self, std::io::Error> {
+        let ServerOptions {
+            scenario_config,
+            large_report,
+            max_request_bytes,
+        } = options;
         let UnixSocketBinding {
             path: socket_path,
             temp_dir,
@@ -91,6 +101,7 @@ impl MockGmpServer {
             store,
             scenario_config,
             large_report,
+            max_request_bytes,
             fault_engine: fault_engine.clone(),
             shutdown: Arc::clone(&shutdown),
         });
@@ -121,9 +132,13 @@ impl MockGmpServer {
         fixtures: Option<FixtureStore>,
         store: Option<ResourceStore>,
         fault_engine: FaultEngine,
-        scenario_config: Option<(ScenarioMode, Vec<ScenarioStep>)>,
-        large_report: Option<LargeReportConfig>,
+        options: ServerOptions,
     ) -> Result<Self, std::io::Error> {
+        let ServerOptions {
+            scenario_config,
+            large_report,
+            max_request_bytes,
+        } = options;
         let listener = TcpListener::bind(addr).await?;
         let local_addr = listener.local_addr()?;
         let history = CommandHistory::new();
@@ -138,6 +153,7 @@ impl MockGmpServer {
             store,
             scenario_config,
             large_report,
+            max_request_bytes,
             fault_engine: fault_engine.clone(),
             shutdown: Arc::clone(&shutdown),
         });
@@ -169,9 +185,13 @@ impl MockGmpServer {
         fixtures: Option<FixtureStore>,
         store: Option<ResourceStore>,
         fault_engine: FaultEngine,
-        scenario_config: Option<(ScenarioMode, Vec<ScenarioStep>)>,
-        large_report: Option<LargeReportConfig>,
+        options: ServerOptions,
     ) -> Result<Self, std::io::Error> {
+        let ServerOptions {
+            scenario_config,
+            large_report,
+            max_request_bytes,
+        } = options;
         let listener = TcpListener::bind(addr).await?;
         let local_addr = listener.local_addr()?;
         let host_key = generate_host_key()?;
@@ -188,6 +208,7 @@ impl MockGmpServer {
             store,
             scenario_config,
             large_report,
+            max_request_bytes,
             fault_engine: fault_engine.clone(),
             shutdown: Arc::clone(&shutdown),
         });

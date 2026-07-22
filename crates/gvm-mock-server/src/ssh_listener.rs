@@ -126,15 +126,19 @@ impl server::Handler for MockSshHandler {
         );
 
         tokio::spawn(async move {
-            let mut xml_buf = Vec::new();
+            let mut xml_reader =
+                gvm_protocol::XmlReader::with_buffer_limit(state.max_request_bytes);
 
             while let Some(msg) = channel.wait().await {
                 match msg {
                     ChannelMsg::Data { data } => {
-                        xml_buf.extend_from_slice(&data);
+                        let mut offset = 0;
+                        while offset < data.len() {
+                            let (consumed, result) =
+                                try_extract_command(&mut xml_reader, &data[offset..], &handler);
+                            offset = offset.saturating_add(consumed);
 
-                        loop {
-                            match try_extract_command(&mut xml_buf, &handler) {
+                            match result {
                                 CommandResult::Response { bytes, delay } => {
                                     if let Some(delay) = delay {
                                         tokio::time::sleep(delay).await;
@@ -152,6 +156,14 @@ impl server::Handler for MockSshHandler {
                                     tracing::debug!(
                                         "Fault: disconnecting SSH session {session_id}"
                                     );
+                                    let _ = channel.close().await;
+                                    return;
+                                }
+                                CommandResult::Reject { bytes, reason } => {
+                                    tracing::debug!(
+                                        "Rejecting SSH session {session_id} input: {reason}"
+                                    );
+                                    let _ = channel.data(&bytes[..]).await;
                                     let _ = channel.close().await;
                                     return;
                                 }
