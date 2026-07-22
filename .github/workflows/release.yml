@@ -20,6 +20,7 @@ env:
   # Pinned tool versions for reproducibility
   CARGO_CYCLONEDX_VERSION: "0.5.9"
   SBOMQS_VERSION: "v2.0.5"
+  SBOM_QUALITY_THRESHOLD: "8.3"
   CROSS_VERSION: "v0.2.5"
 
 jobs:
@@ -177,6 +178,9 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
@@ -185,10 +189,14 @@ jobs:
           tool: cargo-cyclonedx@${{ env.CARGO_CYCLONEDX_VERSION }}
 
       - name: Generate CycloneDX SBOM (JSON)
-        run: cargo cyclonedx --format json --all --spec-version 1.5
+        run: >-
+          cargo cyclonedx --format json --all --all-features --target all
+          --spec-version 1.5
 
       - name: Generate CycloneDX SBOM (XML)
-        run: cargo cyclonedx --format xml --all --spec-version 1.5
+        run: >-
+          cargo cyclonedx --format xml --all --all-features --target all
+          --spec-version 1.5
 
       - name: Collect SBOMs
         shell: bash
@@ -201,7 +209,10 @@ jobs:
       - name: Post-process CycloneDX JSON SBOMs
         shell: bash
         run: |
-          python3 scripts/sbom_postprocess.py --cargo-toml Cargo.toml sbom-artifacts/*.cdx.json
+          python3 scripts/sbom_postprocess.py \
+            --cargo-toml Cargo.toml \
+            --declare-dependency-complete \
+            sbom-artifacts/*.cdx.json
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -216,32 +227,14 @@ jobs:
         shell: bash
         run: |
           sbomqs score --json sbom-artifacts/*.cdx.json > sbomqs-results.json
-          python3 - sbomqs-results.json <<'PY'
-          import json
-          import sys
-
-          threshold = 7.0
-          with open(sys.argv[1], "r", encoding="utf-8") as handle:
-              data = json.load(handle)
-
-          failures = []
-          for entry in data.get("files", []):
-              score = float(entry.get("avg_score", 0.0))
-              path = entry.get("path") or entry.get("file") or entry.get("fileName") or "<unknown>"
-              print(f"{path}: {score:.2f}/10")
-              if score < threshold:
-                  failures.append((path, score))
-
-          if failures:
-              for path, score in failures:
-                  print(f"::warning file={path}::SBOM quality score below {threshold:.1f}: {score:.2f}")
-              print("SBOM quality score is below threshold; continuing release and uploading SBOM artifacts.")
-          PY
+          python3 scripts/check_sbom_quality.py \
+            --threshold "$SBOM_QUALITY_THRESHOLD" \
+            sbomqs-results.json
 
       - name: Package SBOMs
         run: |
           cd sbom-artifacts
-          tar czf ../rust-gvm-sbom.tar.gz *.cdx.*
+          tar czf ../rust-gvm-sbom.tar.gz ./*.cdx.*
           cd ..
           sha256sum rust-gvm-sbom.tar.gz > rust-gvm-sbom.tar.gz.sha256
 

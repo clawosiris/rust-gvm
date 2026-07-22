@@ -10,10 +10,24 @@
       "name": "gvm-client",
       "version": "0.1.0",
       "purl": "pkg:cargo/gvm-client@0.1.0?download_url=file://.",
+      "licenses": [
+        {
+          "expression": "AGPL-3.0-or-later"
+        }
+      ],
       "externalReferences": [
         {
           "type": "vcs",
           "url": "https://github.com/clawosiris/rust-gvm"
+        }
+      ],
+      "components": [
+        {
+          "type": "library",
+          "bom-ref": "path+file:///tmp/rust-gvm-sbom-improve/crates/gvm-client#0.1.0-target",
+          "name": "gvm_client",
+          "version": "0.1.0",
+          "purl": "pkg:cargo/gvm-client@0.1.0?download_url=file://.#src/lib.rs"
         }
       ]
     }
@@ -32,6 +46,20 @@
       "name": "async-trait",
       "version": "0.1.89",
       "purl": "pkg:cargo/async-trait@0.1.89"
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "path+file:///tmp/rust-gvm-sbom-improve/crates/gvm-client#0.1.0",
+      "dependsOn": [
+        "path+file:///tmp/rust-gvm-sbom-improve/crates/gvm-connection#0.1.0"
+      ]
+    },
+    {
+      "ref": "path+file:///tmp/rust-gvm-sbom-improve/crates/gvm-connection#0.1.0",
+      "dependsOn": [
+        "registry+https://github.com/rust-lang/crates.io-index#async-trait@0.1.89"
+      ]
     }
   ]
 }
