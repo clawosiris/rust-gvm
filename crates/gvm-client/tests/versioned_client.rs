@@ -4,13 +4,15 @@
 #![allow(clippy::print_stderr, missing_docs)]
 #![cfg(feature = "unix-socket-tests")]
 
+use gvm_client::GmpNext;
 use gvm_client::{
-    AgentInstallerLanguage, CreateAgentGroupOpts, CreateOciImageTargetOpts,
-    CreateWebApplicationTargetOpts, GetAgentsOpts, Gmp226Commands, GmpNextCommands, GmpVersioned,
-    GvmError, ModifyAgentControlScanConfigOpts, ModifyAgentGroupOpts, ModifyAgentOpts,
-    ModifyOciImageTargetOpts, ModifyWebApplicationTargetOpts,
+    AgentInstallerLanguage, CreateAgentGroupOpts, CreateAgentGroupTaskOpts,
+    CreateOciImageTargetOpts, CreateWebApplicationTargetOpts, GetAgentsOpts, Gmp226Commands,
+    GmpNextCommands, GmpVersioned, GvmError, ModifyAgentControlScanConfigOpts,
+    ModifyAgentGroupOpts, ModifyAgentOpts, ModifyOciImageTargetOpts,
+    ModifyWebApplicationTargetOpts,
 };
-use gvm_connection::UnixSocketConnection;
+use gvm_connection::{GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::agents::get_agents;
 use gvm_gmp::commands::oci_image_targets::get_oci_image_targets;
 use gvm_gmp::{EntityId, GmpVersion};
@@ -41,6 +43,44 @@ async fn stateful_server(version: MockVersion) -> Option<MockGmpServer> {
 
 fn unix_connection(server: &MockGmpServer) -> UnixSocketConnection {
     UnixSocketConnection::with_path(server.socket_path().expect("unix socket path"))
+}
+
+async fn assert_create_agent_group_task_round_trip<C>(
+    client: &mut GmpNext<C>,
+    server: &MockGmpServer,
+    agent_group_id: &EntityId,
+) where
+    C: GvmConnection + Send,
+{
+    server.clear_history();
+
+    let scanner_id = EntityId::new("scanner-1").expect("valid id");
+    let task_response = client
+        .create_agent_group_task(
+            "Client Agent Group Task",
+            agent_group_id,
+            &scanner_id,
+            CreateAgentGroupTaskOpts {
+                comment: Some("task through client".into()),
+                alterable: Some(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("create_agent_group_task should succeed");
+    assert_eq!(task_response.status_code(), Some(201));
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 1);
+    let command = history.last().expect("create_task command recorded");
+    assert_eq!(command.command_name(), "create_task");
+    assert_eq!(
+        String::from_utf8(command.raw_xml().to_vec()).expect("history should be UTF-8"),
+        format!(
+            "<create_task><name>Client Agent Group Task</name><usage_type>scan</usage_type><agent_group id=\"{}\"/><scanner id=\"scanner-1\"/><comment>task through client</comment><alterable>1</alterable></create_task>",
+            agent_group_id.as_str()
+        )
+    );
 }
 
 #[tokio::test]
@@ -144,6 +184,8 @@ async fn next_client_agent_groups_round_trip() {
     assert_eq!(create_response.status_code(), Some(201));
     let agent_group_id = EntityId::new(create_response.id().expect("created id"))
         .expect("server id should be valid");
+
+    assert_create_agent_group_task_round_trip(&mut client, &server, &agent_group_id).await;
 
     let clone_response = client
         .clone_agent_group(&agent_group_id)

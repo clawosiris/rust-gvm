@@ -41,6 +41,56 @@ fn test_create_task_with_optionals() {
 }
 
 #[test]
+fn test_create_agent_group_task() {
+    assert_eq!(
+        xml(create_agent_group_task(
+            "foo",
+            &id("ag1"),
+            &id("s1"),
+            Default::default()
+        )),
+        "<create_task><name>foo</name><usage_type>scan</usage_type><agent_group id=\"ag1\"/><scanner id=\"s1\"/></create_task>"
+    );
+}
+
+#[test]
+fn test_create_agent_group_task_with_optionals() {
+    assert_eq!(
+        xml(create_agent_group_task(
+            "foo",
+            &id("ag1"),
+            &id("s1"),
+            CreateAgentGroupTaskOpts {
+                comment: Some("bar".into()),
+                alterable: Some(true),
+                schedule_id: Some(id("sched1")),
+                alert_ids: vec![id("a1"), id("a2")],
+                schedule_periods: Some(5),
+                observers: vec!["alice".into(), "bob".into()],
+                preferences: vec![("k".into(), "v".into())],
+            }
+        )),
+        "<create_task><name>foo</name><usage_type>scan</usage_type><agent_group id=\"ag1\"/><scanner id=\"s1\"/><comment>bar</comment><alterable>1</alterable><alert id=\"a1\"/><alert id=\"a2\"/><schedule id=\"sched1\"/><schedule_periods>5</schedule_periods><observers><observer>alice</observer><observer>bob</observer></observers><preferences><preference><scanner_name>k</scanner_name><value>v</value></preference></preferences></create_task>"
+    );
+}
+
+#[test]
+fn test_create_agent_group_task_ignores_schedule_periods_without_schedule() {
+    assert_eq!(
+        xml(create_agent_group_task(
+            "foo",
+            &id("ag1"),
+            &id("s1"),
+            CreateAgentGroupTaskOpts {
+                schedule_periods: Some(5),
+                ..Default::default()
+            }
+        )),
+        "<create_task><name>foo</name><usage_type>scan</usage_type><agent_group id=\"ag1\"/><scanner id=\"s1\"/></create_task>"
+    );
+}
+
+#[test]
 fn test_task_mutation_and_actions() {
     assert_eq!(
         xml(clone_task(&id("a1"))),
