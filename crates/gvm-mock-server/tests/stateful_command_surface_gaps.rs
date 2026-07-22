@@ -17,7 +17,9 @@ use gvm_gmp::commands::agents::{
     modify_agent, modify_agent_control_scan_config, sync_agents, AgentInstallerLanguage,
     GetAgentsOpts, ModifyAgentControlScanConfigOpts, ModifyAgentOpts,
 };
-use gvm_gmp::commands::credentials::{modify_credential_store, ModifyCredentialStoreOpts};
+use gvm_gmp::commands::credentials::{
+    modify_credential_store, verify_credential_store, ModifyCredentialStoreOpts,
+};
 use gvm_gmp::commands::hosts::{create_host, get_host, get_hosts, HostOpts};
 use gvm_gmp::commands::system::{modify_auth, modify_license};
 use gvm_gmp::types::EntityId;
@@ -208,6 +210,31 @@ async fn stateful_credential_store_modify_uses_gvmd_builder_shape() {
     )
     .await;
     assert_eq!(modify.status_code(), Some(200));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn stateful_credential_store_verify_uses_gvmd_builder_shape() {
+    let Some(server) = stateful_server_with_version(GmpVersion::V22_8).await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let verify = send_request(
+        &mut stream,
+        verify_credential_store(&id("credential-store-1")),
+    )
+    .await;
+    assert_eq!(verify.status_code(), Some(200));
+
+    let missing_id = send_recv(&mut stream, b"<verify_credential_store/>").await;
+    assert_eq!(missing_id.status_code(), Some(400));
+    assert!(missing_id
+        .status_text()
+        .expect("status text")
+        .contains("credential_store_id"));
 
     server.shutdown().await;
 }

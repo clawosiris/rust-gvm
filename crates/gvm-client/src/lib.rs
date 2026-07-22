@@ -29,7 +29,7 @@ use gvm_gmp::commands::agents::{
     delete_agent, get_agent, get_agent_installer_instruction, get_agent_support_bundle, get_agents,
     modify_agent, modify_agent_control_scan_config, sync_agents,
 };
-use gvm_gmp::commands::credentials::get_credential_stores;
+use gvm_gmp::commands::credentials::{get_credential_stores, verify_credential_store};
 use gvm_gmp::commands::features::get_features;
 use gvm_gmp::commands::integration_configs::{
     get_integration_config, get_integration_configs, modify_integration_config,
@@ -1169,6 +1169,12 @@ pub trait GmpNextCommands {
 
     /// List credential stores.
     async fn get_credential_stores(&mut self) -> Result<Response, GvmError>;
+
+    /// Verify a credential store connection.
+    async fn verify_credential_store(
+        &mut self,
+        credential_store_id: &EntityId,
+    ) -> Result<Response, GvmError>;
 }
 
 macro_rules! impl_gmp226_commands {
@@ -1650,6 +1656,15 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
 
     async fn get_credential_stores(&mut self) -> Result<Response, GvmError> {
         self.0.call(get_credential_stores()).await
+    }
+
+    async fn verify_credential_store(
+        &mut self,
+        credential_store_id: &EntityId,
+    ) -> Result<Response, GvmError> {
+        self.0
+            .call(verify_credential_store(credential_store_id))
+            .await
     }
 }
 

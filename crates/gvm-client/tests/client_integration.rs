@@ -519,6 +519,20 @@ async fn unsupported_next_command_rejected_before_send() {
         } if command == "get_timezones"
     ));
 
+    let credential_store_id = EntityId::new("credential-store-1").expect("valid id");
+    let error = client
+        .verify_credential_store(&credential_store_id)
+        .await
+        .expect_err("22.7 should reject typed credential store verification");
+    assert!(matches!(
+        error,
+        GvmError::UnsupportedCommand {
+            command,
+            version: GmpVersion(22, 7),
+            required: "22.8"
+        } if command == "verify_credential_store"
+    ));
+
     server.shutdown().await;
 }
 
@@ -642,6 +656,40 @@ async fn typed_rest_support_gap_helpers_parse_fixture_responses() {
         .await
         .expect("credential stores should parse");
     assert_eq!(stores.items[0].name, "Local credential store");
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_verify_credential_store_uses_next_command_shape() {
+    let Some(server) = stateful_server_with_version(MockVersion::V22_8).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+    server.clear_history();
+
+    let credential_store_id = EntityId::new("credential-store-1").expect("valid id");
+    let response = client
+        .verify_credential_store(&credential_store_id)
+        .await
+        .expect("verify_credential_store should parse");
+    assert_eq!(response.status, 200);
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].command_name(), "verify_credential_store");
+    assert_eq!(
+        std::str::from_utf8(history[0].raw_xml()).expect("valid UTF-8 command"),
+        "<verify_credential_store credential_store_id=\"credential-store-1\"/>"
+    );
 
     server.shutdown().await;
 }
