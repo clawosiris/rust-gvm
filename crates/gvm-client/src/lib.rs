@@ -49,7 +49,7 @@ use gvm_gmp::commands::reports::{
 };
 use gvm_gmp::commands::system::get_timezones;
 use gvm_gmp::commands::tasks::create_agent_group_task;
-use gvm_gmp::commands::tasks::create_oci_image_target_task;
+use gvm_gmp::commands::tasks::create_oci_image_target_task as build_oci_image_target_task;
 use gvm_gmp::commands::version::get_version;
 use gvm_gmp::commands::web_application_targets::{
     clone_web_application_target, create_web_application_target, delete_web_application_target,
@@ -1482,7 +1482,7 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
         opts: CreateOciImageTargetTaskOpts,
     ) -> Result<Response, GvmError> {
         self.0
-            .call(create_oci_image_target_task(
+            .call(build_oci_image_target_task(
                 name,
                 oci_image_target_id,
                 scanner_id,

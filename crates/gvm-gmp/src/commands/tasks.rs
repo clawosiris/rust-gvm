@@ -26,7 +26,7 @@ pub struct CreateTaskOpts {
     pub alert_ids: Vec<EntityId>,
     /// Optional comment text included in the request.
     pub comment: Option<String>,
-    /// Optional schedule period count.
+    /// Optional schedule period count, serialized only when [`Self::schedule_id`] is set.
     pub schedule_periods: Option<u32>,
     /// Observer names associated with the task.
     pub observers: Vec<String>,
@@ -45,7 +45,7 @@ pub struct CreateAgentGroupTaskOpts {
     pub schedule_id: Option<EntityId>,
     /// Alert identifiers associated with the request.
     pub alert_ids: Vec<EntityId>,
-    /// Optional schedule period count.
+    /// Optional schedule period count, serialized only when [`Self::schedule_id`] is set.
     pub schedule_periods: Option<u32>,
     /// Observer names associated with the task.
     pub observers: Vec<String>,
@@ -64,7 +64,7 @@ pub struct CreateOciImageTargetTaskOpts {
     pub schedule_id: Option<EntityId>,
     /// Alert identifiers associated with the request.
     pub alert_ids: Vec<EntityId>,
-    /// Optional schedule period count.
+    /// Optional schedule period count, serialized only when [`Self::schedule_id`] is set.
     pub schedule_periods: Option<u32>,
     /// Observer names associated with the task.
     pub observers: Vec<String>,
