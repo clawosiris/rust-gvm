@@ -11,11 +11,11 @@ not a claim of full conformance with every gvmd deployment or feature build.
 | 22.5 | `Gmp225` | 115 | `V22_5` |
 | 22.6 | `Gmp226` | 120 | `V22_6` |
 | 22.7 | `Gmp227` | 120 | `V22_7` |
-| 22.8 and newer | `GmpNext` | 153 | `V22_8` |
+| 22.8 and newer | `GmpNext` | 154 | `V22_8` |
 
 The command count is derived from
 `gvm_gmp::capabilities::COMMAND_CAPABILITIES`. Five commands require GMP 22.6
-and another 33 require GMP 22.8. It describes typed-client gates and stateful
+and another 34 require GMP 22.8. It describes typed-client gates and stateful
 mock behavior, not the commands enabled in every gvmd build. The client
 deliberately permits unknown raw commands for forward compatibility; standard
 mock responses reject commands absent from the registry. Explicit fixture and
@@ -23,24 +23,26 @@ scenario configuration remains programmable by design.
 
 ## Command and mock qualification
 
-The registry contains 153 wire command names:
+The registry contains 154 wire command names:
 
 | Qualification | Count | Meaning |
 |---|---:|---|
-| Stateful mock behavior | 136 | Bespoke behavior or deterministic generic CRUD |
+| Stateful mock behavior | 137 | Bespoke behavior or deterministic generic CRUD |
 | Fixture mock behavior | 10 | Deterministic built-in fixture response |
 | Echo-only mock behavior | 7 | Intentionally limited to a generic success response |
 | Current pinned `GMP.xml.in` | 151 | Present in the public schema snapshot |
-| Public gvmd source only | 1 | Implemented publicly but omitted from that schema |
+| Public gvmd source only | 2 | Implemented publicly but omitted from that schema |
 | Legacy compatibility | 1 | Retained for public legacy-client compatibility |
 
 Mock support is test support, not proof of real-gvmd conformance. In particular,
 generic CRUD does not imply that every field and side effect matches gvmd.
 
-The two commands outside the pinned schema are explicitly qualified:
+The three commands outside the pinned schema are explicitly qualified:
 
 - `modify_credential_store` is feature-gated and implemented in current public
   gvmd source, but is absent from the pinned `GMP.xml.in`.
+- `verify_credential_store` is likewise feature-gated and implemented in the
+  public credential-store source while absent from the pinned schema.
 - `delete_tls_certificate` is retained for compatibility with the public
   python-gvm GMP 22.4 API. It is absent from the pinned current gvmd schema and
   implementation, so applications must not infer current-gvmd support from the
