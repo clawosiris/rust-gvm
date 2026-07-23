@@ -25,6 +25,7 @@ use gvm_gmp::commands::credentials::{
     CredentialStoreCredentialOpts, GetCredentialStoresOpts, GetCredentialsOpts,
     ModifyCredentialStoreCredentialOpts,
 };
+use gvm_gmp::commands::features::get_features;
 use gvm_gmp::commands::feed::get_feeds;
 use gvm_gmp::commands::filters::{create_filter, get_filters, FilterOpts, GetFiltersOpts};
 use gvm_gmp::commands::groups::{create_group, get_groups, GetGroupsOpts, GroupOpts};
@@ -119,10 +120,10 @@ use gvm_gmp::responses::{
     DeleteScanConfigResponse, DeleteScannerResponse, DeleteWebApplicationTargetResponse,
     DescribeAuthResponse, EmptyTrashcanResponse, GetAlertsResponse, GetAssetsResponse,
     GetCertBundAdvisoriesResponse, GetCpesResponse, GetCredentialStoresResponse,
-    GetCredentialsResponse, GetCvesResponse, GetDfnCertAdvisoriesResponse, GetFeedsResponse,
-    GetFiltersResponse, GetGroupsResponse, GetHostsResponse, GetIntegrationConfigsResponse,
-    GetNotesResponse, GetNvtFamiliesResponse, GetNvtsResponse, GetOciImageTargetsResponse,
-    GetOverridesResponse, GetPermissionsResponse, GetPortListsResponse,
+    GetCredentialsResponse, GetCvesResponse, GetDfnCertAdvisoriesResponse, GetFeaturesResponse,
+    GetFeedsResponse, GetFiltersResponse, GetGroupsResponse, GetHostsResponse,
+    GetIntegrationConfigsResponse, GetNotesResponse, GetNvtFamiliesResponse, GetNvtsResponse,
+    GetOciImageTargetsResponse, GetOverridesResponse, GetPermissionsResponse, GetPortListsResponse,
     GetReportApplicationsResponse, GetReportClosedCvesResponse, GetReportConfigsResponse,
     GetReportCvesResponse, GetReportErrorsResponse, GetReportFormatsResponse,
     GetReportHostsResponse, GetReportOperatingSystemsResponse, GetReportPortsResponse,
@@ -1849,6 +1850,19 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     }
 
     // ── System ────────────────────────────────────────────────────────────────
+
+    /// Send a `get_features` request and return a typed
+    /// [`GetFeaturesResponse`].
+    ///
+    /// The `_parsed` suffix avoids conflicting with the raw
+    /// [`crate::Gmp226Commands::get_features`] versioned-client method.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_features_parsed(&mut self) -> Result<GetFeaturesResponse, GvmError> {
+        let response = self.send(get_features()).await?;
+        GetFeaturesResponse::from_response(&response).map_err(GvmError::Parse)
+    }
 
     /// Send a `get_settings` request and return a typed [`GetSettingsResponse`].
     ///

@@ -5,13 +5,16 @@
 
 use gvm_protocol::Response;
 
-use crate::responses::common::{parse_document, status_from_response, ParseError, XmlNode};
+use crate::responses::common::{
+    parse_bool, parse_document, status_from_response, ParseError, XmlNode,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Feature {
     pub name: String,
+    pub compiled_in: bool,
     pub enabled: bool,
 }
 
@@ -27,11 +30,19 @@ pub struct GetFeaturesResponse {
 impl Feature {
     fn from_node(node: &XmlNode) -> Result<Self, ParseError> {
         let name = node.required_child_text("name")?;
+        let compiled_in = node
+            .attr("compiled_in")
+            .ok_or_else(|| ParseError::MissingElement("feature.compiled_in".to_string()))
+            .and_then(|value| parse_bool(value, "feature.compiled_in"))?;
         let enabled = node
-            .child_text("_enabled")
-            .map(|text| text == "1" || text.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
-        Ok(Self { name, enabled })
+            .attr("enabled")
+            .ok_or_else(|| ParseError::MissingElement("feature.enabled".to_string()))
+            .and_then(|value| parse_bool(value, "feature.enabled"))?;
+        Ok(Self {
+            name,
+            compiled_in,
+            enabled,
+        })
     }
 }
 
@@ -61,9 +72,9 @@ mod tests {
     fn parses_features_response() {
         let response = Response::from(
             r#"<get_features_response status="200" status_text="OK">
-                <feature><name>SCAP</name><_enabled>1</_enabled></feature>
-                <feature><name>CERT_BUND</name><_enabled>1</_enabled></feature>
-                <feature><name>ENTERPRISE</name><_enabled>0</_enabled></feature>
+                <feature compiled_in="1" enabled="1"><name>ENABLE_OPENVASD</name></feature>
+                <feature compiled_in="true" enabled="1"><name>ENABLE_AGENTS</name></feature>
+                <feature compiled_in="0" enabled="false"><name>ENABLE_JWT_AUTH</name></feature>
             </get_features_response>"#,
         );
 
@@ -71,8 +82,11 @@ mod tests {
 
         assert_eq!(parsed.status, 200);
         assert_eq!(parsed.features.len(), 3);
-        assert_eq!(parsed.features[0].name, "SCAP");
+        assert_eq!(parsed.features[0].name, "ENABLE_OPENVASD");
+        assert!(parsed.features[0].compiled_in);
         assert!(parsed.features[0].enabled);
+        assert!(parsed.features[1].compiled_in);
+        assert!(!parsed.features[2].compiled_in);
         assert!(!parsed.features[2].enabled);
     }
 
@@ -83,5 +97,38 @@ mod tests {
         let parsed = GetFeaturesResponse::from_response(&response).expect("parse");
 
         assert!(parsed.features.is_empty());
+    }
+
+    #[test]
+    fn rejects_missing_feature_attributes() {
+        let response = Response::from(
+            r#"<get_features_response status="200" status_text="OK">
+                <feature enabled="1"><name>ENABLE_AGENTS</name></feature>
+            </get_features_response>"#,
+        );
+
+        let error = GetFeaturesResponse::from_response(&response).expect_err("missing compiled_in");
+
+        assert!(matches!(
+            error,
+            ParseError::MissingElement(field) if field == "feature.compiled_in"
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_feature_attributes() {
+        let response = Response::from(
+            r#"<get_features_response status="200" status_text="OK">
+                <feature compiled_in="1" enabled="sometimes"><name>ENABLE_AGENTS</name></feature>
+            </get_features_response>"#,
+        );
+
+        let error = GetFeaturesResponse::from_response(&response).expect_err("invalid enabled");
+
+        assert!(matches!(
+            error,
+            ParseError::InvalidValue { field, value }
+                if field == "feature.enabled" && value == "sometimes"
+        ));
     }
 }
