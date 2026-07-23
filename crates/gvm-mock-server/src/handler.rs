@@ -586,6 +586,30 @@ impl SessionHandler {
         if name.is_empty() && requires_name {
             return error_response(&cmd.name, 400, "Missing required element: name");
         }
+        let credential_store_type = if resource_type == "credential" {
+            parse_element_text(raw_xml, "type")
+                .filter(|credential_type| is_credential_store_credential_type(credential_type))
+        } else {
+            None
+        };
+        if credential_store_type.is_some() && self.version != GmpVersion::V22_8 {
+            return error_response(
+                &cmd.name,
+                400,
+                "Credential-store-backed credentials require GMP 22.8",
+            );
+        }
+        if credential_store_type.is_some()
+            && parse_element_text(raw_xml, "vault_id").is_none_or(|value| value.trim().is_empty())
+        {
+            return error_response(&cmd.name, 400, "Missing required element: vault_id");
+        }
+        if credential_store_type.is_some()
+            && parse_element_text(raw_xml, "host_identifier")
+                .is_none_or(|value| value.trim().is_empty())
+        {
+            return error_response(&cmd.name, 400, "Missing required element: host_identifier");
+        }
 
         let mut resource = Resource::new(resource_type, &name);
 
@@ -632,6 +656,20 @@ impl SessionHandler {
             };
             if let Some(usage_type) = usage_type {
                 resource.set_attr("usage_type", &usage_type);
+            }
+        }
+        if resource_type == "credential" {
+            if let Some(credential_type) = parse_element_text(raw_xml, "type") {
+                resource.set_attr("type", &credential_type);
+            }
+            if let Some(credential_store_id) = parse_element_text(raw_xml, "credential_store_id") {
+                resource.set_attr("credential_store_id", &credential_store_id);
+            }
+            if let Some(vault_id) = parse_element_text(raw_xml, "vault_id") {
+                resource.set_attr("vault_id", &vault_id);
+            }
+            if let Some(host_identifier) = parse_element_text(raw_xml, "host_identifier") {
+                resource.set_attr("host_identifier", &host_identifier);
             }
         }
 
@@ -1456,6 +1494,13 @@ fn handle_verify_credential_store(cmd: &ParsedCommand) -> Vec<u8> {
         );
     }
     format!("<{}_response status=\"200\" status_text=\"OK\"/>", cmd.name).into_bytes()
+}
+
+fn is_credential_store_credential_type(credential_type: &str) -> bool {
+    matches!(
+        credential_type,
+        "cs_cc" | "cs_snmp" | "cs_up" | "cs_usk" | "cs_smime" | "cs_pgp" | "cs_pw"
+    )
 }
 
 fn has_agent_ids(cmd: &ParsedCommand) -> bool {
