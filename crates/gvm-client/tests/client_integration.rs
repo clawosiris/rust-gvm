@@ -522,6 +522,24 @@ async fn unsupported_next_command_rejected_before_send() {
         } if command == "get_timezones"
     ));
 
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn credential_store_commands_are_rejected_before_v22_8() {
+    let Some(server) = stateful_server_with_version(MockVersion::V22_7).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .call(authenticate("admin", "admin"))
+        .await
+        .expect("authenticate should succeed");
+
     let credential_store_id = EntityId::new("credential-store-1").expect("valid id");
     let error = client
         .verify_credential_store(&credential_store_id)

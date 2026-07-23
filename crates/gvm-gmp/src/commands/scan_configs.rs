@@ -420,15 +420,13 @@ fn validate_policy_import_xml(xml: &str) -> Result<(), ParseError> {
                 }
                 depth += 1;
             }
-            Event::Empty(event) => {
-                if depth == 0 {
-                    if completed_root {
-                        return invalid_policy_xml("multiple root elements");
-                    }
-                    completed_root = true;
-                    saw_root = true;
-                    validate_policy_import_root(event.name().as_ref())?;
+            Event::Empty(event) if depth == 0 => {
+                if completed_root {
+                    return invalid_policy_xml("multiple root elements");
                 }
+                completed_root = true;
+                saw_root = true;
+                validate_policy_import_root(event.name().as_ref())?;
             }
             Event::End(_) => {
                 depth = depth.checked_sub(1).ok_or(ParseError::InvalidValue {
@@ -439,22 +437,20 @@ fn validate_policy_import_xml(xml: &str) -> Result<(), ParseError> {
                     completed_root = true;
                 }
             }
-            Event::Text(event) => {
-                if depth == 0 && !std::str::from_utf8(event.as_ref())?.trim().is_empty() {
-                    return invalid_policy_xml(if completed_root {
-                        "text after root element"
-                    } else {
-                        "text before root element"
-                    });
-                }
+            Event::Text(event)
+                if depth == 0 && !std::str::from_utf8(event.as_ref())?.trim().is_empty() =>
+            {
+                return invalid_policy_xml(if completed_root {
+                    "text after root element"
+                } else {
+                    "text before root element"
+                });
             }
             Event::CData(_) | Event::GeneralRef(_) if depth == 0 => {
                 return invalid_policy_xml("content outside root element");
             }
-            Event::Decl(_) => {
-                if saw_root || completed_root || depth != 0 {
-                    return invalid_policy_xml("XML declaration outside document prolog");
-                }
+            Event::Decl(_) if saw_root || completed_root || depth != 0 => {
+                return invalid_policy_xml("XML declaration outside document prolog");
             }
             Event::DocType(_) => return invalid_policy_xml("DOCTYPE is not allowed"),
             Event::Eof => {
@@ -512,15 +508,13 @@ fn validate_scan_config_import_xml(xml: &str) -> Result<(), ParseError> {
                 }
                 depth += 1;
             }
-            Event::Empty(event) => {
-                if depth == 0 {
-                    if completed_root {
-                        return invalid_scan_config_xml("multiple root elements");
-                    }
-                    completed_root = true;
-                    saw_root = true;
-                    validate_scan_config_import_root(event.name().as_ref())?;
+            Event::Empty(event) if depth == 0 => {
+                if completed_root {
+                    return invalid_scan_config_xml("multiple root elements");
                 }
+                completed_root = true;
+                saw_root = true;
+                validate_scan_config_import_root(event.name().as_ref())?;
             }
             Event::End(_) => {
                 depth = depth.checked_sub(1).ok_or(ParseError::InvalidValue {
@@ -531,14 +525,14 @@ fn validate_scan_config_import_xml(xml: &str) -> Result<(), ParseError> {
                     completed_root = true;
                 }
             }
-            Event::Text(event) => {
-                if depth == 0 && !std::str::from_utf8(event.as_ref())?.trim().is_empty() {
-                    return invalid_scan_config_xml(if completed_root {
-                        "text after root element"
-                    } else {
-                        "text before root element"
-                    });
-                }
+            Event::Text(event)
+                if depth == 0 && !std::str::from_utf8(event.as_ref())?.trim().is_empty() =>
+            {
+                return invalid_scan_config_xml(if completed_root {
+                    "text after root element"
+                } else {
+                    "text before root element"
+                });
             }
             Event::CData(_) | Event::GeneralRef(_) if depth == 0 => {
                 return invalid_scan_config_xml("content outside root element");
