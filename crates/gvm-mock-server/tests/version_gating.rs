@@ -428,7 +428,6 @@ async fn version_22_8_accepts_next_commands() {
     assert_credential_store_verify_works_on_next(&mut stream).await;
     assert_credential_store_credentials_work_on_next(&mut stream).await;
     assert_web_application_targets_and_tasks_work_on_next(&mut stream).await;
-    assert_credential_store_credentials_work_on_next(&mut stream).await;
     assert_oci_image_targets_work_on_next(&mut stream).await;
 
     server.shutdown().await;
