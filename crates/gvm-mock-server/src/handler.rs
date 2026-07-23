@@ -205,6 +205,16 @@ impl SessionHandler {
                 ),
             );
         }
+        if cmd.name == "modify_credential"
+            && has_credential_store_credential_modify_field(cmd)
+            && self.version != GmpVersion::V22_8
+        {
+            return error_response(
+                &cmd.name,
+                400,
+                "Credential-store-backed credentials require GMP 22.8",
+            );
+        }
 
         // Route to specific handlers
         match cmd.name.as_str() {
@@ -954,6 +964,9 @@ impl SessionHandler {
         let new_active = parse_element_text(raw_xml, "active");
         let new_usage_type = parse_element_text(raw_xml, "usage_type");
         let new_value = parse_element_text(raw_xml, "value");
+        let new_credential_store_id = parse_element_text(raw_xml, "credential_store_id");
+        let new_vault_id = parse_element_text(raw_xml, "vault_id");
+        let new_host_identifier = parse_element_text(raw_xml, "host_identifier");
         let (
             new_service_url,
             new_service_cacert,
@@ -1038,6 +1051,17 @@ impl SessionHandler {
             }
             if let Some(ref value) = new_value {
                 r.set_attr("value", value);
+            }
+            if resource_type == "credential" {
+                if let Some(ref credential_store_id) = new_credential_store_id {
+                    r.set_attr("credential_store_id", credential_store_id);
+                }
+                if let Some(ref vault_id) = new_vault_id {
+                    r.set_attr("vault_id", vault_id);
+                }
+                if let Some(ref host_identifier) = new_host_identifier {
+                    r.set_attr("host_identifier", host_identifier);
+                }
             }
             if let Some(ref service_url) = new_service_url {
                 r.set_attr("service_url", service_url);
@@ -1501,6 +1525,15 @@ fn is_credential_store_credential_type(credential_type: &str) -> bool {
         credential_type,
         "cs_cc" | "cs_snmp" | "cs_up" | "cs_usk" | "cs_smime" | "cs_pgp" | "cs_pw"
     )
+}
+
+fn has_credential_store_credential_modify_field(cmd: &ParsedCommand) -> bool {
+    cmd.children.iter().any(|child| {
+        matches!(
+            child.name.as_str(),
+            "credential_store_id" | "vault_id" | "host_identifier"
+        )
+    })
 }
 
 fn has_agent_ids(cmd: &ParsedCommand) -> bool {

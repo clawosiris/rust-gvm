@@ -42,6 +42,8 @@ pub fn minimum_version_for_command(command_name: &str) -> Option<GmpVersion> {
         | "get_report_export"
         | "get_credential_stores"
         | "verify_credential_store"
+        | "create_credential_store_credential"
+        | "modify_credential_store_credential"
         | "create_oci_image_target"
         | "delete_oci_image_target"
         | "get_oci_image_targets"
@@ -221,6 +223,14 @@ mod tests {
             minimum_version_for_command("verify_credential_store"),
             Some(GmpVersion(22, 8))
         );
+        assert!(!command_supported(
+            "create_credential_store_credential",
+            GmpVersion(22, 7)
+        ));
+        assert!(command_supported(
+            "create_credential_store_credential",
+            GmpVersion(22, 8)
+        ));
         assert!(!command_supported("get_agent_groups", GmpVersion(22, 7)));
         assert!(command_supported("get_agent_groups", GmpVersion(22, 8)));
         assert_eq!(

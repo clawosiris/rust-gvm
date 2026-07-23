@@ -7,8 +7,8 @@
 use gvm_client::{
     CreateOciImageTargetOpts, CreateWebApplicationTargetOpts, CredentialStoreCredentialOpts,
     CredentialStoreCredentialType, GetCredentialStoresOpts, GmpClient, GmpNextCommands,
-    GmpVersioned, GvmError, ImportReportOpts, ModifyOciImageTargetOpts,
-    ModifyWebApplicationTargetOpts, WireTraceDirection, WireTraceEvent,
+    GmpVersioned, GvmError, ImportReportOpts, ModifyCredentialStoreCredentialOpts,
+    ModifyOciImageTargetOpts, ModifyWebApplicationTargetOpts, WireTraceDirection, WireTraceEvent,
 };
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::alerts::{trigger_alert, TriggerAlertOpts};
@@ -16,7 +16,10 @@ use gvm_gmp::commands::assets::{
     AssetType, CreateAssetOpts, DeleteAssetOpts, GetAssetsOpts, ModifyAssetOpts,
 };
 use gvm_gmp::commands::authentication::authenticate;
-use gvm_gmp::commands::credentials::create_credential_store_credential;
+use gvm_gmp::commands::credentials::{
+    create_credential_store_credential, get_credential, modify_credential_store_credential,
+    ModifyCredentialStoreCredentialOpts as GmpModifyCredentialStoreCredentialOpts,
+};
 use gvm_gmp::commands::feed::get_feed;
 use gvm_gmp::commands::nvts::{
     get_nvt_preference, get_nvt_preferences, GetNvtPreferencesOpts, GetNvtsOpts,
@@ -749,7 +752,48 @@ async fn credential_store_commands_are_rejected_before_v22_8() {
         } if command == "create_credential_store_credential"
     ));
 
+    assert_credential_store_credential_modify_rejected_before_next(&mut client).await;
+
     server.shutdown().await;
+}
+
+async fn assert_credential_store_credential_modify_rejected_before_next(
+    client: &mut GmpClient<UnixSocketConnection>,
+) {
+    let credential_id = EntityId::new("credential-1").expect("valid id");
+    for opts in [
+        GmpModifyCredentialStoreCredentialOpts::default(),
+        GmpModifyCredentialStoreCredentialOpts {
+            vault_id: Some("vault-1".into()),
+            ..Default::default()
+        },
+    ] {
+        let error = client
+            .call(modify_credential_store_credential(&credential_id, opts))
+            .await
+            .expect_err("22.7 should reject raw credential store credential modify");
+        assert_unsupported_next_command(error, "modify_credential_store_credential");
+    }
+
+    let error = client
+        .modify_credential_store_credential(
+            &credential_id,
+            ModifyCredentialStoreCredentialOpts::default(),
+        )
+        .await
+        .expect_err("22.7 should reject typed credential store credential modify");
+    assert_unsupported_next_command(error, "modify_credential_store_credential");
+}
+
+fn assert_unsupported_next_command(error: GvmError, expected_command: &str) {
+    assert!(matches!(
+        error,
+        GvmError::UnsupportedCommand {
+            command,
+            version: GmpVersion(22, 7),
+            required: "22.8"
+        } if command == expected_command
+    ));
 }
 
 #[tokio::test]
@@ -991,6 +1035,70 @@ async fn typed_create_credential_store_credential_uses_next_shape() {
         raw_xml,
         "<create_credential><name>Typed Store Credential</name><type>cs_pw</type><comment>typed store credential</comment><credential_store_id>credential-store-typed</credential_store_id><vault_id>vault-typed</vault_id><host_identifier>host-typed</host_identifier></create_credential>"
     );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_modify_credential_store_credential_uses_next_shape() {
+    let Some(server) = stateful_server_with_version(MockVersion::V22_8).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .call(authenticate("admin", "admin"))
+        .await
+        .expect("authenticate should succeed");
+
+    let credential = client
+        .create_credential("Stored Credential", Default::default())
+        .await
+        .expect("create credential should succeed");
+
+    server.clear_history();
+
+    let response = client
+        .modify_credential_store_credential(
+            &credential.id,
+            ModifyCredentialStoreCredentialOpts {
+                name: Some("Updated Store Credential".into()),
+                comment: Some("from credential store".into()),
+                credential_store_id: Some(EntityId::new("credential-store-1").expect("valid id")),
+                vault_id: Some("vault-1".into()),
+                host_identifier: Some("host-1".into()),
+            },
+        )
+        .await
+        .expect("typed modify should succeed");
+    assert_eq!(response.status, 200);
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 1);
+    let command = history.last().expect("modify command recorded");
+    assert_eq!(command.command_name(), "modify_credential");
+    let raw_xml = String::from_utf8(command.raw_xml().to_vec()).expect("valid utf8");
+    assert_eq!(
+        raw_xml,
+        format!(
+            "<modify_credential credential_id=\"{}\"><name>Updated Store Credential</name><comment>from credential store</comment><credential_store_id>credential-store-1</credential_store_id><vault_id>vault-1</vault_id><host_identifier>host-1</host_identifier></modify_credential>",
+            credential.id.as_str()
+        )
+    );
+
+    let get = client
+        .call(get_credential(&credential.id))
+        .await
+        .expect("get modified credential should succeed");
+    let xml = get.as_str().expect("utf8 response");
+    assert!(xml.contains("Updated Store Credential"));
+    assert!(xml.contains("<comment>from credential store</comment>"));
+    assert!(xml.contains("<credential_store_id>credential-store-1</credential_store_id>"));
+    assert!(xml.contains("<vault_id>vault-1</vault_id>"));
+    assert!(xml.contains("<host_identifier>host-1</host_identifier>"));
 
     server.shutdown().await;
 }
