@@ -30,8 +30,8 @@ use gvm_gmp::commands::agents::{
     modify_agent, modify_agent_control_scan_config, sync_agents,
 };
 use gvm_gmp::commands::credentials::{
-    get_credential_store, get_credential_stores, get_credential_stores_with_opts,
-    verify_credential_store,
+    create_credential_store_credential, get_credential_store, get_credential_stores,
+    get_credential_stores_with_opts, verify_credential_store,
 };
 use gvm_gmp::commands::features::get_features;
 use gvm_gmp::commands::integration_configs::{
@@ -71,7 +71,7 @@ pub use gvm_gmp::commands::agents::{
     AgentRetryConfig, AgentScriptExecutorConfig, GetAgentsOpts, ModifyAgentControlScanConfigOpts,
     ModifyAgentOpts,
 };
-pub use gvm_gmp::commands::credentials::GetCredentialStoresOpts;
+pub use gvm_gmp::commands::credentials::{CredentialStoreCredentialOpts, GetCredentialStoresOpts};
 pub use gvm_gmp::commands::integration_configs::{
     GetIntegrationConfigsOpts, ModifyIntegrationConfigOpts,
 };
@@ -86,6 +86,7 @@ pub use gvm_gmp::commands::tasks::CreateWebApplicationTaskOpts;
 pub use gvm_gmp::commands::web_application_targets::{
     CreateWebApplicationTargetOpts, GetWebApplicationTargetsOpts, ModifyWebApplicationTargetOpts,
 };
+pub use gvm_gmp::enums::CredentialStoreCredentialType;
 pub use version::{
     command_supported, map_supported_version, minimum_version_for_command, parse_version_text,
     required_version_label,
@@ -289,15 +290,22 @@ impl<C: GvmConnection> GmpClient<C> {
             return Ok(());
         };
 
-        if version::command_supported(command_name, self.version) {
+        let semantic_command_name = next_only_semantic_command(command_name, request_bytes);
+        if semantic_command_name.is_some() && self.version >= GmpVersion(22, 8) {
+            return Ok(());
+        }
+        if semantic_command_name.is_none() && version::command_supported(command_name, self.version)
+        {
             return Ok(());
         }
 
-        let required =
-            version::required_version_label(command_name).unwrap_or("a newer GMP version");
+        let command = semantic_command_name.unwrap_or(command_name);
+        let required = version::required_version_label(command)
+            .or_else(|| semantic_command_name.map(|_| "22.8"))
+            .unwrap_or("a newer GMP version");
 
         Err(GvmError::UnsupportedCommand {
-            command: command_name.to_string(),
+            command: command.to_string(),
             version: self.version,
             required,
         })
@@ -1227,6 +1235,16 @@ pub trait GmpNextCommands {
         credential_store_id: &EntityId,
         details: Option<bool>,
     ) -> Result<Response, GvmError>;
+
+    /// Create a credential-store-backed credential.
+    async fn create_credential_store_credential(
+        &mut self,
+        name: &str,
+        credential_type: CredentialStoreCredentialType,
+        vault_id: &str,
+        host_identifier: &str,
+        opts: CredentialStoreCredentialOpts,
+    ) -> Result<Response, GvmError>;
 }
 
 macro_rules! impl_gmp226_commands {
@@ -1769,6 +1787,25 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
             .call(get_credential_store(credential_store_id, details))
             .await
     }
+
+    async fn create_credential_store_credential(
+        &mut self,
+        name: &str,
+        credential_type: CredentialStoreCredentialType,
+        vault_id: &str,
+        host_identifier: &str,
+        opts: CredentialStoreCredentialOpts,
+    ) -> Result<Response, GvmError> {
+        self.0
+            .call(create_credential_store_credential(
+                name,
+                credential_type,
+                vault_id,
+                host_identifier,
+                opts,
+            ))
+            .await
+    }
 }
 
 fn request_command_name(request_bytes: &[u8]) -> Option<&str> {
@@ -1778,6 +1815,49 @@ fn request_command_name(request_bytes: &[u8]) -> Option<&str> {
         .find(|ch: char| ch == '>' || ch == '/' || ch.is_whitespace())
         .unwrap_or(request.len());
     Some(&request[..end])
+}
+
+fn next_only_semantic_command(command_name: &str, request_bytes: &[u8]) -> Option<&'static str> {
+    if command_name != "create_credential" {
+        return None;
+    }
+    if !request_contains_credential_store_type(request_bytes) {
+        return None;
+    }
+    Some("create_credential_store_credential")
+}
+
+fn request_contains_credential_store_type(request_bytes: &[u8]) -> bool {
+    let Ok(request) = std::str::from_utf8(request_bytes) else {
+        return false;
+    };
+    request_element_text(request, "type").is_some_and(|value| value.starts_with("cs_"))
+}
+
+fn request_element_text<'a>(request: &'a str, element_name: &str) -> Option<&'a str> {
+    let opening = format!("<{element_name}");
+    let closing = format!("</{element_name}>");
+    let mut search_from = 0;
+
+    while let Some(relative_start) = request[search_from..].find(&opening) {
+        let element_start = search_from + relative_start;
+        let after_name = element_start + opening.len();
+        let delimiter = request.as_bytes().get(after_name).copied()?;
+        if delimiter != b'>' && !delimiter.is_ascii_whitespace() {
+            search_from = after_name;
+            continue;
+        }
+
+        let opening_end = after_name + request[after_name..].find('>')?;
+        if request[..opening_end].trim_end().ends_with('/') {
+            return Some("");
+        }
+        let content_start = opening_end + 1;
+        let content_end = content_start + request[content_start..].find(&closing)?;
+        return Some(request[content_start..content_end].trim());
+    }
+
+    None
 }
 
 #[cfg(test)]
@@ -1942,6 +2022,102 @@ mod tests {
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].direction, WireTraceDirection::Request);
         assert_eq!(event_text(&events[0]), "<get_version/>");
+    }
+
+    #[test]
+    fn credential_store_create_semantic_detection_matches_next_shape() {
+        assert_eq!(
+            next_only_semantic_command(
+                "create_credential",
+                b"<create_credential><type>cs_pw</type></create_credential>",
+            ),
+            Some("create_credential_store_credential")
+        );
+        assert_eq!(
+            next_only_semantic_command(
+                "create_credential",
+                b"<create_credential><type>up</type></create_credential>",
+            ),
+            None
+        );
+        assert_eq!(
+            next_only_semantic_command(
+                "modify_credential",
+                b"<modify_credential><type>cs_pw</type></modify_credential>",
+            ),
+            None
+        );
+        assert!(!request_contains_credential_store_type(b"\xff"));
+
+        for credential_type in [
+            "cs_cc", "cs_snmp", "cs_up", "cs_usk", "cs_smime", "cs_pgp", "cs_pw",
+        ] {
+            let request =
+                format!("<create_credential><type>{credential_type}</type></create_credential>");
+            assert!(request_contains_credential_store_type(request.as_bytes()));
+        }
+        assert!(request_contains_credential_store_type(
+            b"<create_credential><type>\n  cs_future \t</type></create_credential>"
+        ));
+    }
+
+    #[test]
+    fn credential_store_create_semantic_gate_uses_next_version() {
+        let client = GmpClient {
+            connection: ScriptedConnection::new(std::iter::empty::<&str>()),
+            version: GmpVersion(22, 7),
+            wire_trace: None,
+        };
+        let error = client
+            .ensure_command_supported(b"<create_credential><type>cs_up</type></create_credential>")
+            .expect_err("credential-store create is gated before 22.8");
+
+        assert!(matches!(
+            error,
+            GvmError::UnsupportedCommand {
+                ref command,
+                version: GmpVersion(22, 7),
+                required: "22.8",
+            } if command == "create_credential_store_credential"
+        ));
+
+        let client = GmpClient {
+            connection: ScriptedConnection::new(std::iter::empty::<&str>()),
+            version: GmpVersion(22, 8),
+            wire_trace: None,
+        };
+        client
+            .ensure_command_supported(b"<create_credential><type>cs_up</type></create_credential>")
+            .expect("credential-store create is available in 22.8");
+        client
+            .ensure_command_supported(b"<get_version/>")
+            .expect("normal supported command still passes");
+    }
+
+    #[tokio::test]
+    async fn next_trait_create_credential_store_credential_sends_request() {
+        let mut connection = ScriptedConnection::new([
+            r#"<create_credential_response id="credential-1" status="201" status_text="Created"/>"#,
+        ]);
+        connection.connect().await.expect("connection opens");
+        let mut client = GmpNext(GmpClient {
+            connection,
+            version: GmpVersion(22, 8),
+            wire_trace: None,
+        });
+
+        let response = client
+            .create_credential_store_credential(
+                "Credential",
+                CredentialStoreCredentialType::UsernamePassword,
+                "vault-1",
+                "host-1",
+                CredentialStoreCredentialOpts::default(),
+            )
+            .await
+            .expect("request succeeds");
+
+        assert_eq!(response.status_code(), Some(201));
     }
 
     #[test]

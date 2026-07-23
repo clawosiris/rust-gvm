@@ -18,11 +18,13 @@ use gvm_gmp::commands::agents::{
     GetAgentsOpts, ModifyAgentControlScanConfigOpts, ModifyAgentOpts,
 };
 use gvm_gmp::commands::credentials::{
-    modify_credential_store, verify_credential_store, ModifyCredentialStoreOpts,
+    create_credential_store_credential, modify_credential_store, verify_credential_store,
+    CredentialStoreCredentialOpts, ModifyCredentialStoreOpts,
 };
 use gvm_gmp::commands::hosts::{create_host, get_host, get_hosts, HostOpts};
 use gvm_gmp::commands::system::{modify_auth, modify_license};
 use gvm_gmp::types::EntityId;
+use gvm_gmp::CredentialStoreCredentialType;
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
 use gvm_protocol::{Request, Response};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -235,6 +237,71 @@ async fn stateful_credential_store_verify_uses_gvmd_builder_shape() {
         .status_text()
         .expect("status text")
         .contains("credential_store_id"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn stateful_credential_store_create_credential_uses_gvmd_builder_shape() {
+    let Some(server) = stateful_server_with_version(GmpVersion::V22_8).await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let create = send_request(
+        &mut stream,
+        create_credential_store_credential(
+            "Store Credential",
+            CredentialStoreCredentialType::UsernamePassword,
+            "vault-1",
+            "host-1",
+            CredentialStoreCredentialOpts {
+                comment: Some("from credential store".into()),
+                credential_store_id: Some(id("credential-store-1")),
+            },
+        ),
+    )
+    .await;
+    assert_eq!(create.status_code(), Some(201));
+
+    let missing_vault = send_recv(
+        &mut stream,
+        b"<create_credential><name>Missing Vault</name><type>cs_up</type><host_identifier>host-1</host_identifier></create_credential>",
+    )
+    .await;
+    assert_eq!(missing_vault.status_code(), Some(400));
+    assert!(missing_vault.status_text().unwrap().contains("vault_id"));
+
+    let empty_vault = send_recv(
+        &mut stream,
+        b"<create_credential><name>Empty Vault</name><type>cs_up</type><vault_id/><host_identifier>host-1</host_identifier></create_credential>",
+    )
+    .await;
+    assert_eq!(empty_vault.status_code(), Some(400));
+    assert!(empty_vault.status_text().unwrap().contains("vault_id"));
+
+    let missing_host = send_recv(
+        &mut stream,
+        b"<create_credential><name>Missing Host</name><type>cs_up</type><vault_id>vault-1</vault_id></create_credential>",
+    )
+    .await;
+    assert_eq!(missing_host.status_code(), Some(400));
+    assert!(missing_host
+        .status_text()
+        .unwrap()
+        .contains("host_identifier"));
+
+    let empty_host = send_recv(
+        &mut stream,
+        b"<create_credential><name>Empty Host</name><type>cs_up</type><vault_id>vault-1</vault_id><host_identifier>  </host_identifier></create_credential>",
+    )
+    .await;
+    assert_eq!(empty_host.status_code(), Some(400));
+    assert!(empty_host
+        .status_text()
+        .unwrap()
+        .contains("host_identifier"));
 
     server.shutdown().await;
 }

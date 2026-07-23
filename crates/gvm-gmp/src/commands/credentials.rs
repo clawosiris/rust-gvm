@@ -6,7 +6,10 @@
 use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
-use crate::enums::{CredentialFormat, CredentialType, SnmpAuthAlgorithm, SnmpPrivacyAlgorithm};
+use crate::enums::{
+    CredentialFormat, CredentialStoreCredentialType, CredentialType, SnmpAuthAlgorithm,
+    SnmpPrivacyAlgorithm,
+};
 use crate::types::EntityId;
 
 /// Optional fields for credential create and modify requests.
@@ -30,6 +33,15 @@ pub struct CredentialOpts {
     pub privacy_algorithm: Option<SnmpPrivacyAlgorithm>,
     /// Optional credential or report format value.
     pub format: Option<CredentialFormat>,
+}
+
+/// Optional fields for credential-store-backed credential creation.
+#[derive(Debug, Clone, Default)]
+pub struct CredentialStoreCredentialOpts {
+    /// Optional comment text included in the request.
+    pub comment: Option<String>,
+    /// Optional credential store identifier.
+    pub credential_store_id: Option<EntityId>,
 }
 
 /// Options for `get_credentials` requests.
@@ -94,6 +106,27 @@ pub fn create_credential(name: &str, opts: CredentialOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_credential");
     cmd.add_element_with_text("name", name);
     add_credential_body(&mut cmd, &opts);
+    cmd
+}
+
+/// Build a `create_credential` request for a credential-store-backed credential.
+#[must_use]
+pub fn create_credential_store_credential(
+    name: &str,
+    credential_type: CredentialStoreCredentialType,
+    vault_id: &str,
+    host_identifier: &str,
+    opts: CredentialStoreCredentialOpts,
+) -> impl Request {
+    let mut cmd = XmlCommand::new("create_credential");
+    cmd.add_element_with_text("name", name);
+    cmd.add_element_with_text("type", credential_type.as_gmp_str());
+    add_text_element(&mut cmd, "comment", opts.comment.as_deref());
+    if let Some(credential_store_id) = opts.credential_store_id {
+        cmd.add_element_with_text("credential_store_id", credential_store_id.as_str());
+    }
+    cmd.add_element_with_text("vault_id", vault_id);
+    cmd.add_element_with_text("host_identifier", host_identifier);
     cmd
 }
 
@@ -242,6 +275,19 @@ mod tests {
         ));
         assert!(rendered.contains("<type>up</type>"));
         assert!(rendered.contains("<password>pass</password>"));
+        assert_eq!(
+            xml(create_credential_store_credential(
+                "stored",
+                CredentialStoreCredentialType::UsernamePassword,
+                "vault-1",
+                "host-1",
+                CredentialStoreCredentialOpts {
+                    comment: Some("from store".into()),
+                    credential_store_id: Some(id("cs1")),
+                },
+            )),
+            "<create_credential><name>stored</name><type>cs_up</type><comment>from store</comment><credential_store_id>cs1</credential_store_id><vault_id>vault-1</vault_id><host_identifier>host-1</host_identifier></create_credential>"
+        );
         assert_eq!(
             xml(clone_credential(&id("c1"))),
             "<create_credential><copy>c1</copy></create_credential>"

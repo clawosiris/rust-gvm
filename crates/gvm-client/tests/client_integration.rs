@@ -5,8 +5,9 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_client::{
-    CreateOciImageTargetOpts, CreateWebApplicationTargetOpts, GetCredentialStoresOpts, GmpClient,
-    GmpNextCommands, GmpVersioned, GvmError, ImportReportOpts, ModifyOciImageTargetOpts,
+    CreateOciImageTargetOpts, CreateWebApplicationTargetOpts, CredentialStoreCredentialOpts,
+    CredentialStoreCredentialType, GetCredentialStoresOpts, GmpClient, GmpNextCommands,
+    GmpVersioned, GvmError, ImportReportOpts, ModifyOciImageTargetOpts,
     ModifyWebApplicationTargetOpts, WireTraceDirection, WireTraceEvent,
 };
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
@@ -15,6 +16,7 @@ use gvm_gmp::commands::assets::{
     AssetType, CreateAssetOpts, DeleteAssetOpts, GetAssetsOpts, ModifyAssetOpts,
 };
 use gvm_gmp::commands::authentication::authenticate;
+use gvm_gmp::commands::credentials::create_credential_store_credential;
 use gvm_gmp::commands::feed::get_feed;
 use gvm_gmp::commands::nvts::{
     get_nvt_preference, get_nvt_preferences, GetNvtPreferencesOpts, GetNvtsOpts,
@@ -677,6 +679,24 @@ async fn unsupported_next_command_rejected_before_send() {
         } if command == "get_timezones"
     ));
 
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn credential_store_commands_are_rejected_before_v22_8() {
+    let Some(server) = stateful_server_with_version(MockVersion::V22_7).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .call(authenticate("admin", "admin"))
+        .await
+        .expect("authenticate should succeed");
+
     let credential_store_id = EntityId::new("credential-store-1").expect("valid id");
     let error = client
         .verify_credential_store(&credential_store_id)
@@ -689,6 +709,44 @@ async fn unsupported_next_command_rejected_before_send() {
             version: GmpVersion(22, 7),
             required: "22.8"
         } if command == "verify_credential_store"
+    ));
+
+    let error = client
+        .call(create_credential_store_credential(
+            "Rejected Store Credential",
+            CredentialStoreCredentialType::UsernamePassword,
+            "vault-1",
+            "host-1",
+            CredentialStoreCredentialOpts::default(),
+        ))
+        .await
+        .expect_err("22.7 should reject raw credential store credential create");
+    assert!(matches!(
+        error,
+        GvmError::UnsupportedCommand {
+            command,
+            version: GmpVersion(22, 7),
+            required: "22.8"
+        } if command == "create_credential_store_credential"
+    ));
+
+    let error = client
+        .create_credential_store_credential(
+            "Rejected Typed Store Credential",
+            CredentialStoreCredentialType::UsernamePassword,
+            "vault-1",
+            "host-1",
+            CredentialStoreCredentialOpts::default(),
+        )
+        .await
+        .expect_err("22.7 should reject typed credential store credential create");
+    assert!(matches!(
+        error,
+        GvmError::UnsupportedCommand {
+            command,
+            version: GmpVersion(22, 7),
+            required: "22.8"
+        } if command == "create_credential_store_credential"
     ));
 
     server.shutdown().await;
@@ -885,6 +943,53 @@ async fn typed_verify_credential_store_uses_next_command_shape() {
     assert_eq!(
         std::str::from_utf8(history[0].raw_xml()).expect("valid UTF-8 command"),
         "<verify_credential_store credential_store_id=\"credential-store-1\"/>"
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_create_credential_store_credential_uses_next_shape() {
+    let Some(server) = stateful_server_with_version(MockVersion::V22_8).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .call(authenticate("admin", "admin"))
+        .await
+        .expect("authenticate should succeed");
+
+    server.clear_history();
+
+    let response = client
+        .create_credential_store_credential(
+            "Typed Store Credential",
+            CredentialStoreCredentialType::PasswordOnly,
+            "vault-typed",
+            "host-typed",
+            CredentialStoreCredentialOpts {
+                comment: Some("typed store credential".into()),
+                credential_store_id: Some(
+                    EntityId::new("credential-store-typed").expect("valid id"),
+                ),
+            },
+        )
+        .await
+        .expect("typed create should succeed");
+    assert_eq!(response.status, 201);
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 1);
+    let command = history.last().expect("create command recorded");
+    assert_eq!(command.command_name(), "create_credential");
+    let raw_xml = String::from_utf8(command.raw_xml().to_vec()).expect("valid utf8");
+    assert_eq!(
+        raw_xml,
+        "<create_credential><name>Typed Store Credential</name><type>cs_pw</type><comment>typed store credential</comment><credential_store_id>credential-store-typed</credential_store_id><vault_id>vault-typed</vault_id><host_identifier>host-typed</host_identifier></create_credential>"
     );
 
     server.shutdown().await;

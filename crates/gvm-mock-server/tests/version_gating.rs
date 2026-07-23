@@ -12,7 +12,9 @@
 
 use gvm_gmp::commands::agent_groups::{create_agent_group, get_agent_groups, CreateAgentGroupOpts};
 use gvm_gmp::commands::authentication::authenticate;
-use gvm_gmp::commands::credentials::verify_credential_store;
+use gvm_gmp::commands::credentials::{
+    create_credential_store_credential, verify_credential_store, CredentialStoreCredentialOpts,
+};
 use gvm_gmp::commands::features::get_features;
 use gvm_gmp::commands::integration_configs::{
     get_integration_config, get_integration_configs, modify_integration_config,
@@ -28,6 +30,7 @@ use gvm_gmp::commands::tasks::{create_web_application_task, CreateWebApplication
 use gvm_gmp::commands::web_application_targets::{
     create_web_application_target, get_web_application_targets, CreateWebApplicationTargetOpts,
 };
+use gvm_gmp::CredentialStoreCredentialType;
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
 use gvm_protocol::{Request, Response, XmlCommand};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -280,6 +283,20 @@ async fn version_22_7_rejects_next_commands() {
         .unwrap()
         .contains("Web application target tasks"));
 
+    let response = send_recv(
+        &mut stream,
+        create_credential_store_credential(
+            "Rejected Store Credential",
+            CredentialStoreCredentialType::UsernamePassword,
+            "vault-1",
+            "host-1",
+            CredentialStoreCredentialOpts::default(),
+        ),
+    )
+    .await;
+    assert_eq!(response.status_code(), Some(400));
+    assert!(response.status_text().unwrap().contains("GMP 22.8"));
+
     server.shutdown().await;
 }
 
@@ -368,6 +385,7 @@ async fn version_22_8_accepts_next_commands() {
     assert_eq!(report_helper.status_code(), Some(404));
 
     assert_credential_store_verify_works_on_next(&mut stream).await;
+    assert_credential_store_credentials_work_on_next(&mut stream).await;
     assert_web_application_targets_and_tasks_work_on_next(&mut stream).await;
     assert_oci_image_targets_work_on_next(&mut stream).await;
 
@@ -414,6 +432,21 @@ async fn assert_web_application_targets_and_tasks_work_on_next(stream: &mut Unix
 async fn assert_credential_store_verify_works_on_next(stream: &mut UnixStream) {
     let response = send_recv(stream, verify_credential_store(&id("credential-store-1"))).await;
     assert_eq!(response.status_code(), Some(200));
+}
+
+async fn assert_credential_store_credentials_work_on_next(stream: &mut UnixStream) {
+    let response = send_recv(
+        stream,
+        create_credential_store_credential(
+            "Version Gated Store Credential",
+            CredentialStoreCredentialType::PasswordOnly,
+            "vault-1",
+            "host-1",
+            CredentialStoreCredentialOpts::default(),
+        ),
+    )
+    .await;
+    assert_eq!(response.status_code(), Some(201));
 }
 
 async fn assert_oci_image_targets_work_on_next(stream: &mut UnixStream) {
