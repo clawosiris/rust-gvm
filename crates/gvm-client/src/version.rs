@@ -174,6 +174,8 @@ mod tests {
             minimum_version_for_command("get_report_vulns"),
             Some(GmpVersion(22, 8))
         );
+        assert!(!command_supported("get_report_export", GmpVersion(22, 7)));
+        assert!(command_supported("get_report_export", GmpVersion(22, 8)));
         assert_eq!(
             minimum_version_for_command("get_credential_stores"),
             Some(GmpVersion(22, 8))

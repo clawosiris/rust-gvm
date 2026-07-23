@@ -242,11 +242,11 @@ pub fn is_known_command(name: &str) -> bool {
 #[must_use]
 pub fn minimum_version_for_command(name: &str) -> Option<GmpVersion> {
     match name {
-        // Semantic aliases distinguish Next-only credential-store shapes that
-        // reuse the baseline create_credential/modify_credential wire commands.
-        "create_credential_store_credential" | "modify_credential_store_credential" => {
-            Some(GmpVersion(22, 8))
-        }
+        // Semantic aliases distinguish newer helper shapes that reuse baseline
+        // wire command names.
+        "create_credential_store_credential"
+        | "get_report_export"
+        | "modify_credential_store_credential" => Some(GmpVersion(22, 8)),
         _ => command_capability(name).and_then(|capability| capability.min_version),
     }
 }
@@ -271,6 +271,10 @@ mod tests {
 
         let reports = command_capability("get_reports").expect("known command");
         assert!(reports.available_in(GmpVersion(22, 4)));
+        assert_eq!(
+            minimum_version_for_command("get_report_export"),
+            Some(GmpVersion(22, 8))
+        );
         assert!(command_capability("unknown_prefixed_command").is_none());
     }
 

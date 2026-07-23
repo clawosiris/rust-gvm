@@ -26,7 +26,7 @@ use gvm_gmp::commands::nvts::{
 };
 use gvm_gmp::commands::operating_systems::{get_operating_systems, GetOperatingSystemsOpts};
 use gvm_gmp::commands::reports::{
-    get_report_hosts, get_report_vulnerabilities, get_reports, GetReportsOpts,
+    get_report_export, get_report_hosts, get_report_vulnerabilities, get_reports, GetReportsOpts,
 };
 use gvm_gmp::commands::scan_configs::{
     create_policy, get_policies, get_scan_config_preference, get_scan_config_preferences,
@@ -681,6 +681,15 @@ async fn unsupported_next_command_rejected_before_send() {
             required: "22.8"
         } if command == "get_timezones"
     ));
+
+    let error = client
+        .call(get_report_export(
+            &EntityId::new("report-1").expect("valid id"),
+            &EntityId::new("format-1").expect("valid id"),
+        ))
+        .await
+        .expect_err("22.7 should reject the report export semantic operation");
+    assert_unsupported_next_command(error, "get_report_export");
 
     server.shutdown().await;
 }
