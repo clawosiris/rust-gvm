@@ -91,9 +91,12 @@ pub use permission::{
 };
 pub use port_list::{CreatePortListResponse, GetPortListsResponse, PortList};
 pub use report::{
-    CreateReportResponse, DeleteReportResponse, GetReportClosedCvesResponse,
-    GetReportErrorsResponse, GetReportTlsCertificatesResponse, GetReportVulnsResponse,
-    GetReportsResponse, Report, ReportClosedCve, ReportError, ReportExport, ReportTlsCertificate,
+    CreateReportResponse, DeleteReportResponse, GetReportApplicationsResponse,
+    GetReportClosedCvesResponse, GetReportCvesResponse, GetReportErrorsResponse,
+    GetReportHostsResponse, GetReportOperatingSystemsResponse, GetReportPortsResponse,
+    GetReportTlsCertificatesResponse, GetReportVulnsResponse, GetReportsResponse, Report,
+    ReportApplicationSummary, ReportClosedCve, ReportCveSummary, ReportError, ReportExport,
+    ReportHostSummary, ReportOperatingSystemSummary, ReportPortSummary, ReportTlsCertificate,
     ReportVulnerability, ResultCount, Severity,
 };
 pub use report_config::{

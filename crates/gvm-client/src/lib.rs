@@ -1713,7 +1713,7 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
         report_id: &EntityId,
         opts: GetReportDetailsOpts,
     ) -> Result<Response, GvmError> {
-        self.0.get_report_hosts(report_id, opts).await
+        self.0.call(get_report_hosts(report_id, opts)).await
     }
 
     async fn get_report_ports(
@@ -1721,7 +1721,7 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
         report_id: &EntityId,
         opts: GetReportDetailsOpts,
     ) -> Result<Response, GvmError> {
-        self.0.get_report_ports(report_id, opts).await
+        self.0.call(get_report_ports(report_id, opts)).await
     }
 
     async fn get_report_applications(
@@ -1729,7 +1729,7 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
         report_id: &EntityId,
         opts: GetReportDetailsOpts,
     ) -> Result<Response, GvmError> {
-        self.0.get_report_applications(report_id, opts).await
+        self.0.call(get_report_applications(report_id, opts)).await
     }
 
     async fn get_report_operating_systems(
@@ -1737,7 +1737,9 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
         report_id: &EntityId,
         opts: GetReportDetailsOpts,
     ) -> Result<Response, GvmError> {
-        self.0.get_report_operating_systems(report_id, opts).await
+        self.0
+            .call(get_report_operating_systems(report_id, opts))
+            .await
     }
 
     async fn get_report_cves(
@@ -1745,7 +1747,7 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
         report_id: &EntityId,
         opts: GetReportDetailsOpts,
     ) -> Result<Response, GvmError> {
-        self.0.get_report_cves(report_id, opts).await
+        self.0.call(get_report_cves(report_id, opts)).await
     }
 
     async fn get_report_vulns(

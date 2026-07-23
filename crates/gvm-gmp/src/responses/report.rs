@@ -169,6 +169,101 @@ pub struct GetReportClosedCvesResponse {
     pub counts: CountInfo,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ReportHostSummary {
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub severity: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ReportPortSummary {
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub severity: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ReportApplicationSummary {
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub severity: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ReportOperatingSystemSummary {
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub severity: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ReportCveSummary {
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub severity: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct GetReportHostsResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub items: Vec<ReportHostSummary>,
+    pub counts: CountInfo,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct GetReportPortsResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub items: Vec<ReportPortSummary>,
+    pub counts: CountInfo,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct GetReportApplicationsResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub items: Vec<ReportApplicationSummary>,
+    pub counts: CountInfo,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct GetReportOperatingSystemsResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub items: Vec<ReportOperatingSystemSummary>,
+    pub counts: CountInfo,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct GetReportCvesResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub items: Vec<ReportCveSummary>,
+    pub counts: CountInfo,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -354,6 +449,26 @@ impl ReportClosedCve {
     }
 }
 
+macro_rules! impl_report_summary {
+    ($item:ident) => {
+        impl $item {
+            fn from_node(node: &crate::responses::common::XmlNode) -> Self {
+                Self {
+                    id: node.attr("id").map(ToString::to_string),
+                    name: node.optional_child_text("name"),
+                    severity: node.optional_child_text("severity"),
+                }
+            }
+        }
+    };
+}
+
+impl_report_summary!(ReportHostSummary);
+impl_report_summary!(ReportPortSummary);
+impl_report_summary!(ReportApplicationSummary);
+impl_report_summary!(ReportOperatingSystemSummary);
+impl_report_summary!(ReportCveSummary);
+
 macro_rules! impl_report_detail_response {
     ($response:ident, $item:ident, [$($item_name:literal),+], $count_name:literal) => {
         impl $response {
@@ -392,6 +507,36 @@ impl_report_detail_response!(
     ReportClosedCve,
     ["closed_cve", "cve"],
     "closed_cve_count"
+);
+impl_report_detail_response!(
+    GetReportHostsResponse,
+    ReportHostSummary,
+    ["host"],
+    "host_count"
+);
+impl_report_detail_response!(
+    GetReportPortsResponse,
+    ReportPortSummary,
+    ["port"],
+    "port_count"
+);
+impl_report_detail_response!(
+    GetReportApplicationsResponse,
+    ReportApplicationSummary,
+    ["application"],
+    "application_count"
+);
+impl_report_detail_response!(
+    GetReportOperatingSystemsResponse,
+    ReportOperatingSystemSummary,
+    ["operating_system"],
+    "operating_system_count"
+);
+impl_report_detail_response!(
+    GetReportCvesResponse,
+    ReportCveSummary,
+    ["cve"],
+    "cve_count"
 );
 
 impl GetReportTlsCertificatesResponse {
@@ -915,6 +1060,70 @@ mod tests {
         assert_eq!(parsed.items.len(), 1);
         assert_eq!(parsed.items[0].cve.as_deref(), Some("CVE-2025-9999"));
         assert_eq!(parsed.items[0].severity.as_deref(), Some("5.0"));
+    }
+
+    #[test]
+    fn parses_report_summary_drilldowns() {
+        let hosts = GetReportHostsResponse::from_response(&Response::from(
+            r#"<get_report_hosts_response status="200" status_text="OK">
+                <host id="host-1"><name>192.0.2.10</name><severity>7.5</severity></host>
+                <host_count>1<filtered>1</filtered><page>1</page></host_count>
+            </get_report_hosts_response>"#,
+        ))
+        .expect("hosts parse");
+        assert_eq!(hosts.items[0].name.as_deref(), Some("192.0.2.10"));
+        assert_eq!(hosts.items[0].severity.as_deref(), Some("7.5"));
+        assert_eq!(hosts.counts.page, Some(1));
+
+        let ports = GetReportPortsResponse::from_response(&Response::from(
+            r#"<get_report_ports_response status="200" status_text="OK">
+                <port id="port-1"><name>443/tcp</name><severity>4.2</severity></port>
+                <port_count>1<filtered>1</filtered></port_count>
+            </get_report_ports_response>"#,
+        ))
+        .expect("ports parse");
+        assert_eq!(ports.items[0].name.as_deref(), Some("443/tcp"));
+
+        let applications = GetReportApplicationsResponse::from_response(&Response::from(
+            r#"<get_report_applications_response status="200" status_text="OK">
+                <application id="app-1"><name>OpenSSH</name><severity>6.5</severity></application>
+                <application_count>1<filtered>1</filtered></application_count>
+            </get_report_applications_response>"#,
+        ))
+        .expect("applications parse");
+        assert_eq!(applications.items[0].name.as_deref(), Some("OpenSSH"));
+
+        let operating_systems =
+            GetReportOperatingSystemsResponse::from_response(&Response::from(
+                r#"<get_report_operating_systems_response status="200" status_text="OK">
+                    <operating_system id="os-1"><name>Debian</name><severity>5.5</severity></operating_system>
+                    <operating_system_count>1<filtered>1</filtered></operating_system_count>
+                </get_report_operating_systems_response>"#,
+            ))
+            .expect("operating systems parse");
+        assert_eq!(operating_systems.items[0].name.as_deref(), Some("Debian"));
+
+        let cves = GetReportCvesResponse::from_response(&Response::from(
+            r#"<get_report_cves_response status="200" status_text="OK">
+                <cve id="cve-1"><name>CVE-2026-0001</name><severity>8.0</severity></cve>
+                <cve_count>1<filtered>1</filtered></cve_count>
+            </get_report_cves_response>"#,
+        ))
+        .expect("cves parse");
+        assert_eq!(cves.items[0].name.as_deref(), Some("CVE-2026-0001"));
+    }
+
+    #[test]
+    fn parses_empty_report_summary_drilldown() {
+        let response = Response::from(
+            r#"<get_report_hosts_response status="200" status_text="OK"><host_count>0<filtered>0</filtered></host_count></get_report_hosts_response>"#,
+        );
+
+        let parsed = GetReportHostsResponse::from_response(&response).expect("hosts parse");
+
+        assert!(parsed.items.is_empty());
+        assert_eq!(parsed.counts.total, Some(0));
+        assert_eq!(parsed.counts.filtered, Some(0));
     }
 
     #[test]
