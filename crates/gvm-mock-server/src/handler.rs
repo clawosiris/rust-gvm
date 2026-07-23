@@ -218,11 +218,7 @@ impl SessionHandler {
 
         // Route to specific handlers
         match cmd.name.as_str() {
-            "get_features" => {
-                "<get_features_response status=\"200\" status_text=\"OK\"></get_features_response>"
-                    .as_bytes()
-                    .to_vec()
-            }
+            "get_features" => render_features_response(),
             "get_agent_installer_instruction" => render_agent_installer_instruction_response(cmd),
             "get_agent_support_bundle" => render_agent_support_bundle_response(cmd),
             "create_asset" => self.handle_create_asset(cmd, store),
@@ -1458,6 +1454,28 @@ impl SessionHandler {
         )
         .into_bytes()
     }
+}
+
+fn render_features_response() -> Vec<u8> {
+    const FEATURE_NAMES: [&str; 8] = [
+        "ENABLE_OPENVASD",
+        "ENABLE_CONTAINER_SCANNING",
+        "ENABLE_AGENTS",
+        "ENABLE_CREDENTIAL_STORES",
+        "FEED_VT_METADATA",
+        "ENABLE_SECURITY_INTELLIGENCE_EXPORT",
+        "ENABLE_JWT_AUTH",
+        "ENABLE_WEB_APPLICATION_SCANNING",
+    ];
+
+    let mut xml = String::from("<get_features_response status=\"200\" status_text=\"OK\">");
+    for name in FEATURE_NAMES {
+        xml.push_str("<feature compiled_in=\"0\" enabled=\"0\"><name>");
+        xml.push_str(name);
+        xml.push_str("</name></feature>");
+    }
+    xml.push_str("</get_features_response>");
+    xml.into_bytes()
 }
 
 fn render_report_result_xml(result: &Resource) -> String {
