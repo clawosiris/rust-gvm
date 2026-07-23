@@ -44,9 +44,13 @@ impl Feed {
         let currently_syncing = node
             .child("currently_syncing")
             .map(|sync| {
-                sync.optional_child_text("timestamp")
-                    .or_else(|| (!sync.text.is_empty()).then(|| sync.text.clone()))
-                    .ok_or_else(|| ParseError::MissingElement("timestamp".to_string()))
+                if sync.child("timestamp").is_some() {
+                    sync.required_child_text("timestamp")
+                } else if !sync.text.is_empty() {
+                    Ok(sync.text.clone())
+                } else {
+                    Err(ParseError::MissingElement("timestamp".to_string()))
+                }
             })
             .transpose()?;
         Ok(Self {
