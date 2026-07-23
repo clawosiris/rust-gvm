@@ -16,8 +16,22 @@ use crate::types::EntityId;
 pub struct HostOpts {
     /// Optional comment text included in the request.
     pub comment: Option<String>,
-    /// Optional free-form value payload.
+    /// Host IPv4 or IPv6 address used as the asset name when creating a host.
+    ///
+    /// This field is ignored by `modify_host`, because current gvmd only
+    /// supports modifying the host comment.
     pub value: Option<String>,
+}
+
+impl HostOpts {
+    /// Create options for the given host IP address.
+    #[must_use]
+    pub fn named(name: impl Into<String>) -> Self {
+        Self {
+            comment: None,
+            value: Some(name.into()),
+        }
+    }
 }
 
 /// Options for `get_hosts` requests.
@@ -47,7 +61,6 @@ pub fn create_host(opts: HostOpts) -> impl Request {
 #[must_use]
 pub fn get_hosts(opts: GetHostsOpts) -> impl Request {
     get_assets(GetAssetsOpts {
-        asset_type: Some(AssetType::Host),
         type_: Some(AssetType::Host),
         filter_string: opts.filter_string,
         filter_id: opts.filter_id,
@@ -62,7 +75,6 @@ pub fn get_hosts(opts: GetHostsOpts) -> impl Request {
 pub fn get_host(host_id: &EntityId) -> impl Request {
     get_assets(GetAssetsOpts {
         asset_id: Some(host_id.clone()),
-        asset_type: Some(AssetType::Host),
         type_: Some(AssetType::Host),
         details: Some(true),
         ..Default::default()
@@ -76,20 +88,18 @@ pub fn modify_host(host_id: &EntityId, opts: HostOpts) -> impl Request {
         host_id,
         ModifyAssetOpts {
             comment: opts.comment,
-            value: opts.value,
+            value: None,
         },
     )
 }
 
 /// Build a `delete_host` request.
+///
+/// The `ultimate` argument is retained for API compatibility but is ignored:
+/// current gvmd does not accept an `ultimate` attribute for asset deletion.
 #[must_use]
-pub fn delete_host(host_id: &EntityId, ultimate: bool) -> impl Request {
-    delete_asset(
-        host_id,
-        DeleteAssetOpts {
-            ultimate: Some(ultimate),
-        },
-    )
+pub fn delete_host(host_id: &EntityId, _ultimate: bool) -> impl Request {
+    delete_asset(host_id, DeleteAssetOpts { ultimate: None })
 }
 
 #[cfg(test)]
@@ -107,11 +117,11 @@ mod tests {
             value: Some("1.1.1.1".into()),
             ..Default::default()
         }));
-        assert!(rendered.contains("<asset_type>host</asset_type>"));
-        assert!(rendered.contains("<value>1.1.1.1</value>"));
+        assert!(rendered.contains("<type>host</type>"));
+        assert!(rendered.contains("<name>1.1.1.1</name>"));
         assert_eq!(
             xml(get_host(&id("h1"))),
-            "<get_assets asset_id=\"h1\" asset_type=\"host\" details=\"1\" type=\"host\"/>"
+            "<get_assets asset_id=\"h1\" details=\"1\" type=\"host\"/>"
         );
     }
 
@@ -121,7 +131,6 @@ mod tests {
             details: Some(true),
             ..Default::default()
         }));
-        assert!(rendered.contains("asset_type=\"host\""));
         assert!(rendered.contains("type=\"host\""));
         let rendered = xml(modify_host(
             &id("h1"),
@@ -136,7 +145,7 @@ mod tests {
         );
         assert_eq!(
             xml(delete_host(&id("h1"), false)),
-            "<delete_asset asset_id=\"h1\" ultimate=\"0\"/>"
+            "<delete_asset asset_id=\"h1\"/>"
         );
     }
 }

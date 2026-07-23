@@ -8,6 +8,7 @@
 
 pub mod aggregates;
 pub mod alert;
+pub mod asset;
 pub mod auth;
 pub mod common;
 pub mod credential;
@@ -49,6 +50,10 @@ pub use aggregates::{AggregateGroup, AggregateStats, AggregateSubgroup, GetAggre
 pub use alert::{
     Alert, CreateAlertResponse, DeleteAlertResponse, GetAlertsResponse, ModifyAlertResponse,
 };
+pub use asset::{
+    Asset, CreateAssetResponse, DeleteAssetResponse, GetAssetsResponse, ModifyAssetResponse,
+    OperatingSystemAsset, OperatingSystemHost,
+};
 pub use auth::AuthenticateResponse;
 pub use common::{ActionResponse, CountInfo, EntityMeta, NamedEntity, Owner, ParseError};
 pub use credential::{
@@ -65,7 +70,8 @@ pub use group::{
     CreateGroupResponse, DeleteGroupResponse, GetGroupsResponse, Group, ModifyGroupResponse,
 };
 pub use host::{
-    CreateHostResponse, DeleteHostResponse, GetHostsResponse, Host, ModifyHostResponse,
+    AssetSource, CreateHostResponse, DeleteHostResponse, GetHostsResponse, Host, HostDetail,
+    HostIdentifier, HostOperatingSystem, ModifyHostResponse,
 };
 pub use note::{
     CreateNoteResponse, DeleteNoteResponse, GetNotesResponse, ModifyNoteResponse, Note,

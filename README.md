@@ -226,10 +226,14 @@ The mock server is the most developed component. It's designed to be a drop-in t
 - **Pre-seeding** — populate the store before tests via builder API
 - **Template substitution** — `{{uuid}}`, `{{now}}`, `{{version}}` in fixture responses
 - **Resource filtering** — basic GMP filter string support (`name=foo status=Running`)
+- **gvmd-conformant direct-host assets** — canonical host/OS responses plus
+  stateful direct-host create/get/modify/delete; historical flat asset inputs
+  require an explicit compatibility profile. Report-import creation and
+  report-based bulk deletion are outside this stateful handler's scope.
 
 ### Validated Against
 
-The mock server is validated against [python-gvm](https://github.com/greenbone/python-gvm) in CI, exercising the full protocol flow: version negotiation, authentication, target/task CRUD, notes lifecycle, and cleanup. This protects migration and client interoperability while rust-gvm continues to model GMP/GVMD behavior directly.
+The mock server is validated against [python-gvm](https://github.com/greenbone/python-gvm) in CI, exercising version negotiation, authentication, target/task CRUD, the canonical host-asset lifecycle, notes, and cleanup. This protects migration and client interoperability while rust-gvm continues to model GMP/GVMD behavior directly.
 
 ## Connection Crate
 

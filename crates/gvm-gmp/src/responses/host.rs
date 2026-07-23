@@ -6,9 +6,51 @@
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, parse_document, parse_entity_id, parse_entity_meta, status_from_response,
-    ActionResponse, CountInfo, EntityMeta, ParseError,
+    count_info, parse_bool, parse_document, parse_entity_id, parse_entity_meta,
+    status_from_response, ActionResponse, CountInfo, EntityMeta, ParseError, XmlNode,
 };
+use crate::EntityId;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct AssetSource {
+    pub id: Option<EntityId>,
+    pub source_type: String,
+    pub data: Option<String>,
+    pub deleted: Option<bool>,
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HostOperatingSystem {
+    pub id: Option<EntityId>,
+    pub title: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HostIdentifier {
+    pub id: Option<EntityId>,
+    pub name: String,
+    pub value: String,
+    pub creation_time: Option<String>,
+    pub modification_time: Option<String>,
+    pub source: Option<AssetSource>,
+    pub operating_system: Option<HostOperatingSystem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HostDetail {
+    pub name: String,
+    pub value: String,
+    pub source: Option<AssetSource>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -19,6 +61,10 @@ pub struct Host {
     pub hostname: Option<String>,
     pub severity: Option<String>,
     pub os: Option<String>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub identifiers: Vec<HostIdentifier>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub details: Vec<HostDetail>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,41 +87,135 @@ pub struct CreateHostResponse {
 }
 
 impl Host {
-    fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
-        let ip = node
+    pub(crate) fn from_node(node: &XmlNode) -> Result<Self, ParseError> {
+        let identifiers = node
             .child("identifiers")
-            .and_then(|ids| {
-                ids.children_named("identifier")
-                    .find(|id| id.child_text("name").as_deref() == Some("ip"))
-                    .and_then(|id| id.optional_child_text("value"))
+            .map(|identifiers| {
+                identifiers
+                    .children_named("identifier")
+                    .map(HostIdentifier::from_node)
+                    .collect::<Result<Vec<_>, _>>()
             })
+            .transpose()?
+            .unwrap_or_default();
+        let host = node.child("host");
+        let details = host
+            .map(|host| {
+                host.children_named("detail")
+                    .map(HostDetail::from_node)
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+
+        let ip = identifiers
+            .iter()
+            .find(|identifier| identifier.name == "ip")
+            .map(|identifier| identifier.value.clone())
             .or_else(|| node.optional_child_text("ip"));
-
-        let hostname = node
-            .child("identifiers")
-            .and_then(|ids| {
-                ids.children_named("identifier")
-                    .find(|id| id.child_text("name").as_deref() == Some("hostname"))
-                    .and_then(|id| id.optional_child_text("value"))
-            })
+        let hostname = identifiers
+            .iter()
+            .find(|identifier| identifier.name == "hostname")
+            .map(|identifier| identifier.value.clone())
             .or_else(|| node.optional_child_text("hostname"));
-
-        let severity = node
-            .child("severity")
+        let severity = host
+            .and_then(|host| host.child("severity"))
             .and_then(|s| {
                 s.optional_child_text("value")
                     .or_else(|| (!s.text.is_empty()).then_some(s.text.clone()))
             })
-            .or_else(|| node.optional_child_text("severity"));
+            .or_else(|| {
+                node.child("severity").and_then(|severity| {
+                    severity
+                        .optional_child_text("value")
+                        .or_else(|| (!severity.text.is_empty()).then_some(severity.text.clone()))
+                })
+            });
+        let os = identifiers
+            .iter()
+            .find(|identifier| identifier.name == "OS")
+            .and_then(|identifier| identifier.operating_system.as_ref())
+            .map(|os| os.title.clone())
+            .or_else(|| node.optional_child_text("os"));
 
         Ok(Self {
             meta: parse_entity_meta(node)?,
             ip,
             hostname,
             severity,
-            os: node.optional_child_text("os"),
+            os,
+            identifiers,
+            details,
         })
     }
+}
+
+impl AssetSource {
+    fn from_node(node: &XmlNode, field: &str) -> Result<Self, ParseError> {
+        Ok(Self {
+            id: optional_node_id(node, &format!("{field}.id"))?,
+            source_type: node
+                .required_child_text("type")
+                .map_err(|_| ParseError::MissingElement(format!("{field}.type")))?,
+            data: node.optional_child_text("data"),
+            deleted: node
+                .optional_child_text("deleted")
+                .map(|value| parse_bool(&value, &format!("{field}.deleted")))
+                .transpose()?,
+            name: node.optional_child_text("name"),
+        })
+    }
+}
+
+impl HostOperatingSystem {
+    fn from_node(node: &XmlNode) -> Result<Self, ParseError> {
+        Ok(Self {
+            id: optional_node_id(node, "identifier.os.id")?,
+            title: node
+                .required_child_text("title")
+                .map_err(|_| ParseError::MissingElement("identifier.os.title".to_string()))?,
+        })
+    }
+}
+
+impl HostIdentifier {
+    fn from_node(node: &XmlNode) -> Result<Self, ParseError> {
+        Ok(Self {
+            id: optional_node_id(node, "identifier.id")?,
+            name: node.required_child_text("name")?,
+            value: node.required_child_text("value")?,
+            creation_time: node.optional_child_text("creation_time"),
+            modification_time: node.optional_child_text("modification_time"),
+            source: node
+                .child("source")
+                .map(|source| AssetSource::from_node(source, "identifier.source"))
+                .transpose()?,
+            operating_system: node
+                .child("os")
+                .map(HostOperatingSystem::from_node)
+                .transpose()?,
+        })
+    }
+}
+
+impl HostDetail {
+    fn from_node(node: &XmlNode) -> Result<Self, ParseError> {
+        Ok(Self {
+            name: node.required_child_text("name")?,
+            value: node.required_child_text("value")?,
+            source: node
+                .child("source")
+                .map(|source| AssetSource::from_node(source, "host.detail.source"))
+                .transpose()?,
+        })
+    }
+}
+
+fn optional_node_id(node: &XmlNode, field: &str) -> Result<Option<EntityId>, ParseError> {
+    node.attr("id")
+        .filter(|id| !id.is_empty())
+        .map(|id| parse_entity_id(id, field))
+        .transpose()
 }
 
 impl GetHostsResponse {

@@ -10,6 +10,29 @@ use uuid::Uuid;
 
 use crate::util::{now_iso, xml_escape, xml_escape_attr};
 
+/// Input profile for stateful asset commands.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum AssetInputProfile {
+    /// Require the asset command shapes accepted by current gvmd.
+    #[default]
+    GvmdStrict,
+    /// Accept the historical flat mock inputs (`asset_type`, `<asset_type>`, and `<value>`).
+    ///
+    /// This profile exists only for consumers that explicitly need compatibility
+    /// with the mock's former, non-canonical asset command surface.
+    LegacyFlatCompatibility,
+}
+
+/// Result of an atomic permanent asset deletion.
+pub(crate) enum DeleteAssetResult {
+    /// The asset was deleted.
+    Deleted,
+    /// The operating-system asset is still referenced.
+    InUse,
+    /// No live asset with the requested ID exists.
+    NotFound,
+}
+
 /// Task status in the lifecycle state machine.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TaskStatus {
@@ -95,6 +118,97 @@ impl Resource {
         self.attrs.get(key).map(String::as_str)
     }
 
+    /// Return the canonical asset type, including legacy seeded resources.
+    pub(crate) fn asset_type(&self) -> Option<&str> {
+        self.attr("type").or_else(|| self.attr("asset_type"))
+    }
+
+    /// Generate the canonical gvmd asset representation used by `get_assets`.
+    pub(crate) fn to_asset_xml(&self) -> String {
+        let asset_type = self.asset_type().unwrap_or_default();
+        let writable = if asset_type == "os" { "0" } else { "1" };
+        let in_use = if asset_type == "os"
+            && self
+                .attr("installs")
+                .and_then(|value| value.parse::<u32>().ok())
+                .is_some_and(|count| count > 0)
+        {
+            "1"
+        } else {
+            "0"
+        };
+        let common = format!(
+            "<asset id=\"{id}\">\
+             <owner><name>admin</name></owner>\
+             <name>{name}</name>\
+             <comment>{comment}</comment>\
+             <creation_time>{ct}</creation_time>\
+             <modification_time>{mt}</modification_time>\
+             <writable>{writable}</writable>\
+             <in_use>{in_use}</in_use>\
+             <permissions><permission><name>Everything</name></permission></permissions>",
+            id = self.id,
+            name = xml_escape(&self.name),
+            comment = xml_escape(&self.comment),
+            ct = self.creation_time,
+            mt = self.modification_time,
+            writable = writable,
+            in_use = in_use,
+        );
+
+        match asset_type {
+            "host" => {
+                let severity = self.attr("severity").unwrap_or_default();
+                format!(
+                    "{common}\
+                     <identifiers><identifier id=\"{id}\">\
+                     <name>ip</name><value>{name}</value>\
+                     <creation_time>{ct}</creation_time>\
+                     <modification_time>{mt}</modification_time>\
+                     <source><type>User</type><data></data><deleted>0</deleted><name>admin</name></source>\
+                     </identifier></identifiers>\
+                     <type>host</type>\
+                     <host><severity><value>{severity}</value></severity></host>\
+                     </asset>",
+                    id = self.id,
+                    name = xml_escape(&self.name),
+                    ct = self.creation_time,
+                    mt = self.modification_time,
+                    severity = xml_escape(severity),
+                )
+            }
+            "os" => {
+                let title = self.attr("title").unwrap_or(&self.name);
+                let installs = self.attr("installs").unwrap_or("0");
+                let all_installs = self.attr("all_installs").unwrap_or(installs);
+                let latest = self.attr("latest_severity").unwrap_or_default();
+                let highest = self.attr("highest_severity").unwrap_or_default();
+                let average = self.attr("average_severity").unwrap_or_default();
+                format!(
+                    "{common}\
+                     <type>os</type>\
+                     <os>\
+                     <latest_severity><value>{latest}</value></latest_severity>\
+                     <highest_severity><value>{highest}</value></highest_severity>\
+                     <average_severity><value>{average}</value></average_severity>\
+                     <title>{title}</title>\
+                     <installs>{installs}</installs>\
+                     <all_installs>{all_installs}</all_installs>\
+                     <hosts>{installs}</hosts>\
+                     </os>\
+                     </asset>",
+                    latest = xml_escape(latest),
+                    highest = xml_escape(highest),
+                    average = xml_escape(average),
+                    title = xml_escape(title),
+                    installs = xml_escape(installs),
+                    all_installs = xml_escape(all_installs),
+                )
+            }
+            _ => format!("{common}<type>{}</type></asset>", xml_escape(asset_type)),
+        }
+    }
+
     /// Generate XML representation for get responses.
     pub fn to_xml(&self) -> String {
         // Notes and overrides use <text> instead of <name>
@@ -152,6 +266,8 @@ pub struct ResourceStore {
 #[derive(Debug)]
 struct StoreInner {
     resources: HashMap<Uuid, Resource>,
+    /// Stateful asset request parsing profile.
+    asset_input_profile: AssetInputProfile,
     /// Authenticated sessions.
     authenticated_sessions: std::collections::HashSet<u64>,
     /// Configured credentials.
@@ -207,6 +323,7 @@ impl ResourceStore {
         Self {
             inner: Arc::new(RwLock::new(StoreInner {
                 resources: default_resources(),
+                asset_input_profile: AssetInputProfile::GvmdStrict,
                 authenticated_sessions: std::collections::HashSet::new(),
                 username: username.to_string(),
                 password: password.to_string(),
@@ -229,6 +346,18 @@ impl ResourceStore {
     pub fn is_authenticated(&self, session_id: u64) -> bool {
         let inner = self.inner.read().expect("store lock poisoned");
         inner.authenticated_sessions.contains(&session_id)
+    }
+
+    /// Set the asset request parsing profile before the server starts.
+    pub(crate) fn set_asset_input_profile(&self, profile: AssetInputProfile) {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        inner.asset_input_profile = profile;
+    }
+
+    /// Return the configured asset request parsing profile.
+    pub(crate) fn asset_input_profile(&self) -> AssetInputProfile {
+        let inner = self.inner.read().expect("store lock poisoned");
+        inner.asset_input_profile
     }
 
     /// Check whether the provided credentials match the configured SSH credentials.
@@ -293,6 +422,23 @@ impl ResourceStore {
         }
     }
 
+    /// Modify the comment of a non-trashed host asset.
+    pub(crate) fn modify_host_asset_comment(&self, id: &Uuid, comment: &str) -> bool {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let Some(resource) = inner.resources.get_mut(id) else {
+            return false;
+        };
+        if resource.trashed
+            || resource.resource_type != "asset"
+            || resource.asset_type() != Some("host")
+        {
+            return false;
+        }
+        comment.clone_into(&mut resource.comment);
+        resource.modification_time = now_iso();
+        true
+    }
+
     /// Delete a resource (move to trash or permanently).
     pub fn delete(&self, id: &Uuid, ultimate: bool) -> bool {
         let mut inner = self.inner.write().expect("store lock poisoned");
@@ -304,6 +450,27 @@ impl ResourceStore {
         } else {
             false
         }
+    }
+
+    /// Permanently delete an asset while checking its lifecycle atomically.
+    pub(crate) fn delete_asset_permanently(&self, id: &Uuid) -> DeleteAssetResult {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        let Some(resource) = inner.resources.get(id) else {
+            return DeleteAssetResult::NotFound;
+        };
+        if resource.resource_type != "asset" || resource.trashed {
+            return DeleteAssetResult::NotFound;
+        }
+        if resource.asset_type() == Some("os")
+            && resource
+                .attr("installs")
+                .and_then(|value| value.parse::<u32>().ok())
+                .is_some_and(|count| count > 0)
+        {
+            return DeleteAssetResult::InUse;
+        }
+        inner.resources.remove(id);
+        DeleteAssetResult::Deleted
     }
 
     /// Restore a trashed resource.
@@ -438,6 +605,63 @@ mod tests {
         });
         assert!(modified);
         assert_eq!(store.get(&id).unwrap().name, "New Name");
+    }
+
+    #[test]
+    fn asset_helpers_cover_unknown_rendering_and_missing_modification() {
+        let store = ResourceStore::new();
+        let missing = Uuid::new_v4();
+        assert!(!store.modify_host_asset_comment(&missing, "unused"));
+        assert!(matches!(
+            store.delete_asset_permanently(&missing),
+            DeleteAssetResult::NotFound
+        ));
+
+        let mut unknown = Resource::new("asset", "mystery");
+        unknown.set_attr("type", "firmware");
+        assert!(unknown
+            .to_asset_xml()
+            .contains("<type>firmware</type></asset>"));
+    }
+
+    #[test]
+    fn atomic_asset_delete_has_exactly_one_winner() {
+        let store = ResourceStore::new();
+        let mut host = Resource::new("asset", "192.0.2.10");
+        host.set_attr("type", "host");
+        let id = store.create(host);
+        let barrier = Arc::new(Barrier::new(3));
+
+        let handles: Vec<_> = (0..2)
+            .map(|_| {
+                let store = store.clone();
+                let barrier = Arc::clone(&barrier);
+                thread::spawn(move || {
+                    barrier.wait();
+                    store.delete_asset_permanently(&id)
+                })
+            })
+            .collect();
+        barrier.wait();
+        let results: Vec<_> = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("delete thread panicked"))
+            .collect();
+
+        assert_eq!(
+            results
+                .iter()
+                .filter(|result| matches!(result, DeleteAssetResult::Deleted))
+                .count(),
+            1
+        );
+        assert_eq!(
+            results
+                .iter()
+                .filter(|result| matches!(result, DeleteAssetResult::NotFound))
+                .count(),
+            1
+        );
     }
 
     #[test]
