@@ -211,7 +211,7 @@ jobs:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
-      - uses: greenbone/actions/trigger-workflow@v3
+      - uses: greenbone/actions/trigger-workflow@aa49604a7c2a28d7810d23addac6513af7d8e11f # v3.36.12
         with:
           token: ${{ secrets.RELEASE_TOKEN }}
           repository: clawosiris/rust-gvm-e2e-tests
