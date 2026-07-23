@@ -284,8 +284,14 @@ async fn version_22_7_rejects_next_commands() {
         .unwrap()
         .contains("Web application target tasks"));
 
+    assert_credential_store_credentials_rejected_before_next(&mut stream).await;
+
+    server.shutdown().await;
+}
+
+async fn assert_credential_store_credentials_rejected_before_next(stream: &mut UnixStream) {
     let response = send_recv(
-        &mut stream,
+        stream,
         create_credential_store_credential(
             "Rejected Store Credential",
             CredentialStoreCredentialType::UsernamePassword,
@@ -299,7 +305,7 @@ async fn version_22_7_rejects_next_commands() {
     assert!(response.status_text().unwrap().contains("GMP 22.8"));
 
     let response = send_recv(
-        &mut stream,
+        stream,
         modify_credential_store_credential(
             &id("credential-1"),
             ModifyCredentialStoreCredentialOpts {
@@ -313,7 +319,7 @@ async fn version_22_7_rejects_next_commands() {
     assert!(response.status_text().unwrap().contains("GMP 22.8"));
 
     let response = send_recv(
-        &mut stream,
+        stream,
         modify_credential_store_credential(
             &id("credential-1"),
             ModifyCredentialStoreCredentialOpts {
@@ -327,14 +333,12 @@ async fn version_22_7_rejects_next_commands() {
     assert!(response.status_text().unwrap().contains("GMP 22.8"));
 
     let response = send_recv(
-        &mut stream,
+        stream,
         &b"<modify_credential credential_id=\"credential-1\"><vault_id/></modify_credential>"[..],
     )
     .await;
     assert_eq!(response.status_code(), Some(400));
     assert!(response.status_text().unwrap().contains("GMP 22.8"));
-
-    server.shutdown().await;
 }
 
 #[tokio::test]
