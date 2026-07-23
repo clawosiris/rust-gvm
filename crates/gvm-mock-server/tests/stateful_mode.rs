@@ -16,6 +16,8 @@ use gvm_protocol::Response;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
+const DEFAULT_SCANNER_ID: &str = "08b69003-5fc2-4037-a479-93b440211c73";
+
 async fn send_recv(stream: &mut UnixStream, xml: &[u8]) -> Response {
     stream.write_all(xml).await.expect("write failed");
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -191,14 +193,40 @@ async fn stateful_create_task() {
 
 #[tokio::test]
 async fn stateful_create_agent_group_task_preserves_agent_group_id() {
-    let Some(server) = stateful_server().await else {
+    let Some(server) = stateful_server_with_version(GmpVersion::V22_8).await else {
         return;
     };
     let mut stream = connect_and_auth(&server).await;
 
+    let missing_id = send_recv(
+        &mut stream,
+        br#"<create_task><name>Invalid Agent Group Task</name><agent_group/><scanner id="08b69003-5fc2-4037-a479-93b440211c73"/></create_task>"#,
+    )
+    .await;
+    assert_eq!(missing_id.status_code(), Some(400));
+
+    let agent_group = send_recv(
+        &mut stream,
+        b"<create_agent_group><name>Agent Group One</name></create_agent_group>",
+    )
+    .await;
+    let agent_group_id = agent_group.id().expect("agent group should have id");
+    let invalid_scanner = send_recv(
+        &mut stream,
+        format!(
+            "<create_task><name>Invalid Scanner Task</name><agent_group id=\"{agent_group_id}\"/><scanner id=\"not-a-uuid\"/></create_task>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(invalid_scanner.status_code(), Some(400));
+
     let create_resp = send_recv(
         &mut stream,
-        br#"<create_task><name>Agent Group Task</name><usage_type>scan</usage_type><agent_group id="ag1"/><scanner id="s1"/></create_task>"#,
+        format!(
+            "<create_task><name>Agent Group Task</name><usage_type>scan</usage_type><agent_group id=\"{agent_group_id}\"/><scanner id=\"{DEFAULT_SCANNER_ID}\"/></create_task>"
+        )
+        .as_bytes(),
     )
     .await;
     assert_eq!(create_resp.status_code(), Some(201));
@@ -213,8 +241,38 @@ async fn stateful_create_agent_group_task_preserves_agent_group_id() {
 
     let text = get_resp.as_str().expect("valid utf8");
     assert!(text.contains("Agent Group Task"));
-    assert!(text.contains("<agent_group_id>ag1</agent_group_id>"));
-    assert!(text.contains("<scanner_id>s1</scanner_id>"));
+    assert!(text.contains(&format!(
+        "<agent_group_id>{agent_group_id}</agent_group_id>"
+    )));
+    assert!(text.contains(&format!("<scanner_id>{DEFAULT_SCANNER_ID}</scanner_id>")));
+
+    let replacement = send_recv(
+        &mut stream,
+        b"<create_agent_group><name>Agent Group Two</name></create_agent_group>",
+    )
+    .await;
+    let replacement_id = replacement.id().expect("agent group should have id");
+    let modify_resp = send_recv(
+        &mut stream,
+        format!(
+            "<modify_task task_id=\"{task_id}\"><agent_group id=\"{replacement_id}\"/></modify_task>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(modify_resp.status_code(), Some(200));
+
+    let get_modified = send_recv(
+        &mut stream,
+        format!("<get_tasks task_id=\"{task_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert!(get_modified
+        .as_str()
+        .expect("valid utf8")
+        .contains(&format!(
+            "<agent_group_id>{replacement_id}</agent_group_id>"
+        )));
 
     let start_resp = send_recv(
         &mut stream,
@@ -224,19 +282,46 @@ async fn stateful_create_agent_group_task_preserves_agent_group_id() {
     assert_eq!(start_resp.status_code(), Some(202));
     assert!(start_resp.as_str().unwrap().contains("<report_id>"));
 
+    let modify_running = send_recv(
+        &mut stream,
+        format!(
+            "<modify_task task_id=\"{task_id}\"><agent_group id=\"{agent_group_id}\"/></modify_task>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(modify_running.status_code(), Some(409));
+
+    let delete_referenced = send_recv(
+        &mut stream,
+        format!("<delete_agent_group agent_group_id=\"{replacement_id}\" ultimate=\"1\"/>")
+            .as_bytes(),
+    )
+    .await;
+    assert_eq!(delete_referenced.status_code(), Some(409));
+
     server.shutdown().await;
 }
 
 #[tokio::test]
 async fn stateful_create_oci_image_target_task_preserves_target_id() {
-    let Some(server) = stateful_server().await else {
+    let Some(server) = stateful_server_with_version(GmpVersion::V22_8).await else {
         return;
     };
     let mut stream = connect_and_auth(&server).await;
 
+    let target = send_recv(
+        &mut stream,
+        b"<create_oci_image_target><name>OCI One</name></create_oci_image_target>",
+    )
+    .await;
+    let target_id = target.id().expect("OCI target should have id");
     let create_resp = send_recv(
         &mut stream,
-        br#"<create_task><name>OCI Target Task</name><usage_type>scan</usage_type><oci_image_target id="oci1"/><scanner id="s1"/></create_task>"#,
+        format!(
+            "<create_task><name>OCI Target Task</name><usage_type>scan</usage_type><oci_image_target id=\"{target_id}\"/><scanner id=\"{DEFAULT_SCANNER_ID}\"/></create_task>"
+        )
+        .as_bytes(),
     )
     .await;
     assert_eq!(create_resp.status_code(), Some(201));
@@ -251,8 +336,10 @@ async fn stateful_create_oci_image_target_task_preserves_target_id() {
 
     let text = get_resp.as_str().expect("valid utf8");
     assert!(text.contains("OCI Target Task"));
-    assert!(text.contains("<oci_image_target_id>oci1</oci_image_target_id>"));
-    assert!(text.contains("<scanner_id>s1</scanner_id>"));
+    assert!(text.contains(&format!(
+        "<oci_image_target_id>{target_id}</oci_image_target_id>"
+    )));
+    assert!(text.contains(&format!("<scanner_id>{DEFAULT_SCANNER_ID}</scanner_id>")));
 
     server.shutdown().await;
 }
@@ -266,7 +353,7 @@ async fn stateful_create_web_application_task_preserves_target_id() {
 
     let missing_id = send_recv(
         &mut stream,
-        br#"<create_task><name>Invalid Web Task</name><web_application_target/><scanner id="s1"/></create_task>"#,
+        br#"<create_task><name>Invalid Web Task</name><web_application_target/><scanner id="08b69003-5fc2-4037-a479-93b440211c73"/></create_task>"#,
     )
     .await;
     assert_eq!(missing_id.status_code(), Some(400));
@@ -275,9 +362,18 @@ async fn stateful_create_web_application_task_preserves_target_id() {
         .expect("status text")
         .contains("web_application_target id"));
 
+    let target = send_recv(
+        &mut stream,
+        b"<create_web_application_target><name>Web One</name></create_web_application_target>",
+    )
+    .await;
+    let target_id = target.id().expect("web target should have id");
     let create_resp = send_recv(
         &mut stream,
-        br#"<create_task><name>Web Task</name><usage_type>scan</usage_type><web_application_target id="wt1"/><scanner id="s1"/></create_task>"#,
+        format!(
+            "<create_task><name>Web Task</name><usage_type>scan</usage_type><web_application_target id=\"{target_id}\"/><scanner id=\"{DEFAULT_SCANNER_ID}\"/></create_task>"
+        )
+        .as_bytes(),
     )
     .await;
     assert_eq!(create_resp.status_code(), Some(201));
@@ -291,8 +387,10 @@ async fn stateful_create_web_application_task_preserves_target_id() {
     assert_eq!(get_resp.status_code(), Some(200));
 
     let text = get_resp.as_str().expect("valid utf8");
-    assert!(text.contains("<web_application_target_id>wt1</web_application_target_id>"));
-    assert!(text.contains("<scanner_id>s1</scanner_id>"));
+    assert!(text.contains(&format!(
+        "<web_application_target_id>{target_id}</web_application_target_id>"
+    )));
+    assert!(text.contains(&format!("<scanner_id>{DEFAULT_SCANNER_ID}</scanner_id>")));
 
     server.shutdown().await;
 }

@@ -492,6 +492,13 @@ async fn stateful_policies_round_trip_with_usage_type_filtering() {
     assert!(get_one_text.contains("<usage_type>policy</usage_type>"));
     assert!(get_one_text.contains("<comment>updated</comment>"));
 
+    let wrong_usage_type = send_recv(
+        &mut stream,
+        format!("<get_configs config_id=\"{policy_id}\" usage_type=\"scan\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(wrong_usage_type.status_code(), Some(404));
+
     server.shutdown().await;
 }
 

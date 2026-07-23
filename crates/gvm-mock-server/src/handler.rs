@@ -20,8 +20,9 @@ use crate::response_gen::{
 };
 use crate::scenario::{ScenarioEngine, ScenarioMode, ScenarioOutcome, ScenarioStep};
 use crate::store::{
-    AssetInputProfile, DeleteAssetResult, Resource, ResourceStore, StoreError,
-    TaskReferenceUpdates, TaskReferences, TaskStatus, DEFAULT_CONFIG_ID, DEFAULT_SCANNER_ID,
+    AssetInputProfile, DeleteAssetResult, Resource, ResourceStore, SpecializedTaskTarget,
+    StoreError, TaskReferenceUpdates, TaskReferences, TaskStatus, DEFAULT_CONFIG_ID,
+    DEFAULT_SCANNER_ID,
 };
 use crate::util::{xml_escape, xml_escape_attr};
 use crate::version::{command_available, GmpVersion};
@@ -1692,25 +1693,27 @@ fn task_references(cmd: &ParsedCommand) -> Result<TaskReferences, &'static str> 
         .iter()
         .find(|child| child.name == "target")
         .and_then(|child| child.attributes.get("id"));
+    let specialized_target = specialized_task_target(cmd)?;
     if target_id.map(String::as_str) == Some("0") {
+        if specialized_target.is_some() {
+            return Err("A task cannot have multiple target types");
+        }
         return Ok(TaskReferences {
             target: None,
+            specialized_target: None,
             config: None,
             scanner: None,
         });
     }
-    if target_id.is_none()
-        && cmd.children.iter().any(|child| {
-            matches!(
-                child.name.as_str(),
-                "agent_group" | "oci_image_target" | "web_application_target"
-            )
-        })
-    {
+    if let Some(specialized_target) = specialized_target {
+        if target_id.is_some() {
+            return Err("A task cannot have multiple target types");
+        }
         return Ok(TaskReferences {
             target: None,
-            config: None,
-            scanner: None,
+            specialized_target: Some(specialized_target),
+            config: optional_child_uuid(cmd, "config")?,
+            scanner: Some(optional_child_uuid(cmd, "scanner")?.ok_or("A scanner is required")?),
         });
     }
     let target = optional_child_uuid(cmd, "target")?.ok_or("A target is required")?;
@@ -1718,17 +1721,51 @@ fn task_references(cmd: &ParsedCommand) -> Result<TaskReferences, &'static str> 
     let scanner = optional_child_uuid(cmd, "scanner")?.unwrap_or(DEFAULT_SCANNER_ID);
     Ok(TaskReferences {
         target: Some(target),
+        specialized_target: None,
         config: Some(config),
         scanner: Some(scanner),
     })
 }
 
 fn task_reference_updates(cmd: &ParsedCommand) -> Result<TaskReferenceUpdates, &'static str> {
+    let target = optional_child_uuid(cmd, "target")?;
+    let specialized_target = specialized_task_target(cmd)?;
+    if target.is_some() && specialized_target.is_some() {
+        return Err("A task cannot have multiple target types");
+    }
     Ok(TaskReferenceUpdates {
-        target: optional_child_uuid(cmd, "target")?,
+        target,
+        specialized_target,
         config: optional_child_uuid(cmd, "config")?,
         scanner: optional_child_uuid(cmd, "scanner")?,
     })
+}
+
+fn specialized_task_target(
+    cmd: &ParsedCommand,
+) -> Result<Option<SpecializedTaskTarget>, &'static str> {
+    let mut targets = cmd.children.iter().filter_map(|child| {
+        let kind = match child.name.as_str() {
+            "agent_group" => SpecializedTaskTarget::AgentGroup,
+            "oci_image_target" => SpecializedTaskTarget::OciImageTarget,
+            "web_application_target" => SpecializedTaskTarget::WebApplicationTarget,
+            _ => return None,
+        };
+        Some((child, kind))
+    });
+    let Some((child, kind)) = targets.next() else {
+        return Ok(None);
+    };
+    if targets.next().is_some() {
+        return Err("A task cannot have multiple specialized targets");
+    }
+    let id = child
+        .attributes
+        .get("id")
+        .filter(|id| !id.is_empty())
+        .ok_or("Missing specialized target id")?;
+    let id = Uuid::parse_str(id).map_err(|_| "Invalid specialized target UUID")?;
+    Ok(Some(kind(id)))
 }
 
 fn store_error_response(command_name: &str, error: StoreError) -> Vec<u8> {
@@ -2110,6 +2147,53 @@ mod tests {
                 Err(invalid_message)
             );
         }
+    }
+
+    #[test]
+    fn task_reference_parsing_rejects_competing_target_shapes() {
+        let target_id = Uuid::new_v4();
+        let agent_group_id = Uuid::new_v4();
+        let oci_target_id = Uuid::new_v4();
+
+        let import_and_specialized = parse_command(
+            format!(
+                "<create_task><target id=\"0\"/><agent_group id=\"{agent_group_id}\"/></create_task>"
+            )
+            .as_bytes(),
+        )
+        .expect("parse import and specialized targets");
+        assert_eq!(
+            task_references(&import_and_specialized),
+            Err("A task cannot have multiple target types")
+        );
+
+        let regular_and_specialized = parse_command(
+            format!(
+                "<create_task><target id=\"{target_id}\"/><agent_group id=\"{agent_group_id}\"/></create_task>"
+            )
+            .as_bytes(),
+        )
+        .expect("parse regular and specialized targets");
+        assert_eq!(
+            task_references(&regular_and_specialized),
+            Err("A task cannot have multiple target types")
+        );
+        assert_eq!(
+            task_reference_updates(&regular_and_specialized),
+            Err("A task cannot have multiple target types")
+        );
+
+        let multiple_specialized = parse_command(
+            format!(
+                "<create_task><agent_group id=\"{agent_group_id}\"/><oci_image_target id=\"{oci_target_id}\"/></create_task>"
+            )
+            .as_bytes(),
+        )
+        .expect("parse multiple specialized targets");
+        assert_eq!(
+            task_references(&multiple_specialized),
+            Err("A task cannot have multiple specialized targets")
+        );
     }
 
     #[test]

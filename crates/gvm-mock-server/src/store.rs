@@ -47,8 +47,40 @@ pub(crate) enum StoreError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SpecializedTaskTarget {
+    AgentGroup(Uuid),
+    OciImageTarget(Uuid),
+    WebApplicationTarget(Uuid),
+}
+
+impl SpecializedTaskTarget {
+    fn resource_type(self) -> &'static str {
+        match self {
+            Self::AgentGroup(_) => "agent_group",
+            Self::OciImageTarget(_) => "oci_image_target",
+            Self::WebApplicationTarget(_) => "web_application_target",
+        }
+    }
+
+    fn attr_name(self) -> &'static str {
+        match self {
+            Self::AgentGroup(_) => "agent_group_id",
+            Self::OciImageTarget(_) => "oci_image_target_id",
+            Self::WebApplicationTarget(_) => "web_application_target_id",
+        }
+    }
+
+    fn id(self) -> Uuid {
+        match self {
+            Self::AgentGroup(id) | Self::OciImageTarget(id) | Self::WebApplicationTarget(id) => id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TaskReferences {
     pub target: Option<Uuid>,
+    pub specialized_target: Option<SpecializedTaskTarget>,
     pub config: Option<Uuid>,
     pub scanner: Option<Uuid>,
 }
@@ -56,13 +88,17 @@ pub(crate) struct TaskReferences {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct TaskReferenceUpdates {
     pub target: Option<Uuid>,
+    pub specialized_target: Option<SpecializedTaskTarget>,
     pub config: Option<Uuid>,
     pub scanner: Option<Uuid>,
 }
 
 impl TaskReferenceUpdates {
     fn is_empty(self) -> bool {
-        self.target.is_none() && self.config.is_none() && self.scanner.is_none()
+        self.target.is_none()
+            && self.specialized_target.is_none()
+            && self.config.is_none()
+            && self.scanner.is_none()
     }
 }
 
@@ -420,28 +456,38 @@ fn stored_task_reference(
 }
 
 fn validate_stored_task_references(inner: &StoreInner, task: &Resource) -> Result<(), StoreError> {
-    if task.attr("import_task") == Some("1") || task_has_specialized_target(task) {
+    if task.attr("import_task") == Some("1") {
         return Ok(());
     }
-    for (key, resource_type) in [
-        ("target_id", "target"),
-        ("config_id", "config"),
-        ("scanner_id", "scanner"),
-    ] {
+
+    let specialized: Vec<_> = [
+        ("agent_group_id", "agent_group"),
+        ("oci_image_target_id", "oci_image_target"),
+        ("web_application_target_id", "web_application_target"),
+    ]
+    .into_iter()
+    .filter(|(key, _)| task.attr(key).is_some())
+    .collect();
+    if specialized.len() > 1 {
+        return Err(StoreError::Inconsistent("task target"));
+    }
+    let mut required = if let Some(reference) = specialized.first() {
+        vec![*reference, ("scanner_id", "scanner")]
+    } else {
+        vec![
+            ("target_id", "target"),
+            ("config_id", "config"),
+            ("scanner_id", "scanner"),
+        ]
+    };
+    if !specialized.is_empty() && task.attr("config_id").is_some() {
+        required.push(("config_id", "config"));
+    }
+    for (key, resource_type) in required {
         let id = stored_task_reference(task, key, resource_type)?;
         validate_task_reference(inner, &id, resource_type)?;
     }
     Ok(())
-}
-
-fn task_has_specialized_target(task: &Resource) -> bool {
-    [
-        "agent_group_id",
-        "oci_image_target_id",
-        "web_application_target_id",
-    ]
-    .iter()
-    .any(|key| task.attr(key).is_some())
 }
 
 fn task_is_active(task: &Resource) -> bool {
@@ -525,6 +571,10 @@ impl ResourceStore {
             validate_task_reference(&inner, &target, "target")?;
             task.set_attr("target_id", &target.to_string());
         }
+        if let Some(target) = references.specialized_target {
+            validate_task_reference(&inner, &target.id(), target.resource_type())?;
+            task.set_attr(target.attr_name(), &target.id().to_string());
+        }
         if let Some(config) = references.config {
             validate_task_reference(&inner, &config, "config")?;
             task.set_attr("config_id", &config.to_string());
@@ -533,7 +583,7 @@ impl ResourceStore {
             validate_task_reference(&inner, &scanner, "scanner")?;
             task.set_attr("scanner_id", &scanner.to_string());
         }
-        if references.target.is_none() && !task_has_specialized_target(&task) {
+        if references.target.is_none() && references.specialized_target.is_none() {
             task.set_attr("import_task", "1");
             task.set_attr("status", TaskStatus::Done.as_str());
         } else {
@@ -669,6 +719,9 @@ impl ResourceStore {
         if let Some(target) = references.target {
             validate_task_reference(&inner, &target, "target")?;
         }
+        if let Some(target) = references.specialized_target {
+            validate_task_reference(&inner, &target.id(), target.resource_type())?;
+        }
         if let Some(config) = references.config {
             validate_task_reference(&inner, &config, "config")?;
         }
@@ -682,6 +735,24 @@ impl ResourceStore {
             .expect("validated task should remain present while locked");
         if let Some(target) = references.target {
             task.set_attr("target_id", &target.to_string());
+            for key in [
+                "agent_group_id",
+                "oci_image_target_id",
+                "web_application_target_id",
+            ] {
+                task.attrs.remove(key);
+            }
+        }
+        if let Some(target) = references.specialized_target {
+            task.attrs.remove("target_id");
+            for key in [
+                "agent_group_id",
+                "oci_image_target_id",
+                "web_application_target_id",
+            ] {
+                task.attrs.remove(key);
+            }
+            task.set_attr(target.attr_name(), &target.id().to_string());
         }
         if let Some(config) = references.config {
             task.set_attr("config_id", &config.to_string());
@@ -748,6 +819,11 @@ impl ResourceStore {
 
         let task_reference = match resource_type {
             "target" => Some(("target_id", "target")),
+            "agent_group" => Some(("agent_group_id", "agent_group")),
+            "oci_image_target" => Some(("oci_image_target_id", "oci_image_target")),
+            "web_application_target" => {
+                Some(("web_application_target_id", "web_application_target"))
+            }
             "config" => Some(("config_id", "config")),
             "scanner" => Some(("scanner_id", "scanner")),
             _ => None,
@@ -1172,6 +1248,7 @@ mod tests {
                 Resource::new("task", name),
                 TaskReferences {
                     target: Some(target_id),
+                    specialized_target: None,
                     config: Some(DEFAULT_CONFIG_ID),
                     scanner: Some(DEFAULT_SCANNER_ID),
                 },
@@ -1483,6 +1560,7 @@ mod tests {
                 &task_id,
                 TaskReferenceUpdates {
                     target: Some(target_id),
+                    specialized_target: None,
                     config: Some(config_id),
                     scanner: Some(scanner_id),
                 },
@@ -1590,6 +1668,7 @@ mod tests {
                 Resource::new("task", "Imported"),
                 TaskReferences {
                     target: None,
+                    specialized_target: None,
                     config: None,
                     scanner: None,
                 },
@@ -1605,6 +1684,35 @@ mod tests {
         assert_eq!(
             store.start_task(&import_task_id),
             Err(StoreError::InvalidState("Import tasks cannot be started"))
+        );
+    }
+
+    #[test]
+    fn cloning_rejects_corrupt_specialized_task_graphs() {
+        let store = ResourceStore::new();
+        let agent_group_id = store.create(Resource::new("agent_group", "Agents"));
+        let oci_target_id = store.create(Resource::new("oci_image_target", "OCI"));
+
+        let mut multiple_targets = Resource::new("task", "Multiple specialized targets");
+        multiple_targets.set_attr("agent_group_id", &agent_group_id.to_string());
+        multiple_targets.set_attr("oci_image_target_id", &oci_target_id.to_string());
+        multiple_targets.set_attr("scanner_id", &DEFAULT_SCANNER_ID.to_string());
+        multiple_targets.set_attr("status", TaskStatus::New.as_str());
+        let multiple_targets_id = store.create(multiple_targets);
+        assert_eq!(
+            store.clone_typed(&multiple_targets_id, "task"),
+            Err(StoreError::Inconsistent("task target"))
+        );
+
+        let mut missing_config = Resource::new("task", "Missing optional config");
+        missing_config.set_attr("agent_group_id", &agent_group_id.to_string());
+        missing_config.set_attr("scanner_id", &DEFAULT_SCANNER_ID.to_string());
+        missing_config.set_attr("config_id", &Uuid::new_v4().to_string());
+        missing_config.set_attr("status", TaskStatus::New.as_str());
+        let missing_config_id = store.create(missing_config);
+        assert_eq!(
+            store.clone_typed(&missing_config_id, "task"),
+            Err(StoreError::NotFound("config".to_string()))
         );
     }
 
