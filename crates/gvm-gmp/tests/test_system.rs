@@ -25,11 +25,12 @@ fn test_system_help_and_feeds() {
 fn test_system_filtered_getters() {
     assert_eq!(xml(get_settings(Default::default())), "<get_settings/>");
     assert_eq!(
-        xml(get_system_reports(FilteredGetOpts {
-            filter_string: Some("name=foo".into()),
-            filter_id: Some(id("f1"))
+        xml(get_system_reports(GetSystemReportsOpts {
+            name: Some("load".into()),
+            brief: Some(true),
+            ..Default::default()
         })),
-        "<get_system_reports filt_id=\"f1\" filter=\"name=foo\"/>"
+        "<get_system_reports brief=\"1\" name=\"load\"/>"
     );
     assert_eq!(
         xml(get_preferences(FilteredGetOpts {

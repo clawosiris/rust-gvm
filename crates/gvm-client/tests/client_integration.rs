@@ -6,8 +6,8 @@
 
 use gvm_client::{
     CreateOciImageTargetOpts, CreateWebApplicationTargetOpts, CredentialStoreCredentialOpts,
-    CredentialStoreCredentialType, GetCredentialStoresOpts, GmpClient, GmpNextCommands,
-    GmpVersioned, GvmError, ImportReportOpts, ModifyCredentialStoreCredentialOpts,
+    CredentialStoreCredentialType, GetCredentialStoresOpts, GetSystemReportsOpts, GmpClient,
+    GmpNextCommands, GmpVersioned, GvmError, ImportReportOpts, ModifyCredentialStoreCredentialOpts,
     ModifyOciImageTargetOpts, ModifyWebApplicationTargetOpts, WireTraceDirection, WireTraceEvent,
 };
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
@@ -642,6 +642,49 @@ async fn get_feed_sends_typed_get_feeds_command() {
     assert_eq!(
         std::str::from_utf8(command.raw_xml()).expect("valid UTF-8 command"),
         "<get_feeds type=\"NVT\"/>"
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_system_reports_preserve_wire_options_and_payload_metadata() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let response = client
+        .get_system_reports(GetSystemReportsOpts {
+            name: Some("load".into()),
+            duration: Some(3600),
+            ..Default::default()
+        })
+        .await
+        .expect("system report should parse");
+
+    assert_eq!(response.reports.len(), 1);
+    let report = &response.reports[0];
+    assert_eq!(report.name, "load");
+    assert_eq!(report.title.as_deref(), Some("System Load"));
+    assert_eq!(report.report_format.as_deref(), Some("png"));
+    assert_eq!(report.report_duration, Some(3600));
+    assert!(report.report.is_some());
+
+    let history = server.command_history();
+    let command = history.last().expect("system-report command recorded");
+    assert_eq!(command.command_name(), "get_system_reports");
+    assert_eq!(
+        std::str::from_utf8(command.raw_xml()).expect("valid UTF-8 command"),
+        "<get_system_reports duration=\"3600\" name=\"load\"/>"
     );
 
     server.shutdown().await;
