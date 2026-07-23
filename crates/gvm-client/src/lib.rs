@@ -95,7 +95,7 @@ pub use gvm_gmp::commands::tasks::CreateWebApplicationTaskOpts;
 pub use gvm_gmp::commands::web_application_targets::{
     CreateWebApplicationTargetOpts, GetWebApplicationTargetsOpts, ModifyWebApplicationTargetOpts,
 };
-pub use gvm_gmp::enums::CredentialStoreCredentialType;
+pub use gvm_gmp::enums::{CredentialStoreCredentialType, FeedType};
 pub use version::{
     command_supported, map_supported_version, minimum_version_for_command, parse_version_text,
     required_version_label,

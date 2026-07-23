@@ -6,7 +6,7 @@
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, parse_document, status_from_response, CountInfo, ParseError,
+    count_info, parse_bool, parse_document, status_from_response, CountInfo, ParseError, XmlNode,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,6 +18,7 @@ pub struct Feed {
     pub version: String,
     pub status: Option<String>,
     pub description: Option<String>,
+    pub sync_not_available: Option<String>,
     pub currently_syncing: Option<String>,
 }
 
@@ -29,19 +30,38 @@ pub struct GetFeedsResponse {
     pub status_text: String,
     pub items: Vec<Feed>,
     pub counts: CountInfo,
+    pub feed_owner_set: bool,
+    pub feed_roles_set: bool,
+    pub feed_resources_access: bool,
 }
 
 impl Feed {
-    fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
+    fn from_node(node: &XmlNode) -> Result<Self, ParseError> {
+        let sync_not_available = node
+            .child("sync_not_available")
+            .map(|sync| sync.required_child_text("error"))
+            .transpose()?;
+        let currently_syncing = node
+            .child("currently_syncing")
+            .map(|sync| sync.required_child_text("timestamp"))
+            .transpose()?;
         Ok(Self {
             type_: node.required_child_text("type")?,
             name: node.required_child_text("name")?,
             version: node.required_child_text("version")?,
             status: node.optional_child_text("status"),
             description: node.optional_child_text("description"),
-            currently_syncing: node.optional_child_text("currently_syncing"),
+            sync_not_available,
+            currently_syncing,
         })
     }
+}
+
+fn required_bool_child(root: &XmlNode, name: &str) -> Result<bool, ParseError> {
+    let value = root
+        .child_text(name)
+        .ok_or_else(|| ParseError::MissingElement(name.to_string()))?;
+    parse_bool(&value, name)
 }
 
 impl GetFeedsResponse {
@@ -57,6 +77,9 @@ impl GetFeedsResponse {
             status_text,
             items,
             counts: count_info(&root, "feed_count")?,
+            feed_owner_set: required_bool_child(&root, "feed_owner_set")?,
+            feed_roles_set: required_bool_child(&root, "feed_roles_set")?,
+            feed_resources_access: required_bool_child(&root, "feed_resources_access")?,
         })
     }
 }
@@ -71,40 +94,50 @@ mod tests {
     fn parses_multiple_feeds() {
         let response = Response::from(
             r#"<get_feeds_response status="200" status_text="OK">
+                <feed_owner_set>1</feed_owner_set>
+                <feed_roles_set>0</feed_roles_set>
+                <feed_resources_access>true</feed_resources_access>
                 <feed>
                     <type>NVT</type>
                     <name>NVT Feed</name>
                     <version>202603260800</version>
-                    <status>Current</status>
                     <description>Network vulnerability tests</description>
-                    <currently_syncing>0</currently_syncing>
+                    <currently_syncing><timestamp></timestamp></currently_syncing>
                 </feed>
                 <feed>
                     <type>SCAP</type>
                     <name>SCAP Feed</name>
                     <version>202603250700</version>
-                    <status>Updating</status>
                     <description>Security content automation data</description>
-                    <currently_syncing>1</currently_syncing>
+                    <sync_not_available><error>Feed lock unavailable</error></sync_not_available>
                 </feed>
-                <feed_count>2<filtered>2</filtered><page>1</page></feed_count>
             </get_feeds_response>"#,
         );
 
         let parsed = GetFeedsResponse::from_response(&response).expect("feeds parse");
 
         assert_eq!(parsed.items.len(), 2);
-        assert_eq!(parsed.counts.total, Some(2));
-        assert_eq!(parsed.counts.filtered, Some(2));
-        assert_eq!(parsed.counts.page, Some(1));
+        assert_eq!(parsed.counts, CountInfo::default());
+        assert!(parsed.feed_owner_set);
+        assert!(!parsed.feed_roles_set);
+        assert!(parsed.feed_resources_access);
         assert_eq!(parsed.items[0].type_, "NVT");
-        assert_eq!(parsed.items[1].currently_syncing.as_deref(), Some("1"));
+        assert_eq!(parsed.items[0].currently_syncing.as_deref(), Some(""));
+        assert_eq!(
+            parsed.items[1].sync_not_available.as_deref(),
+            Some("Feed lock unavailable")
+        );
     }
 
     #[test]
     fn parses_empty_feeds() {
         let response = Response::from(
-            r#"<get_feeds_response status="200" status_text="OK"><feed_count>0<filtered>0</filtered></feed_count></get_feeds_response>"#,
+            r#"<get_feeds_response status="200" status_text="OK">
+                <feed_owner_set>0</feed_owner_set>
+                <feed_roles_set>0</feed_roles_set>
+                <feed_resources_access>0</feed_resources_access>
+                <feed_count>0<filtered>0</filtered></feed_count>
+            </get_feeds_response>"#,
         );
 
         let parsed = GetFeedsResponse::from_response(&response).expect("feeds parse");
@@ -133,6 +166,9 @@ mod tests {
     fn parses_missing_optional_non_version_feed_fields() {
         let response = Response::from(
             r#"<get_feeds_response status="200" status_text="OK">
+                <feed_owner_set>1</feed_owner_set>
+                <feed_roles_set>1</feed_roles_set>
+                <feed_resources_access>1</feed_resources_access>
                 <feed>
                     <type>CERT</type>
                     <name>CERT Feed</name>
@@ -147,6 +183,7 @@ mod tests {
         assert_eq!(feed.version, "202603260800");
         assert_eq!(feed.status, None);
         assert_eq!(feed.description, None);
+        assert_eq!(feed.sync_not_available, None);
         assert_eq!(feed.currently_syncing, None);
     }
 
@@ -179,6 +216,47 @@ mod tests {
         assert!(matches!(
             GetFeedsResponse::from_response(&missing_version),
             Err(ParseError::MissingElement(field)) if field == "version"
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_access_flag_and_incomplete_sync_state() {
+        let invalid_flag = Response::from(
+            r#"<get_feeds_response status="200" status_text="OK">
+                <feed_owner_set>sometimes</feed_owner_set>
+            </get_feeds_response>"#,
+        );
+        assert!(matches!(
+            GetFeedsResponse::from_response(&invalid_flag),
+            Err(ParseError::InvalidValue { field, value })
+                if field == "feed_owner_set" && value == "sometimes"
+        ));
+
+        let missing_flag = Response::from(
+            r#"<get_feeds_response status="200" status_text="OK">
+                <feed_owner_set>1</feed_owner_set>
+                <feed_roles_set>1</feed_roles_set>
+            </get_feeds_response>"#,
+        );
+        assert!(matches!(
+            GetFeedsResponse::from_response(&missing_flag),
+            Err(ParseError::MissingElement(field)) if field == "feed_resources_access"
+        ));
+
+        let missing_timestamp = Response::from(
+            r#"<get_feeds_response status="200" status_text="OK">
+                <feed_owner_set>1</feed_owner_set>
+                <feed_roles_set>1</feed_roles_set>
+                <feed_resources_access>1</feed_resources_access>
+                <feed>
+                    <type>NVT</type><name>NVT Feed</name><version>1</version>
+                    <currently_syncing/>
+                </feed>
+            </get_feeds_response>"#,
+        );
+        assert!(matches!(
+            GetFeedsResponse::from_response(&missing_timestamp),
+            Err(ParseError::MissingElement(field)) if field == "timestamp"
         ));
     }
 }

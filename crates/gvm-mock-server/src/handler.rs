@@ -814,7 +814,7 @@ impl SessionHandler {
 
     fn handle_get(&self, cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
         match cmd.name.as_str() {
-            "get_feeds" => return render_feeds_response(),
+            "get_feeds" => return render_feeds_response(cmd),
             "get_aggregates" => return render_aggregates_response(cmd),
             "get_system_reports" => return render_system_reports_response(),
             "get_info" => return render_secinfo_response(cmd),
@@ -1725,15 +1725,67 @@ fn render_help_response(cmd: &ParsedCommand) -> Vec<u8> {
     }
 }
 
-fn render_feeds_response() -> Vec<u8> {
-    "<get_feeds_response status=\"200\" status_text=\"OK\">\
-     <feed><type>NVT</type><name>Network Vulnerability Tests</name><version>2026031801</version><status>current</status></feed>\
-     <feed><type>SCAP</type><name>SCAP Data</name><version>2026031701</version><status>current</status></feed>\
-     <feed><type>CERT</type><name>CERT Advisories</name><version>2026031601</version><status>current</status></feed>\
-     <feed_count>3<filtered>3</filtered></feed_count>\
-     </get_feeds_response>"
-        .as_bytes()
-        .to_vec()
+fn render_feeds_response(cmd: &ParsedCommand) -> Vec<u8> {
+    const FEEDS: [(&str, &str, &str, &str); 4] = [
+        (
+            "NVT",
+            "Greenbone Security Feed",
+            "2026031801",
+            "Network vulnerability tests",
+        ),
+        (
+            "SCAP",
+            "Greenbone SCAP Feed",
+            "2026031701",
+            "Security content automation data",
+        ),
+        (
+            "CERT",
+            "Greenbone CERT Feed",
+            "2026031601",
+            "CERT advisories",
+        ),
+        (
+            "GVMD_DATA",
+            "Greenbone Data Objects Feed",
+            "2026031501",
+            "Manager data objects",
+        ),
+    ];
+    let selected_type = cmd.attr("type");
+    let mut feeds = String::new();
+    for (feed_type, name, version, description) in FEEDS {
+        if selected_type.is_some_and(|selected| !selected.eq_ignore_ascii_case(feed_type)) {
+            continue;
+        }
+        feeds.push_str("<feed><type>");
+        feeds.push_str(feed_type);
+        feeds.push_str("</type><name>");
+        feeds.push_str(name);
+        feeds.push_str("</name><version>");
+        feeds.push_str(version);
+        feeds.push_str("</version><description>");
+        feeds.push_str(description);
+        feeds.push_str("</description>");
+        if feed_type == "SCAP" {
+            feeds.push_str(
+                "<currently_syncing><timestamp>2026-03-18T00:00:00Z</timestamp></currently_syncing>",
+            );
+        } else if feed_type == "CERT" {
+            feeds.push_str(
+                "<sync_not_available><error>Feed synchronization is unavailable</error></sync_not_available>",
+            );
+        }
+        feeds.push_str("</feed>");
+    }
+    format!(
+        "<get_feeds_response status=\"200\" status_text=\"OK\">\
+         <feed_owner_set>1</feed_owner_set>\
+         <feed_roles_set>1</feed_roles_set>\
+         <feed_resources_access>1</feed_resources_access>\
+         {feeds}</get_feeds_response>"
+    )
+    .into_bytes()
 }
 
 fn render_aggregates_response(cmd: &ParsedCommand) -> Vec<u8> {
