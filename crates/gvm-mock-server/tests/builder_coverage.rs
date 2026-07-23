@@ -10,6 +10,8 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
+#[cfg(feature = "tls")]
+use tempfile::TempDir;
 
 async fn build_server(builder: gvm_mock_server::MockGmpServerBuilder) -> Option<MockGmpServer> {
     match builder.build().await {
@@ -96,4 +98,82 @@ async fn builder_rejects_zero_request_limit() {
     };
 
     assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+}
+
+#[tokio::test]
+async fn builder_requires_a_transport() {
+    let result = MockGmpServer::builder().build().await;
+    let error = match result {
+        Ok(server) => {
+            server.shutdown().await;
+            panic!("builder without a transport must fail");
+        }
+        Err(error) => error,
+    };
+
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    assert!(error.to_string().contains("No transport configured"));
+}
+
+#[cfg(feature = "tls")]
+#[tokio::test]
+async fn builder_tls_mode_exposes_address_and_certificate() {
+    let server = MockGmpServer::builder()
+        .mode(ServerMode::Echo)
+        .tls("127.0.0.1:0")
+        .build()
+        .await
+        .expect("TLS server should start");
+
+    assert!(server.tls_addr().is_some());
+    assert!(server.tls_port().is_some());
+    assert!(server
+        .tls_certificate_pem()
+        .expect("generated certificate")
+        .contains("BEGIN CERTIFICATE"));
+    server.shutdown().await;
+}
+
+#[cfg(feature = "tls")]
+#[tokio::test]
+async fn client_certificate_requirement_needs_tls_transport() {
+    let result = MockGmpServer::builder()
+        .tcp("127.0.0.1:0")
+        .require_client_cert("unused.pem")
+        .build()
+        .await;
+    let error = match result {
+        Ok(server) => {
+            server.shutdown().await;
+            panic!("client certificates without TLS must be rejected");
+        }
+        Err(error) => error,
+    };
+
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    assert!(error.to_string().contains("can only be used with tls"));
+}
+
+#[cfg(feature = "tls")]
+#[tokio::test]
+async fn empty_client_ca_is_rejected() {
+    let directory = TempDir::new().expect("temporary directory");
+    let ca_path = directory.path().join("empty-ca.pem");
+    std::fs::write(&ca_path, "").expect("write empty CA");
+
+    let result = MockGmpServer::builder()
+        .tls("127.0.0.1:0")
+        .require_client_cert(ca_path)
+        .build()
+        .await;
+    let error = match result {
+        Ok(server) => {
+            server.shutdown().await;
+            panic!("empty client CA must be rejected");
+        }
+        Err(error) => error,
+    };
+
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    assert!(error.to_string().contains("contains no certificates"));
 }

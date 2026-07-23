@@ -109,13 +109,23 @@ Maintains an in-memory resource store. Create commands generate UUIDs and store 
 
 ### 3.3 Transport Listeners
 
-The mock server supports three listener types, all routing to the same `handle_stream` pipeline:
+The mock server supports four listener types, all routing to the same `handle_stream` pipeline:
 
 | Transport | Builder Method | Feature Flag | Notes |
 |-----------|---------------|-------------|-------|
 | Unix socket | `.unix_socket(path)` / `.unix_socket_auto()` | — (always available) | Default for local testing |
 | TCP | `.tcp("addr:port")` | — (always available) | For cross-language testing |
+| TLS | `.tls("addr:port")` | `tls` | Generated self-signed server certificate; optional trusted client CA |
 | SSH | `.ssh("addr:port")` | `ssh` | Embeds `russh` SSH server with ephemeral Ed25519 host key |
+
+#### TLS Listener Details
+
+The TLS listener generates a new server key and self-signed certificate at
+startup. The certificate includes `localhost`, `127.0.0.1`, and `::1` subject
+alternative names and is exposed by the library for client pinning. TLS
+encrypts the connection without requiring a client certificate by default.
+`.require_client_cert("client-ca.pem")` enables strict mutual TLS and rejects
+clients that do not present a certificate chaining to the configured CA.
 
 #### SSH Listener Details
 
@@ -499,8 +509,12 @@ gvm-mock-server --mode stateful --socket /tmp/gvmd.sock --version 22.5
 # Start on TCP
 gvm-mock-server --mode fixture --tcp 127.0.0.1:9390 --version 22.4
 
-# With TLS
-gvm-mock-server --mode fixture --tls --cert server.pem --key server.key --tcp 0.0.0.0:9390
+# With TLS and a generated server certificate exported for client pinning
+gvm-mock-server --mode fixture --tls 127.0.0.1:9390 --tls-cert-out server.pem
+
+# Require a client certificate issued by a trusted CA
+gvm-mock-server --mode stateful --tls 127.0.0.1:9390 \
+  --tls-cert-out server.pem --tls-client-ca client-ca.pem
 
 # Load custom fixtures
 gvm-mock-server --mode fixture --fixtures ./my-fixtures/ --socket /tmp/gvmd.sock
@@ -665,7 +679,7 @@ Dev: `tempfile` (auto-cleanup socket paths), `gvm-connection` (integration tests
 ### Phase 4: Python Ecosystem (Partial)
 1. ✅ Standalone binary with CLI (`--mode`, `--version`, `--socket`, `--tcp`)
 2. ⬜ Scenario YAML format — deferred
-3. ⬜ TLS support — deferred
+3. ✅ TLS support, including optional client-certificate authentication
 4. ⬜ Python wrapper package with pytest fixture — deferred
 5. ✅ python-gvm integration test in CI (`tests/integration/test_python_gvm.py`)
 
@@ -673,6 +687,7 @@ Dev: `tempfile` (auto-cleanup socket paths), `gvm-connection` (integration tests
 
 ### Phase 4 Additions (Not in Original Spec)
 - ✅ SSH listener (`ssh_listener.rs`) for E2E testing of SSH transport
+- ✅ TLS listener (`tls_listener.rs`) with generated server identity and optional strict mTLS
 - ✅ `util.rs` — shared `now_iso()` (Rata Die), `xml_escape()`, `xml_escape_attr()`
 - ✅ Cross-platform binary builds (5 targets) in CI
 - ✅ SBOM generation (CycloneDX) attached to releases
@@ -703,6 +718,14 @@ Dev: `tempfile` (auto-cleanup socket paths), `gvm-connection` (integration tests
 **Decision:** Match the Greenbone ecosystem licensing direction.
 **Rationale:** Changed from GPL-3.0-or-later to AGPL-3.0-or-later. The mock server is part of the rust-gvm workspace. All source files carry SPDX headers.
 
+### D6: Secure, Self-Contained TLS Test Identity
+**Decision:** Generate an ephemeral server identity and accept anonymous TLS
+clients by default, with an explicit option to require certificates from a
+configured client CA.
+**Rationale:** Tests need a self-contained encrypted listener without committed
+private keys. Optional strict mTLS models gvmd deployments while keeping the
+default mock usable by clients that do not present a certificate.
+
 ---
 
 ## 12. Open Questions
@@ -711,8 +734,6 @@ Dev: `tempfile` (auto-cleanup socket paths), `gvm-connection` (integration tests
 
 2. **Filter string parsing depth** — GMP filters are complex (`name=foo and type=task sort=name`). How much of the filter language should stateful mode implement? Suggest: basic equality matching in Phase 2, defer complex filters.
 
-3. **TLS client certificate auth** — gvmd supports TLS client cert authentication. Should the mock server validate certs, or just accept any TLS connection? Suggest: accept any, with an option to require specific certs.
+3. **WebSocket / HTTP transport** — Newer Greenbone components (OpenVAS daemon) use HTTP. Should the mock server support HTTP alongside GMP-over-socket? Suggest: out of scope for v1, separate mock for OpenVAS HTTP API if needed.
 
-4. **WebSocket / HTTP transport** — Newer Greenbone components (OpenVAS daemon) use HTTP. Should the mock server support HTTP alongside GMP-over-socket? Suggest: out of scope for v1, separate mock for OpenVAS HTTP API if needed.
-
-5. **Record-and-replay** — Should the mock server support recording traffic from a real gvmd and replaying it? This would be valuable for regression testing. Suggest: Phase 4+ stretch goal.
+4. **Record-and-replay** — Should the mock server support recording traffic from a real gvmd and replaying it? This would be valuable for regression testing. Suggest: Phase 4+ stretch goal.

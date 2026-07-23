@@ -52,7 +52,7 @@ This is not an HTTP interface for GMP. It is gvmd's internal client for connecti
 
 - `UnixSocketConnection` for primary containerized deployments
 - `SshConnection` for remote access via SSH tunnel
-- `TlsConnection` as the remaining planned parity item for direct TLS+TCP on port 9390
+- `TlsConnection` for verified direct TLS+TCP on port 9390, with optional client identity
 
 There is no native HTTP or gRPC transport to implement in `rust-gvm` today because gvmd does not expose either interface.
 

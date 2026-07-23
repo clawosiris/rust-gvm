@@ -14,7 +14,7 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 |-------|--------|-------|-------|-------------|
 | `gvm-protocol` | ✅ Implemented | ~2,330 | 67 | XML command builder, response parser, streaming reader |
 | `gvm-mock-server` | ✅ Implemented | ~5,850 | 266 | Programmable mock GMP server |
-| `gvm-connection` | ✅ Unix + SSH done | ~1,070 | 45 | Async transport layer (Unix socket + SSH implemented) |
+| `gvm-connection` | ✅ Implemented | ~1,500 | 45+ | Async Unix socket, verified TLS/mTLS, and SSH transports |
 | `gvm-gmp` | ✅ Implemented | ~19,800 | 838 | Typed GMP command builders and response models |
 | `gvm-client` | ✅ Implemented | ~3,590 | 62 | High-level async client with version negotiation and typed methods |
 
@@ -85,6 +85,8 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 | Unix socket (path) | ✅ | `.unix_socket("/tmp/gvmd.sock")` |
 | Unix socket (auto temp) | ✅ | `.unix_socket_auto()` |
 | TCP listener | ✅ | `.tcp("127.0.0.1:9390")` |
+| TLS listener | ✅ | `.tls("127.0.0.1:9390")`; generated certificate exposed for pinning |
+| Mutual TLS | ✅ | `.require_client_cert("client-ca.pem")` |
 | Credentials | ✅ | `.credentials("admin", "admin")` |
 | Fixture overrides | ✅ | `.override_response("get_tasks", xml)` |
 | Pre-seeding | ✅ | `.seed(\|store\| { ... })` |
@@ -202,6 +204,9 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 | `--tcp <addr:port>` | ✅ |
 | `--max-request-bytes <bytes>` | ✅ (64 MiB default) |
 | XML nesting limit | ✅ (256 elements per frame; enforced across protocol, client, and mock readers) |
+| `--tls <addr:port>` | ✅ (`tls` feature) |
+| `--tls-client-ca <path>` | ✅ (`tls` feature) |
+| `--tls-cert-out <path>` | ✅ (`tls` feature) |
 | Cross-platform binaries | ✅ (5 targets in CI) |
 | GHCR release image | ✅ `ghcr.io/clawosiris/gvm-mock-server:<tag>` |
 
@@ -225,7 +230,7 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 |-----------|--------|-------------|-------|
 | Unix socket | ✅ | `unix` (default) | `UnixSocketConnection` with configurable path, timeout, buffer size |
 | SSH tunnel | ✅ | `ssh` | `SshConnection` via `russh` — `direct-streamlocal` to remote gvmd socket |
-| TLS (TCP) | 📋 Planned | `tls` | Via `tokio-rustls` |
+| TLS (TCP) | ✅ | `tls` | `TlsConnection` via `tokio-rustls`, verified server SAN/roots, optional client identity |
 
 ### UnixSocketConfig
 
@@ -247,6 +252,19 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 | `timeout` | 60s | Connect + read timeout |
 | `read_buffer_size` | 64 KB | Per-read allocation |
 
+### TlsConfig
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| `hostname` | `127.0.0.1` | TCP destination |
+| `port` | 9390 | gvmd TLS port |
+| `server_name` | Same as hostname | Required DNS/IP certificate SAN |
+| `use_native_roots` | `true` | Platform trust store; disabling does not disable verification |
+| custom roots | None | PEM roots can be supplied in memory or from a file |
+| client identity | None | Optional PEM certificate chain plus unencrypted private key for mTLS |
+| `timeout` | 60s | TCP connect, TLS handshake, and response-read timeout |
+| `max_response_bytes` | 64 MiB | Bounded XML response size |
+
 ### Error Types
 
 | Variant | Description |
@@ -257,6 +275,7 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 | `SendFailed` | Write error |
 | `ReadFailed` | Read error or unexpected EOF |
 | `Timeout` | Operation exceeded configured timeout |
+| `InvalidConfiguration` | Trust roots, server name, or certificate/key material is unusable |
 | `SocketNotFound` | Unix socket path does not exist |
 
 ### Integration Tests (against gvm-mock-server)
@@ -386,6 +405,7 @@ Convenience methods on `GmpClient<C>` that combine `send()` + `XxxResponse::from
 | Disconnect + error path tests | ✅ |
 | Works with Unix socket transport | ✅ |
 | Works with SSH transport | ✅ |
+| Works with verified TLS and mTLS transports | ✅ |
 
 ---
 
@@ -398,8 +418,8 @@ Convenience methods on `GmpClient<C>` that combine `send()` + `XxxResponse::from
 | Unit tests (protocol) | 37 | XML builder, response parser, reader, request trait |
 | Unit tests (mock server) | 73 | Store, parser, fixtures, faults, scenarios, history, version, util |
 | Integration tests (mock server) | 137 | All modes, CRUD, lifecycle, faults, MCP compat (feature-gated) |
-| Integration tests (connection) | 10 | Unix socket + SSH transport tests (feature-gated) |
-| Unit tests (connection) | 9 | Config, error display, construction (Unix + SSH) |
+| Integration tests (connection) | — | Unix socket + SSH + verified TLS/mTLS transport tests (feature-gated) |
+| Unit tests (connection) | — | Config, error display, and construction coverage |
 | Unit tests (gvm-gmp inline) | 80 | Command builder XML verification |
 | External tests (gvm-gmp) | 53 | Per-module command XML tests |
 | Enum exhaustive tests | 347 | Every variant as_gmp_str + FromStr + invalid |

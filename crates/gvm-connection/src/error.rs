@@ -36,6 +36,10 @@ pub enum ConnectionError {
     #[error("timeout after {0:?}")]
     Timeout(std::time::Duration),
 
+    /// Connection settings are incomplete or contain invalid certificate material.
+    #[error("invalid connection configuration: {0}")]
+    InvalidConfiguration(String),
+
     /// The configured Unix socket path does not exist.
     #[error("socket not found: {0}")]
     SocketNotFound(String),
@@ -70,5 +74,14 @@ mod tests {
     fn test_disconnect_failed() {
         let err = ConnectionError::DisconnectFailed("channel closed".to_string());
         assert_eq!(err.to_string(), "disconnect failed: channel closed");
+    }
+
+    #[test]
+    fn test_invalid_configuration() {
+        let err = ConnectionError::InvalidConfiguration("missing trust roots".to_string());
+        assert_eq!(
+            err.to_string(),
+            "invalid connection configuration: missing trust roots"
+        );
     }
 }

@@ -54,6 +54,8 @@ pub mod server;
 #[cfg(feature = "ssh")]
 pub mod ssh_listener;
 pub mod store;
+#[cfg(feature = "tls")]
+pub mod tls_listener;
 pub(crate) mod util;
 pub mod version;
 

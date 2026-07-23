@@ -97,7 +97,7 @@ pub trait GvmConnection: Send + Sync {
 | Type | Transport | Default Address | Dependencies |
 |------|-----------|-----------------|--------------|
 | `UnixSocketConnection` | Unix domain socket | `/run/gvmd/gvmd.sock` | `tokio` |
-| `TlsConnection` | TLS over TCP | `127.0.0.1:9390` | `tokio`, `tokio-rustls` or `tokio-native-tls` |
+| `TlsConnection` | Verified TLS over TCP | `127.0.0.1:9390` | `tokio`, `tokio-rustls` |
 | `SshConnection` | SSH tunnel via `direct-streamlocal` | `localhost:22` (user: `root`) | `tokio`, `russh` |
 
 #### Configuration
@@ -111,11 +111,12 @@ pub struct UnixSocketConfig {
 pub struct TlsConfig {
     pub hostname: String,        // default: 127.0.0.1
     pub port: u16,               // default: 9390
-    pub certfile: Option<PathBuf>,
-    pub cafile: Option<PathBuf>,
-    pub keyfile: Option<PathBuf>,
-    pub password: Option<String>,
-    pub timeout: Duration,
+    pub server_name: String,     // DNS/IP SAN required in server certificate
+    pub use_native_roots: bool,  // default: true
+    // Additional PEM roots and an optional client identity are configured
+    // through builders. Verification cannot be disabled.
+    pub timeout: Duration,       // default: 60s
+    pub max_response_bytes: Option<usize>,
 }
 
 pub struct SshConfig {
@@ -568,13 +569,15 @@ Dev dependencies: `tokio-test`, `pretty_assertions`, `rstest`
 - Against `gvm-mock-server` (all modes: Echo, Fixture, Stateful, Scenario)
 - Feature-gated: `unix-socket-tests` for socket-based tests
 - Feature-gated: `ssh` for SSH transport E2E tests
+- Feature-gated: `tls` for verified TLS and mutual-TLS transport E2E tests
 - `gvm-client` integration: version negotiation, CRUD lifecycle, error paths
-- `gvm-connection` integration: Unix socket + SSH transport against mock server
+- `gvm-connection` integration: Unix socket, TLS/mTLS, and SSH transports against mock server
 
 ### python-gvm Cross-Validation
-- CI job runs `python-gvm` against `gvm-mock-server` (standalone binary)
-- Full lifecycle: version negotiation → auth → target/task CRUD → notes CRUD → cleanup
-- Test harness: `tests/integration/test_python_gvm.py`
+- CI runs `python-gvm` against the standalone `gvm-mock-server` binary
+- Unix lifecycle: version negotiation → auth → target/task CRUD → notes CRUD → cleanup
+- TLS coverage: anonymous TLS reconnect plus mTLS anonymous rejection and authenticated reconnect
+- Test harnesses: `tests/integration/test_python_gvm.py` and `test_python_gvm_tls.py`
 - Validates protocol compatibility, not just XML generation
 
 ### Property-Based Tests
@@ -668,7 +671,7 @@ Development commands available via `make`:
 1. All command builders for GMP 22.4
 2. All enums
 3. Response parsing for core types
-4. TLS connection support
+4. ✅ Verified TLS connection support with optional mutual TLS
 5. Comprehensive unit tests ported from python-gvm
 
 **Exit criteria:** Feature parity with python-gvm for GMP 22.4.
@@ -693,6 +696,7 @@ Development commands available via `make`:
 - ✅ AGPL-3.0-or-later license (changed from GPL)
 - ✅ SPDX headers on all source files
 - ✅ SSH listener in mock server (for E2E testing)
+- ✅ TLS listener in mock server with generated server identity and optional strict mTLS
 
 ---
 

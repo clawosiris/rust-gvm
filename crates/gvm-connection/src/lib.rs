@@ -17,6 +17,9 @@ pub mod unix;
 #[cfg(feature = "ssh")]
 pub mod ssh;
 
+#[cfg(feature = "tls")]
+pub mod tls;
+
 pub use connection::GvmConnection;
 pub use error::{ConnectionError, Result};
 
@@ -25,3 +28,6 @@ pub use unix::{UnixSocketConfig, UnixSocketConnection};
 
 #[cfg(feature = "ssh")]
 pub use ssh::{SshAuth, SshConfig, SshConnection, SshHostKeyPolicy};
+
+#[cfg(feature = "tls")]
+pub use tls::{TlsClientIdentity, TlsConfig, TlsConnection};

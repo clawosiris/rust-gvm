@@ -14,7 +14,13 @@ default = ["unix"]
 unix = []
 unix-socket-tests = []
 large-response-tests = ["unix-socket-tests"]
-tls = ["dep:tokio-rustls", "dep:rustls", "dep:rustls-pemfile"]
+tls = [
+    "dep:tokio-rustls",
+    "dep:rustls",
+    "dep:rustls-pemfile",
+    "dep:rustls-native-certs",
+    "gvm-mock-server/tls",
+]
 ssh = ["dep:russh", "gvm-mock-server/ssh"]
 
 [dependencies]
@@ -28,10 +34,8 @@ gvm-protocol.workspace = true
 tokio-rustls = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
 rustls-pemfile = { workspace = true, optional = true }
+rustls-native-certs = { workspace = true, optional = true }
 russh = { workspace = true, optional = true }
-
-[package.metadata.cargo-machete]
-ignored = ["rustls", "rustls-pemfile", "tokio-rustls"]  # TLS feature-gated, not yet implemented
 
 [dev-dependencies]
 pretty_assertions.workspace = true
@@ -40,6 +44,9 @@ tokio-test.workspace = true
 gvm-gmp.workspace = true
 gvm-mock-server.workspace = true
 getrandom.workspace = true
+x509-cert.workspace = true
+p256.workspace = true
+sha2.workspace = true
 
 [lints]
 workspace = true

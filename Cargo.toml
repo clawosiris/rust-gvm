@@ -45,6 +45,10 @@ sha1 = "0.11"
 tokio-rustls = "0.26"
 rustls = "0.23"
 rustls-pemfile = "2"
+rustls-native-certs = "0.8"
+x509-cert = { version = "0.3", features = ["builder"] }
+p256 = "=0.14.0-rc.10"
+sha2 = { version = "0.11", features = ["oid"] }
 
 # SSH (feature-gated)
 russh = "0.61"
