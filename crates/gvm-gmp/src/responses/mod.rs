@@ -19,6 +19,7 @@ pub mod feed;
 pub mod filter;
 pub mod group;
 pub mod host;
+pub mod integration_config;
 pub mod note;
 pub mod nvt;
 pub mod oci_image_target;
@@ -84,6 +85,10 @@ pub use group::{
 pub use host::{
     AssetSource, CreateHostResponse, DeleteHostResponse, GetHostsResponse, Host, HostDetail,
     HostIdentifier, HostOperatingSystem, ModifyHostResponse,
+};
+pub use integration_config::{
+    GetIntegrationConfigsResponse, IntegrationConfig, IntegrationConfigOidc,
+    IntegrationConfigService, ModifyIntegrationConfigResponse,
 };
 pub use note::{
     CreateNoteResponse, DeleteNoteResponse, GetNotesResponse, ModifyNoteResponse, Note,

@@ -853,7 +853,11 @@ impl SessionHandler {
                     if cmd.name == "get_reports" {
                         return self.render_single_report_response(cmd, &resource, store);
                     }
-                    let xml = resource.to_xml();
+                    let xml = if cmd.name == "get_integration_configs" {
+                        resource.to_integration_config_xml(cmd.attr("details") == Some("1"))
+                    } else {
+                        resource.to_xml()
+                    };
                     return format!(
                         "<{}_response status=\"200\" status_text=\"OK\">\
                          {xml}\
@@ -909,7 +913,15 @@ impl SessionHandler {
         }
 
         let count = resources.len();
-        let items: String = resources.iter().map(|r| r.to_xml()).collect();
+        let items: String = if cmd.name == "get_integration_configs" {
+            let details = cmd.attr("details") == Some("1");
+            resources
+                .iter()
+                .map(|resource| resource.to_integration_config_xml(details))
+                .collect()
+        } else {
+            resources.iter().map(|resource| resource.to_xml()).collect()
+        };
 
         format!(
             "<{name}_response status=\"200\" status_text=\"OK\">\
@@ -977,13 +989,56 @@ impl SessionHandler {
             (
                 nested_child_text(cmd, &["service", "url"]),
                 nested_child_text(cmd, &["service", "cacert"]),
-                nested_child_text(cmd, &["oidc", "oidc_provider_url"]),
+                nested_child_text(cmd, &["oidc", "url"]),
                 nested_child_text(cmd, &["oidc", "client", "id"]),
                 nested_child_text(cmd, &["oidc", "client", "secret"]),
             )
         } else {
             (None, None, None, None, None)
         };
+
+        if resource_type == "integration_config" {
+            for (value, field) in [
+                (&new_service_url, "service <url>"),
+                (&new_oidc_provider_url, "oidc <url>"),
+                (&new_oidc_client_id, "oidc client <id>"),
+                (&new_oidc_client_secret, "oidc client <secret>"),
+            ] {
+                if value.is_none() {
+                    return error_response(
+                        &cmd.name,
+                        400,
+                        &format!("Invalid arguments: missing {field}"),
+                    );
+                }
+            }
+
+            let all_empty = [
+                new_service_url.as_deref(),
+                new_service_cacert.as_deref(),
+                new_oidc_provider_url.as_deref(),
+                new_oidc_client_id.as_deref(),
+                new_oidc_client_secret.as_deref(),
+            ]
+            .into_iter()
+            .all(|value| value.is_none_or(|value| value.trim().is_empty()));
+            if !all_empty {
+                for (value, field) in [
+                    (new_service_url.as_deref(), "service <url>"),
+                    (new_oidc_provider_url.as_deref(), "oidc <url>"),
+                    (new_oidc_client_id.as_deref(), "oidc client <id>"),
+                    (new_oidc_client_secret.as_deref(), "oidc client <secret>"),
+                ] {
+                    if value.is_none_or(|value| value.trim().is_empty()) {
+                        return error_response(
+                            &cmd.name,
+                            400,
+                            &format!("Invalid arguments: missing {field}"),
+                        );
+                    }
+                }
+            }
+        }
 
         let modified = store.modify(&uuid, |r| {
             if matches!(resource_type, "note" | "override") {

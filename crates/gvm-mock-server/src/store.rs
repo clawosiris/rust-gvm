@@ -255,6 +255,37 @@ impl Resource {
         xml.push_str(&format!("</{}>", self.resource_type));
         xml
     }
+
+    /// Generate the canonical gvmd representation for an integration configuration.
+    pub(crate) fn to_integration_config_xml(&self, details: bool) -> String {
+        let mut xml = format!(
+            "<integration_config id=\"{id}\">\
+             <owner><name>admin</name></owner>\
+             <name>{name}</name>\
+             <comment>{comment}</comment>\
+             <creation_time>{ct}</creation_time>\
+             <modification_time>{mt}</modification_time>\
+             <writable>1</writable>\
+             <in_use>0</in_use>\
+             <permissions><permission><name>Everything</name></permission></permissions>",
+            id = self.id,
+            name = xml_escape(&self.name),
+            comment = xml_escape(&self.comment),
+            ct = self.creation_time,
+            mt = self.modification_time,
+        );
+        if details {
+            xml.push_str(&format!(
+                "<service><url>{service_url}</url></service>\
+                 <oidc><url>{oidc_url}</url><client><id>{client_id}</id></client></oidc>",
+                service_url = xml_escape(self.attr("service_url").unwrap_or_default()),
+                oidc_url = xml_escape(self.attr("oidc_provider_url").unwrap_or_default()),
+                client_id = xml_escape(self.attr("oidc_provider_client_id").unwrap_or_default()),
+            ));
+        }
+        xml.push_str("</integration_config>");
+        xml
+    }
 }
 
 /// Thread-safe resource store.
