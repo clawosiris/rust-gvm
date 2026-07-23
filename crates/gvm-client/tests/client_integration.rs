@@ -168,6 +168,47 @@ async fn connect_negotiates_supported_versions() {
 }
 
 #[tokio::test]
+async fn typed_feature_discovery_parses_current_gvmd_shape_over_unix_transport() {
+    let server = match MockGmpServer::builder()
+        .mode(ServerMode::Fixture)
+        .version(MockVersion::V22_8)
+        .unix_socket_auto()
+        .override_response(
+            "get_features",
+            "<get_features_response status=\"200\" status_text=\"OK\">\
+             <feature compiled_in=\"1\" enabled=\"1\"><name>ENABLE_AGENTS</name></feature>\
+             <feature compiled_in=\"1\" enabled=\"0\"><name>ENABLE_JWT_AUTH</name></feature>\
+             </get_features_response>",
+        )
+        .build()
+        .await
+    {
+        Ok(server) => server,
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return,
+        Err(error) => panic!("server should start: {error}"),
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    let response = client
+        .get_features_parsed()
+        .await
+        .expect("typed feature discovery should parse");
+
+    assert_eq!(response.features.len(), 2);
+    assert_eq!(response.features[0].name, "ENABLE_AGENTS");
+    assert!(response.features[0].compiled_in);
+    assert!(response.features[0].enabled);
+    assert_eq!(response.features[1].name, "ENABLE_JWT_AUTH");
+    assert!(response.features[1].compiled_in);
+    assert!(!response.features[1].enabled);
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn unsupported_version_returns_error() {
     let Some(server) = fixture_server_with_version_response("21.4").await else {
         return;

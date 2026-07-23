@@ -142,6 +142,11 @@ async fn assert_version_gated_accepted(version: GmpVersion) {
 
     let features_response = send_recv(&mut stream, get_features()).await;
     assert_eq!(features_response.status_code(), Some(200));
+    let features_text = features_response.as_str().expect("valid UTF-8");
+    assert!(features_text.contains(
+        "<feature compiled_in=\"0\" enabled=\"0\"><name>ENABLE_OPENVASD</name></feature>"
+    ));
+    assert!(features_text.contains("<name>ENABLE_WEB_APPLICATION_SCANNING</name>"));
 
     server.shutdown().await;
 }
