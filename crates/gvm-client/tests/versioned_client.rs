@@ -474,9 +474,8 @@ async fn next_client_agent_groups_round_trip() {
         )
         .await
         .expect("create_agent_group should succeed");
-    assert_eq!(create_response.status_code(), Some(201));
-    let agent_group_id = EntityId::new(create_response.id().expect("created id"))
-        .expect("server id should be valid");
+    assert_eq!(create_response.status, 201);
+    let agent_group_id = create_response.id;
 
     assert_create_agent_group_task_round_trip(&mut client, &server, &agent_group_id).await;
 
@@ -484,25 +483,25 @@ async fn next_client_agent_groups_round_trip() {
         .clone_agent_group(&agent_group_id)
         .await
         .expect("clone_agent_group should succeed");
-    assert_eq!(clone_response.status_code(), Some(201));
+    assert_eq!(clone_response.status, 201);
 
     let get_response = client
         .get_agent_group(&agent_group_id)
         .await
         .expect("get_agent_group should succeed");
-    let get_text = get_response.as_str().expect("valid UTF-8 XML");
-    assert!(get_text.contains("Client Agent Group"));
-    assert!(get_text.contains("<scheduler_cron_time>0 */5 * * *</scheduler_cron_time>"));
+    assert_eq!(get_response.items.len(), 1);
+    assert_eq!(get_response.items[0].meta.name, "Client Agent Group");
+    assert_eq!(
+        get_response.items[0].scheduler_cron_time.as_deref(),
+        Some("0 */5 * * *")
+    );
 
     let list_response = client
         .get_agent_groups(Default::default())
         .await
         .expect("get_agent_groups should succeed");
-    assert_eq!(list_response.status_code(), Some(200));
-    assert!(list_response
-        .as_str()
-        .expect("valid UTF-8 XML")
-        .contains("<agent_group_count>2"));
+    assert_eq!(list_response.status, 200);
+    assert_eq!(list_response.counts.total, Some(2));
 
     let modify_response = client
         .modify_agent_group(
@@ -516,22 +515,27 @@ async fn next_client_agent_groups_round_trip() {
         )
         .await
         .expect("modify_agent_group should succeed");
-    assert_eq!(modify_response.status_code(), Some(200));
+    assert_eq!(modify_response.status, 200);
 
     let updated_response = client
         .get_agent_group(&agent_group_id)
         .await
         .expect("updated get_agent_group should succeed");
-    let updated_text = updated_response.as_str().expect("valid UTF-8 XML");
-    assert!(updated_text.contains("Updated Agent Group"));
-    assert!(updated_text.contains("<comment>modified through client</comment>"));
-    assert!(updated_text.contains("<scheduler_cron_time>0 */10 * * *</scheduler_cron_time>"));
+    assert_eq!(updated_response.items[0].meta.name, "Updated Agent Group");
+    assert_eq!(
+        updated_response.items[0].meta.comment.as_deref(),
+        Some("modified through client")
+    );
+    assert_eq!(
+        updated_response.items[0].scheduler_cron_time.as_deref(),
+        Some("0 */10 * * *")
+    );
 
     let delete_response = client
         .delete_agent_group(&agent_group_id, true)
         .await
         .expect("delete_agent_group should succeed");
-    assert_eq!(delete_response.status_code(), Some(200));
+    assert_eq!(delete_response.status, 200);
 
     let error = client
         .get_agent_group(&agent_group_id)
@@ -657,7 +661,7 @@ async fn next_client_agent_commands_round_trip() {
         })
         .await
         .expect("get_agents should succeed");
-    assert_eq!(agents.status_code(), Some(200));
+    assert_eq!(agents.status, 200);
 
     let missing_agent = client
         .get_agent(&id("ffffffff-ffff-ffff-ffff-ffffffffffff"))
@@ -681,13 +685,13 @@ async fn next_client_agent_commands_round_trip() {
         )
         .await
         .expect("modify_agent should succeed");
-    assert_eq!(modify.status_code(), Some(200));
+    assert_eq!(modify.status, 200);
 
     let sync = client
         .sync_agents()
         .await
         .expect("sync_agents should succeed");
-    assert_eq!(sync.status_code(), Some(200));
+    assert_eq!(sync.status, 200);
 
     let control_config = client
         .modify_agent_control_scan_config(
@@ -699,7 +703,7 @@ async fn next_client_agent_commands_round_trip() {
         )
         .await
         .expect("modify_agent_control_scan_config should succeed");
-    assert_eq!(control_config.status_code(), Some(200));
+    assert_eq!(control_config.status, 200);
 
     let instruction = client
         .get_agent_installer_instruction(
@@ -709,23 +713,24 @@ async fn next_client_agent_commands_round_trip() {
         )
         .await
         .expect("get_agent_installer_instruction should succeed");
-    let instruction_xml = instruction.as_str().expect("valid UTF-8 XML");
-    assert!(instruction_xml.contains("<language>en</language>"));
-    assert!(instruction_xml.contains("<instruction>"));
+    assert_eq!(instruction.language, "en");
+    assert!(instruction.instruction.contains("mock agent"));
 
     let bundle = client
         .get_agent_support_bundle(&agent_ids[0], Some(7))
         .await
         .expect("get_agent_support_bundle should succeed");
-    let bundle_xml = bundle.as_str().expect("valid UTF-8 XML");
-    assert!(bundle_xml.contains("<content_type>application/octet-stream</content_type>"));
-    assert!(bundle_xml.contains("<content encoding=\"base64\">"));
+    assert_eq!(
+        bundle.file.content_type.as_deref(),
+        Some("application/octet-stream")
+    );
+    assert_eq!(bundle.file.content, b"hello-mock");
 
     let delete = client
         .delete_agent(&agent_ids)
         .await
         .expect("delete_agent should succeed");
-    assert_eq!(delete.status_code(), Some(200));
+    assert_eq!(delete.status, 200);
 
     server.shutdown().await;
 }
