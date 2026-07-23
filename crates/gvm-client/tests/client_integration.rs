@@ -2266,7 +2266,11 @@ async fn typed_report_drilldowns_parse_stateful_mock_responses() {
         .await
         .expect("authenticate should succeed");
 
-    let task_id = EntityId::new("task-drilldown").expect("valid id");
+    let task_id = client
+        .create_import_task("Report Drilldown Task", None)
+        .await
+        .expect("import task should succeed")
+        .id;
     let created = client
         .import_report(
             r#"<report id="drilldown-report"><name>Drilldown</name></report>"#,
