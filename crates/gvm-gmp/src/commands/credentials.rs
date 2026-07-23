@@ -94,6 +94,36 @@ pub struct ModifyCredentialStoreOpts {
     pub preferences: Vec<CredentialStorePreference>,
 }
 
+/// Optional fields for `modify_credential_store_credential` requests.
+#[derive(Debug, Clone, Default)]
+pub struct ModifyCredentialStoreCredentialOpts {
+    /// Optional credential name.
+    pub name: Option<String>,
+    /// Optional comment text.
+    pub comment: Option<String>,
+    /// Optional credential store identifier.
+    pub credential_store_id: Option<EntityId>,
+    /// Optional vault identifier.
+    pub vault_id: Option<String>,
+    /// Optional host identifier.
+    pub host_identifier: Option<String>,
+}
+
+struct SemanticCommand {
+    command: XmlCommand,
+    semantic_command_name: &'static str,
+}
+
+impl Request for SemanticCommand {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.command.to_bytes()
+    }
+
+    fn semantic_command_name(&self) -> Option<&'static str> {
+        Some(self.semantic_command_name)
+    }
+}
+
 /// Build a clone request for an existing credential.
 #[must_use]
 pub fn clone_credential(credential_id: &EntityId) -> impl Request {
@@ -224,6 +254,27 @@ pub fn modify_credential(credential_id: &EntityId, opts: CredentialOpts) -> impl
     cmd
 }
 
+/// Build a `modify_credential` request for a credential-store-backed credential.
+#[must_use]
+pub fn modify_credential_store_credential(
+    credential_id: &EntityId,
+    opts: ModifyCredentialStoreCredentialOpts,
+) -> impl Request {
+    let mut cmd =
+        XmlCommand::new("modify_credential").attribute("credential_id", credential_id.as_str());
+    add_text_element(&mut cmd, "name", opts.name.as_deref());
+    add_text_element(&mut cmd, "comment", opts.comment.as_deref());
+    if let Some(credential_store_id) = opts.credential_store_id {
+        cmd.add_element_with_text("credential_store_id", credential_store_id.as_str());
+    }
+    add_text_element(&mut cmd, "vault_id", opts.vault_id.as_deref());
+    add_text_element(&mut cmd, "host_identifier", opts.host_identifier.as_deref());
+    SemanticCommand {
+        command: cmd,
+        semantic_command_name: "modify_credential_store_credential",
+    }
+}
+
 /// Build a `delete_credential` request.
 #[must_use]
 pub fn delete_credential(credential_id: &EntityId, ultimate: bool) -> impl Request {
@@ -351,6 +402,26 @@ mod tests {
             },
         ));
         assert_eq!(rendered, "<modify_credential credential_id=\"c1\"><comment>updated</comment></modify_credential>");
+        assert_eq!(
+            xml(modify_credential_store_credential(
+                &id("c1"),
+                ModifyCredentialStoreCredentialOpts::default(),
+            )),
+            "<modify_credential credential_id=\"c1\"/>"
+        );
+        assert_eq!(
+            xml(modify_credential_store_credential(
+                &id("c1"),
+                ModifyCredentialStoreCredentialOpts {
+                    name: Some("store credential".into()),
+                    comment: Some("from store".into()),
+                    credential_store_id: Some(id("cs1")),
+                    vault_id: Some("vault-1".into()),
+                    host_identifier: Some("host-1".into()),
+                },
+            )),
+            "<modify_credential credential_id=\"c1\"><name>store credential</name><comment>from store</comment><credential_store_id>cs1</credential_store_id><vault_id>vault-1</vault_id><host_identifier>host-1</host_identifier></modify_credential>"
+        );
         assert_eq!(
             xml(delete_credential(&id("c1"), true)),
             "<delete_credential credential_id=\"c1\" ultimate=\"1\"/>"
