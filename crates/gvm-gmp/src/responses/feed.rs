@@ -43,7 +43,11 @@ impl Feed {
             .transpose()?;
         let currently_syncing = node
             .child("currently_syncing")
-            .map(|sync| sync.required_child_text("timestamp"))
+            .map(|sync| {
+                sync.optional_child_text("timestamp")
+                    .or_else(|| (!sync.text.is_empty()).then(|| sync.text.clone()))
+                    .ok_or_else(|| ParseError::MissingElement("timestamp".to_string()))
+            })
             .transpose()?;
         Ok(Self {
             type_: node.required_child_text("type")?,
@@ -183,6 +187,27 @@ mod tests {
         assert_eq!(feed.description, None);
         assert_eq!(feed.sync_not_available, None);
         assert_eq!(feed.currently_syncing, None);
+    }
+
+    #[test]
+    fn preserves_legacy_direct_sync_value() {
+        let response = Response::from(
+            r#"<get_feeds_response status="200" status_text="OK">
+                <feed>
+                    <type>NVT</type>
+                    <name>NVT Feed</name>
+                    <version>202603260800</version>
+                    <currently_syncing>0</currently_syncing>
+                </feed>
+            </get_feeds_response>"#,
+        );
+
+        let parsed = GetFeedsResponse::from_response(&response).expect("legacy sync value parses");
+
+        assert_eq!(parsed.items[0].currently_syncing.as_deref(), Some("0"));
+        assert!(!parsed.feed_owner_set);
+        assert!(!parsed.feed_roles_set);
+        assert!(!parsed.feed_resources_access);
     }
 
     #[test]
