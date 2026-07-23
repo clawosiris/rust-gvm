@@ -105,7 +105,7 @@ All integration tests assume the **gvm-mock-server** is available as test infras
 | TLS-001 | TLS handshake with mock server | Connect over TLS → GMP commands work |
 | TLS-002 | Default port | Default is 9390 |
 | TLS-003 | Custom hostname and port | Configured values used |
-| TLS-004 | Certificate verification | With CA file → verified; without → accepts (depending on config) |
+| TLS-004 | Certificate verification | Platform/custom roots and DNS/IP SAN are always verified |
 | TLS-005 | Client certificate auth | Certfile + keyfile → presented during handshake |
 | TLS-006 | TLS timeout | Handshake hang → timeout error |
 | TLS-007 | Invalid cert → error | Expired/wrong cert → `GvmError::Connection` |

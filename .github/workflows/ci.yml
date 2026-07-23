@@ -148,9 +148,8 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: pip install python-gvm
-      - run: cargo build -p gvm-mock-server
-      - run: python3 tests/integration/test_python_gvm.py
+      - run: pip install python-gvm cryptography
+      - run: make test-integration
 
   msrv:
     name: MSRV Check

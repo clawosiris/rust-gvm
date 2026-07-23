@@ -495,7 +495,7 @@ Strict tenant isolation through policy engine. Customer A cannot see Customer B'
 |-----------|--------|-------|
 | Unix socket transport | ✅ Complete | `UnixSocketConnection` |
 | SSH transport | ✅ Complete | `SshConnection` |
-| TLS transport | 🔲 Planned (#7) | Will use `TlsConnection` |
+| TLS transport | ✅ Implemented | `TlsConnection` with verified roots/SAN and optional client identity |
 | GMP command builders | ✅ Complete | All `gvm-gmp` commands |
 | Response parsing | ✅ Complete | `Response` + `child_text()` |
 | Version negotiation | ✅ Complete | `GmpClient` auto-negotiates |

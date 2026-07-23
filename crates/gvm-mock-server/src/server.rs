@@ -21,6 +21,8 @@ use crate::scenario::{ScenarioMode, ScenarioStep};
 #[cfg(feature = "ssh")]
 use crate::ssh_listener::{generate_host_key, host_key_fingerprint, run_ssh_listener};
 use crate::store::ResourceStore;
+#[cfg(feature = "tls")]
+use crate::tls_listener::{generate_tls_acceptor, run_tls_listener};
 use crate::version::GmpVersion;
 use crate::ServerMode;
 
@@ -43,6 +45,12 @@ pub struct MockGmpServer {
     _socket_dir: Option<TempDir>,
     /// The TCP address (if using TCP transport).
     tcp_addr: Option<std::net::SocketAddr>,
+    /// The TLS address (if using TLS transport).
+    #[cfg(feature = "tls")]
+    tls_addr: Option<std::net::SocketAddr>,
+    /// Generated TLS server certificate in PEM format.
+    #[cfg(feature = "tls")]
+    tls_certificate_pem: Option<String>,
     /// The SSH address (if using SSH transport).
     #[cfg(feature = "ssh")]
     ssh_addr: Option<std::net::SocketAddr>,
@@ -54,7 +62,7 @@ pub struct MockGmpServer {
     /// Shutdown signal.
     shutdown: Arc<Notify>,
     /// Background listener task handle.
-    _listener_handle: JoinHandle<()>,
+    listener_handle: JoinHandle<()>,
 }
 
 impl MockGmpServer {
@@ -114,13 +122,17 @@ impl MockGmpServer {
             socket_path: Some(socket_path),
             _socket_dir: temp_dir,
             tcp_addr: None,
+            #[cfg(feature = "tls")]
+            tls_addr: None,
+            #[cfg(feature = "tls")]
+            tls_certificate_pem: None,
             #[cfg(feature = "ssh")]
             ssh_addr: None,
             #[cfg(feature = "ssh")]
             ssh_host_key_fingerprint: None,
             history,
             shutdown,
-            _listener_handle: handle,
+            listener_handle: handle,
         })
     }
 
@@ -166,13 +178,75 @@ impl MockGmpServer {
             socket_path: None,
             _socket_dir: None,
             tcp_addr: Some(local_addr),
+            #[cfg(feature = "tls")]
+            tls_addr: None,
+            #[cfg(feature = "tls")]
+            tls_certificate_pem: None,
             #[cfg(feature = "ssh")]
             ssh_addr: None,
             #[cfg(feature = "ssh")]
             ssh_host_key_fingerprint: None,
             history,
             shutdown,
-            _listener_handle: handle,
+            listener_handle: handle,
+        })
+    }
+
+    /// Create and start a new mock server on verified TLS.
+    #[cfg(feature = "tls")]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn start_tls(
+        addr: &str,
+        client_ca_certificate: Option<&Path>,
+        mode: ServerMode,
+        version: GmpVersion,
+        fixtures: Option<FixtureStore>,
+        store: Option<ResourceStore>,
+        fault_engine: FaultEngine,
+        options: ServerOptions,
+    ) -> Result<Self, std::io::Error> {
+        let ServerOptions {
+            scenario_config,
+            large_report,
+            max_request_bytes,
+        } = options;
+        let listener = TcpListener::bind(addr).await?;
+        let local_addr = listener.local_addr()?;
+        let (acceptor, certificate_pem) = generate_tls_acceptor(client_ca_certificate)?;
+        let history = CommandHistory::new();
+        let shutdown = Arc::new(Notify::new());
+
+        let state = Arc::new(ListenerState {
+            mode,
+            version,
+            history: history.clone(),
+            session_counter: AtomicU64::new(0),
+            fixtures,
+            store,
+            scenario_config,
+            large_report,
+            max_request_bytes,
+            fault_engine: fault_engine.clone(),
+            shutdown: Arc::clone(&shutdown),
+        });
+
+        let handle = tokio::spawn(async move {
+            run_tls_listener(listener, acceptor, state).await;
+        });
+
+        Ok(Self {
+            socket_path: None,
+            _socket_dir: None,
+            tcp_addr: None,
+            tls_addr: Some(local_addr),
+            tls_certificate_pem: Some(certificate_pem),
+            #[cfg(feature = "ssh")]
+            ssh_addr: None,
+            #[cfg(feature = "ssh")]
+            ssh_host_key_fingerprint: None,
+            history,
+            shutdown,
+            listener_handle: handle,
         })
     }
 
@@ -223,11 +297,15 @@ impl MockGmpServer {
             socket_path: None,
             _socket_dir: None,
             tcp_addr: None,
+            #[cfg(feature = "tls")]
+            tls_addr: None,
+            #[cfg(feature = "tls")]
+            tls_certificate_pem: None,
             ssh_addr: Some(local_addr),
             ssh_host_key_fingerprint: Some(fingerprint),
             history,
             shutdown,
-            _listener_handle: handle,
+            listener_handle: handle,
         })
     }
 
@@ -244,6 +322,24 @@ impl MockGmpServer {
     /// Get the TCP port (convenience for random port assignment).
     pub fn port(&self) -> Option<u16> {
         self.tcp_addr.map(|a| a.port())
+    }
+
+    /// Get the TLS address (if using TLS transport).
+    #[cfg(feature = "tls")]
+    pub fn tls_addr(&self) -> Option<std::net::SocketAddr> {
+        self.tls_addr
+    }
+
+    /// Get the TLS port (convenience for random port assignment).
+    #[cfg(feature = "tls")]
+    pub fn tls_port(&self) -> Option<u16> {
+        self.tls_addr.map(|address| address.port())
+    }
+
+    /// Get the generated TLS server certificate in PEM format.
+    #[cfg(feature = "tls")]
+    pub fn tls_certificate_pem(&self) -> Option<&str> {
+        self.tls_certificate_pem.as_deref()
     }
 
     /// Get the SSH address (if using SSH transport).
@@ -282,6 +378,7 @@ impl MockGmpServer {
     /// Shut down the server and clean up resources.
     pub async fn shutdown(self) {
         self.shutdown.notify_one();
+        let _ = self.listener_handle.await;
 
         // Clean up Unix socket
         if let Some(ref path) = self.socket_path {
