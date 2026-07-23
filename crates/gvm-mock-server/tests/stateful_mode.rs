@@ -216,6 +216,14 @@ async fn stateful_create_agent_group_task_preserves_agent_group_id() {
     assert!(text.contains("<agent_group_id>ag1</agent_group_id>"));
     assert!(text.contains("<scanner_id>s1</scanner_id>"));
 
+    let start_resp = send_recv(
+        &mut stream,
+        format!("<start_task task_id=\"{task_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(start_resp.status_code(), Some(202));
+    assert!(start_resp.as_str().unwrap().contains("<report_id>"));
+
     server.shutdown().await;
 }
 

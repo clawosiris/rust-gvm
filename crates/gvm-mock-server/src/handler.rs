@@ -1691,9 +1691,22 @@ fn task_references(cmd: &ParsedCommand) -> Result<TaskReferences, &'static str> 
         .children
         .iter()
         .find(|child| child.name == "target")
-        .and_then(|child| child.attributes.get("id"))
-        .ok_or("A target is required")?;
-    if target_id == "0" {
+        .and_then(|child| child.attributes.get("id"));
+    if target_id.map(String::as_str) == Some("0") {
+        return Ok(TaskReferences {
+            target: None,
+            config: None,
+            scanner: None,
+        });
+    }
+    if target_id.is_none()
+        && cmd.children.iter().any(|child| {
+            matches!(
+                child.name.as_str(),
+                "agent_group" | "oci_image_target" | "web_application_target"
+            )
+        })
+    {
         return Ok(TaskReferences {
             target: None,
             config: None,

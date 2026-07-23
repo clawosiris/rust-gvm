@@ -420,7 +420,7 @@ fn stored_task_reference(
 }
 
 fn validate_stored_task_references(inner: &StoreInner, task: &Resource) -> Result<(), StoreError> {
-    if task.attr("import_task") == Some("1") {
+    if task.attr("import_task") == Some("1") || task_has_specialized_target(task) {
         return Ok(());
     }
     for (key, resource_type) in [
@@ -432,6 +432,16 @@ fn validate_stored_task_references(inner: &StoreInner, task: &Resource) -> Resul
         validate_task_reference(inner, &id, resource_type)?;
     }
     Ok(())
+}
+
+fn task_has_specialized_target(task: &Resource) -> bool {
+    [
+        "agent_group_id",
+        "oci_image_target_id",
+        "web_application_target_id",
+    ]
+    .iter()
+    .any(|key| task.attr(key).is_some())
 }
 
 fn task_is_active(task: &Resource) -> bool {
@@ -523,7 +533,7 @@ impl ResourceStore {
             validate_task_reference(&inner, &scanner, "scanner")?;
             task.set_attr("scanner_id", &scanner.to_string());
         }
-        if references.target.is_none() {
+        if references.target.is_none() && !task_has_specialized_target(&task) {
             task.set_attr("import_task", "1");
             task.set_attr("status", TaskStatus::Done.as_str());
         } else {
