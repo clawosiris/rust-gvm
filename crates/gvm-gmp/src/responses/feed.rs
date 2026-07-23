@@ -57,11 +57,9 @@ impl Feed {
     }
 }
 
-fn required_bool_child(root: &XmlNode, name: &str) -> Result<bool, ParseError> {
-    let value = root
-        .child_text(name)
-        .ok_or_else(|| ParseError::MissingElement(name.to_string()))?;
-    parse_bool(&value, name)
+fn optional_bool_child(root: &XmlNode, name: &str) -> Result<bool, ParseError> {
+    root.child_text(name)
+        .map_or(Ok(false), |value| parse_bool(&value, name))
 }
 
 impl GetFeedsResponse {
@@ -77,9 +75,9 @@ impl GetFeedsResponse {
             status_text,
             items,
             counts: count_info(&root, "feed_count")?,
-            feed_owner_set: required_bool_child(&root, "feed_owner_set")?,
-            feed_roles_set: required_bool_child(&root, "feed_roles_set")?,
-            feed_resources_access: required_bool_child(&root, "feed_resources_access")?,
+            feed_owner_set: optional_bool_child(&root, "feed_owner_set")?,
+            feed_roles_set: optional_bool_child(&root, "feed_roles_set")?,
+            feed_resources_access: optional_bool_child(&root, "feed_resources_access")?,
         })
     }
 }
@@ -238,10 +236,10 @@ mod tests {
                 <feed_roles_set>1</feed_roles_set>
             </get_feeds_response>"#,
         );
-        assert!(matches!(
-            GetFeedsResponse::from_response(&missing_flag),
-            Err(ParseError::MissingElement(field)) if field == "feed_resources_access"
-        ));
+        let parsed = GetFeedsResponse::from_response(&missing_flag).expect("missing flag defaults");
+        assert!(parsed.feed_owner_set);
+        assert!(parsed.feed_roles_set);
+        assert!(!parsed.feed_resources_access);
 
         let missing_timestamp = Response::from(
             r#"<get_feeds_response status="200" status_text="OK">
