@@ -1596,6 +1596,9 @@ fn render_help_response(cmd: &ParsedCommand) -> Vec<u8> {
     if !matches!(help_type, "" | "brief") {
         return error_response("help", 400, "Help type must be blank or 'brief'");
     }
+    if help_type == "brief" && format.as_deref() != Some("xml") {
+        return error_response("help", 400, "Brief help requires XML format");
+    }
 
     if format.as_deref().is_none_or(|value| value == "text") {
         let mut body = String::new();
@@ -1610,9 +1613,6 @@ fn render_help_response(cmd: &ParsedCommand) -> Vec<u8> {
     }
 
     if help_type == "brief" {
-        if format.as_deref() != Some("xml") {
-            return error_response("help", 400, "Brief help requires XML format");
-        }
         let mut body = String::new();
         for (name, summary) in COMMANDS {
             body.push_str("<command><name>");

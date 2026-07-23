@@ -556,6 +556,9 @@ async fn stateful_help_returns_command_listing() {
         send_recv(&mut stream, br#"<help format="html" type="brief"/>"#).await;
     assert_eq!(invalid_brief_format.status_code(), Some(400));
 
+    let missing_brief_format = send_recv(&mut stream, br#"<help type="brief"/>"#).await;
+    assert_eq!(missing_brief_format.status_code(), Some(400));
+
     let full_xml = send_recv(&mut stream, br#"<help format="xml"/>"#).await;
     assert_eq!(full_xml.status_code(), Some(200));
     let full_xml_text = full_xml.as_str().expect("utf8");
