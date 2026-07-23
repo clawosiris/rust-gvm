@@ -845,7 +845,11 @@ impl ResourceStore {
                 .attr("report_id")
                 .and_then(|report_id| Uuid::parse_str(report_id).ok())
             {
-                if let Some(report) = inner.resources.get_mut(&report_id) {
+                let task_id = id.to_string();
+                if let Some(report) = inner.resources.get_mut(&report_id).filter(|report| {
+                    report.resource_type == "report"
+                        && report.attr("task_id") == Some(task_id.as_str())
+                }) {
                     report.set_attr("status", TaskStatus::Stopped.as_str());
                     report.modification_time = now_iso();
                 }
@@ -1627,6 +1631,34 @@ mod tests {
             .delete_typed(&task_id, "task", true)
             .expect("synchronous mock deletion should still remove the task");
         assert!(store.get(&task_id).is_none());
+    }
+
+    #[test]
+    fn deleting_an_active_task_does_not_mutate_an_unrelated_report_reference() {
+        let store = ResourceStore::new();
+        let task_id = create_valid_task(&store, "Corrupt Report Link");
+        let other_task_id = create_valid_task(&store, "Report Owner");
+        let other_report_id = store.start_task(&other_task_id).expect("start other task");
+        assert!(store.modify(&task_id, |task| {
+            task.set_attr("status", TaskStatus::Running.as_str());
+            task.set_attr("report_id", &other_report_id.to_string());
+        }));
+
+        store
+            .delete_typed(&task_id, "task", true)
+            .expect("delete corrupt task");
+
+        let other_report = store
+            .get(&other_report_id)
+            .expect("unrelated report remains");
+        assert_eq!(
+            other_report.attr("task_id"),
+            Some(other_task_id.to_string().as_str())
+        );
+        assert_eq!(
+            other_report.attr("status"),
+            Some(TaskStatus::Running.as_str())
+        );
     }
 
     #[test]

@@ -1688,11 +1688,8 @@ fn optional_child_uuid(
 }
 
 fn task_references(cmd: &ParsedCommand) -> Result<TaskReferences, &'static str> {
-    let target_id = cmd
-        .children
-        .iter()
-        .find(|child| child.name == "target")
-        .and_then(|child| child.attributes.get("id"));
+    let target = cmd.children.iter().find(|child| child.name == "target");
+    let target_id = target.and_then(|child| child.attributes.get("id"));
     let specialized_target = specialized_task_target(cmd)?;
     if target_id.map(String::as_str) == Some("0") {
         if specialized_target.is_some() {
@@ -1706,7 +1703,7 @@ fn task_references(cmd: &ParsedCommand) -> Result<TaskReferences, &'static str> 
         });
     }
     if let Some(specialized_target) = specialized_target {
-        if target_id.is_some() {
+        if target.is_some() {
             return Err("A task cannot have multiple target types");
         }
         return Ok(TaskReferences {
@@ -2180,6 +2177,16 @@ mod tests {
         );
         assert_eq!(
             task_reference_updates(&regular_and_specialized),
+            Err("A task cannot have multiple target types")
+        );
+
+        let empty_regular_and_specialized = parse_command(
+            format!("<create_task><target/><agent_group id=\"{agent_group_id}\"/></create_task>")
+                .as_bytes(),
+        )
+        .expect("parse empty regular and specialized targets");
+        assert_eq!(
+            task_references(&empty_regular_and_specialized),
             Err("A task cannot have multiple target types")
         );
 
