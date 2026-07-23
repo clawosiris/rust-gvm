@@ -17,7 +17,11 @@ pub struct GetIntegrationConfigsOpts {
     pub filter_id: Option<EntityId>,
 }
 
-/// Options for `modify_integration_config` requests.
+/// Options for a full `modify_integration_config` replacement.
+///
+/// gvmd requires the service URL, OIDC URL, client ID, and client secret
+/// together when any configurable value is non-empty. Leaving every field
+/// unset clears the integration configuration.
 #[derive(Debug, Clone, Default)]
 pub struct ModifyIntegrationConfigOpts {
     /// Optional integration service URL.
@@ -56,7 +60,7 @@ pub fn get_integration_config(
     cmd
 }
 
-/// Build a `modify_integration_config` request.
+/// Build a schema-complete `modify_integration_config` request.
 #[must_use]
 pub fn modify_integration_config(
     integration_config_id: &EntityId,
@@ -65,35 +69,24 @@ pub fn modify_integration_config(
     let mut cmd = XmlCommand::new("modify_integration_config")
         .attribute("uuid", integration_config_id.as_str());
 
-    if opts.service_url.is_some() || opts.service_cacert.is_some() {
-        let service = cmd.add_element("service");
-        if let Some(service_url) = opts.service_url.as_deref() {
-            service.add_child_with_text("url", service_url);
-        }
-        if let Some(service_cacert) = opts.service_cacert.as_deref() {
-            service.add_child_with_text("cacert", service_cacert);
-        }
-    }
+    let service = cmd.add_element("service");
+    service.add_child_with_text("url", opts.service_url.as_deref().unwrap_or_default());
+    service.add_child_with_text("cacert", opts.service_cacert.as_deref().unwrap_or_default());
 
-    if opts.oidc_provider_url.is_some()
-        || opts.oidc_provider_client_id.is_some()
-        || opts.oidc_provider_client_secret.is_some()
-    {
-        let oidc = cmd.add_element("oidc");
-        if let Some(oidc_provider_url) = opts.oidc_provider_url.as_deref() {
-            oidc.add_child_with_text("oidc_provider_url", oidc_provider_url);
-        }
+    let oidc = cmd.add_element("oidc");
+    oidc.add_child_with_text("url", opts.oidc_provider_url.as_deref().unwrap_or_default());
 
-        if opts.oidc_provider_client_id.is_some() || opts.oidc_provider_client_secret.is_some() {
-            let client = oidc.add_child("client");
-            if let Some(client_id) = opts.oidc_provider_client_id.as_deref() {
-                client.add_child_with_text("id", client_id);
-            }
-            if let Some(client_secret) = opts.oidc_provider_client_secret.as_deref() {
-                client.add_child_with_text("secret", client_secret);
-            }
-        }
-    }
+    let client = oidc.add_child("client");
+    client.add_child_with_text(
+        "id",
+        opts.oidc_provider_client_id.as_deref().unwrap_or_default(),
+    );
+    client.add_child_with_text(
+        "secret",
+        opts.oidc_provider_client_secret
+            .as_deref()
+            .unwrap_or_default(),
+    );
 
     cmd
 }
@@ -135,11 +128,11 @@ mod tests {
                     oidc_provider_client_secret: Some("client-secret".into()),
                 }
             )),
-            "<modify_integration_config uuid=\"ic1\"><service><url>https://service.example</url><cacert>CERT</cacert></service><oidc><oidc_provider_url>https://oidc.example</oidc_provider_url><client><id>client-id</id><secret>client-secret</secret></client></oidc></modify_integration_config>"
+            "<modify_integration_config uuid=\"ic1\"><service><url>https://service.example</url><cacert>CERT</cacert></service><oidc><url>https://oidc.example</url><client><id>client-id</id><secret>client-secret</secret></client></oidc></modify_integration_config>"
         );
         assert_eq!(
             xml(modify_integration_config(&id("ic1"), Default::default())),
-            "<modify_integration_config uuid=\"ic1\"/>"
+            "<modify_integration_config uuid=\"ic1\"><service><url></url><cacert></cacert></service><oidc><url></url><client><id></id><secret></secret></client></oidc></modify_integration_config>"
         );
     }
 }

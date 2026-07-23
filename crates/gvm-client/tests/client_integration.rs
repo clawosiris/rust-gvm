@@ -835,7 +835,10 @@ async fn next_commands_work_on_v22_8() {
             &integration_config_id,
             gvm_client::ModifyIntegrationConfigOpts {
                 service_url: Some("https://updated.example".into()),
-                ..Default::default()
+                service_cacert: Some("UPDATED-CA".into()),
+                oidc_provider_url: Some("https://updated-oidc.example".into()),
+                oidc_provider_client_id: Some("updated-client".into()),
+                oidc_provider_client_secret: Some("updated-secret".into()),
             },
         )
         .await
@@ -854,6 +857,68 @@ async fn next_commands_work_on_v22_8() {
         .await
         .expect_err("missing report should return server error through alias");
     assert!(matches!(alias_error, GvmError::Server { status: 404, .. }));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_integration_configs_round_trip_over_unix_transport() {
+    let Some(server) = stateful_server_with_version(MockVersion::V22_8).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+    client
+        .call(authenticate("admin", "admin"))
+        .await
+        .expect("authenticate should succeed");
+
+    let integration_config_id =
+        EntityId::new("00000000-0000-0000-0000-000000000100").expect("valid id");
+    let get_response = client
+        .get_integration_config_parsed(&integration_config_id, Some(true))
+        .await
+        .expect("detailed integration config should parse");
+    assert_eq!(get_response.items.len(), 1);
+    assert_eq!(
+        get_response.items[0]
+            .service
+            .as_ref()
+            .map(|service| service.url.as_str()),
+        Some("https://service.example.invalid")
+    );
+    assert_eq!(
+        get_response.items[0]
+            .oidc
+            .as_ref()
+            .map(|oidc| oidc.client_id.as_str()),
+        Some("mock-client-id")
+    );
+
+    let list_response = client
+        .get_integration_configs_parsed(Default::default())
+        .await
+        .expect("integration config list should parse");
+    assert_eq!(list_response.counts.total, Some(1));
+    assert!(list_response.items[0].service.is_none());
+    assert!(list_response.items[0].oidc.is_none());
+
+    let modify_response = client
+        .modify_integration_config_parsed(
+            &integration_config_id,
+            gvm_client::ModifyIntegrationConfigOpts {
+                service_url: Some("https://typed.example".into()),
+                service_cacert: Some("TYPED-CA".into()),
+                oidc_provider_url: Some("https://typed-oidc.example".into()),
+                oidc_provider_client_id: Some("typed-client".into()),
+                oidc_provider_client_secret: Some("typed-secret".into()),
+            },
+        )
+        .await
+        .expect("typed modify response should parse");
+    assert_eq!(modify_response.status, 200);
 
     server.shutdown().await;
 }

@@ -349,19 +349,7 @@ async fn version_22_8_accepts_next_commands() {
     let mut stream = connect(&server).await;
     authenticate_admin(&mut stream).await;
 
-    let get_response = send_recv(
-        &mut stream,
-        get_integration_config(&id("00000000-0000-0000-0000-000000000100"), Some(true)),
-    )
-    .await;
-    assert_eq!(get_response.status_code(), Some(200));
-
-    let list_response = send_recv(&mut stream, get_integration_configs(Default::default())).await;
-    assert_eq!(list_response.status_code(), Some(200));
-    assert!(list_response
-        .as_str()
-        .expect("utf8")
-        .contains("Default Integration Config"));
+    assert_integration_configs_work_on_next(&mut stream).await;
 
     let agent_group_response = send_recv(
         &mut stream,
@@ -382,40 +370,7 @@ async fn version_22_8_accepts_next_commands() {
         .expect("utf8")
         .contains("Version Gated Agent Group"));
 
-    let modify_response = send_recv(
-        &mut stream,
-        modify_integration_config(
-            &id("00000000-0000-0000-0000-000000000100"),
-            gvm_gmp::commands::integration_configs::ModifyIntegrationConfigOpts {
-                service_url: Some("https://updated.example".into()),
-                ..Default::default()
-            },
-        ),
-    )
-    .await;
-    assert_eq!(modify_response.status_code(), Some(200));
-
-    let modified_get_response = send_recv(
-        &mut stream,
-        get_integration_config(&id("00000000-0000-0000-0000-000000000100"), Some(true)),
-    )
-    .await;
-    let modified_xml = modified_get_response.as_str().expect("utf8");
-    assert!(modified_xml.contains("<service_url>https://updated.example</service_url>"));
-    assert!(modified_xml.contains("<service_cacert>MOCK-CA-CERT</service_cacert>"));
-    assert!(
-        modified_xml.contains("<oidc_provider_client_id>mock-client-id</oidc_provider_client_id>")
-    );
-
-    let missing_uuid_response =
-        send_recv(&mut stream, XmlCommand::new("modify_integration_config")).await;
-    assert_eq!(missing_uuid_response.status_code(), Some(400));
-    assert!(missing_uuid_response
-        .status_text()
-        .expect("status text")
-        .contains("uuid"));
-
-    let report_helper = send_recv(
+    let report_response = send_recv(
         &mut stream,
         get_report_cves(
             &id("00000000-0000-0000-0000-000000000200"),
@@ -423,7 +378,7 @@ async fn version_22_8_accepts_next_commands() {
         ),
     )
     .await;
-    assert_eq!(report_helper.status_code(), Some(404));
+    assert_eq!(report_response.status_code(), Some(404));
 
     assert_credential_store_verify_works_on_next(&mut stream).await;
     assert_credential_store_credentials_work_on_next(&mut stream).await;
@@ -431,6 +386,96 @@ async fn version_22_8_accepts_next_commands() {
     assert_oci_image_targets_work_on_next(&mut stream).await;
 
     server.shutdown().await;
+}
+
+async fn assert_integration_configs_work_on_next(stream: &mut UnixStream) {
+    let integration_config_id = id("00000000-0000-0000-0000-000000000100");
+    let get_response = send_recv(
+        stream,
+        get_integration_config(&integration_config_id, Some(true)),
+    )
+    .await;
+    assert_eq!(get_response.status_code(), Some(200));
+
+    let list_response = send_recv(stream, get_integration_configs(Default::default())).await;
+    assert_eq!(list_response.status_code(), Some(200));
+    assert!(list_response
+        .as_str()
+        .expect("utf8")
+        .contains("Default Integration Config"));
+
+    let modify_response = send_recv(
+        stream,
+        modify_integration_config(
+            &integration_config_id,
+            gvm_gmp::commands::integration_configs::ModifyIntegrationConfigOpts {
+                service_url: Some("https://updated.example".into()),
+                service_cacert: Some("UPDATED-CA".into()),
+                oidc_provider_url: Some("https://updated-oidc.example".into()),
+                oidc_provider_client_id: Some("updated-client".into()),
+                oidc_provider_client_secret: Some("updated-secret".into()),
+            },
+        ),
+    )
+    .await;
+    assert_eq!(modify_response.status_code(), Some(200));
+
+    let modified_get_response = send_recv(
+        stream,
+        get_integration_config(&integration_config_id, Some(true)),
+    )
+    .await;
+    let modified_xml = modified_get_response.as_str().expect("utf8");
+    assert!(modified_xml.contains("<service><url>https://updated.example</url></service>"));
+    assert!(modified_xml.contains(
+        "<oidc><url>https://updated-oidc.example</url><client><id>updated-client</id></client></oidc>"
+    ));
+    assert!(!modified_xml.contains("MOCK-CA-CERT"));
+    assert!(!modified_xml.contains("mock-client-secret"));
+
+    let missing_uuid_response =
+        send_recv(stream, XmlCommand::new("modify_integration_config")).await;
+    assert_eq!(missing_uuid_response.status_code(), Some(400));
+    assert!(missing_uuid_response
+        .status_text()
+        .expect("status text")
+        .contains("uuid"));
+
+    let malformed_modify = send_recv(
+        stream,
+        XmlCommand::new("modify_integration_config")
+            .attribute("uuid", "00000000-0000-0000-0000-000000000100"),
+    )
+    .await;
+    assert_eq!(malformed_modify.status_code(), Some(400));
+    assert!(malformed_modify
+        .status_text()
+        .expect("status text")
+        .contains("service"));
+
+    let partial_modify = send_recv(
+        stream,
+        modify_integration_config(
+            &integration_config_id,
+            gvm_gmp::commands::integration_configs::ModifyIntegrationConfigOpts {
+                service_url: Some("https://partial.example".into()),
+                ..Default::default()
+            },
+        ),
+    )
+    .await;
+    assert_eq!(partial_modify.status_code(), Some(400));
+    assert!(partial_modify
+        .status_text()
+        .expect("status text")
+        .contains("oidc"));
+
+    let clear_response = send_recv(
+        stream,
+        modify_integration_config(&integration_config_id, Default::default()),
+    )
+    .await;
+    assert_eq!(clear_response.status_code(), Some(200));
 }
 
 async fn assert_web_application_targets_and_tasks_work_on_next(stream: &mut UnixStream) {

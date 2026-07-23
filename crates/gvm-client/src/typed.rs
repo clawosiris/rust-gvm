@@ -30,6 +30,10 @@ use gvm_gmp::commands::filters::{create_filter, get_filters, FilterOpts, GetFilt
 use gvm_gmp::commands::groups::{create_group, get_groups, GetGroupsOpts, GroupOpts};
 use gvm_gmp::commands::help::help;
 use gvm_gmp::commands::hosts::{create_host, get_hosts, GetHostsOpts, HostOpts};
+use gvm_gmp::commands::integration_configs::{
+    get_integration_config, get_integration_configs, modify_integration_config,
+    GetIntegrationConfigsOpts, ModifyIntegrationConfigOpts,
+};
 use gvm_gmp::commands::notes::{create_note, get_notes, GetNotesOpts, NoteOpts};
 use gvm_gmp::commands::nvts::{
     get_nvt_families, get_nvts, get_scan_config_nvt, get_scan_config_nvts, GetNvtsOpts,
@@ -116,21 +120,22 @@ use gvm_gmp::responses::{
     DescribeAuthResponse, EmptyTrashcanResponse, GetAlertsResponse, GetAssetsResponse,
     GetCertBundAdvisoriesResponse, GetCpesResponse, GetCredentialStoresResponse,
     GetCredentialsResponse, GetCvesResponse, GetDfnCertAdvisoriesResponse, GetFeedsResponse,
-    GetFiltersResponse, GetGroupsResponse, GetHostsResponse, GetNotesResponse,
-    GetNvtFamiliesResponse, GetNvtsResponse, GetOciImageTargetsResponse, GetOverridesResponse,
-    GetPermissionsResponse, GetPortListsResponse, GetReportApplicationsResponse,
-    GetReportClosedCvesResponse, GetReportConfigsResponse, GetReportCvesResponse,
-    GetReportErrorsResponse, GetReportFormatsResponse, GetReportHostsResponse,
-    GetReportOperatingSystemsResponse, GetReportPortsResponse, GetReportTlsCertificatesResponse,
-    GetReportVulnsResponse, GetReportsResponse, GetResultsResponse, GetRolesResponse,
-    GetScanConfigsResponse, GetScannersResponse, GetSchedulesResponse, GetSettingsResponse,
-    GetTagsResponse, GetTargetsResponse, GetTasksResponse, GetTicketsResponse,
-    GetTimezonesResponse, GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse,
-    GetVulnerabilitiesResponse, GetWebApplicationTargetsResponse, HelpResponse,
-    ModifyAssetResponse, ModifyCredentialResponse, ModifyOciImageTargetResponse,
-    ModifyScanConfigResponse, ModifyScannerResponse, ModifyWebApplicationTargetResponse,
-    ReportExport, RestoreResponse, ResumeTaskResponse, StartTaskResponse, SyncConfigResponse,
-    VerifyCredentialStoreResponse, VerifyScannerResponse,
+    GetFiltersResponse, GetGroupsResponse, GetHostsResponse, GetIntegrationConfigsResponse,
+    GetNotesResponse, GetNvtFamiliesResponse, GetNvtsResponse, GetOciImageTargetsResponse,
+    GetOverridesResponse, GetPermissionsResponse, GetPortListsResponse,
+    GetReportApplicationsResponse, GetReportClosedCvesResponse, GetReportConfigsResponse,
+    GetReportCvesResponse, GetReportErrorsResponse, GetReportFormatsResponse,
+    GetReportHostsResponse, GetReportOperatingSystemsResponse, GetReportPortsResponse,
+    GetReportTlsCertificatesResponse, GetReportVulnsResponse, GetReportsResponse,
+    GetResultsResponse, GetRolesResponse, GetScanConfigsResponse, GetScannersResponse,
+    GetSchedulesResponse, GetSettingsResponse, GetTagsResponse, GetTargetsResponse,
+    GetTasksResponse, GetTicketsResponse, GetTimezonesResponse, GetTlsCertificatesResponse,
+    GetUsersResponse, GetVersionResponse, GetVulnerabilitiesResponse,
+    GetWebApplicationTargetsResponse, HelpResponse, ModifyAssetResponse, ModifyCredentialResponse,
+    ModifyIntegrationConfigResponse, ModifyOciImageTargetResponse, ModifyScanConfigResponse,
+    ModifyScannerResponse, ModifyWebApplicationTargetResponse, ReportExport, RestoreResponse,
+    ResumeTaskResponse, StartTaskResponse, SyncConfigResponse, VerifyCredentialStoreResponse,
+    VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::CredentialStoreCredentialType;
@@ -1605,6 +1610,59 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     pub async fn create_host(&mut self, opts: HostOpts) -> Result<CreateHostResponse, GvmError> {
         let response = self.send(create_host(opts)).await?;
         CreateHostResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    // ── Integration Configurations ────────────────────────────────────────────
+
+    /// Send a single `get_integration_config` request and return a typed response.
+    ///
+    /// The `_parsed` suffix distinguishes this helper from the raw
+    /// [`GmpClient::get_integration_config`] method.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_integration_config_parsed(
+        &mut self,
+        integration_config_id: &EntityId,
+        details: Option<bool>,
+    ) -> Result<GetIntegrationConfigsResponse, GvmError> {
+        let response = self
+            .send(get_integration_config(integration_config_id, details))
+            .await?;
+        GetIntegrationConfigsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `get_integration_configs` request and return a typed response.
+    ///
+    /// The `_parsed` suffix distinguishes this helper from the raw
+    /// [`GmpClient::get_integration_configs`] method.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_integration_configs_parsed(
+        &mut self,
+        opts: GetIntegrationConfigsOpts,
+    ) -> Result<GetIntegrationConfigsResponse, GvmError> {
+        let response = self.send(get_integration_configs(opts)).await?;
+        GetIntegrationConfigsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `modify_integration_config` request and return a typed response.
+    ///
+    /// The `_parsed` suffix distinguishes this helper from the raw
+    /// [`GmpClient::modify_integration_config`] method.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_integration_config_parsed(
+        &mut self,
+        integration_config_id: &EntityId,
+        opts: ModifyIntegrationConfigOpts,
+    ) -> Result<ModifyIntegrationConfigResponse, GvmError> {
+        let response = self
+            .send(modify_integration_config(integration_config_id, opts))
+            .await?;
+        ModifyIntegrationConfigResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     // ── Assets ──────────────────────────────────────────────────────────────────
