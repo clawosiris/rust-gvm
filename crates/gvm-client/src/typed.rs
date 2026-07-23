@@ -28,7 +28,7 @@ use gvm_gmp::commands::credentials::{
 use gvm_gmp::commands::feed::get_feeds;
 use gvm_gmp::commands::filters::{create_filter, get_filters, FilterOpts, GetFiltersOpts};
 use gvm_gmp::commands::groups::{create_group, get_groups, GetGroupsOpts, GroupOpts};
-use gvm_gmp::commands::help::help;
+use gvm_gmp::commands::help::{help, help_with_mode, HelpMode};
 use gvm_gmp::commands::hosts::{create_host, get_hosts, GetHostsOpts, HostOpts};
 use gvm_gmp::commands::notes::{create_note, get_notes, GetNotesOpts, NoteOpts};
 use gvm_gmp::commands::nvts::{
@@ -1807,6 +1807,15 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_help(&mut self) -> Result<HelpResponse, GvmError> {
         let response = self.send(help(None)).await?;
+        HelpResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `help` request for an explicit response mode.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_help_with_mode(&mut self, mode: HelpMode) -> Result<HelpResponse, GvmError> {
+        let response = self.send(help_with_mode(mode)).await?;
         HelpResponse::from_response(&response).map_err(GvmError::Parse)
     }
 

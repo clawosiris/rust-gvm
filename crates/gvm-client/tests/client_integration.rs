@@ -21,6 +21,7 @@ use gvm_gmp::commands::credentials::{
     ModifyCredentialStoreCredentialOpts as GmpModifyCredentialStoreCredentialOpts,
 };
 use gvm_gmp::commands::feed::get_feed;
+use gvm_gmp::commands::help::HelpMode;
 use gvm_gmp::commands::nvts::{
     get_nvt_preference, get_nvt_preferences, GetNvtPreferencesOpts, GetNvtsOpts,
 };
@@ -238,6 +239,37 @@ async fn live_wire_trace_observes_typed_helper_with_redaction() {
                 && event_text(event).contains("<authenticate_response")
         }));
     }
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_help_preserves_brief_xml_over_unix_transport() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authentication should succeed");
+
+    let response = client
+        .get_help_with_mode(HelpMode::BriefXml)
+        .await
+        .expect("brief XML help should parse");
+    let schema = response.schema.expect("brief help schema");
+
+    assert!(response.help_text.is_empty());
+    assert_eq!(schema.format.as_deref(), Some("XML"));
+    assert_eq!(schema.commands.len(), 6);
+    assert!(schema
+        .commands
+        .iter()
+        .any(|command| command.name == "get_tasks"));
+
     server.shutdown().await;
 }
 
