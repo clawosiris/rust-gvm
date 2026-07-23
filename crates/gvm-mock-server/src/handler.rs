@@ -3,6 +3,7 @@
 
 //! GMP session handler — processes commands and generates responses.
 
+use std::net::IpAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -18,7 +19,7 @@ use crate::response_gen::{
     generate_xml_report_export, LargeReportConfig, REPORT_EXPORT_XML_FORMAT_ID,
 };
 use crate::scenario::{ScenarioEngine, ScenarioMode, ScenarioOutcome, ScenarioStep};
-use crate::store::{Resource, ResourceStore, TaskStatus};
+use crate::store::{AssetInputProfile, DeleteAssetResult, Resource, ResourceStore, TaskStatus};
 use crate::util::xml_escape;
 use crate::version::{command_available, GmpVersion};
 use crate::ServerMode;
@@ -48,6 +49,15 @@ pub enum HandleResult {
     },
     /// Close the connection immediately (fault injection).
     Disconnect,
+}
+
+fn asset_sort_value<'a>(resource: &'a Resource, field: &str) -> &'a str {
+    match field {
+        "name" => &resource.name,
+        "comment" => &resource.comment,
+        "type" => resource.asset_type().unwrap_or_default(),
+        _ => resource.attr(field).unwrap_or_default(),
+    }
 }
 
 impl SessionHandler {
@@ -205,6 +215,10 @@ impl SessionHandler {
             }
             "get_agent_installer_instruction" => render_agent_installer_instruction_response(cmd),
             "get_agent_support_bundle" => render_agent_support_bundle_response(cmd),
+            "create_asset" => self.handle_create_asset(cmd, store),
+            "get_assets" => self.handle_get_assets(cmd, store),
+            "modify_asset" => self.handle_modify_asset(cmd, store),
+            "delete_asset" => self.handle_delete_asset(cmd, store),
             // Create commands
             name if name.starts_with("create_") => self.handle_create(cmd, raw_xml, store),
             // Get commands
@@ -257,6 +271,257 @@ impl SessionHandler {
                 .to_vec()
         } else {
             error_response(&cmd.name, 400, "Authentication failed")
+        }
+    }
+
+    fn handle_create_asset(&self, cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
+        let profile = store.asset_input_profile();
+        let canonical = cmd.children.iter().find(|child| child.name == "asset");
+
+        let parsed = canonical.and_then(|asset| {
+            let asset_type = element_child_text(asset, "type")?;
+            let name = element_child_text(asset, "name")?;
+            let comment = asset
+                .children
+                .iter()
+                .find(|child| child.name == "comment")
+                .map(|child| child.text.as_deref().unwrap_or_default())
+                .unwrap_or_default();
+            Some((
+                asset_type.to_string(),
+                name.to_string(),
+                comment.to_string(),
+                false,
+            ))
+        });
+
+        let parsed = parsed.or_else(|| {
+            (profile == AssetInputProfile::LegacyFlatCompatibility).then(|| {
+                let asset_type = cmd
+                    .attr("asset_type")
+                    .or_else(|| cmd.child_text("asset_type"))
+                    .or_else(|| cmd.attr("type"))
+                    .or_else(|| cmd.child_text("type"))?
+                    .to_string();
+                let name = cmd
+                    .child_text("name")
+                    .or_else(|| cmd.child_text("value"))?
+                    .to_string();
+                let comment = cmd.child_text("comment").unwrap_or_default().to_string();
+                Some((asset_type, name, comment, true))
+            })?
+        });
+
+        let Some((asset_type, name, comment, legacy_flat)) = parsed else {
+            return error_response(
+                &cmd.name,
+                400,
+                "Missing required nested asset/type/name elements",
+            );
+        };
+        if asset_type.is_empty() || name.is_empty() {
+            return error_response(&cmd.name, 400, "Asset type and name must not be empty");
+        }
+
+        let asset_type = asset_type.to_ascii_lowercase();
+        if asset_type != "host"
+            && !(legacy_flat
+                && profile == AssetInputProfile::LegacyFlatCompatibility
+                && asset_type == "os")
+        {
+            return error_response(
+                &cmd.name,
+                400,
+                "Direct asset creation supports only host assets",
+            );
+        }
+
+        if asset_type == "host" && !legacy_flat && name.parse::<IpAddr>().is_err() {
+            return error_response(
+                &cmd.name,
+                400,
+                "Host asset name must be a valid IPv4 or IPv6 address",
+            );
+        }
+
+        let mut resource = Resource::new("asset", &name);
+        resource.comment = comment;
+        resource.set_attr("type", &asset_type);
+        if legacy_flat {
+            resource.set_attr("asset_type", &asset_type);
+            resource.set_attr("value", &name);
+        }
+
+        let id = store.create(resource);
+        format!(
+            "<create_asset_response status=\"201\" status_text=\"OK, resource created\" id=\"{id}\"/>"
+        )
+        .into_bytes()
+    }
+
+    fn handle_get_assets(&self, cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
+        let profile = store.asset_input_profile();
+        let asset_type = cmd.attr("type").or_else(|| {
+            (profile == AssetInputProfile::LegacyFlatCompatibility)
+                .then(|| cmd.attr("asset_type"))
+                .flatten()
+        });
+        let Some(asset_type) = asset_type else {
+            return error_response(&cmd.name, 400, "Missing required attribute: type");
+        };
+        let asset_type = asset_type.to_ascii_lowercase();
+        if !matches!(asset_type.as_str(), "host" | "os") {
+            return error_response(
+                &cmd.name,
+                404,
+                &format!("Failed to find type '{asset_type}'"),
+            );
+        }
+
+        if cmd
+            .attr("filt_id")
+            .is_some_and(|filter_id| filter_id != "0")
+        {
+            return error_response(&cmd.name, 404, "Saved filter not found");
+        }
+
+        let trash = matches!(cmd.attr("trash"), Some("1" | "true"));
+        let mut resources: Vec<Resource> = if trash {
+            store.list_trashed("asset")
+        } else {
+            store.list("asset")
+        }
+        .into_iter()
+        .filter(|resource| resource.asset_type() == Some(asset_type.as_str()))
+        .collect();
+        let total = resources.len();
+
+        if let Some(id) = cmd.attr("asset_id") {
+            let Ok(id) = Uuid::parse_str(id) else {
+                return error_response(&cmd.name, 400, "Invalid UUID");
+            };
+            let Some(resource) = resources.into_iter().find(|resource| resource.id == id) else {
+                return error_response(&cmd.name, 404, "Resource not found");
+            };
+            return format!(
+                "<get_assets_response status=\"200\" status_text=\"OK\">{}\
+                 <asset_count>{total}<filtered>1</filtered><page>1</page></asset_count>\
+                 </get_assets_response>",
+                resource.to_asset_xml(),
+            )
+            .into_bytes();
+        }
+
+        let mut first = 1usize;
+        let mut rows = None;
+        let mut sort_field = "name";
+        let mut reverse = false;
+        if let Some(filter) = cmd.attr("filter") {
+            for predicate in filter.split_whitespace() {
+                let Some((key, value)) = predicate.split_once('=') else {
+                    continue;
+                };
+                match key {
+                    "first" => {
+                        first = value
+                            .parse::<isize>()
+                            .ok()
+                            .map_or(1, |value| value.max(0) as usize);
+                    }
+                    "rows" => {
+                        rows = value
+                            .parse::<isize>()
+                            .ok()
+                            .and_then(|value| (value > 0).then_some(value as usize));
+                    }
+                    "sort" => sort_field = value,
+                    "sort-reverse" => {
+                        sort_field = value;
+                        reverse = true;
+                    }
+                    "permission" | "owner" | "min_qod" => {}
+                    "name" => resources.retain(|resource| resource.name == value),
+                    "comment" => resources.retain(|resource| resource.comment == value),
+                    "uuid" | "id" => {
+                        resources.retain(|resource| resource.id.to_string() == value);
+                    }
+                    "type" => {
+                        resources.retain(|resource| resource.asset_type() == Some(value));
+                    }
+                    _ => resources.retain(|resource| resource.attr(key) == Some(value)),
+                }
+            }
+        }
+        resources.sort_by(|left, right| {
+            let left = asset_sort_value(left, sort_field);
+            let right = asset_sort_value(right, sort_field);
+            if reverse {
+                right.cmp(left)
+            } else {
+                left.cmp(right)
+            }
+        });
+
+        let filtered = resources.len();
+        if !matches!(cmd.attr("ignore_pagination"), Some("1" | "true")) {
+            let start = first.saturating_sub(1).min(resources.len());
+            let end = rows.map_or(resources.len(), |rows| {
+                start.saturating_add(rows).min(resources.len())
+            });
+            resources = resources[start..end].to_vec();
+        }
+
+        let page = resources.len();
+        let items: String = resources.iter().map(Resource::to_asset_xml).collect();
+        format!(
+            "<get_assets_response status=\"200\" status_text=\"OK\">\
+             {items}\
+             <asset_count>{total}<filtered>{filtered}</filtered><page>{page}</page></asset_count>\
+             </get_assets_response>"
+        )
+        .into_bytes()
+    }
+
+    fn handle_modify_asset(&self, cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
+        let Some(id) = cmd.attr("asset_id") else {
+            return error_response(&cmd.name, 400, "Missing required attribute: asset_id");
+        };
+        let Ok(id) = Uuid::parse_str(id) else {
+            return error_response(&cmd.name, 400, "Invalid UUID");
+        };
+        let comment = cmd
+            .children
+            .iter()
+            .find(|child| child.name == "comment")
+            .and_then(|comment| comment.text.as_deref())
+            .unwrap_or_default();
+
+        if store.modify_host_asset_comment(&id, comment) {
+            b"<modify_asset_response status=\"200\" status_text=\"OK\"/>".to_vec()
+        } else {
+            error_response(&cmd.name, 404, "Host asset not found")
+        }
+    }
+
+    fn handle_delete_asset(&self, cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
+        let Some(id) = cmd.attr("asset_id") else {
+            let message = if cmd.attr("report_id").is_some() {
+                "Report-based bulk asset deletion is not implemented by the stateful mock"
+            } else {
+                "Missing required attribute: asset_id"
+            };
+            return error_response(&cmd.name, 400, message);
+        };
+        let Ok(id) = Uuid::parse_str(id) else {
+            return error_response(&cmd.name, 400, "Invalid UUID");
+        };
+
+        match store.delete_asset_permanently(&id) {
+            DeleteAssetResult::Deleted => {
+                b"<delete_asset_response status=\"200\" status_text=\"OK\"/>".to_vec()
+            }
+            DeleteAssetResult::InUse => error_response(&cmd.name, 400, "Asset is in use"),
+            DeleteAssetResult::NotFound => error_response(&cmd.name, 404, "Asset not found"),
         }
     }
 

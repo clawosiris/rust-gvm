@@ -12,7 +12,7 @@ use crate::fixtures::FixtureStore;
 use crate::response_gen::LargeReportConfig;
 use crate::scenario::{ScenarioMode, ScenarioStep};
 use crate::server::{MockGmpServer, ServerOptions, UnixSocketBinding};
-use crate::store::ResourceStore;
+use crate::store::{AssetInputProfile, ResourceStore};
 use crate::version::GmpVersion;
 use crate::ServerMode;
 
@@ -30,6 +30,7 @@ pub struct MockGmpServerBuilder {
     scenario_config: Option<(ScenarioMode, Vec<ScenarioStep>)>,
     large_report: Option<LargeReportConfig>,
     max_request_bytes: Option<usize>,
+    asset_input_profile: AssetInputProfile,
 }
 
 enum Transport {
@@ -55,6 +56,7 @@ impl MockGmpServerBuilder {
             scenario_config: None,
             large_report: None,
             max_request_bytes: Some(DEFAULT_MAX_REQUEST_BYTES),
+            asset_input_profile: AssetInputProfile::GvmdStrict,
         }
     }
 
@@ -123,6 +125,17 @@ impl MockGmpServerBuilder {
         self
     }
 
+    /// Select the input profile for stateful asset commands.
+    ///
+    /// The default is [`AssetInputProfile::GvmdStrict`]. Select
+    /// [`AssetInputProfile::LegacyFlatCompatibility`] only for compatibility
+    /// with the mock server's historical flat asset command shapes.
+    #[must_use]
+    pub fn asset_input_profile(mut self, profile: AssetInputProfile) -> Self {
+        self.asset_input_profile = profile;
+        self
+    }
+
     /// Inject a fault for error testing.
     #[must_use]
     pub fn inject_fault(mut self, fault: Fault) -> Self {
@@ -187,6 +200,7 @@ impl MockGmpServerBuilder {
             scenario_config,
             large_report,
             max_request_bytes,
+            asset_input_profile,
         } = self;
 
         if max_request_bytes == Some(0) {
@@ -222,6 +236,7 @@ impl MockGmpServerBuilder {
                 Some((ref u, ref p)) => ResourceStore::with_credentials(u, p),
                 None => ResourceStore::new(),
             };
+            s.set_asset_input_profile(asset_input_profile);
             if let Some(seed_fn) = seed_fn {
                 seed_fn(&s);
             }

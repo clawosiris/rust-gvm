@@ -262,14 +262,16 @@ async fn stateful_host_asset_uses_gmp_builder_shape() {
     let hosts = send_request(&mut stream, get_hosts(Default::default())).await;
     let hosts_text = hosts.as_str().expect("utf8");
     assert!(hosts_text.contains(&host_id));
-    assert!(hosts_text.contains("<asset_type>host</asset_type>"));
-    assert!(hosts_text.contains("<value>1.1.1.1</value>"));
+    assert!(hosts_text.contains("<type>host</type>"));
+    assert!(hosts_text.contains("<name>ip</name><value>1.1.1.1</value>"));
+    assert!(hosts_text.contains("<host><severity>"));
 
     let host = send_request(&mut stream, get_host(&host_entity_id)).await;
     let host_text = host.as_str().expect("utf8");
     assert!(host_text.contains(&host_id));
-    assert!(host_text.contains("<asset_type>host</asset_type>"));
-    assert!(host_text.contains("<value>1.1.1.1</value>"));
+    assert!(host_text.contains("<type>host</type>"));
+    assert!(host_text.contains("<name>ip</name><value>1.1.1.1</value>"));
+    assert!(host_text.contains("<host><severity>"));
 
     server.shutdown().await;
 }

@@ -17,6 +17,8 @@ fuzz_target!(|data: &[u8]| {
         // Try parsing as various response types — all should handle malformed input gracefully
         let _ = gvm_gmp::responses::version::GetVersionResponse::from_response(&response);
         let _ = gvm_gmp::responses::auth::AuthenticateResponse::from_response(&response);
+        let _ = gvm_gmp::responses::asset::GetAssetsResponse::from_response(&response);
+        let _ = gvm_gmp::responses::host::GetHostsResponse::from_response(&response);
         let _ = gvm_gmp::responses::target::GetTargetsResponse::from_response(&response);
         let _ = gvm_gmp::responses::task::GetTasksResponse::from_response(&response);
         let _ = gvm_gmp::responses::report::GetReportsResponse::from_response(&response);

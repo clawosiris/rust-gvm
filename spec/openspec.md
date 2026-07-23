@@ -597,7 +597,7 @@ Dev dependencies: `tokio-test`, `pretty_assertions`, `rstest`
 | gvm-gmp enum exhaustive tests | 347 |
 | gvm-gmp type tests | 6 |
 | gvm-client unit + integration | 13 |
-| python-gvm integration | 15 steps |
+| python-gvm integration | 21 steps |
 
 ---
 
