@@ -16,7 +16,7 @@ use crate::fixtures::FixtureStore;
 use crate::history::CommandHistory;
 use crate::response_gen::{
     echo_response, error_response, generate_binary_report_export, generate_large_report,
-    generate_xml_report_export, LargeReportConfig, REPORT_EXPORT_XML_FORMAT_ID,
+    generate_xml_report_export, is_known_command, LargeReportConfig, REPORT_EXPORT_XML_FORMAT_ID,
 };
 use crate::scenario::{ScenarioEngine, ScenarioMode, ScenarioOutcome, ScenarioStep};
 use crate::store::{AssetInputProfile, DeleteAssetResult, Resource, ResourceStore, TaskStatus};
@@ -193,6 +193,10 @@ impl SessionHandler {
         // All other commands require authentication
         if !store.is_authenticated(self.session_id) {
             return error_response(&cmd.name, 401, "Not authenticated");
+        }
+
+        if !is_known_command(&cmd.name) {
+            return error_response(&cmd.name, 400, "Unknown command");
         }
 
         if !command_available(&cmd.name, self.version) {

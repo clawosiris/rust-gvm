@@ -980,6 +980,7 @@ name = "gvm-gmp"
 version = "0.3.3"
 dependencies = [
  "base64",
+ "clap",
  "gvm-protocol",
  "pretty_assertions",
  "proptest",

@@ -75,6 +75,18 @@ impl GetReportExportOpts {
     }
 }
 
+struct ReportExportCommand(XmlCommand);
+
+impl Request for ReportExportCommand {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.0.to_bytes()
+    }
+
+    fn semantic_command_name(&self) -> Option<&'static str> {
+        Some("get_report_export")
+    }
+}
+
 /// Shared options for `get_report_*` helper requests.
 #[derive(Debug, Clone, Default)]
 pub struct GetReportDetailsOpts {
@@ -198,7 +210,7 @@ pub fn get_report_export_with_opts(
         opts.filter_string.as_deref(),
         opts.filter_id.as_ref(),
     );
-    cmd
+    ReportExportCommand(cmd)
 }
 
 /// Build a `delete_report` request.
@@ -317,6 +329,8 @@ mod tests {
 
     #[test]
     fn report_commands_build_xml() {
+        let export = get_report_export(&id("r1"), &id("rf1"));
+        assert_eq!(export.semantic_command_name(), Some("get_report_export"));
         let rendered = xml(create_report(
             &id("t1"),
             CreateReportOpts {
@@ -332,7 +346,7 @@ mod tests {
             "<get_reports details=\"1\" report_id=\"r1\"/>"
         );
         assert_eq!(
-            xml(get_report_export(&id("r1"), &id("rf1"))),
+            xml(export),
             "<get_reports details=\"1\" format_id=\"rf1\" ignore_pagination=\"1\" report_id=\"r1\"/>"
         );
     }

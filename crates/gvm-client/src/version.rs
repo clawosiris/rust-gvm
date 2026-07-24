@@ -10,50 +10,7 @@ use crate::GvmError;
 /// Minimum GMP version required for a command, when version-gated.
 #[must_use]
 pub fn minimum_version_for_command(command_name: &str) -> Option<GmpVersion> {
-    match command_name {
-        "create_report_config"
-        | "delete_report_config"
-        | "get_report_configs"
-        | "modify_report_config"
-        | "get_features" => Some(GmpVersion(22, 6)),
-        "create_agent_group"
-        | "delete_agent"
-        | "delete_agent_group"
-        | "get_agents"
-        | "get_agent_groups"
-        | "get_agent_installer_instruction"
-        | "get_agent_support_bundle"
-        | "modify_agent"
-        | "modify_agent_control_scan_config"
-        | "modify_agent_group"
-        | "sync_agents"
-        | "get_integration_configs"
-        | "modify_integration_config"
-        | "get_report_hosts"
-        | "get_report_ports"
-        | "get_report_applications"
-        | "get_report_operating_systems"
-        | "get_report_cves"
-        | "get_report_vulns"
-        | "get_report_tls_certificates"
-        | "get_report_errors"
-        | "get_report_closed_cves"
-        | "get_timezones"
-        | "get_report_export"
-        | "get_credential_stores"
-        | "verify_credential_store"
-        | "create_credential_store_credential"
-        | "modify_credential_store_credential"
-        | "create_oci_image_target"
-        | "delete_oci_image_target"
-        | "get_oci_image_targets"
-        | "modify_oci_image_target"
-        | "create_web_application_target"
-        | "delete_web_application_target"
-        | "get_web_application_targets"
-        | "modify_web_application_target" => Some(GmpVersion(22, 8)),
-        _ => None,
-    }
+    gvm_gmp::capabilities::minimum_version_for_command(command_name)
 }
 
 /// Return whether a command is supported by the negotiated version.
@@ -203,8 +160,10 @@ mod tests {
         assert!(command_supported("get_features", GmpVersion(22, 6)));
         assert!(!command_supported("get_report_hosts", GmpVersion(22, 7)));
         assert!(command_supported("get_report_hosts", GmpVersion(22, 8)));
-        assert!(!command_supported("get_report_export", GmpVersion(22, 7)));
-        assert!(command_supported("get_report_export", GmpVersion(22, 8)));
+        assert!(command_supported(
+            "unknown_future_command",
+            GmpVersion(22, 4)
+        ));
         assert_eq!(
             minimum_version_for_command("get_report_cves"),
             Some(GmpVersion(22, 8))
@@ -215,6 +174,8 @@ mod tests {
             minimum_version_for_command("get_report_vulns"),
             Some(GmpVersion(22, 8))
         );
+        assert!(!command_supported("get_report_export", GmpVersion(22, 7)));
+        assert!(command_supported("get_report_export", GmpVersion(22, 8)));
         assert_eq!(
             minimum_version_for_command("get_credential_stores"),
             Some(GmpVersion(22, 8))
