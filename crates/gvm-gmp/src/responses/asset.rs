@@ -6,11 +6,65 @@
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, parse_document, parse_entity_id, parse_entity_meta, parse_u32,
-    status_from_response, ActionResponse, CountInfo, EntityMeta, ParseError, XmlNode,
+    count_info, parse_document, parse_entity_id, parse_entity_meta,
+    parse_entity_meta_optional_name, parse_u32, status_from_response, ActionResponse, CountInfo,
+    EntityMeta, ParseError, XmlNode,
 };
 use crate::responses::host::Host;
 use crate::EntityId;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum AssetKind {
+    Host,
+    OperatingSystem,
+    TlsCertificate,
+    Custom(String),
+}
+
+impl AssetKind {
+    #[must_use]
+    pub fn from_gmp_str(value: &str) -> Self {
+        match value {
+            "host" => Self::Host,
+            "os" => Self::OperatingSystem,
+            "tls_certificate" | "tls-cert" | "tls_cert" => Self::TlsCertificate,
+            other => Self::Custom(other.to_string()),
+        }
+    }
+
+    #[must_use]
+    pub fn as_gmp_str(&self) -> &str {
+        match self {
+            Self::Host => "host",
+            Self::OperatingSystem => "os",
+            Self::TlsCertificate => "tls_certificate",
+            Self::Custom(value) => value.as_str(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct AssetIdentifier {
+    pub name: Option<String>,
+    pub value: Option<String>,
+    pub source: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct GenericAsset {
+    pub meta: EntityMeta,
+    pub asset_type: Option<AssetKind>,
+    pub type_: Option<AssetKind>,
+    pub value: Option<String>,
+    pub identifiers: Vec<AssetIdentifier>,
+    pub severity: Option<String>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -26,6 +80,9 @@ pub struct OperatingSystemHost {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct OperatingSystemAsset {
     pub meta: EntityMeta,
+    pub value: Option<String>,
+    pub hosts_count: Option<u32>,
+    pub severity: Option<String>,
     pub title: String,
     pub installs: u32,
     pub all_installs: u32,
@@ -42,6 +99,7 @@ pub struct OperatingSystemAsset {
 pub enum Asset {
     Host(Host),
     OperatingSystem(OperatingSystemAsset),
+    Generic(GenericAsset),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +115,16 @@ pub struct GetAssetsResponse {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct GetOperatingSystemAssetsResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub items: Vec<OperatingSystemAsset>,
+    pub counts: CountInfo,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CreateAssetResponse {
     pub status: u16,
     pub status_text: String,
@@ -66,7 +134,9 @@ pub struct CreateAssetResponse {
 impl Asset {
     fn from_node(node: &XmlNode) -> Result<Self, ParseError> {
         let asset_type = node
-            .child_text("type")
+            .optional_child_text("type")
+            .or_else(|| node.optional_child_text("asset_type"))
+            .filter(|value| !value.is_empty())
             .ok_or_else(|| ParseError::MissingElement("asset.type".to_string()))?;
 
         match asset_type.as_str() {
@@ -77,11 +147,25 @@ impl Asset {
                 Host::from_node(node).map(Self::Host)
             }
             "os" => OperatingSystemAsset::from_node(node).map(Self::OperatingSystem),
-            value => Err(ParseError::InvalidValue {
-                field: "asset.type".to_string(),
-                value: value.to_string(),
-            }),
+            _ => GenericAsset::from_node(node).map(Self::Generic),
         }
+    }
+}
+
+impl GenericAsset {
+    fn from_node(node: &XmlNode) -> Result<Self, ParseError> {
+        Ok(Self {
+            meta: parse_entity_meta_optional_name(node)?,
+            asset_type: node
+                .optional_child_text("asset_type")
+                .map(|value| AssetKind::from_gmp_str(&value)),
+            type_: node
+                .optional_child_text("type")
+                .map(|value| AssetKind::from_gmp_str(&value)),
+            value: node.optional_child_text("value"),
+            identifiers: parse_identifiers(node),
+            severity: parse_generic_severity(node),
+        })
     }
 }
 
@@ -96,6 +180,11 @@ impl OperatingSystemAsset {
 
         Ok(Self {
             meta: parse_entity_meta(node)?,
+            value: node
+                .optional_child_text("value")
+                .or_else(|| node.optional_child_text("name")),
+            hosts_count: Some(parse_u32(&hosts.text, "asset.os.hosts.count")?),
+            severity: severity_value(os, "latest_severity"),
             title: required_text(os, "title", "asset.os.title")?,
             installs: required_u32(os, "installs", "asset.os.installs")?,
             all_installs: required_u32(os, "all_installs", "asset.os.all_installs")?,
@@ -144,6 +233,24 @@ impl GetAssetsResponse {
     }
 }
 
+impl GetOperatingSystemAssetsResponse {
+    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+        let (status, status_text) = status_from_response(response)?;
+        let root = parse_document(response.data())?;
+        let items = root
+            .children_named("asset")
+            .map(OperatingSystemAsset::from_node)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Self {
+            status,
+            status_text,
+            items,
+            counts: count_info(&root, "asset_count")?,
+        })
+    }
+}
+
 impl CreateAssetResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
@@ -169,6 +276,36 @@ fn severity_value(node: &XmlNode, name: &str) -> Option<String> {
         .and_then(|severity| severity.optional_child_text("value"))
 }
 
+fn parse_identifiers(node: &XmlNode) -> Vec<AssetIdentifier> {
+    node.child("identifiers")
+        .map(|identifiers| {
+            identifiers
+                .children_named("identifier")
+                .map(|identifier| AssetIdentifier {
+                    name: identifier.optional_child_text("name"),
+                    value: identifier.optional_child_text("value"),
+                    source: identifier.child("source").and_then(|source| {
+                        source
+                            .optional_child_text("name")
+                            .or_else(|| source.optional_child_text("type"))
+                            .or_else(|| (!source.text.is_empty()).then(|| source.text.clone()))
+                    }),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_generic_severity(node: &XmlNode) -> Option<String> {
+    node.child("severity")
+        .and_then(|severity| {
+            severity
+                .optional_child_text("value")
+                .or_else(|| (!severity.text.is_empty()).then(|| severity.text.clone()))
+        })
+        .or_else(|| node.optional_child_text("severity"))
+}
+
 fn required_text(node: &XmlNode, name: &str, field: &str) -> Result<String, ParseError> {
     node.child_text(name)
         .ok_or_else(|| ParseError::MissingElement(field.to_string()))
@@ -187,14 +324,14 @@ mod tests {
     fn as_host(asset: &Asset) -> Option<&Host> {
         match asset {
             Asset::Host(host) => Some(host),
-            Asset::OperatingSystem(_) => None,
+            Asset::OperatingSystem(_) | Asset::Generic(_) => None,
         }
     }
 
     fn as_operating_system(asset: &Asset) -> Option<&OperatingSystemAsset> {
         match asset {
             Asset::OperatingSystem(os) => Some(os),
-            Asset::Host(_) => None,
+            Asset::Host(_) | Asset::Generic(_) => None,
         }
     }
 
@@ -312,6 +449,9 @@ mod tests {
         let os = as_operating_system(&parsed.items[0]).expect("expected operating-system asset");
         assert!(as_host(&parsed.items[0]).is_none());
         assert_eq!(os.meta.id.as_str(), "os-1");
+        assert_eq!(os.value.as_deref(), Some("cpe:/o:example:linux"));
+        assert_eq!(os.hosts_count, Some(2));
+        assert_eq!(os.severity.as_deref(), Some("6.1"));
         assert_eq!(os.title, "Example Linux");
         assert_eq!(os.installs, 2);
         assert_eq!(os.all_installs, 3);
@@ -374,17 +514,10 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_empty_and_unknown_asset_types() {
-        for (asset_xml, expected_value) in [
-            ("<asset id=\"asset-1\"><name>missing</name></asset>", None),
-            (
-                "<asset id=\"asset-1\"><name>empty</name><type></type></asset>",
-                Some(""),
-            ),
-            (
-                "<asset id=\"asset-1\"><name>unknown</name><type>printer</type></asset>",
-                Some("printer"),
-            ),
+    fn rejects_missing_and_empty_asset_types() {
+        for asset_xml in [
+            "<asset id=\"asset-1\"><name>missing</name></asset>",
+            "<asset id=\"asset-1\"><name>empty</name><type></type></asset>",
         ] {
             let response = Response::from(
                 format!(
@@ -394,18 +527,37 @@ mod tests {
             );
             let error = GetAssetsResponse::from_response(&response).expect_err("type rejected");
 
-            match expected_value {
-                None => assert!(matches!(
-                    error,
-                    ParseError::MissingElement(field) if field == "asset.type"
-                )),
-                Some(expected) => assert!(matches!(
-                    error,
-                    ParseError::InvalidValue { field, value }
-                        if field == "asset.type" && value == expected
-                )),
-            }
+            assert!(matches!(
+                error,
+                ParseError::MissingElement(field) if field == "asset.type"
+            ));
         }
+    }
+
+    #[test]
+    fn preserves_custom_and_tls_asset_types() {
+        let response = Response::from(
+            r#"<get_assets_response status="200" status_text="OK">
+                <asset id="asset-1"><name>Firmware</name><type>firmware</type><value>UEFI</value></asset>
+                <asset id="asset-2"><name>Certificate</name><type>tls_certificate</type></asset>
+                <asset_count>2<filtered>2</filtered><page>1</page></asset_count>
+            </get_assets_response>"#,
+        );
+
+        let parsed = GetAssetsResponse::from_response(&response).expect("custom assets parse");
+        let Asset::Generic(custom) = &parsed.items[0] else {
+            panic!("custom asset should use the forward-compatible model");
+        };
+        assert_eq!(
+            custom.type_,
+            Some(AssetKind::Custom("firmware".to_string()))
+        );
+        assert_eq!(custom.value.as_deref(), Some("UEFI"));
+
+        let Asset::Generic(certificate) = &parsed.items[1] else {
+            panic!("TLS certificate should use the generic asset model");
+        };
+        assert_eq!(certificate.type_, Some(AssetKind::TlsCertificate));
     }
 
     #[test]

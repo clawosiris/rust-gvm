@@ -16,6 +16,10 @@ use gvm_gmp::commands::assets::{
     AssetType, CreateAssetOpts, DeleteAssetOpts, GetAssetsOpts, ModifyAssetOpts,
 };
 use gvm_gmp::commands::authentication::authenticate;
+use gvm_gmp::commands::configs::{
+    CloneConfigOpts, ConfigUsageType, CreateConfigOpts, DeleteConfigOpts, GetConfigOpts,
+    GetConfigsOpts, ModifyConfigOpts,
+};
 use gvm_gmp::commands::credentials::{
     create_credential_store_credential, get_credential, modify_credential_store_credential,
     ModifyCredentialStoreCredentialOpts as GmpModifyCredentialStoreCredentialOpts,
@@ -39,7 +43,9 @@ use gvm_gmp::commands::targets::{
     create_target, delete_target, get_targets, CreateTargetOpts, GetTargetsOpts,
 };
 use gvm_gmp::commands::tasks::{create_task, delete_task, get_task, start_task, stop_task};
-use gvm_gmp::responses::{Asset, CreateScanConfigResponse, GetScanConfigsResponse};
+use gvm_gmp::responses::{
+    Asset, ConfigUsageKind, CreateScanConfigResponse, GetConfigsResponse, GetScanConfigsResponse,
+};
 use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
 use gvm_gmp::FeedType;
@@ -459,6 +465,182 @@ async fn operating_system_helpers_send_asset_commands() {
     server.shutdown().await;
 }
 
+#[tokio::test]
+async fn typed_generic_configs_round_trip_through_mock_server() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let config = client
+        .create_config(CreateConfigOpts {
+            name: "Generic policy".into(),
+            base_id: None,
+            comment: Some("generic config".into()),
+            usage_type: Some(ConfigUsageType::Policy),
+        })
+        .await
+        .expect("generic config create should parse");
+    let custom_config = client
+        .create_config(CreateConfigOpts {
+            name: "Future config".into(),
+            base_id: None,
+            comment: None,
+            usage_type: Some(ConfigUsageType::custom("future")),
+        })
+        .await
+        .expect("custom config create should parse");
+
+    let configs = client
+        .get_configs(GetConfigsOpts::default())
+        .await
+        .expect("generic configs should parse");
+    assert!(configs
+        .items
+        .iter()
+        .any(|item| item.meta.id == config.id && item.usage_type == Some(ConfigUsageKind::Policy)));
+    assert!(configs.items.iter().any(|item| {
+        item.meta.id == custom_config.id
+            && item.usage_type == Some(ConfigUsageKind::Custom("future".into()))
+    }));
+
+    let cloned = client
+        .clone_config(
+            &config.id,
+            CloneConfigOpts {
+                name: Some("Generic policy copy".into()),
+            },
+        )
+        .await
+        .expect("generic config clone should parse");
+    assert_ne!(cloned.id, config.id);
+
+    server.shutdown().await;
+}
+
+fn assert_single_generic_config(
+    response: &GetConfigsResponse,
+    id: &EntityId,
+    name: &str,
+    comment: &str,
+    usage_type: ConfigUsageKind,
+) {
+    assert_eq!(response.items.len(), 1);
+    assert_eq!(&response.items[0].meta.id, id);
+    assert_eq!(response.items[0].meta.name, name);
+    assert_eq!(response.items[0].meta.comment.as_deref(), Some(comment));
+    assert_eq!(response.items[0].usage_type, Some(usage_type));
+}
+
+#[tokio::test]
+async fn typed_generic_config_get_modify_and_delete_round_trip() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let config = client
+        .create_config(CreateConfigOpts {
+            name: "Mutable policy".into(),
+            base_id: None,
+            comment: Some("before modification".into()),
+            usage_type: Some(ConfigUsageType::Policy),
+        })
+        .await
+        .expect("generic config create should parse");
+
+    let fetched = client
+        .get_config(&config.id, GetConfigOpts::default())
+        .await
+        .expect("single generic config should parse");
+    assert_single_generic_config(
+        &fetched,
+        &config.id,
+        "Mutable policy",
+        "before modification",
+        ConfigUsageKind::Policy,
+    );
+
+    client
+        .modify_config(
+            &config.id,
+            ModifyConfigOpts {
+                name: Some("Updated policy".into()),
+                comment: Some("after modification".into()),
+                usage_type: Some(ConfigUsageType::Audit),
+            },
+        )
+        .await
+        .expect("generic config modify should parse");
+
+    let updated = client
+        .get_config(
+            &config.id,
+            GetConfigOpts {
+                usage_type: Some(ConfigUsageType::Audit),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("modified generic config should parse");
+    assert_single_generic_config(
+        &updated,
+        &config.id,
+        "Updated policy",
+        "after modification",
+        ConfigUsageKind::Audit,
+    );
+
+    client
+        .delete_config(&config.id, DeleteConfigOpts::default())
+        .await
+        .expect("generic config trash should parse");
+    let trashed = client
+        .get_configs(GetConfigsOpts {
+            trash: Some(true),
+            ..Default::default()
+        })
+        .await
+        .expect("trashed generic configs should parse");
+    assert!(trashed.items.iter().any(|item| item.meta.id == config.id));
+
+    client
+        .delete_config(
+            &config.id,
+            DeleteConfigOpts {
+                ultimate: Some(true),
+            },
+        )
+        .await
+        .expect("ultimate generic config deletion should parse");
+    let remaining = client
+        .get_configs(GetConfigsOpts {
+            trash: Some(true),
+            ..Default::default()
+        })
+        .await
+        .expect("trash listing after ultimate deletion should parse");
+    assert!(remaining.items.iter().all(|item| item.meta.id != config.id));
+
+    server.shutdown().await;
+}
+
 async fn typed_host_asset_lifecycle(client: &mut GmpClient<UnixSocketConnection>) {
     let mut create_opts = CreateAssetOpts::host("192.0.2.10");
     create_opts.comment = Some("created through typed client".into());
@@ -471,13 +653,9 @@ async fn typed_host_asset_lifecycle(client: &mut GmpClient<UnixSocketConnection>
         .expect("direct host creation should return an id");
 
     let fetched = client
-        .get_assets(GetAssetsOpts {
-            asset_id: Some(asset_id.clone()),
-            type_: Some(AssetType::Host),
-            ..Default::default()
-        })
+        .get_asset(&asset_id, AssetType::Host)
         .await
-        .expect("get_assets should return the created host");
+        .expect("get_asset should return the created host");
     assert_eq!(fetched.items.len(), 1);
     assert_eq!(fetched.counts.total, Some(1));
     assert_eq!(fetched.counts.filtered, Some(1));
@@ -555,22 +733,24 @@ async fn typed_host_asset_lifecycle(client: &mut GmpClient<UnixSocketConnection>
 
 async fn typed_operating_system_get(client: &mut GmpClient<UnixSocketConnection>) {
     let operating_systems = client
-        .get_assets(GetAssetsOpts {
-            type_: Some(AssetType::OperatingSystem),
-            ..Default::default()
-        })
+        .get_operating_system_assets(GetOperatingSystemsOpts::default())
         .await
-        .expect("get_assets should parse operating-system assets");
+        .expect("typed operating-system assets should parse");
     assert_eq!(operating_systems.items.len(), 1);
-    let Asset::OperatingSystem(operating_system) = &operating_systems.items[0] else {
-        panic!("seeded asset should be an operating system");
-    };
+    let operating_system = &operating_systems.items[0];
     assert_eq!(operating_system.title, "Example Linux");
     assert_eq!(operating_system.installs, 0);
     assert_eq!(operating_system.all_installs, 0);
     assert_eq!(operating_system.host_count, 0);
     assert!(operating_system.hosts.is_empty());
     assert_eq!(operating_system.latest_severity.as_deref(), Some("6.1"));
+
+    let single = client
+        .get_operating_system_asset(&operating_system.meta.id, Some(true))
+        .await
+        .expect("single operating-system asset should parse");
+    assert_eq!(single.items.len(), 1);
+    assert_eq!(single.items[0].meta.id, operating_system.meta.id);
 }
 
 #[tokio::test]
