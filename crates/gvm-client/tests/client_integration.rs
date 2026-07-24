@@ -20,7 +20,6 @@ use gvm_gmp::commands::credentials::{
     create_credential_store_credential, get_credential, modify_credential_store_credential,
     ModifyCredentialStoreCredentialOpts as GmpModifyCredentialStoreCredentialOpts,
 };
-use gvm_gmp::commands::feed::get_feed;
 use gvm_gmp::commands::help::HelpMode;
 use gvm_gmp::commands::nvts::{
     get_nvt_preference, get_nvt_preferences, GetNvtPreferencesOpts, GetNvtsOpts,
@@ -630,11 +629,18 @@ async fn get_feed_sends_typed_get_feeds_command() {
         .expect("authenticate should succeed");
 
     let response = client
-        .call(get_feed(FeedType::Nvt))
+        .get_feed(FeedType::Nvt)
         .await
-        .expect("get_feed should send get_feeds command");
+        .expect("get_feed should return typed feed data");
 
-    assert_eq!(response.status_code(), Some(200));
+    assert_eq!(response.status, 200);
+    assert!(response.feed_owner_set);
+    assert!(response.feed_roles_set);
+    assert!(response.feed_resources_access);
+    assert_eq!(response.items.len(), 1);
+    assert_eq!(response.items[0].type_, "NVT");
+    assert_eq!(response.items[0].status, None);
+    assert_eq!(response.counts, Default::default());
 
     let history = server.command_history();
     let command = history.last().expect("feed command recorded");
@@ -642,6 +648,30 @@ async fn get_feed_sends_typed_get_feeds_command() {
     assert_eq!(
         std::str::from_utf8(command.raw_xml()).expect("valid UTF-8 command"),
         "<get_feeds type=\"NVT\"/>"
+    );
+
+    let all = client
+        .get_feeds()
+        .await
+        .expect("all feeds should return typed data");
+    assert_eq!(all.items.len(), 4);
+    let scap = all
+        .items
+        .iter()
+        .find(|feed| feed.type_ == "SCAP")
+        .expect("SCAP feed");
+    assert_eq!(
+        scap.currently_syncing.as_deref(),
+        Some("2026-03-18T00:00:00Z")
+    );
+    let cert = all
+        .items
+        .iter()
+        .find(|feed| feed.type_ == "CERT")
+        .expect("CERT feed");
+    assert_eq!(
+        cert.sync_not_available.as_deref(),
+        Some("Feed synchronization is unavailable")
     );
 
     server.shutdown().await;
