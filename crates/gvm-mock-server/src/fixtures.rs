@@ -186,8 +186,13 @@ impl FixtureStore {
         self.fixtures.insert(
             "get_aggregates".to_string(),
             "<get_aggregates_response status=\"200\" status_text=\"OK\">\
-             <aggregate><text>High</text><value>3</value></aggregate>\
-             <aggregate><text>Medium</text><value>5</value></aggregate>\
+             <aggregate><data_type>task</data_type><group_column>severity</group_column>\
+             <group><value>High</value><count>3</count><c_count>3</c_count></group>\
+             <group><value>Medium</value><count>5</count><c_count>8</c_count></group>\
+             <column_info><aggregate_column><name>value</name><stat>value</stat>\
+             <type>task</type><column>severity</column><data_type>text</data_type>\
+             </aggregate_column></column_info></aggregate>\
+             <filters id=\"\"><term></term><keywords/></filters>\
              </get_aggregates_response>"
                 .to_string(),
         );

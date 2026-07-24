@@ -12,6 +12,7 @@
 //! non-2xx status detection), which is then converted to [`GvmError::Parse`].
 
 use gvm_connection::GvmConnection;
+use gvm_gmp::commands::aggregates::{get_aggregates_request, GetAggregatesRequestOpts};
 use gvm_gmp::commands::alerts::{create_alert, get_alerts, AlertOpts, GetAlertsOpts};
 use gvm_gmp::commands::assets::{
     create_asset, delete_asset, get_assets, modify_asset, AssetType, CreateAssetOpts,
@@ -129,11 +130,11 @@ use gvm_gmp::responses::{
     CreateWebApplicationTargetResponse, DeleteAssetResponse, DeleteConfigResponse,
     DeleteOciImageTargetResponse, DeleteScanConfigResponse, DeleteScannerResponse,
     DeleteWebApplicationTargetResponse, DescribeAuthResponse, EmptyTrashcanResponse,
-    GetAlertsResponse, GetAssetsResponse, GetCertBundAdvisoriesResponse, GetConfigsResponse,
-    GetCpesResponse, GetCredentialStoresResponse, GetCredentialsResponse, GetCvesResponse,
-    GetDfnCertAdvisoriesResponse, GetFeaturesResponse, GetFeedsResponse, GetFiltersResponse,
-    GetGroupsResponse, GetHostsResponse, GetIntegrationConfigsResponse, GetNotesResponse,
-    GetNvtFamiliesResponse, GetNvtsResponse, GetOciImageTargetsResponse,
+    GetAggregatesResponse, GetAlertsResponse, GetAssetsResponse, GetCertBundAdvisoriesResponse,
+    GetConfigsResponse, GetCpesResponse, GetCredentialStoresResponse, GetCredentialsResponse,
+    GetCvesResponse, GetDfnCertAdvisoriesResponse, GetFeaturesResponse, GetFeedsResponse,
+    GetFiltersResponse, GetGroupsResponse, GetHostsResponse, GetIntegrationConfigsResponse,
+    GetNotesResponse, GetNvtFamiliesResponse, GetNvtsResponse, GetOciImageTargetsResponse,
     GetOperatingSystemAssetsResponse, GetOverridesResponse, GetPermissionsResponse,
     GetPortListsResponse, GetReportApplicationsResponse, GetReportClosedCvesResponse,
     GetReportConfigsResponse, GetReportCvesResponse, GetReportErrorsResponse,
@@ -1996,6 +1997,21 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     }
 
     // ── System ────────────────────────────────────────────────────────────────
+
+    /// Send a current gvmd `get_aggregates` request and return its typed result.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_aggregates(
+        &mut self,
+        resource_type: &str,
+        opts: GetAggregatesRequestOpts,
+    ) -> Result<GetAggregatesResponse, GvmError> {
+        let response = self
+            .send(get_aggregates_request(resource_type, opts))
+            .await?;
+        GetAggregatesResponse::from_response(&response).map_err(GvmError::Parse)
+    }
 
     /// Send a `get_features` request and return a typed
     /// [`GetFeaturesResponse`].

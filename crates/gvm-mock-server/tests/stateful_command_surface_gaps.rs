@@ -615,14 +615,87 @@ async fn stateful_aggregates_returns_fixture_response() {
 
     let resp = send_recv(
         &mut stream,
-        br#"<get_aggregates type="task" group_column="severity"/>"#,
+        br#"<get_aggregates type="task&amp;&lt;" group_column="severity&lt;&amp;"><data_column>qod&amp;&lt;</data_column><text_column>name&amp;&lt;</text_column></get_aggregates>"#,
     )
     .await;
     assert_eq!(resp.status_code(), Some(200));
     let text = resp.as_str().expect("utf8");
-    assert!(text.contains("<type>task</type>"));
-    assert!(text.contains("<group_column>severity</group_column>"));
-    assert!(text.contains("<aggregate><text>High</text><value>3</value></aggregate>"));
+    assert!(text.contains("<data_type>task&amp;&lt;</data_type>"));
+    assert!(text.contains("<group_column>severity&lt;&amp;</group_column>"));
+    assert!(text.contains("<data_column>qod&amp;&lt;</data_column>"));
+    assert!(text.contains("<group><value>High</value><count>3</count><c_count>3</c_count>"));
+    assert!(text.contains("<stats column=\"qod&amp;&lt;\">"));
+    assert!(text.contains("<text column=\"name&amp;&lt;\">High</text>"));
+    assert!(!text.contains("task&<"));
+
+    let no_columns = send_recv(
+        &mut stream,
+        br#"<get_aggregates type="task" group_column="severity"/>"#,
+    )
+    .await;
+    assert_eq!(no_columns.status_code(), Some(200));
+    assert!(no_columns
+        .as_str()
+        .expect("utf8")
+        .contains("<group><value>High</value><count>3</count><c_count>3</c_count></group>"));
+
+    let missing_type = send_recv(&mut stream, br#"<get_aggregates/>"#).await;
+    assert_eq!(missing_type.status_code(), Some(400));
+
+    let missing_group = send_recv(
+        &mut stream,
+        br#"<get_aggregates type="task" subgroup_column="status"/>"#,
+    )
+    .await;
+    assert_eq!(missing_group.status_code(), Some(400));
+
+    let subgroup = send_recv(
+        &mut stream,
+        br#"<get_aggregates type="task" group_column="status" subgroup_column="owner"><data_column>qod</data_column></get_aggregates>"#,
+    )
+    .await;
+    assert_eq!(subgroup.status_code(), Some(200));
+    let subgroup_text = subgroup.as_str().expect("utf8");
+    assert!(subgroup_text
+        .contains("<subgroup><value>Primary</value><count>3</count><c_count>3</c_count>"));
+    assert!(subgroup_text.contains(
+        "<subgroup><value>Secondary</value><count>5</count><c_count>5</c_count>\
+         <stats column=\"qod\"><min>1</min><max>5</max><mean>2</mean><sum>5</sum>\
+         <c_sum>5</c_sum></stats></subgroup>"
+    ));
+    assert!(subgroup_text.contains(
+        "<aggregate_column><name>subgroup_value</name><stat>value</stat>\
+         <type>task</type><column>owner</column><data_type>text</data_type>"
+    ));
+
+    let overall = send_recv(
+        &mut stream,
+        br#"<get_aggregates type="task" data_column="severity" filt_id="filter-1" filter="owner=me"/>"#,
+    )
+    .await;
+    assert_eq!(overall.status_code(), Some(200));
+    let overall_text = overall.as_str().expect("utf8");
+    assert!(overall_text
+        .contains("<overall><count>8</count><c_count>8</c_count><stats column=\"severity\">"));
+    assert!(overall_text
+        .contains("<filters id=\"filter-1\"><term>owner=me</term><keywords/></filters>"));
+
+    let word_counts = send_recv(
+        &mut stream,
+        br#"<get_aggregates type="task" group_column="comment" mode="word_counts"/>"#,
+    )
+    .await;
+    assert_eq!(word_counts.status_code(), Some(200));
+    let word_counts_text = word_counts.as_str().expect("utf8");
+    assert!(word_counts_text.contains("<group><value>security</value><count>3</count></group>"));
+    assert!(!word_counts_text.contains("<c_count>"));
+
+    let word_counts_without_group = send_recv(
+        &mut stream,
+        br#"<get_aggregates type="task" mode="word_counts"/>"#,
+    )
+    .await;
+    assert_eq!(word_counts_without_group.status_code(), Some(400));
 
     server.shutdown().await;
 }

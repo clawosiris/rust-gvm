@@ -2270,15 +2270,211 @@ fn render_feeds_response(cmd: &ParsedCommand) -> Vec<u8> {
 }
 
 fn render_aggregates_response(cmd: &ParsedCommand) -> Vec<u8> {
-    let resource_type = cmd.attr("type").unwrap_or("task");
-    let group_column = cmd.attr("group_column").unwrap_or("severity");
+    let Some(resource_type) = cmd.attr("type") else {
+        return error_response("get_aggregates", 400, "A 'type' attribute is required");
+    };
+    let group_column = cmd.attr("group_column");
+    let subgroup_column = cmd.attr("subgroup_column");
+    if subgroup_column.is_some() && group_column.is_none() {
+        return error_response(
+            "get_aggregates",
+            400,
+            "A 'group_column' attribute is required when 'subgroup_column' is given",
+        );
+    }
+    if cmd
+        .attr("mode")
+        .is_some_and(|mode| mode.eq_ignore_ascii_case("word_counts"))
+    {
+        let Some(group_column) = group_column else {
+            return error_response(
+                "get_aggregates",
+                400,
+                "A 'group_column' attribute is required for word_counts mode",
+            );
+        };
+        let filter_id = cmd.attr("filt_id").unwrap_or_default();
+        let filter_term = cmd.attr("filter").unwrap_or_default();
+        return format!(
+            "<get_aggregates_response status=\"200\" status_text=\"OK\">\
+             <aggregate><data_type>{}</data_type><group_column>{}</group_column>\
+             <group><value>security</value><count>3</count></group>\
+             <group><value>update</value><count>5</count></group>\
+             <column_info><aggregate_column><name>value</name><stat>value</stat>\
+             <type>{}</type><column>{}</column><data_type>text</data_type>\
+             </aggregate_column><aggregate_column><name>count</name><stat>count</stat>\
+             <type>{}</type><column></column><data_type>integer</data_type>\
+             </aggregate_column></column_info></aggregate>\
+             <filters id=\"{}\"><term>{}</term><keywords/></filters>\
+             </get_aggregates_response>",
+            xml_escape(resource_type),
+            xml_escape(group_column),
+            xml_escape(resource_type),
+            xml_escape(group_column),
+            xml_escape(resource_type),
+            xml_escape_attr(filter_id),
+            xml_escape(filter_term)
+        )
+        .into_bytes();
+    }
+
+    let mut data_columns: Vec<&str> = cmd
+        .children
+        .iter()
+        .filter(|child| child.name == "data_column")
+        .filter_map(|child| child.text.as_deref())
+        .collect();
+    if data_columns.is_empty() {
+        if let Some(data_column) = cmd.attr("data_column") {
+            if !data_column.is_empty() {
+                data_columns.push(data_column);
+            }
+        }
+    }
+    let text_columns: Vec<&str> = cmd
+        .children
+        .iter()
+        .filter(|child| child.name == "text_column")
+        .filter_map(|child| child.text.as_deref())
+        .collect();
+
+    let mut aggregate = format!(
+        "<aggregate><data_type>{}</data_type>",
+        xml_escape(resource_type)
+    );
+    for data_column in &data_columns {
+        aggregate.push_str(&format!(
+            "<data_column>{}</data_column>",
+            xml_escape(data_column)
+        ));
+    }
+    for text_column in &text_columns {
+        aggregate.push_str(&format!(
+            "<text_column>{}</text_column>",
+            xml_escape(text_column)
+        ));
+    }
+    if let Some(group_column) = group_column {
+        aggregate.push_str(&format!(
+            "<group_column>{}</group_column>",
+            xml_escape(group_column)
+        ));
+    }
+    if let Some(subgroup_column) = subgroup_column {
+        aggregate.push_str(&format!(
+            "<subgroup_column>{}</subgroup_column>",
+            xml_escape(subgroup_column)
+        ));
+    }
+
+    let append_statistics = |xml: &mut String, count: u32, cumulative: u32| {
+        for data_column in &data_columns {
+            xml.push_str(&format!(
+                "<stats column=\"{}\"><min>1</min><max>{count}</max>\
+                 <mean>2</mean><sum>{count}</sum><c_sum>{cumulative}</c_sum></stats>",
+                xml_escape_attr(data_column)
+            ));
+        }
+    };
+    let append_text = |xml: &mut String, value: &str| {
+        for text_column in &text_columns {
+            xml.push_str(&format!(
+                "<text column=\"{}\">{}</text>",
+                xml_escape_attr(text_column),
+                xml_escape(value)
+            ));
+        }
+    };
+
+    if group_column.is_none() {
+        aggregate.push_str("<overall><count>8</count><c_count>8</c_count>");
+        append_statistics(&mut aggregate, 8, 8);
+        append_text(&mut aggregate, "All");
+        aggregate.push_str("</overall>");
+    } else if subgroup_column.is_some() {
+        aggregate.push_str("<group><value>High</value>");
+        aggregate.push_str("<subgroup><value>Primary</value><count>3</count><c_count>3</c_count>");
+        append_statistics(&mut aggregate, 3, 3);
+        aggregate.push_str("</subgroup><count>3</count><c_count>3</c_count>");
+        append_statistics(&mut aggregate, 3, 3);
+        append_text(&mut aggregate, "High");
+        aggregate.push_str("</group><group><value>Medium</value>");
+        aggregate
+            .push_str("<subgroup><value>Secondary</value><count>5</count><c_count>5</c_count>");
+        append_statistics(&mut aggregate, 5, 5);
+        aggregate.push_str("</subgroup><count>5</count><c_count>8</c_count>");
+        append_statistics(&mut aggregate, 5, 8);
+        append_text(&mut aggregate, "Medium");
+        aggregate.push_str(
+            "</group><subgroups><value>Primary</value><value>Secondary</value></subgroups>",
+        );
+    } else {
+        aggregate.push_str("<group><value>High</value><count>3</count><c_count>3</c_count>");
+        append_statistics(&mut aggregate, 3, 3);
+        append_text(&mut aggregate, "High");
+        aggregate
+            .push_str("</group><group><value>Medium</value><count>5</count><c_count>8</c_count>");
+        append_statistics(&mut aggregate, 5, 8);
+        append_text(&mut aggregate, "Medium");
+        aggregate.push_str("</group>");
+    }
+
+    aggregate.push_str("<column_info>");
+    if let Some(group_column) = group_column {
+        aggregate.push_str(&format!(
+            "<aggregate_column><name>value</name><stat>value</stat>\
+             <type>{}</type><column>{}</column><data_type>text</data_type></aggregate_column>",
+            xml_escape(resource_type),
+            xml_escape(group_column)
+        ));
+    }
+    if let Some(subgroup_column) = subgroup_column {
+        aggregate.push_str(&format!(
+            "<aggregate_column><name>subgroup_value</name><stat>value</stat>\
+             <type>{}</type><column>{}</column><data_type>text</data_type></aggregate_column>",
+            xml_escape(resource_type),
+            xml_escape(subgroup_column)
+        ));
+    }
+    aggregate.push_str(&format!(
+        "<aggregate_column><name>count</name><stat>count</stat>\
+         <type>{}</type><column></column><data_type>integer</data_type></aggregate_column>\
+         <aggregate_column><name>c_count</name><stat>c_count</stat>\
+         <type>{}</type><column></column><data_type>integer</data_type></aggregate_column>",
+        xml_escape(resource_type),
+        xml_escape(resource_type)
+    ));
+    for data_column in &data_columns {
+        for statistic in ["min", "max", "mean", "sum", "c_sum"] {
+            aggregate.push_str(&format!(
+                "<aggregate_column><name>{}_{statistic}</name><stat>{statistic}</stat>\
+                 <type>{}</type><column>{}</column><data_type>number</data_type>\
+                 </aggregate_column>",
+                xml_escape(data_column),
+                xml_escape(resource_type),
+                xml_escape(data_column)
+            ));
+        }
+    }
+    for text_column in &text_columns {
+        aggregate.push_str(&format!(
+            "<aggregate_column><name>{}</name><stat>text</stat>\
+             <type>{}</type><column>{}</column><data_type>text</data_type></aggregate_column>",
+            xml_escape(text_column),
+            xml_escape(resource_type),
+            xml_escape(text_column)
+        ));
+    }
+    aggregate.push_str("</column_info></aggregate>");
+
+    let filter_id = cmd.attr("filt_id").unwrap_or_default();
+    let filter_term = cmd.attr("filter").unwrap_or_default();
     format!(
-        "<get_aggregates_response status=\"200\" status_text=\"OK\">\
-         <type>{resource_type}</type>\
-         <group_column>{group_column}</group_column>\
-         <aggregate><text>High</text><value>3</value></aggregate>\
-         <aggregate><text>Medium</text><value>5</value></aggregate>\
-         </get_aggregates_response>"
+        "<get_aggregates_response status=\"200\" status_text=\"OK\">{aggregate}\
+         <filters id=\"{}\"><term>{}</term><keywords/></filters>\
+         </get_aggregates_response>",
+        xml_escape_attr(filter_id),
+        xml_escape(filter_term)
     )
     .into_bytes()
 }

@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use quick_xml::events::Event;
+use quick_xml::events::{BytesRef, Event};
 use quick_xml::{Reader, XmlVersion};
 
 /// A parsed GMP command extracted from incoming XML.
@@ -73,12 +73,12 @@ pub fn parse_command(xml: &[u8]) -> Option<ParsedCommand> {
         match reader.read_event() {
             Ok(Event::Start(ref e)) => {
                 let name = std::str::from_utf8(e.name().as_ref()).ok()?.to_string();
-                let attributes = extract_attributes(e);
+                let attributes = extract_attributes(e)?;
                 break (name, attributes);
             }
             Ok(Event::Empty(ref e)) => {
                 let name = std::str::from_utf8(e.name().as_ref()).ok()?.to_string();
-                let attributes = extract_attributes(e);
+                let attributes = extract_attributes(e)?;
                 return Some(ParsedCommand {
                     name,
                     attributes,
@@ -93,7 +93,7 @@ pub fn parse_command(xml: &[u8]) -> Option<ParsedCommand> {
     };
 
     // Parse children
-    let (children, _root_text) = parse_children(&mut reader, &name);
+    let (children, _root_text) = parse_children(&mut reader)?;
 
     Some(ParsedCommand {
         name,
@@ -103,10 +103,7 @@ pub fn parse_command(xml: &[u8]) -> Option<ParsedCommand> {
     })
 }
 
-fn parse_children(
-    reader: &mut Reader<&[u8]>,
-    parent_name: &str,
-) -> (Vec<ParsedElement>, Option<String>) {
+fn parse_children(reader: &mut Reader<&[u8]>) -> Option<(Vec<ParsedElement>, Option<String>)> {
     let mut children = Vec::new();
     let mut current_text = String::new();
 
@@ -115,8 +112,8 @@ fn parse_children(
             Ok(Event::Start(ref e)) => {
                 let qn = e.name();
                 let child_name = std::str::from_utf8(qn.as_ref()).unwrap_or("").to_string();
-                let attrs = extract_attributes(e);
-                let (grandchildren, child_text) = parse_children(reader, &child_name);
+                let attrs = extract_attributes(e)?;
+                let (grandchildren, child_text) = parse_children(reader)?;
                 children.push(ParsedElement {
                     name: child_name,
                     attributes: attrs,
@@ -127,7 +124,7 @@ fn parse_children(
             Ok(Event::Empty(ref e)) => {
                 let qn = e.name();
                 let child_name = std::str::from_utf8(qn.as_ref()).unwrap_or("").to_string();
-                let attrs = extract_attributes(e);
+                let attrs = extract_attributes(e)?;
                 children.push(ParsedElement {
                     name: child_name,
                     attributes: attrs,
@@ -140,21 +137,19 @@ fn parse_children(
                     current_text.push_str(&unescaped);
                 }
             }
-            Ok(Event::End(ref e)) => {
-                let qn = e.name();
-                let end_name = std::str::from_utf8(qn.as_ref()).unwrap_or("");
-                if end_name == parent_name {
-                    break;
-                }
+            Ok(Event::GeneralRef(ref reference)) => {
+                current_text.push_str(&resolve_reference(reference)?);
             }
-            Ok(Event::Eof) => break,
-            Err(_) => break,
+            Ok(Event::End(_)) => {
+                // quick-xml checks matching end names before yielding this
+                // event, so this closes the element for this recursion level.
+                let text = (!current_text.is_empty()).then_some(current_text);
+                return Some((children, text));
+            }
+            Ok(Event::Eof) | Err(_) => return None,
             _ => continue,
         }
     }
-
-    let text = (!current_text.is_empty()).then_some(current_text);
-    (children, text)
 }
 
 /// Helper: re-parse children to associate text with the correct element.
@@ -183,6 +178,9 @@ pub fn parse_element_text(xml: &[u8], element_name: &str) -> Option<String> {
                     result.push_str(&unescaped);
                 }
             }
+            Ok(Event::GeneralRef(ref reference)) if inside => {
+                result.push_str(&resolve_reference(reference)?);
+            }
             Ok(Event::End(ref e)) if inside => {
                 let qn = e.name();
                 let name = std::str::from_utf8(qn.as_ref()).ok()?;
@@ -197,18 +195,26 @@ pub fn parse_element_text(xml: &[u8], element_name: &str) -> Option<String> {
     }
 }
 
-fn extract_attributes(e: &quick_xml::events::BytesStart<'_>) -> HashMap<String, String> {
-    let mut map = HashMap::new();
-    for attr in e.attributes().flatten() {
-        if let (Ok(key), Ok(val)) = (
-            std::str::from_utf8(attr.key.as_ref()),
-            attr.normalized_value(XmlVersion::Implicit1_0)
-                .map(|v| v.into_owned()),
-        ) {
-            map.insert(key.to_string(), val);
-        }
+fn resolve_reference(reference: &BytesRef<'_>) -> Option<String> {
+    if let Some(character) = reference.resolve_char_ref().ok()? {
+        return Some(character.to_string());
     }
-    map
+    let entity = reference.decode().ok()?;
+    quick_xml::escape::resolve_xml_entity(&entity).map(ToString::to_string)
+}
+
+fn extract_attributes(e: &quick_xml::events::BytesStart<'_>) -> Option<HashMap<String, String>> {
+    let mut map = HashMap::new();
+    for attr in e.attributes() {
+        let attr = attr.ok()?;
+        let key = std::str::from_utf8(attr.key.as_ref()).ok()?;
+        let value = attr
+            .normalized_value(XmlVersion::Implicit1_0)
+            .ok()?
+            .into_owned();
+        map.insert(key.to_string(), value);
+    }
+    Some(map)
 }
 
 #[cfg(test)]
@@ -257,6 +263,31 @@ mod tests {
         assert_eq!(cmd.child_text("name"), Some("My Task"));
         assert_eq!(cmd.child_text("comment"), Some("A comment"));
         assert_eq!(cmd.child_text("missing"), None);
+    }
+
+    #[test]
+    fn test_parse_command_preserves_xml_references() {
+        let xml = br#"<get_aggregates type="task&amp;&lt;"><data_column>qod&amp;&lt;&#33;</data_column></get_aggregates>"#;
+        let cmd = parse_command(xml).expect("should parse");
+
+        assert_eq!(cmd.attr("type"), Some("task&<"));
+        assert_eq!(cmd.child_text("data_column"), Some("qod&<!"));
+        assert_eq!(
+            parse_element_text(xml, "data_column").as_deref(),
+            Some("qod&<!")
+        );
+    }
+
+    #[test]
+    fn test_parse_command_rejects_unknown_entity_references() {
+        assert!(parse_command(b"<create_task><name>a&unknown;b</name></create_task>").is_none());
+        assert!(parse_command(br#"<get_aggregates type="task" filter="a&unknown;b"/>"#).is_none());
+    }
+
+    #[test]
+    fn test_parse_command_rejects_mismatched_and_truncated_children() {
+        assert!(parse_command(b"<create_task><name>task</comment></create_task>").is_none());
+        assert!(parse_command(b"<create_task><name>task").is_none());
     }
 
     // XML-006
