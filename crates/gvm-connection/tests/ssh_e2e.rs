@@ -31,6 +31,12 @@ fn config_for(server: &MockGmpServer) -> SshConfig {
     SshConfig::new("127.0.0.1", "admin", SshAuth::Password("admin".to_string()))
         .with_port(server.ssh_port().expect("ssh port"))
         .with_remote_socket("/run/gvmd/gvmd.sock")
+        .with_host_key_policy(SshHostKeyPolicy::Fingerprint(
+            server
+                .ssh_host_key_fingerprint()
+                .expect("SSH host key fingerprint")
+                .to_string(),
+        ))
 }
 
 #[tokio::test]
@@ -166,6 +172,102 @@ async fn ssh_connect_with_pinned_fingerprint() {
 
     conn.connect().await.expect("connect failed");
     conn.disconnect().await.expect("disconnect failed");
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn ssh_connect_with_known_hosts_file() {
+    let server = start_mock().await;
+    let Some(server) = server else {
+        return;
+    };
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let path = directory.path().join("known_hosts");
+    std::fs::write(
+        &path,
+        format!(
+            "[127.0.0.1]:{} {}\n",
+            server.ssh_port().expect("ssh port"),
+            server.ssh_host_public_key().expect("SSH host public key")
+        ),
+    )
+    .expect("write known_hosts");
+    let config = config_for(&server).with_host_key_policy(SshHostKeyPolicy::KnownHostsFile(path));
+    let mut connection = SshConnection::new(config);
+
+    connection.connect().await.expect("connect failed");
+    connection
+        .send(b"<get_version/>")
+        .await
+        .expect("send failed");
+    let response = Response::new(connection.read().await.expect("read failed"));
+    assert_eq!(response.status_code(), Some(200));
+    connection.disconnect().await.expect("disconnect failed");
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn ssh_rejects_unknown_host_in_known_hosts_file() {
+    let server = start_mock().await;
+    let Some(server) = server else {
+        return;
+    };
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let path = directory.path().join("known_hosts");
+    std::fs::write(&path, "").expect("write known_hosts");
+    let config = config_for(&server).with_host_key_policy(SshHostKeyPolicy::KnownHostsFile(path));
+    let mut connection = SshConnection::new(config);
+
+    let error = connection.connect().await.expect_err("connect should fail");
+    assert!(matches!(error, ConnectionError::ConnectFailed(_)));
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn ssh_rejects_changed_key_in_known_hosts_file() {
+    let trusted_server = start_mock().await;
+    let Some(trusted_server) = trusted_server else {
+        return;
+    };
+    let server = start_mock().await;
+    let Some(server) = server else {
+        trusted_server.shutdown().await;
+        return;
+    };
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let path = directory.path().join("known_hosts");
+    std::fs::write(
+        &path,
+        format!(
+            "[127.0.0.1]:{} {}\n",
+            server.ssh_port().expect("ssh port"),
+            trusted_server
+                .ssh_host_public_key()
+                .expect("trusted SSH host public key")
+        ),
+    )
+    .expect("write known_hosts");
+    let config = config_for(&server).with_host_key_policy(SshHostKeyPolicy::KnownHostsFile(path));
+    let mut connection = SshConnection::new(config);
+
+    let error = connection.connect().await.expect_err("connect should fail");
+    assert!(matches!(error, ConnectionError::ConnectFailed(_)));
+    assert!(error.to_string().to_ascii_lowercase().contains("changed"));
+    server.shutdown().await;
+    trusted_server.shutdown().await;
+}
+
+#[tokio::test]
+async fn ssh_connect_with_explicit_accept_all() {
+    let server = start_mock().await;
+    let Some(server) = server else {
+        return;
+    };
+    let config = config_for(&server).with_host_key_policy(SshHostKeyPolicy::AcceptAll);
+    let mut connection = SshConnection::new(config);
+
+    connection.connect().await.expect("connect failed");
+    connection.disconnect().await.expect("disconnect failed");
     server.shutdown().await;
 }
 

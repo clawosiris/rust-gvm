@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use gvm_connection::{GvmConnection, SshAuth, SshConfig, SshConnection};
+use gvm_connection::{GvmConnection, SshAuth, SshConfig, SshConnection, SshHostKeyPolicy};
 
 #[test]
 fn test_default_config() {
@@ -15,6 +15,7 @@ fn test_default_config() {
     assert_eq!(config.port, 22);
     assert_eq!(config.remote_socket, "/run/gvmd/gvmd.sock");
     assert_eq!(config.timeout, Duration::from_secs(60));
+    assert_eq!(config.host_key_policy, SshHostKeyPolicy::KnownHosts);
 }
 
 #[test]
@@ -29,6 +30,28 @@ fn test_custom_config() {
     assert_eq!(config.port, 2200);
     assert_eq!(config.remote_socket, "/srv/gvmd.sock");
     assert_eq!(config.timeout, Duration::from_secs(5));
+    assert_eq!(config.host_key_policy, SshHostKeyPolicy::KnownHosts);
+}
+
+#[test]
+fn test_custom_host_key_policies() {
+    let known_hosts = SshConfig::default().with_host_key_policy(SshHostKeyPolicy::KnownHostsFile(
+        PathBuf::from("/etc/gvm/known_hosts"),
+    ));
+    assert_eq!(
+        known_hosts.host_key_policy,
+        SshHostKeyPolicy::KnownHostsFile(PathBuf::from("/etc/gvm/known_hosts"))
+    );
+
+    let fingerprint = SshConfig::default()
+        .with_host_key_policy(SshHostKeyPolicy::Fingerprint("sha256".to_string()));
+    assert_eq!(
+        fingerprint.host_key_policy,
+        SshHostKeyPolicy::Fingerprint("sha256".to_string())
+    );
+
+    let insecure = SshConfig::default().with_host_key_policy(SshHostKeyPolicy::AcceptAll);
+    assert_eq!(insecure.host_key_policy, SshHostKeyPolicy::AcceptAll);
 }
 
 #[test]

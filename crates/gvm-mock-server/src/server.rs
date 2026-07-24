@@ -57,6 +57,9 @@ pub struct MockGmpServer {
     /// The SSH host key fingerprint without the `SHA256:` prefix.
     #[cfg(feature = "ssh")]
     ssh_host_key_fingerprint: Option<String>,
+    /// The SSH host public key in OpenSSH format.
+    #[cfg(feature = "ssh")]
+    ssh_host_public_key: Option<String>,
     /// Command history shared with all sessions.
     history: CommandHistory,
     /// Shutdown signal.
@@ -130,6 +133,8 @@ impl MockGmpServer {
             ssh_addr: None,
             #[cfg(feature = "ssh")]
             ssh_host_key_fingerprint: None,
+            #[cfg(feature = "ssh")]
+            ssh_host_public_key: None,
             history,
             shutdown,
             listener_handle: handle,
@@ -186,6 +191,8 @@ impl MockGmpServer {
             ssh_addr: None,
             #[cfg(feature = "ssh")]
             ssh_host_key_fingerprint: None,
+            #[cfg(feature = "ssh")]
+            ssh_host_public_key: None,
             history,
             shutdown,
             listener_handle: handle,
@@ -244,6 +251,8 @@ impl MockGmpServer {
             ssh_addr: None,
             #[cfg(feature = "ssh")]
             ssh_host_key_fingerprint: None,
+            #[cfg(feature = "ssh")]
+            ssh_host_public_key: None,
             history,
             shutdown,
             listener_handle: handle,
@@ -270,6 +279,10 @@ impl MockGmpServer {
         let local_addr = listener.local_addr()?;
         let host_key = generate_host_key()?;
         let fingerprint = host_key_fingerprint(&host_key);
+        let public_key = host_key
+            .public_key()
+            .to_openssh()
+            .map_err(std::io::Error::other)?;
         let history = CommandHistory::new();
         let shutdown = Arc::new(Notify::new());
 
@@ -303,6 +316,7 @@ impl MockGmpServer {
             tls_certificate_pem: None,
             ssh_addr: Some(local_addr),
             ssh_host_key_fingerprint: Some(fingerprint),
+            ssh_host_public_key: Some(public_key),
             history,
             shutdown,
             listener_handle: handle,
@@ -358,6 +372,12 @@ impl MockGmpServer {
     #[cfg(feature = "ssh")]
     pub fn ssh_host_key_fingerprint(&self) -> Option<&str> {
         self.ssh_host_key_fingerprint.as_deref()
+    }
+
+    /// Get the generated SSH host public key in OpenSSH format.
+    #[cfg(feature = "ssh")]
+    pub fn ssh_host_public_key(&self) -> Option<&str> {
+        self.ssh_host_public_key.as_deref()
     }
 
     /// Get the command history.
