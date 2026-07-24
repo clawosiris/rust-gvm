@@ -7,15 +7,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::connection::{write_all_and_flush_with_timeout, GvmConnection};
+use crate::error::{ConnectionError, Result};
 use russh::client;
 use russh::keys::agent::client::AgentClient;
 use russh::keys::ssh_key::{HashAlg, PublicKey};
 use russh::keys::{self, PrivateKeyWithHashAlg};
 use russh::{AgentAuthError, Channel, ChannelMsg, Disconnect};
-use tokio::io::AsyncWriteExt;
-
-use crate::connection::GvmConnection;
-use crate::error::{ConnectionError, Result};
 
 /// Configuration for SSH tunnel connections.
 #[derive(Clone)]
@@ -30,7 +28,7 @@ pub struct SshConfig {
     pub auth: SshAuth,
     /// Remote gvmd Unix socket path.
     pub remote_socket: String,
-    /// Connection timeout.
+    /// Connect, authentication, channel, request-write/flush, and response-read timeout.
     pub timeout: Duration,
     /// Read buffer size in bytes.
     pub read_buffer_size: usize,
@@ -458,19 +456,15 @@ impl GvmConnection for SshConnection {
     }
 
     async fn send(&mut self, data: &[u8]) -> Result<()> {
-        let channel = self.channel.as_ref().ok_or(ConnectionError::NotConnected)?;
-        let mut writer = channel.make_writer();
-
-        tokio::time::timeout(self.config.timeout, writer.write_all(data))
-            .await
-            .map_err(|_| ConnectionError::Timeout(self.config.timeout))?
-            .map_err(ConnectionError::SendFailed)?;
-        tokio::time::timeout(self.config.timeout, writer.flush())
-            .await
-            .map_err(|_| ConnectionError::Timeout(self.config.timeout))?
-            .map_err(ConnectionError::SendFailed)?;
-
-        Ok(())
+        let result = {
+            let channel = self.channel.as_ref().ok_or(ConnectionError::NotConnected)?;
+            let mut writer = channel.make_writer();
+            write_all_and_flush_with_timeout(&mut writer, data, self.config.timeout).await
+        };
+        if result.is_err() {
+            self.invalidate_connection();
+        }
+        result
     }
 
     async fn read(&mut self) -> Result<Vec<u8>> {
@@ -495,10 +489,17 @@ impl GvmConnection for SshConnection {
         }
 
         loop {
-            let channel = self.channel.as_mut().ok_or(ConnectionError::NotConnected)?;
-            let message = tokio::time::timeout(self.config.timeout, channel.wait())
-                .await
-                .map_err(|_| ConnectionError::Timeout(self.config.timeout))?;
+            let wait_result = {
+                let channel = self.channel.as_mut().ok_or(ConnectionError::NotConnected)?;
+                tokio::time::timeout(self.config.timeout, channel.wait()).await
+            };
+            let message = match wait_result {
+                Ok(message) => message,
+                Err(_) => {
+                    self.invalidate_connection();
+                    return Err(ConnectionError::Timeout(self.config.timeout));
+                }
+            };
 
             match message {
                 Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
@@ -526,15 +527,18 @@ impl GvmConnection for SshConnection {
                     )));
                 }
                 Some(ChannelMsg::OpenFailure(error)) => {
-                    return Err(Self::read_error(format!("{error:?}")));
+                    let error = Self::read_error(format!("{error:?}"));
+                    self.invalidate_connection();
+                    return Err(error);
                 }
                 Some(
                     ChannelMsg::WindowAdjusted { .. } | ChannelMsg::Success | ChannelMsg::Failure,
                 ) => {}
                 Some(other) => {
-                    return Err(Self::read_error(format!(
-                        "unexpected ssh channel message: {other:?}"
-                    )));
+                    let error =
+                        Self::read_error(format!("unexpected ssh channel message: {other:?}"));
+                    self.invalidate_connection();
+                    return Err(error);
                 }
             }
         }

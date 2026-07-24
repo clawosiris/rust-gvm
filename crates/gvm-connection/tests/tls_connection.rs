@@ -253,10 +253,8 @@ async fn mutual_tls_requires_and_accepts_trusted_client_identity() {
         rejection,
         ConnectionError::SendFailed(_) | ConnectionError::ReadFailed(_)
     ));
-    assert!(matches!(
-        anonymous.disconnect().await,
-        Err(ConnectionError::DisconnectFailed(_))
-    ));
+    assert!(!anonymous.is_connected());
+    anonymous.disconnect().await.expect("already invalidated");
 
     let identity = TlsClientIdentity::from_pem(
         material.certificate_pem.into_bytes(),
@@ -468,6 +466,18 @@ async fn response_timeout_and_size_limit_are_reported() {
         timed_out.read().await,
         Err(ConnectionError::Timeout(_))
     ));
+    assert!(!timed_out.is_connected());
+    assert!(matches!(
+        timed_out.send(b"<get_version/>").await,
+        Err(ConnectionError::NotConnected)
+    ));
+    assert!(matches!(
+        timed_out.read().await,
+        Err(ConnectionError::NotConnected)
+    ));
+
+    timed_out.connect().await.expect("reconnect");
+    assert_eq!(get_version(&mut timed_out).await.status_code(), Some(200));
     timed_out.disconnect().await.expect("disconnect");
 
     let mut size_limited = TlsConnection::new(config_for(&server).with_max_response_bytes(Some(8)));
@@ -480,6 +490,7 @@ async fn response_timeout_and_size_limit_are_reported() {
         size_limited.read().await,
         Err(ConnectionError::ReadFailed(_))
     ));
+    assert!(!size_limited.is_connected());
     size_limited.disconnect().await.expect("disconnect");
 
     server.shutdown().await;
