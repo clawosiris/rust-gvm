@@ -141,7 +141,9 @@ pub(crate) fn status_from_response(response: &Response) -> Result<(u16, String),
 pub(crate) fn parse_document(data: &[u8]) -> Result<XmlNode, ParseError> {
     let text = str::from_utf8(data)?;
     let mut reader = Reader::from_str(text);
-    reader.config_mut().trim_text(true);
+    // Trimming each event loses significant whitespace when quick-xml splits
+    // text around a character reference (for example `left &amp; right`).
+    reader.config_mut().trim_text(false);
     let mut stack: Vec<XmlNode> = Vec::new();
 
     loop {
@@ -181,10 +183,28 @@ pub(crate) fn parse_document(data: &[u8]) -> Result<XmlNode, ParseError> {
                     node.text.push_str(str::from_utf8(event.as_ref())?);
                 }
             }
+            Event::GeneralRef(event) => {
+                let node = stack.last_mut().ok_or_else(|| {
+                    ParseError::MissingElement("root for entity reference".to_string())
+                })?;
+                if let Some(character) = event.resolve_char_ref()? {
+                    node.text.push(character);
+                } else {
+                    let entity = event.decode().map_err(quick_xml::Error::from)?;
+                    let Some(value) = quick_xml::escape::resolve_xml_entity(&entity) else {
+                        return Err(ParseError::InvalidValue {
+                            field: "entity reference".to_string(),
+                            value: entity.into_owned(),
+                        });
+                    };
+                    node.text.push_str(value);
+                }
+            }
             Event::End(_) => {
-                let Some(node) = stack.pop() else {
+                let Some(mut node) = stack.pop() else {
                     return Err(ParseError::MissingElement("root".to_string()));
                 };
+                node.text = node.text.trim().to_string();
                 if let Some(parent) = stack.last_mut() {
                     parent.children.push(node);
                 } else {
@@ -192,11 +212,7 @@ pub(crate) fn parse_document(data: &[u8]) -> Result<XmlNode, ParseError> {
                 }
             }
             Event::Eof => return Err(ParseError::MissingElement("root".to_string())),
-            Event::Decl(_)
-            | Event::PI(_)
-            | Event::DocType(_)
-            | Event::Comment(_)
-            | Event::GeneralRef(_) => {}
+            Event::Decl(_) | Event::PI(_) | Event::DocType(_) | Event::Comment(_) => {}
         }
     }
 }
@@ -454,5 +470,34 @@ mod tests {
         assert_eq!(parse_score("NaN"), None);
         assert_eq!(parse_score("inf"), None);
         assert_eq!(parse_score("-inf"), None);
+    }
+
+    #[test]
+    fn parse_document_preserves_predefined_and_character_references() {
+        let root = parse_document(
+            br#"<?xml version="1.0"?><!-- metadata --><?test instruction?><!DOCTYPE root><root attr="A &amp; B"><value>A &amp; B &lt; &#x21;&#33;</value></root>"#,
+        )
+        .expect("valid references should parse");
+
+        assert_eq!(root.attr("attr"), Some("A & B"));
+        assert_eq!(root.child_text("value").as_deref(), Some("A & B < !!"));
+    }
+
+    #[test]
+    fn parse_document_rejects_unknown_entity_references() {
+        let error =
+            parse_document(b"<root>&unknown;</root>").expect_err("unknown entity should fail");
+
+        assert!(matches!(
+            error,
+            ParseError::InvalidValue { field, value }
+                if field == "entity reference" && value == "unknown"
+        ));
+
+        assert!(matches!(
+            parse_document(b"&amp;<root/>"),
+            Err(ParseError::MissingElement(element))
+                if element == "root for entity reference"
+        ));
     }
 }
