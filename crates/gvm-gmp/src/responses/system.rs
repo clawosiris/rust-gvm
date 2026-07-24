@@ -51,6 +51,26 @@ pub struct HelpResponse {
     pub status: u16,
     pub status_text: String,
     pub help_text: String,
+    pub schema: Option<HelpSchema>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HelpSchema {
+    pub format: Option<String>,
+    pub extension: Option<String>,
+    pub content_type: Option<String>,
+    pub content: Option<String>,
+    pub commands: Vec<HelpCommand>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HelpCommand {
+    pub name: String,
+    pub summary: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -146,11 +166,44 @@ impl HelpResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
         let root = parse_document(response.data())?;
+        let schema = root.child("schema").map(|schema| {
+            let mut commands = Vec::new();
+            collect_help_commands(schema, &mut commands);
+            HelpSchema {
+                format: schema.attr("format").map(ToString::to_string),
+                extension: schema.attr("extension").map(ToString::to_string),
+                content_type: schema.attr("content_type").map(ToString::to_string),
+                content: (!schema.text.is_empty()).then(|| schema.text.clone()),
+                commands,
+            }
+        });
         Ok(Self {
             status,
             status_text,
             help_text: root.text.clone(),
+            schema,
         })
+    }
+}
+
+fn collect_help_commands(
+    node: &crate::responses::common::XmlNode,
+    commands: &mut Vec<HelpCommand>,
+) {
+    for child in &node.children {
+        if child.name == "command" {
+            if let Some(name) = child
+                .optional_child_text("name")
+                .or_else(|| (!child.text.is_empty()).then(|| child.text.clone()))
+            {
+                commands.push(HelpCommand {
+                    name,
+                    summary: child.optional_child_text("summary"),
+                });
+            }
+        } else {
+            collect_help_commands(child, commands);
+        }
     }
 }
 
@@ -253,6 +306,54 @@ mod tests {
             parsed.help_text,
             "Available commands: get_tasks, get_alerts"
         );
+        assert!(parsed.schema.is_none());
+    }
+
+    #[test]
+    fn parses_brief_xml_help_response() {
+        let response = Response::from(
+            r#"<help_response status="200" status_text="OK">
+                <schema format="XML" extension="xml" content_type="text/xml">
+                    <command><name>get_tasks</name><summary>Get tasks</summary></command>
+                    <command><name>get_alerts</name><summary>Get alerts</summary></command>
+                </schema>
+            </help_response>"#,
+        );
+
+        let parsed = HelpResponse::from_response(&response).expect("brief XML help parse");
+        let schema = parsed.schema.expect("schema");
+
+        assert!(parsed.help_text.is_empty());
+        assert_eq!(schema.format.as_deref(), Some("XML"));
+        assert_eq!(schema.extension.as_deref(), Some("xml"));
+        assert_eq!(schema.content_type.as_deref(), Some("text/xml"));
+        assert_eq!(schema.commands.len(), 2);
+        assert_eq!(schema.commands[0].name, "get_tasks");
+        assert_eq!(schema.commands[0].summary.as_deref(), Some("Get tasks"));
+    }
+
+    #[test]
+    fn parses_encoded_schema_content_and_nested_commands() {
+        let encoded = Response::from(
+            r#"<help_response status="200" status_text="OK">
+                <schema format="html" extension="html" content_type="text/html">PGh0bWw+PC9odG1sPg==</schema>
+            </help_response>"#,
+        );
+        let parsed = HelpResponse::from_response(&encoded).expect("encoded help parse");
+        assert_eq!(
+            parsed.schema.expect("schema").content.as_deref(),
+            Some("PGh0bWw+PC9odG1sPg==")
+        );
+
+        let xml = Response::from(
+            r#"<help_response status="200" status_text="OK">
+                <schema format="XML" extension="xml" content_type="text/xml">
+                    <protocol><command><name>get_tasks</name></command></protocol>
+                </schema>
+            </help_response>"#,
+        );
+        let parsed = HelpResponse::from_response(&xml).expect("nested XML help parse");
+        assert_eq!(parsed.schema.expect("schema").commands[0].name, "get_tasks");
     }
 
     #[test]

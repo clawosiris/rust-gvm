@@ -255,7 +255,7 @@ impl SessionHandler {
             }
             "restore" => self.handle_restore(cmd, store),
             // Help
-            "help" => render_help_response(cmd.attr("format")),
+            "help" => render_help_response(cmd),
             "sync_agents" => b"<sync_agents_response status=\"200\" status_text=\"OK\"/>".to_vec(),
             // Everything else
             _ => echo_response(&cmd.name, self.version.as_str()),
@@ -1658,12 +1658,71 @@ fn usage_type_matches(resource: &Resource, requested_usage_type: Option<&str>) -
     }
 }
 
-fn render_help_response(format: Option<&str>) -> Vec<u8> {
-    let body = match format {
-        Some("brief") => "<commands><command>get_feeds</command><command>get_tasks</command><command>get_configs</command></commands>",
-        _ => "<commands><command>get_feeds</command><command>get_tasks</command><command>get_configs</command><command>get_reports</command><command>get_info</command><command>get_settings</command></commands>",
-    };
-    format!("<help_response status=\"200\" status_text=\"OK\">{body}</help_response>").into_bytes()
+fn render_help_response(cmd: &ParsedCommand) -> Vec<u8> {
+    const COMMANDS: [(&str, &str); 6] = [
+        ("get_configs", "Get scan configurations"),
+        ("get_feeds", "Get feed information"),
+        ("get_info", "Get security information"),
+        ("get_reports", "Get reports"),
+        ("get_settings", "Get settings"),
+        ("get_tasks", "Get tasks"),
+    ];
+
+    let format = cmd.attr("format").map(str::to_ascii_lowercase);
+    let help_type = cmd.attr("type").unwrap_or_default();
+    if !matches!(help_type, "" | "brief") {
+        return error_response("help", 400, "Help type must be blank or 'brief'");
+    }
+    if help_type == "brief" && format.as_deref() != Some("xml") {
+        return error_response("help", 400, "Brief help requires XML format");
+    }
+
+    if format.as_deref().is_none_or(|value| value == "text") {
+        let mut body = String::new();
+        for (name, summary) in COMMANDS {
+            body.push_str(name);
+            body.push_str(" - ");
+            body.push_str(summary);
+            body.push('\n');
+        }
+        return format!("<help_response status=\"200\" status_text=\"OK\">{body}</help_response>")
+            .into_bytes();
+    }
+
+    if help_type == "brief" {
+        let mut body = String::new();
+        for (name, summary) in COMMANDS {
+            body.push_str("<command><name>");
+            body.push_str(name);
+            body.push_str("</name><summary>");
+            body.push_str(summary);
+            body.push_str("</summary></command>");
+        }
+        return format!(
+            "<help_response status=\"200\" status_text=\"OK\"><schema format=\"XML\" extension=\"xml\" content_type=\"text/xml\">{body}</schema></help_response>"
+        )
+        .into_bytes();
+    }
+
+    match format.as_deref().unwrap_or_default() {
+        "xml" => {
+            let mut commands = String::new();
+            for (name, summary) in COMMANDS {
+                commands.push_str("<command><name>");
+                commands.push_str(name);
+                commands.push_str("</name><summary>");
+                commands.push_str(summary);
+                commands.push_str("</summary></command>");
+            }
+            format!(
+                "<help_response status=\"200\" status_text=\"OK\"><schema format=\"xml\" extension=\"xml\" content_type=\"text/xml\"><protocol><name>Greenbone Management Protocol</name>{commands}</protocol></schema></help_response>"
+            )
+            .into_bytes()
+        }
+        "html" => b"<help_response status=\"200\" status_text=\"OK\"><schema format=\"html\" extension=\"html\" content_type=\"text/html\">PGh0bWw+PGJvZHk+R01QPC9ib2R5PjwvaHRtbD4=</schema></help_response>".to_vec(),
+        "rnc" => b"<help_response status=\"200\" status_text=\"OK\"><schema format=\"rnc\" extension=\"rnc\" content_type=\"application/relax-ng-compact-syntax\">c3RhcnQgPSBlbGVtZW50IGhlbHAgeyB0ZXh0IH0=</schema></help_response>".to_vec(),
+        other => error_response("help", 404, &format!("Unknown help format '{other}'")),
+    }
 }
 
 fn render_feeds_response() -> Vec<u8> {
