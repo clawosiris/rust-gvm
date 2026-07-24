@@ -104,9 +104,11 @@ impl server::Handler for MockSshHandler {
         &mut self,
         mut channel: Channel<server::Msg>,
         socket_path: &str,
+        reply: server::ChannelOpenHandle,
         _session: &mut Session,
-    ) -> Result<bool, Self::Error> {
+    ) -> Result<(), Self::Error> {
         tracing::debug!("SSH direct-streamlocal open for {socket_path}");
+        reply.accept().await;
 
         let state = Arc::clone(&self.state);
         let session_id = state.next_session_id();
@@ -185,7 +187,7 @@ impl server::Handler for MockSshHandler {
             }
         });
 
-        Ok(true)
+        Ok(())
     }
 }
 

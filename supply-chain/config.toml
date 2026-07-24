@@ -19,7 +19,7 @@ version = "0.9.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.aes-gcm]]
-version = "0.11.0-rc.4"
+version = "0.11.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.aho-corasick]]
@@ -179,7 +179,7 @@ version = "1.5.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.crypto-bigint]]
-version = "0.7.4"
+version = "0.7.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.crypto-common]]
@@ -199,7 +199,7 @@ version = "0.4.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.curve25519-dalek]]
-version = "5.0.0-rc.0"
+version = "5.0.0-rc.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.curve25519-dalek-derive]]
@@ -235,7 +235,7 @@ version = "1.0.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.ecdsa]]
-version = "0.17.0-rc.18"
+version = "0.17.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.ed25519]]
@@ -243,11 +243,11 @@ version = "3.0.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.ed25519-dalek]]
-version = "3.0.0-rc.0"
+version = "3.0.0-rc.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.elliptic-curve]]
-version = "0.14.0-rc.33"
+version = "0.14.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.enum_dispatch]]
@@ -375,7 +375,7 @@ version = "0.13.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.hybrid-array]]
-version = "0.4.12"
+version = "0.4.13"
 criteria = "safe-to-deploy"
 
 [[exemptions.iana-time-zone]]
@@ -483,15 +483,15 @@ version = "1.70.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.p256]]
-version = "0.14.0-rc.10"
+version = "0.14.0-rc.15"
 criteria = "safe-to-deploy"
 
 [[exemptions.p384]]
-version = "0.14.0-rc.10"
+version = "0.14.0-rc.15"
 criteria = "safe-to-deploy"
 
 [[exemptions.p521]]
-version = "0.14.0-rc.10"
+version = "0.14.0-rc.15"
 criteria = "safe-to-deploy"
 
 [[exemptions.pageant]]
@@ -551,11 +551,11 @@ version = "1.4.1"
 criteria = "safe-to-run"
 
 [[exemptions.primefield]]
-version = "0.14.0-rc.12"
+version = "0.14.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.primeorder]]
-version = "0.14.0-rc.10"
+version = "0.14.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.proc-macro-crate]]
@@ -619,7 +619,7 @@ version = "0.8.11"
 criteria = "safe-to-deploy"
 
 [[exemptions.rfc6979]]
-version = "0.5.0"
+version = "0.6.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.ring]]
@@ -639,11 +639,11 @@ version = "0.26.1"
 criteria = "safe-to-run"
 
 [[exemptions.russh]]
-version = "0.61.2"
+version = "0.62.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.russh-cryptovec]]
-version = "0.61.0"
+version = "0.62.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.russh-util]]
@@ -767,15 +767,15 @@ version = "0.8.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.ssh-cipher]]
-version = "0.3.0-rc.9"
+version = "0.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.ssh-encoding]]
-version = "0.3.0-rc.9"
+version = "0.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.ssh-key]]
-version = "0.7.0-rc.10"
+version = "0.7.0-rc.11"
 criteria = "safe-to-deploy"
 
 [[exemptions.subtle]]
@@ -1012,6 +1012,10 @@ criteria = "safe-to-run"
 
 [[exemptions.wit-bindgen]]
 version = "0.57.1"
+criteria = "safe-to-deploy"
+
+[[exemptions.wnaf]]
+version = "0.14.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.yansi]]
