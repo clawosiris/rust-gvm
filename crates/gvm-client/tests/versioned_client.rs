@@ -4,7 +4,6 @@
 #![allow(clippy::print_stderr, missing_docs)]
 #![cfg(feature = "unix-socket-tests")]
 
-use gvm_client::GmpNext;
 use gvm_client::{
     AgentInstallerLanguage, CreateAgentGroupOpts, CreateAgentGroupTaskOpts,
     CreateOciImageTargetOpts, CreateOciImageTargetTaskOpts, CreateWebApplicationTargetOpts,
@@ -13,6 +12,7 @@ use gvm_client::{
     GvmError, ModifyAgentControlScanConfigOpts, ModifyAgentGroupOpts, ModifyAgentOpts,
     ModifyCredentialStoreCredentialOpts, ModifyOciImageTargetOpts, ModifyWebApplicationTargetOpts,
 };
+use gvm_client::{GmpClient, GmpNext};
 use gvm_connection::{GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::agents::get_agents;
 use gvm_gmp::commands::credentials::{create_credential, verify_credential_store, CredentialOpts};
@@ -47,16 +47,33 @@ fn unix_connection(server: &MockGmpServer) -> UnixSocketConnection {
     UnixSocketConnection::with_path(server.socket_path().expect("unix socket path"))
 }
 
+async fn delete_task(server: &MockGmpServer, task_id: &EntityId) {
+    let mut client = GmpClient::connect(unix_connection(server))
+        .await
+        .expect("task cleanup client should connect");
+    client
+        .call(gvm_gmp::commands::authentication::authenticate(
+            "admin", "admin",
+        ))
+        .await
+        .expect("task cleanup authentication should succeed");
+    client
+        .call(gvm_gmp::commands::tasks::delete_task(task_id, true))
+        .await
+        .expect("delete referencing task should succeed");
+}
+
 async fn assert_create_agent_group_task_round_trip<C>(
     client: &mut GmpNext<C>,
     server: &MockGmpServer,
     agent_group_id: &EntityId,
-) where
+) -> EntityId
+where
     C: GvmConnection + Send,
 {
     server.clear_history();
 
-    let scanner_id = EntityId::new("scanner-1").expect("valid id");
+    let scanner_id = EntityId::new("08b69003-5fc2-4037-a479-93b440211c73").expect("valid id");
     let task_response = client
         .create_agent_group_task(
             "Client Agent Group Task",
@@ -79,22 +96,24 @@ async fn assert_create_agent_group_task_round_trip<C>(
     assert_eq!(
         String::from_utf8(command.raw_xml().to_vec()).expect("history should be UTF-8"),
         format!(
-            "<create_task><name>Client Agent Group Task</name><usage_type>scan</usage_type><agent_group id=\"{}\"/><scanner id=\"scanner-1\"/><comment>task through client</comment><alterable>1</alterable></create_task>",
+            "<create_task><name>Client Agent Group Task</name><usage_type>scan</usage_type><agent_group id=\"{}\"/><scanner id=\"08b69003-5fc2-4037-a479-93b440211c73\"/><comment>task through client</comment><alterable>1</alterable></create_task>",
             agent_group_id.as_str()
         )
     );
+    EntityId::new(task_response.id().expect("created task id")).expect("valid task id")
 }
 
 async fn assert_create_oci_image_target_task_round_trip<C>(
     client: &mut GmpNext<C>,
     server: &MockGmpServer,
     oci_image_target_id: &EntityId,
-) where
+) -> EntityId
+where
     C: GvmConnection + Send,
 {
     server.clear_history();
 
-    let scanner_id = id("scanner-1");
+    let scanner_id = id("08b69003-5fc2-4037-a479-93b440211c73");
     let task_response = client
         .create_container_image_task(
             "Client OCI Target Task",
@@ -117,19 +136,20 @@ async fn assert_create_oci_image_target_task_round_trip<C>(
     assert_eq!(
         String::from_utf8(command.raw_xml().to_vec()).expect("history should be UTF-8"),
         format!(
-            "<create_task><name>Client OCI Target Task</name><usage_type>scan</usage_type><oci_image_target id=\"{}\"/><scanner id=\"scanner-1\"/><comment>task through client</comment><alterable>1</alterable></create_task>",
+            "<create_task><name>Client OCI Target Task</name><usage_type>scan</usage_type><oci_image_target id=\"{}\"/><scanner id=\"08b69003-5fc2-4037-a479-93b440211c73\"/><comment>task through client</comment><alterable>1</alterable></create_task>",
             oci_image_target_id.as_str()
         )
     );
+    EntityId::new(task_response.id().expect("created task id")).expect("valid task id")
 }
 
 async fn assert_create_web_application_task_round_trip(
     client: &mut GmpNext<UnixSocketConnection>,
     server: &MockGmpServer,
     target_id: &EntityId,
-) {
+) -> EntityId {
     server.clear_history();
-    let scanner_id = EntityId::new("scanner-web-1").expect("valid id");
+    let scanner_id = EntityId::new("08b69003-5fc2-4037-a479-93b440211c73").expect("valid id");
     let task_response = client
         .create_web_application_task(
             "Client Web Task",
@@ -150,9 +170,10 @@ async fn assert_create_web_application_task_round_trip(
     assert_eq!(
         raw_xml,
         format!(
-            "<create_task><name>Client Web Task</name><usage_type>scan</usage_type><web_application_target id=\"{target_id}\"/><scanner id=\"scanner-web-1\"/><comment>created from versioned client</comment></create_task>"
+            "<create_task><name>Client Web Task</name><usage_type>scan</usage_type><web_application_target id=\"{target_id}\"/><scanner id=\"08b69003-5fc2-4037-a479-93b440211c73\"/><comment>created from versioned client</comment></create_task>"
         )
     );
+    EntityId::new(task_response.id().expect("created task id")).expect("valid task id")
 }
 
 #[tokio::test]
@@ -477,7 +498,8 @@ async fn next_client_agent_groups_round_trip() {
     assert_eq!(create_response.status, 201);
     let agent_group_id = create_response.id;
 
-    assert_create_agent_group_task_round_trip(&mut client, &server, &agent_group_id).await;
+    let task_id =
+        assert_create_agent_group_task_round_trip(&mut client, &server, &agent_group_id).await;
 
     let clone_response = client
         .clone_agent_group(&agent_group_id)
@@ -531,6 +553,7 @@ async fn next_client_agent_groups_round_trip() {
         Some("0 */10 * * *")
     );
 
+    delete_task(&server, &task_id).await;
     let delete_response = client
         .delete_agent_group(&agent_group_id, true)
         .await
@@ -775,7 +798,8 @@ async fn next_client_oci_image_targets_round_trip() {
     assert_eq!(create_response.status_code(), Some(201));
     let target_id = EntityId::new(create_response.id().expect("created id")).expect("valid id");
 
-    assert_create_oci_image_target_task_round_trip(&mut client, &server, &target_id).await;
+    let task_id =
+        assert_create_oci_image_target_task_round_trip(&mut client, &server, &target_id).await;
 
     let get_response = client
         .get_oci_image_target(&target_id, Some(true))
@@ -827,6 +851,7 @@ async fn next_client_oci_image_targets_round_trip() {
     );
     assert!(modified_xml.contains("<credential_id>credential-oci-2</credential_id>"));
 
+    delete_task(&server, &task_id).await;
     let delete_response = client
         .delete_oci_image_target(&target_id, true)
         .await
@@ -896,7 +921,8 @@ async fn next_client_web_application_targets_round_trip() {
     assert!(get_xml.contains("<exclude_urls>https://example.com/logout</exclude_urls>"));
     assert!(get_xml.contains("<credential_id>credential-web-1</credential_id>"));
 
-    assert_create_web_application_task_round_trip(&mut client, &server, &target_id).await;
+    let task_id =
+        assert_create_web_application_task_round_trip(&mut client, &server, &target_id).await;
 
     let clone_response = client
         .clone_web_application_target(&target_id)
@@ -937,6 +963,7 @@ async fn next_client_web_application_targets_round_trip() {
     assert!(modified_xml.contains("<exclude_urls>https://updated.example/logout</exclude_urls>"));
     assert!(modified_xml.contains("<credential_id>credential-web-2</credential_id>"));
 
+    delete_task(&server, &task_id).await;
     let delete_response = client
         .delete_web_application_target(&target_id, true)
         .await

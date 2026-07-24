@@ -57,6 +57,25 @@ async fn create_and_get_id(
     rest[..end].to_string()
 }
 
+async fn create_task_id(stream: &mut UnixStream, name: &str) -> String {
+    let target_id = create_and_get_id(
+        stream,
+        format!(
+            "<create_target><name>{name} Target</name><hosts>127.0.0.1</hosts></create_target>"
+        )
+        .as_bytes(),
+        "create_target",
+    )
+    .await;
+    create_and_get_id(
+        stream,
+        format!("<create_task><name>{name}</name><target id=\"{target_id}\"/></create_task>")
+            .as_bytes(),
+        "create_task",
+    )
+    .await
+}
+
 async fn stateful_server() -> Option<MockGmpServer> {
     match MockGmpServer::builder()
         .mode(ServerMode::Stateful)
@@ -99,12 +118,7 @@ async fn task_start_new_task() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let task_id = create_and_get_id(
-        &mut stream,
-        b"<create_task><name>Lifecycle Start</name><target id=\"t1\"/></create_task>",
-        "create_task",
-    )
-    .await;
+    let task_id = create_task_id(&mut stream, "Lifecycle Start").await;
 
     let start_resp = send_recv(
         &mut stream,
@@ -137,12 +151,7 @@ async fn task_stop_running_task() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let task_id = create_and_get_id(
-        &mut stream,
-        b"<create_task><name>Lifecycle Stop</name><target id=\"t1\"/></create_task>",
-        "create_task",
-    )
-    .await;
+    let task_id = create_task_id(&mut stream, "Lifecycle Stop").await;
 
     send_recv(
         &mut stream,
@@ -179,23 +188,29 @@ async fn task_resume_stopped_task() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let task_id = create_and_get_id(
-        &mut stream,
-        b"<create_task><name>Lifecycle Resume</name><target id=\"t1\"/></create_task>",
-        "create_task",
-    )
-    .await;
+    let task_id = create_task_id(&mut stream, "Lifecycle Resume").await;
 
-    send_recv(
+    let start_resp = send_recv(
         &mut stream,
         format!("<start_task task_id=\"{task_id}\"/>").as_bytes(),
     )
     .await;
+    let started_report_id = extract_report_id(start_resp.as_str().expect("valid utf8")).to_string();
     send_recv(
         &mut stream,
         format!("<stop_task task_id=\"{task_id}\"/>").as_bytes(),
     )
     .await;
+
+    let stopped_report = send_recv(
+        &mut stream,
+        format!("<get_reports report_id=\"{started_report_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert!(stopped_report
+        .as_str()
+        .expect("valid utf8")
+        .contains("<status>Stopped</status>"));
 
     let resume_resp = send_recv(
         &mut stream,
@@ -203,6 +218,17 @@ async fn task_resume_stopped_task() {
     )
     .await;
     assert_eq!(resume_resp.status_code(), Some(202));
+    assert_eq!(
+        extract_report_id(resume_resp.as_str().expect("valid utf8")),
+        started_report_id,
+        "resume_task should continue the stopped report"
+    );
+
+    let reports = send_recv(&mut stream, b"<get_reports/>").await;
+    assert!(reports
+        .as_str()
+        .expect("valid utf8")
+        .contains("<report_count>1"));
 
     let get_resp = send_recv(
         &mut stream,
@@ -226,12 +252,7 @@ async fn task_start_already_running_returns_409() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let task_id = create_and_get_id(
-        &mut stream,
-        b"<create_task><name>Lifecycle Start Conflict</name><target id=\"t1\"/></create_task>",
-        "create_task",
-    )
-    .await;
+    let task_id = create_task_id(&mut stream, "Lifecycle Start Conflict").await;
 
     send_recv(
         &mut stream,
@@ -257,12 +278,7 @@ async fn task_stop_already_stopped_returns_409() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let task_id = create_and_get_id(
-        &mut stream,
-        b"<create_task><name>Lifecycle Stop Conflict</name><target id=\"t1\"/></create_task>",
-        "create_task",
-    )
-    .await;
+    let task_id = create_task_id(&mut stream, "Lifecycle Stop Conflict").await;
 
     send_recv(
         &mut stream,
@@ -293,12 +309,7 @@ async fn task_resume_non_stopped_returns_409() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let task_id = create_and_get_id(
-        &mut stream,
-        b"<create_task><name>Lifecycle Resume Conflict</name><target id=\"t1\"/></create_task>",
-        "create_task",
-    )
-    .await;
+    let task_id = create_task_id(&mut stream, "Lifecycle Resume Conflict").await;
 
     send_recv(
         &mut stream,
@@ -324,12 +335,7 @@ async fn task_get_shows_current_status() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let task_id = create_and_get_id(
-        &mut stream,
-        b"<create_task><name>Status Progression</name><target id=\"t1\"/></create_task>",
-        "create_task",
-    )
-    .await;
+    let task_id = create_task_id(&mut stream, "Status Progression").await;
 
     let new_resp = send_recv(
         &mut stream,
@@ -382,12 +388,7 @@ async fn task_start_returns_report_id() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let task_id = create_and_get_id(
-        &mut stream,
-        b"<create_task><name>Report Id</name><target id=\"t1\"/></create_task>",
-        "create_task",
-    )
-    .await;
+    let task_id = create_task_id(&mut stream, "Report Id").await;
 
     let start_resp = send_recv(
         &mut stream,

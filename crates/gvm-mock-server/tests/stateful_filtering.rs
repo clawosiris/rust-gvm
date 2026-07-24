@@ -54,6 +54,24 @@ async fn connect(server: &MockGmpServer) -> UnixStream {
     UnixStream::connect(path).await.expect("connect failed")
 }
 
+async fn create_task(stream: &mut UnixStream, name: &str) -> Response {
+    let target = send_recv(
+        stream,
+        format!(
+            "<create_target><name>{name} Target</name><hosts>127.0.0.1</hosts></create_target>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    let target_id = target.id().expect("target should have id");
+    send_recv(
+        stream,
+        format!("<create_task><name>{name}</name><target id=\"{target_id}\"/></create_task>")
+            .as_bytes(),
+    )
+    .await
+}
+
 // FILT-001: Filter by name equality
 #[tokio::test]
 async fn filter_by_name_equality() {
@@ -64,16 +82,8 @@ async fn filter_by_name_equality() {
     auth_admin(&mut stream).await;
 
     // Create two tasks with different names (single-word for simple filter)
-    send_recv(
-        &mut stream,
-        b"<create_task><name>AlphaTask</name><target id=\"t1\"/></create_task>",
-    )
-    .await;
-    send_recv(
-        &mut stream,
-        b"<create_task><name>BetaTask</name><target id=\"t1\"/></create_task>",
-    )
-    .await;
+    create_task(&mut stream, "AlphaTask").await;
+    create_task(&mut stream, "BetaTask").await;
 
     // Filter by name=AlphaTask
     let resp = send_recv(&mut stream, br#"<get_tasks filter="name=AlphaTask"/>"#).await;
@@ -97,11 +107,7 @@ async fn filter_no_match_returns_empty() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    send_recv(
-        &mut stream,
-        b"<create_task><name>Existing</name><target id=\"t1\"/></create_task>",
-    )
-    .await;
+    create_task(&mut stream, "Existing").await;
 
     let resp = send_recv(&mut stream, br#"<get_tasks filter="name=Nonexistent"/>"#).await;
     assert_eq!(resp.status_code(), Some(200));
@@ -123,16 +129,8 @@ async fn no_filter_returns_all() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    send_recv(
-        &mut stream,
-        b"<create_task><name>Task A</name><target id=\"t1\"/></create_task>",
-    )
-    .await;
-    send_recv(
-        &mut stream,
-        b"<create_task><name>Task B</name><target id=\"t1\"/></create_task>",
-    )
-    .await;
+    create_task(&mut stream, "Task A").await;
+    create_task(&mut stream, "Task B").await;
 
     let resp = send_recv(&mut stream, b"<get_tasks/>").await;
     assert_eq!(resp.status_code(), Some(200));
@@ -153,11 +151,7 @@ async fn trash_filter_returns_only_trashed() {
     auth_admin(&mut stream).await;
 
     // Create and trash one task
-    let create_resp = send_recv(
-        &mut stream,
-        b"<create_task><name>Trashed Task</name><target id=\"t1\"/></create_task>",
-    )
-    .await;
+    let create_resp = create_task(&mut stream, "Trashed Task").await;
     let create_text = create_resp.as_str().expect("utf8");
     let marker = "id=\"";
     let start = create_text.find(marker).unwrap() + marker.len();
@@ -173,11 +167,7 @@ async fn trash_filter_returns_only_trashed() {
     .await;
 
     // Create another task (not trashed)
-    send_recv(
-        &mut stream,
-        b"<create_task><name>Active Task</name><target id=\"t1\"/></create_task>",
-    )
-    .await;
+    create_task(&mut stream, "Active Task").await;
 
     // Normal get should only show Active Task
     let normal_resp = send_recv(&mut stream, b"<get_tasks/>").await;
