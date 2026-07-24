@@ -406,7 +406,7 @@ async fn stateful_auth_and_license_modifiers_use_gmp_builder_shape() {
 }
 
 #[tokio::test]
-async fn stateful_get_feeds_returns_static_entries() {
+async fn stateful_get_feeds_returns_canonical_entries() {
     let Some(server) = stateful_server().await else {
         return;
     };
@@ -416,9 +416,13 @@ async fn stateful_get_feeds_returns_static_entries() {
     let resp = send_recv(&mut stream, b"<get_feeds/>").await;
     assert_eq!(resp.status_code(), Some(200));
     let text = resp.as_str().expect("utf8");
-    assert!(text.contains("Network Vulnerability Tests"));
+    assert!(text.contains("<feed_owner_set>1</feed_owner_set>"));
+    assert!(text.contains("<name>Greenbone Security Feed</name>"));
     assert!(text.contains("<type>SCAP</type>"));
-    assert!(text.contains("<feed_count>3"));
+    assert!(text.contains("<type>GVMD_DATA</type>"));
+    assert!(text.contains("<currently_syncing><timestamp>"));
+    assert!(text.contains("<sync_not_available><error>"));
+    assert!(!text.contains("<feed_count>"));
 
     server.shutdown().await;
 }

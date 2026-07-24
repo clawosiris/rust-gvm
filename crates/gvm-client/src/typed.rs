@@ -26,7 +26,7 @@ use gvm_gmp::commands::credentials::{
     ModifyCredentialStoreCredentialOpts,
 };
 use gvm_gmp::commands::features::get_features;
-use gvm_gmp::commands::feed::get_feeds;
+use gvm_gmp::commands::feed::{get_feed, get_feeds};
 use gvm_gmp::commands::filters::{create_filter, get_filters, FilterOpts, GetFiltersOpts};
 use gvm_gmp::commands::groups::{create_group, get_groups, GetGroupsOpts, GroupOpts};
 use gvm_gmp::commands::help::{help, help_with_mode, HelpMode};
@@ -140,7 +140,7 @@ use gvm_gmp::responses::{
     VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
-use gvm_gmp::CredentialStoreCredentialType;
+use gvm_gmp::{CredentialStoreCredentialType, FeedType};
 
 use crate::{GmpClient, GvmError};
 
@@ -1020,6 +1020,15 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_feeds(&mut self) -> Result<GetFeedsResponse, GvmError> {
         let response = self.send(get_feeds()).await?;
+        GetFeedsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a type-filtered `get_feeds` request and return a typed response.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_feed(&mut self, feed_type: FeedType) -> Result<GetFeedsResponse, GvmError> {
+        let response = self.send(get_feed(feed_type)).await?;
         GetFeedsResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
