@@ -16,6 +16,7 @@
 mod error;
 mod typed;
 mod version;
+mod wire_trace;
 
 use std::fmt;
 use std::sync::Arc;
@@ -67,6 +68,7 @@ use gvm_gmp::responses::{
 };
 use gvm_gmp::types::{EntityId, GmpVersion};
 use gvm_protocol::{Request, Response};
+use wire_trace::redact_wire_bytes;
 
 pub use error::GvmError;
 pub use gvm_gmp::commands::agent_groups::{
@@ -141,8 +143,16 @@ pub struct WireTraceEvent {
 
 /// Sink for opt-in GMP wire trace events.
 ///
-/// Events are redacted by default before this callback is invoked. The tracing
-/// hook is disabled unless configured explicitly on [`GmpClient`].
+/// Events are structurally parsed and redacted before this callback is invoked.
+/// Known GMP secret fields, generic `value`, `default_value`, and `param`
+/// payloads, sensitive attributes, comments, and processing instructions are
+/// removed. Malformed or non-UTF-8 payloads are replaced entirely with a fixed
+/// marker.
+///
+/// This policy is not a general secret detector for arbitrary custom XML field
+/// names. Applications sending raw custom requests should still restrict trace
+/// access as they would other diagnostic data. The tracing hook is disabled
+/// unless configured explicitly on [`GmpClient`].
 pub trait WireTrace: Send + Sync + 'static {
     /// Receive a redacted GMP wire trace event.
     fn trace(&self, event: WireTraceEvent);
@@ -862,80 +872,6 @@ fn emit_wire_trace(
             bytes: redact_wire_bytes(bytes),
         });
     }
-}
-
-fn redact_wire_bytes(bytes: &[u8]) -> Vec<u8> {
-    let Ok(text) = std::str::from_utf8(bytes) else {
-        return b"<non-utf8-redacted/>".to_vec();
-    };
-
-    let mut text = text.to_string();
-    for tag in [
-        "password",
-        "private",
-        "private_key",
-        "passphrase",
-        "secret",
-        "auth_password",
-        "privacy_password",
-        "key",
-    ] {
-        text = redact_xml_element_text(&text, tag);
-    }
-    text.into_bytes()
-}
-
-fn redact_xml_element_text(input: &str, tag: &str) -> String {
-    let mut redacted = String::with_capacity(input.len());
-    let close = format!("</{tag}>");
-    let mut rest = input;
-
-    while let Some(open_start) = find_open_element(rest, tag) {
-        let (before, after_before) = rest.split_at(open_start);
-        redacted.push_str(before);
-
-        let Some(open_end) = after_before.find('>') else {
-            redacted.push_str(after_before);
-            return redacted;
-        };
-        let (open_tag, after_open) = after_before.split_at(open_end + 1);
-        redacted.push_str(open_tag);
-
-        if open_tag.trim_end().ends_with("/>") {
-            rest = after_open;
-            continue;
-        }
-
-        let Some(close_start) = after_open.find(&close) else {
-            redacted.push_str(after_open);
-            return redacted;
-        };
-        redacted.push_str("<redacted>");
-        redacted.push_str(&close);
-        rest = &after_open[close_start + close.len()..];
-    }
-
-    redacted.push_str(rest);
-    redacted
-}
-
-fn find_open_element(input: &str, tag: &str) -> Option<usize> {
-    let open_prefix = format!("<{tag}");
-    let mut search_start = 0;
-
-    while let Some(relative_start) = input[search_start..].find(&open_prefix) {
-        let start = search_start + relative_start;
-        let after_tag = start + open_prefix.len();
-        let next = input[after_tag..].chars().next();
-
-        if next.is_some_and(|ch| ch == '>' || ch == '/' || ch.is_whitespace()) {
-            return Some(start);
-        }
-
-        search_start = after_tag;
-    }
-
-    None
 }
 
 /// GMP 22.4 client wrapper.
@@ -2139,7 +2075,7 @@ mod tests {
 
         let auth_request = event_text(&events[2]);
         assert!(auth_request.contains("<authenticate>"));
-        assert!(auth_request.contains("<password><redacted></password>"));
+        assert!(auth_request.contains("<password><redacted/></password>"));
         assert!(!auth_request.contains("secret-password"));
 
         assert_eq!(events[3].direction, WireTraceDirection::Response);
@@ -2399,15 +2335,16 @@ mod tests {
 
     #[test]
     fn redacts_known_credential_elements() {
-        let bytes = br#"<root><password>pw</password><private>key</private><private_key>key2</private_key><passphrase>phrase</passphrase><secret>oidc-secret</secret><auth_password>auth</auth_password><privacy_password>privacy</privacy_password><password algorithm="x">again</password></root>"#;
+        let bytes = br#"<root><password>pw</password><community>snmp</community><private>key</private><private_key>key2</private_key><passphrase>phrase</passphrase><secret>oidc-secret</secret><auth_password>auth</auth_password><privacy_password>privacy</privacy_password><password algorithm="x">again</password></root>"#;
 
         let redacted = String::from_utf8(redact_wire_bytes(bytes)).expect("utf-8");
 
         assert_eq!(
             redacted,
-            r#"<root><password><redacted></password><private><redacted></private><private_key><redacted></private_key><passphrase><redacted></passphrase><secret><redacted></secret><auth_password><redacted></auth_password><privacy_password><redacted></privacy_password><password algorithm="x"><redacted></password></root>"#
+            r#"<root><password><redacted/></password><community><redacted/></community><private><redacted/></private><private_key><redacted/></private_key><passphrase><redacted/></passphrase><secret><redacted/></secret><auth_password><redacted/></auth_password><privacy_password><redacted/></privacy_password><password algorithm="x"><redacted/></password></root>"#
         );
         assert!(!redacted.contains(">pw<"));
+        assert!(!redacted.contains(">snmp<"));
         assert!(!redacted.contains(">key<"));
         assert!(!redacted.contains(">key2<"));
         assert!(!redacted.contains(">phrase<"));
@@ -2425,7 +2362,7 @@ mod tests {
 
         assert_eq!(
             redacted,
-            "<modify_license><key><redacted></key></modify_license>"
+            "<modify_license><key><redacted/></key></modify_license>"
         );
         assert!(!redacted.contains("license-secret"));
     }
@@ -2438,8 +2375,34 @@ mod tests {
 
         assert_eq!(
             redacted,
-            r#"<root><password_hash>keep</password_hash><secret_name>keep-secret-name</secret_name><password/><secret/><password><redacted></password><secret><redacted></secret></root>"#
+            r#"<root><password_hash>keep</password_hash><secret_name>keep-secret-name</secret_name><password/><secret/><password><redacted/></password><secret><redacted/></secret></root>"#
         );
+    }
+
+    #[test]
+    fn redacts_credential_store_preference_builder_values() {
+        use gvm_gmp::commands::credentials::{
+            modify_credential_store, CredentialStorePreference, ModifyCredentialStoreOpts,
+        };
+
+        let request = modify_credential_store(
+            &EntityId::new("credential-store-1").expect("valid ID"),
+            ModifyCredentialStoreOpts {
+                host: Some("store.example".into()),
+                preferences: vec![CredentialStorePreference {
+                    name: "token".into(),
+                    value: "preference-sentinel".into(),
+                }],
+                ..Default::default()
+            },
+        )
+        .to_bytes();
+        let redacted = String::from_utf8(redact_wire_bytes(&request)).expect("UTF-8 trace");
+
+        assert!(redacted.contains("<host>store.example</host>"));
+        assert!(redacted.contains("<name>token</name>"));
+        assert!(redacted.contains("<value><redacted/></value>"));
+        assert!(!redacted.contains("preference-sentinel"));
     }
 
     #[test]

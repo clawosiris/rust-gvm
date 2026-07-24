@@ -943,6 +943,7 @@ dependencies = [
  "gvm-mock-server",
  "gvm-protocol",
  "pretty_assertions",
+ "quick-xml",
  "rstest",
  "tempfile",
  "thiserror",
