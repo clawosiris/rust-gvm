@@ -1,4 +1,6 @@
-.PHONY: all build check test test-all test-integration test-integration-unix test-integration-tls fmt clippy doc deny clean setup-hooks coverage
+.PHONY: all build check test test-all test-integration test-integration-unix test-integration-tls fmt clippy doc deny clean setup-hooks coverage coverage-lcov coverage-policy-test
+
+include .config/coverage.env
 
 # Default: full check cycle
 all: fmt clippy test doc
@@ -59,7 +61,12 @@ coverage:
 
 # Coverage (lcov for CI)
 coverage-lcov:
-	cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
+	cargo llvm-cov --workspace --all-features --fail-under-lines $(RUST_COVERAGE_FLOOR) --lcov --output-path lcov.info
+	cargo llvm-cov report --summary-only --json --output-path rust-coverage-summary.json
+
+# Controlled proof that the threshold comparison rejects a regression.
+coverage-policy-test:
+	scripts/test_coverage_threshold.sh
 
 # Install pre-commit hooks
 setup-hooks:

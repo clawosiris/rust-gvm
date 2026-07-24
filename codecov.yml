@@ -1,0 +1,26 @@
+coverage:
+  precision: 2
+  round: down
+  status:
+    project:
+      rust-workspace:
+        target: 94.00%
+        threshold: 0%
+        paths:
+          - "crates/**/src/**/*.rs"
+    patch:
+      rust-production:
+        target: 90%
+        threshold: 0%
+        paths:
+          - "crates/**/src/**/*.rs"
+
+# Patch status is intentionally limited to production Rust. cargo-llvm-cov
+# already omits test targets from its report; these entries also keep generated
+# build output and non-production harnesses out if another uploader finds them.
+# Platform-specific production modules under crates/**/src remain covered.
+ignore:
+  - "target/**"
+  - "crates/**/tests/**"
+  - "crates/**/examples/**"
+  - "tests/**"
