@@ -641,7 +641,7 @@ async fn stateful_user_settings_get_and_modify() {
 }
 
 #[tokio::test]
-async fn stateful_system_reports_return_fixture_response() {
+async fn stateful_system_reports_follow_gvmd_request_and_response_shapes() {
     let Some(server) = stateful_server().await else {
         return;
     };
@@ -651,8 +651,79 @@ async fn stateful_system_reports_return_fixture_response() {
     let resp = send_recv(&mut stream, b"<get_system_reports/>").await;
     assert_eq!(resp.status_code(), Some(200));
     let text = resp.as_str().expect("utf8");
-    assert!(text.contains("GVMD Performance Snapshot"));
-    assert!(text.contains("<system_report_count>1"));
+    assert!(text.contains("<name>proc</name><title>Processes</title>"));
+    assert!(text.contains("<name>load</name><title>System Load</title>"));
+    assert!(
+        text.contains("<report format=\"png\" start_time=\"\" end_time=\"\" duration=\"86400\">")
+    );
+    assert!(!text.contains("<system_report_count>"));
+
+    let brief = send_recv(
+        &mut stream,
+        b"<get_system_reports name=\"load\" brief=\"true\"/>",
+    )
+    .await;
+    assert_eq!(brief.status_code(), Some(200));
+    let brief_text = brief.as_str().expect("utf8");
+    assert!(!brief_text.contains("<name>proc</name>"));
+    assert!(brief_text.contains("<name>load</name>"));
+    assert!(!brief_text.contains("<report "));
+
+    let not_brief = send_recv(
+        &mut stream,
+        b"<get_system_reports name=\"load\" brief=\"false\"/>",
+    )
+    .await;
+    assert_eq!(not_brief.status_code(), Some(200));
+    assert!(not_brief.as_str().expect("utf8").contains("<report "));
+
+    let invalid_brief = send_recv(&mut stream, b"<get_system_reports brief=\"sometimes\"/>").await;
+    assert_eq!(invalid_brief.status_code(), Some(400));
+
+    let invalid = send_recv(
+        &mut stream,
+        b"<get_system_reports duration=\"not-a-number\"/>",
+    )
+    .await;
+    assert_eq!(invalid.status_code(), Some(400));
+
+    let unknown = send_recv(&mut stream, b"<get_system_reports name=\"unknown\"/>").await;
+    assert_eq!(unknown.status_code(), Some(404));
+
+    let interval = send_recv(
+        &mut stream,
+        b"<get_system_reports name=\"load\" start_time=\"2026-07-23T12:00:00Z\" end_time=\"2026-07-23T13:00:00Z\"/>",
+    )
+    .await;
+    assert_eq!(interval.status_code(), Some(200));
+    assert!(interval.as_str().expect("utf8").contains(
+        "start_time=\"2026-07-23T12:00:00Z\" end_time=\"2026-07-23T13:00:00Z\" duration=\"\""
+    ));
+
+    let unknown_slave = send_recv(
+        &mut stream,
+        b"<get_system_reports slave_id=\"00000000-0000-0000-0000-000000000404\"/>",
+    )
+    .await;
+    assert_eq!(unknown_slave.status_code(), Some(404));
+
+    let invalid_slave = send_recv(&mut stream, b"<get_system_reports slave_id=\"invalid\"/>").await;
+    assert_eq!(invalid_slave.status_code(), Some(400));
+
+    let scanner = send_recv(
+        &mut stream,
+        b"<create_scanner><name>System Report Scanner</name></create_scanner>",
+    )
+    .await;
+    assert_eq!(scanner.status_code(), Some(201));
+    let scanner_id = extract_id(&scanner);
+    let scanner_report = send_recv(
+        &mut stream,
+        format!("<get_system_reports slave_id=\"{scanner_id}\" brief=\"1\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(scanner_report.status_code(), Some(200));
+    assert!(!scanner_report.as_str().expect("utf8").contains("<report "));
 
     server.shutdown().await;
 }

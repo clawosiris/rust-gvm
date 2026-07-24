@@ -9,6 +9,8 @@ use crate::common::add_filter_attrs;
 use crate::enums::{AggregateStatistic, FeedType, HelpFormat, InfoType, ResourceType, SortOrder};
 use crate::types::EntityId;
 
+pub use super::system_reports::{get_system_reports, GetSystemReportsOpts};
+
 /// Options for `get_aggregates` requests.
 #[derive(Debug, Clone, Default)]
 pub struct GetAggregatesOpts {
@@ -133,18 +135,6 @@ pub fn get_aggregates(opts: GetAggregatesOpts) -> impl Request {
     if let Some(sort_order) = opts.sort_order {
         cmd.set_attribute("sort_order", sort_order.as_gmp_str());
     }
-    cmd
-}
-
-/// Build a `get_system_reports` request.
-#[must_use]
-pub fn get_system_reports(opts: FilteredGetOpts) -> impl Request {
-    let mut cmd = XmlCommand::new("get_system_reports");
-    add_filter_attrs(
-        &mut cmd,
-        opts.filter_string.as_deref(),
-        opts.filter_id.as_ref(),
-    );
     cmd
 }
 
@@ -311,11 +301,11 @@ mod tests {
             ..Default::default()
         }))
         .contains("filt_id=\"f1\""));
-        assert!(xml(get_system_reports(FilteredGetOpts {
-            filter_string: Some("name=foo".into()),
+        assert!(xml(get_system_reports(GetSystemReportsOpts {
+            name: Some("load".into()),
             ..Default::default()
         }))
-        .contains("filter=\"name=foo\""));
+        .contains("name=\"load\""));
         assert!(xml(get_info(GetInfoOpts {
             info_type: Some(InfoType::Nvt),
             info_id: Some(id("i1")),
