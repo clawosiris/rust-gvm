@@ -316,6 +316,9 @@ See [docs/STATUS.md](docs/STATUS.md) for detailed implementation status of each 
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for current support goals, known protocol coverage gaps, and compatibility expectations.
 
+See [docs/COVERAGE.md](docs/COVERAGE.md) for the protected Rust workspace and
+patch-coverage policy.
+
 ## Building
 
 ```bash
