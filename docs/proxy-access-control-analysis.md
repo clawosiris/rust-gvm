@@ -501,7 +501,7 @@ Strict tenant isolation through policy engine. Customer A cannot see Customer B'
 | Version negotiation | ✅ Complete | `GmpClient` auto-negotiates |
 | Connection trait | ✅ Complete | Polymorphic over transport |
 | Buffer limits | ✅ PR #36 | `max_buffer_bytes` on XmlReader |
-| Host key verification | ✅ PR #36 | `SshHostKeyPolicy::Fingerprint` |
+| Host key verification | ✅ PR #36 | `KnownHosts` by default, custom known-hosts file, or `Fingerprint` pinning |
 
 ### 9.2 What the Gateway Would Add
 

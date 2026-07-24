@@ -148,6 +148,15 @@ let mut client = GmpClient::connect(conn).await?;
 // Same API as Unix socket — connect/call/disconnect
 ```
 
+SSH verifies the server key against `~/.ssh/known_hosts` by default, including
+the configured port. Use `SshHostKeyPolicy::KnownHostsFile` for a nonstandard
+file or `SshHostKeyPolicy::Fingerprint` for an explicitly pinned SHA-256
+fingerprint. `SshHostKeyPolicy::AcceptAll` disables verification and is only
+appropriate for tests or an independently authenticated transport.
+This secure default is a behavior change for callers that previously relied on
+implicit host-key acceptance; choose one of the explicit trust policies when
+migrating existing deployments.
+
 #### TLS transport
 
 TLS verifies the server certificate and DNS/IP subject name by default. Add a

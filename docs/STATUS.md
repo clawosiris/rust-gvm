@@ -251,6 +251,7 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 | `remote_socket` | `/run/gvmd/gvmd.sock` | Path to gvmd socket on remote host |
 | `timeout` | 60s | Connect + read timeout |
 | `read_buffer_size` | 64 KB | Per-read allocation |
+| `host_key_policy` | `KnownHosts` | Standard or custom `known_hosts`, pinned SHA-256 fingerprint, or explicit insecure opt-out |
 
 ### TlsConfig
 

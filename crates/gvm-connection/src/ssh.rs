@@ -67,7 +67,7 @@ impl Default for SshConfig {
             timeout: Duration::from_secs(60),
             read_buffer_size: 64 * 1024,
             max_response_bytes: Some(64 * 1024 * 1024),
-            host_key_policy: SshHostKeyPolicy::AcceptAll,
+            host_key_policy: SshHostKeyPolicy::KnownHosts,
         }
     }
 }
@@ -158,6 +158,10 @@ impl std::fmt::Debug for SshAuth {
 /// SSH host key verification policy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SshHostKeyPolicy {
+    /// Require the server key to match the user's `~/.ssh/known_hosts` file.
+    KnownHosts,
+    /// Require the server key to match a specific OpenSSH `known_hosts` file.
+    KnownHostsFile(PathBuf),
     /// Accept any server key.
     ///
     /// This is insecure and vulnerable to man-in-the-middle attacks. Use only in tests or when
@@ -169,18 +173,40 @@ pub enum SshHostKeyPolicy {
 
 #[derive(Debug, Clone)]
 struct SshServerKeyVerifier {
+    hostname: String,
+    port: u16,
     policy: SshHostKeyPolicy,
 }
 
 impl SshServerKeyVerifier {
-    fn new(policy: SshHostKeyPolicy) -> Self {
-        Self { policy }
+    fn new(hostname: impl Into<String>, port: u16, policy: SshHostKeyPolicy) -> Self {
+        Self {
+            hostname: hostname.into(),
+            port,
+            policy,
+        }
     }
-}
 
-impl Default for SshServerKeyVerifier {
-    fn default() -> Self {
-        Self::new(SshHostKeyPolicy::AcceptAll)
+    fn check_server_key_with<F>(
+        &self,
+        server_public_key: &PublicKey,
+        check_default_known_hosts: F,
+    ) -> std::result::Result<bool, russh::Error>
+    where
+        F: FnOnce(&str, u16, &PublicKey) -> std::result::Result<bool, keys::Error>,
+    {
+        Ok(match &self.policy {
+            SshHostKeyPolicy::KnownHosts => {
+                check_default_known_hosts(&self.hostname, self.port, server_public_key)?
+            }
+            SshHostKeyPolicy::KnownHostsFile(path) => {
+                keys::check_known_hosts_path(&self.hostname, self.port, server_public_key, path)?
+            }
+            SshHostKeyPolicy::AcceptAll => true,
+            SshHostKeyPolicy::Fingerprint(expected) => {
+                host_key_fingerprint(server_public_key) == normalize_fingerprint(expected)
+            }
+        })
     }
 }
 
@@ -191,12 +217,7 @@ impl client::Handler for SshServerKeyVerifier {
         &mut self,
         server_public_key: &PublicKey,
     ) -> std::result::Result<bool, Self::Error> {
-        Ok(match &self.policy {
-            SshHostKeyPolicy::AcceptAll => true,
-            SshHostKeyPolicy::Fingerprint(expected) => {
-                host_key_fingerprint(server_public_key) == normalize_fingerprint(expected)
-            }
-        })
+        self.check_server_key_with(server_public_key, keys::check_known_hosts)
     }
 }
 
@@ -385,7 +406,11 @@ impl GvmConnection for SshConnection {
             client::connect(
                 ssh_config,
                 (self.config.hostname.as_str(), self.config.port),
-                SshServerKeyVerifier::new(self.config.host_key_policy.clone()),
+                SshServerKeyVerifier::new(
+                    &self.config.hostname,
+                    self.config.port,
+                    self.config.host_key_policy.clone(),
+                ),
             ),
         )
         .await
@@ -570,7 +595,7 @@ mod tests {
         assert_eq!(config.remote_socket, "/run/gvmd/gvmd.sock");
         assert_eq!(config.timeout, Duration::from_secs(60));
         assert_eq!(config.max_response_bytes, Some(64 * 1024 * 1024));
-        assert_eq!(config.host_key_policy, SshHostKeyPolicy::AcceptAll);
+        assert_eq!(config.host_key_policy, SshHostKeyPolicy::KnownHosts);
     }
 
     #[test]
@@ -629,9 +654,32 @@ mod tests {
             .expect("host key")
             .public_key()
             .clone();
-        let mut verifier = SshServerKeyVerifier::default();
+        let mut verifier =
+            SshServerKeyVerifier::new("scanner.example", 22, SshHostKeyPolicy::AcceptAll);
 
         let accepted = tokio_test::block_on(verifier.check_server_key(&public_key)).expect("ok");
+
+        assert!(accepted);
+    }
+
+    #[test]
+    fn test_default_known_hosts_policy() {
+        let mut rng = UnwrapErr(SystemRng);
+        let public_key = keys::PrivateKey::random(&mut rng, keys::Algorithm::Ed25519)
+            .expect("host key")
+            .public_key()
+            .clone();
+        let verifier =
+            SshServerKeyVerifier::new("scanner.example", 2222, SshHostKeyPolicy::KnownHosts);
+
+        let accepted = verifier
+            .check_server_key_with(&public_key, |hostname, port, received_key| {
+                assert_eq!(hostname, "scanner.example");
+                assert_eq!(port, 2222);
+                assert_eq!(received_key, &public_key);
+                Ok(true)
+            })
+            .expect("known host check");
 
         assert!(accepted);
     }
@@ -643,13 +691,20 @@ mod tests {
             keys::PrivateKey::random(&mut rng, keys::Algorithm::Ed25519).expect("host key");
         let public_key = private_key.public_key().clone();
         let fingerprint = host_key_fingerprint(&public_key);
-        let mut verifier =
-            SshServerKeyVerifier::new(SshHostKeyPolicy::Fingerprint(fingerprint.clone()));
+        let mut verifier = SshServerKeyVerifier::new(
+            "scanner.example",
+            22,
+            SshHostKeyPolicy::Fingerprint(fingerprint.clone()),
+        );
 
         let accepted = tokio_test::block_on(verifier.check_server_key(&public_key)).expect("ok");
         let rejected = tokio_test::block_on(
-            SshServerKeyVerifier::new(SshHostKeyPolicy::Fingerprint("invalid".into()))
-                .check_server_key(&public_key),
+            SshServerKeyVerifier::new(
+                "scanner.example",
+                22,
+                SshHostKeyPolicy::Fingerprint("invalid".into()),
+            )
+            .check_server_key(&public_key),
         )
         .expect("ok");
 
@@ -658,6 +713,42 @@ mod tests {
             normalize_fingerprint(&format!("SHA256:{fingerprint}")),
             fingerprint
         );
+        assert!(!rejected);
+    }
+
+    #[test]
+    fn test_known_hosts_file_policy() {
+        let mut rng = UnwrapErr(SystemRng);
+        let private_key =
+            keys::PrivateKey::random(&mut rng, keys::Algorithm::Ed25519).expect("host key");
+        let public_key = private_key.public_key().clone();
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("known_hosts");
+        std::fs::write(
+            &path,
+            format!(
+                "[scanner.example]:2222 {}\n",
+                public_key.to_openssh().expect("OpenSSH public key")
+            ),
+        )
+        .expect("write known_hosts");
+
+        let mut matching = SshServerKeyVerifier::new(
+            "scanner.example",
+            2222,
+            SshHostKeyPolicy::KnownHostsFile(path.clone()),
+        );
+        let accepted =
+            tokio_test::block_on(matching.check_server_key(&public_key)).expect("known host check");
+        let mut unknown = SshServerKeyVerifier::new(
+            "other.example",
+            2222,
+            SshHostKeyPolicy::KnownHostsFile(path),
+        );
+        let rejected = tokio_test::block_on(unknown.check_server_key(&public_key))
+            .expect("unknown host check");
+
+        assert!(accepted);
         assert!(!rejected);
     }
 }
