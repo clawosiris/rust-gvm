@@ -237,7 +237,7 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 | Field | Default | Notes |
 |-------|---------|-------|
 | `path` | `/run/gvmd/gvmd.sock` | Configurable |
-| `timeout` | 60s | Connect + read timeout |
+| `timeout` | 60s | Connect, request write/flush, and response-read timeout |
 | `read_buffer_size` | 64 KB | Per-read allocation |
 
 ### SshConfig
@@ -249,7 +249,7 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 | `username` | `root` | SSH user |
 | `auth` | `Agent` | `Password`, `PrivateKey { key_path, passphrase }`, or `Agent` |
 | `remote_socket` | `/run/gvmd/gvmd.sock` | Path to gvmd socket on remote host |
-| `timeout` | 60s | Connect + read timeout |
+| `timeout` | 60s | Connect/auth/channel, request write/flush, and response-read timeout |
 | `read_buffer_size` | 64 KB | Per-read allocation |
 | `host_key_policy` | `KnownHosts` | Standard or custom `known_hosts`, pinned SHA-256 fingerprint, or explicit insecure opt-out |
 
@@ -263,7 +263,7 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 | `use_native_roots` | `true` | Platform trust store; disabling does not disable verification |
 | custom roots | None | PEM roots can be supplied in memory or from a file |
 | client identity | None | Optional PEM certificate chain plus unencrypted private key for mTLS |
-| `timeout` | 60s | TCP connect, TLS handshake, and response-read timeout |
+| `timeout` | 60s | TCP connect, TLS handshake, request write/flush, and response-read timeout |
 | `max_response_bytes` | 64 MiB | Bounded XML response size |
 
 ### Error Types
@@ -286,8 +286,13 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 | Connect + get_version | ✅ |
 | Auth + create_target | ✅ |
 | Reconnect flow (python-gvm pattern) | ✅ |
+| Timeout invalidation and clean reconnect | ✅ |
 | Not-connected error paths | ✅ |
 | Double-connect error | ✅ |
+
+Once an active transport returns a send or read error, it is invalidated. Callers
+must reconnect before issuing another request; this prevents partial writes or
+late responses from being associated with a later GMP command.
 
 ## gvm-gmp
 

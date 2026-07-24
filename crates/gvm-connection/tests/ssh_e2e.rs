@@ -5,6 +5,7 @@
 #![cfg(all(feature = "ssh", feature = "unix-socket-tests"))]
 
 use std::io::ErrorKind;
+use std::time::Duration;
 
 use gvm_connection::{
     ConnectionError, GvmConnection, SshAuth, SshConfig, SshConnection, SshHostKeyPolicy,
@@ -140,6 +141,45 @@ async fn ssh_reconnect_flow() {
     );
 
     conn2.disconnect().await.expect("disconnect 2 failed");
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn ssh_response_timeout_invalidates_connection() {
+    let server = start_mock().await;
+    let Some(server) = server else {
+        return;
+    };
+    let mut connection =
+        SshConnection::new(config_for(&server).with_timeout(Duration::from_millis(50)));
+    connection.connect().await.expect("connect");
+    connection.send(b"<incomplete").await.expect("send request");
+
+    assert!(matches!(
+        connection.read().await,
+        Err(ConnectionError::Timeout(_))
+    ));
+    assert!(!connection.is_connected());
+    assert!(matches!(
+        connection.send(b"<get_version/>").await,
+        Err(ConnectionError::NotConnected)
+    ));
+    assert!(matches!(
+        connection.read().await,
+        Err(ConnectionError::NotConnected)
+    ));
+
+    connection.connect().await.expect("reconnect");
+    connection
+        .send(b"<get_version/>")
+        .await
+        .expect("send fresh request");
+    assert_eq!(
+        Response::new(connection.read().await.expect("fresh response")).status_code(),
+        Some(200)
+    );
+    connection.disconnect().await.expect("disconnect");
+
     server.shutdown().await;
 }
 
