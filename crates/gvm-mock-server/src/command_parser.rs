@@ -66,7 +66,7 @@ impl ParsedCommand {
 pub fn parse_command(xml: &[u8]) -> Option<ParsedCommand> {
     let text = std::str::from_utf8(xml).ok()?;
     let mut reader = Reader::from_str(text);
-    reader.config_mut().trim_text(true);
+    reader.config_mut().trim_text(false);
 
     // Find the root element
     let (name, attributes) = loop {
@@ -143,7 +143,8 @@ fn parse_children(reader: &mut Reader<&[u8]>) -> Option<(Vec<ParsedElement>, Opt
             Ok(Event::End(_)) => {
                 // quick-xml checks matching end names before yielding this
                 // event, so this closes the element for this recursion level.
-                let text = (!current_text.is_empty()).then_some(current_text);
+                let text = current_text.trim();
+                let text = (!text.is_empty()).then(|| text.to_string());
                 return Some((children, text));
             }
             Ok(Event::Eof) | Err(_) => return None,
@@ -158,7 +159,7 @@ fn parse_children(reader: &mut Reader<&[u8]>) -> Option<(Vec<ParsedElement>, Opt
 pub fn parse_element_text(xml: &[u8], element_name: &str) -> Option<String> {
     let text = std::str::from_utf8(xml).ok()?;
     let mut reader = Reader::from_str(text);
-    reader.config_mut().trim_text(true);
+    reader.config_mut().trim_text(false);
 
     let mut inside = false;
     let mut result = String::new();
@@ -185,7 +186,7 @@ pub fn parse_element_text(xml: &[u8], element_name: &str) -> Option<String> {
                 let qn = e.name();
                 let name = std::str::from_utf8(qn.as_ref()).ok()?;
                 if name == element_name {
-                    return Some(result);
+                    return Some(result.trim().to_string());
                 }
             }
             Ok(Event::Eof) => return None,
@@ -275,6 +276,18 @@ mod tests {
         assert_eq!(
             parse_element_text(xml, "data_column").as_deref(),
             Some("qod&<!")
+        );
+    }
+
+    #[test]
+    fn test_parse_command_preserves_whitespace_around_xml_references() {
+        let xml = b"<create_task><name>left &amp; right &#33; done</name></create_task>";
+        let cmd = parse_command(xml).expect("should parse");
+
+        assert_eq!(cmd.child_text("name"), Some("left & right ! done"));
+        assert_eq!(
+            parse_element_text(xml, "name").as_deref(),
+            Some("left & right ! done")
         );
     }
 
