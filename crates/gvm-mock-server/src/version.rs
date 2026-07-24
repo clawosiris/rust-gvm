@@ -145,6 +145,8 @@ mod tests {
         assert!(command_available("get_report_hosts", GmpVersion::V22_8));
         assert!(!command_available("get_report_vulns", GmpVersion::V22_7));
         assert!(command_available("get_report_vulns", GmpVersion::V22_8));
+        assert!(!command_available("get_scan_report", GmpVersion::V22_7));
+        assert!(command_available("get_scan_report", GmpVersion::V22_8));
         assert!(command_available(
             "get_credential_stores",
             GmpVersion::V22_8

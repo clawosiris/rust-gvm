@@ -6,9 +6,10 @@
 
 use gvm_client::{
     CreateOciImageTargetOpts, CreateWebApplicationTargetOpts, CredentialStoreCredentialOpts,
-    CredentialStoreCredentialType, GetCredentialStoresOpts, GetSystemReportsOpts, GmpClient,
-    GmpNextCommands, GmpVersioned, GvmError, ImportReportOpts, ModifyCredentialStoreCredentialOpts,
-    ModifyOciImageTargetOpts, ModifyWebApplicationTargetOpts, WireTraceDirection, WireTraceEvent,
+    CredentialStoreCredentialType, GetCredentialStoresOpts, GetScanReportOpts,
+    GetSystemReportsOpts, GmpClient, GmpNextCommands, GmpVersioned, GvmError, ImportReportOpts,
+    ModifyCredentialStoreCredentialOpts, ModifyOciImageTargetOpts, ModifyWebApplicationTargetOpts,
+    WireTraceDirection, WireTraceEvent,
 };
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::alerts::{trigger_alert, TriggerAlertOpts};
@@ -49,7 +50,9 @@ use gvm_gmp::responses::{
 use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
 use gvm_gmp::FeedType;
-use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, Resource, ServerMode};
+use gvm_mock_server::{
+    GmpVersion as MockVersion, MockGmpServer, Resource, ResourceStore, ServerMode,
+};
 use std::sync::{Arc, Mutex};
 
 async fn stateful_server() -> Option<MockGmpServer> {
@@ -2310,6 +2313,164 @@ async fn typed_report_drilldowns_parse_stateful_mock_responses() {
         .await
         .expect("report cves should parse");
     assert_eq!(cves.items[0].name.as_deref(), Some("CVE-2026-0001"));
+
+    server.shutdown().await;
+}
+
+const SCAN_REPORT_ID: &str = "10000000-0000-4000-8000-000000000001";
+const SCAN_REPORT_TASK_ID: &str = "20000000-0000-4000-8000-000000000001";
+const SCAN_REPORT_TARGET_ID: &str = "30000000-0000-4000-8000-000000000001";
+const SCAN_REPORT_FILTER_ID: &str = "40000000-0000-4000-8000-000000000001";
+
+fn seed_scan_report_fixture(store: &ResourceStore) {
+    let mut target = Resource::with_id(
+        "target",
+        "Scan Report Target",
+        SCAN_REPORT_TARGET_ID.parse().expect("valid target UUID"),
+    );
+    target.comment = "Target comment".into();
+    store.seed(target);
+
+    let mut task = Resource::with_id(
+        "task",
+        "Scan Report Task",
+        SCAN_REPORT_TASK_ID.parse().expect("valid task UUID"),
+    );
+    task.comment = "Task comment".into();
+    task.set_attr("target_id", SCAN_REPORT_TARGET_ID);
+    task.set_attr("status", "Done");
+    store.seed(task);
+
+    let mut report = Resource::with_id(
+        "report",
+        "Structured Scan Report",
+        SCAN_REPORT_ID.parse().expect("valid report UUID"),
+    );
+    report.comment = "Report comment".into();
+    report.set_attr("task_id", SCAN_REPORT_TASK_ID);
+    report.set_attr("status", "Done");
+    report.set_attr("usage_type", "scan");
+    store.seed(report);
+
+    let mut saved_filter = Resource::with_id(
+        "filter",
+        "Saved Result Filter",
+        SCAN_REPORT_FILTER_ID.parse().expect("valid filter UUID"),
+    );
+    saved_filter.set_attr(
+        "term",
+        "bare levels=chm min_qod=70 apply_overrides=0 first=1 rows=10 \
+         sort-reverse=severity result_hosts_only=1 unknown=ignored",
+    );
+    store.seed(saved_filter);
+
+    for (name, severity, qod, host, port, false_positive, threat) in [
+        ("Critical", "9.5", "90", "192.0.2.1", "443/tcp", false, ""),
+        ("High", "8.0", "80", "192.0.2.2", "22/tcp", false, ""),
+        ("Medium", "5.0", "60", "192.0.2.1", "80/tcp", false, ""),
+        ("Low", "2.0", "100", "192.0.2.3", "80/tcp", false, ""),
+        ("Log", "0.0", "100", "192.0.2.4", "0/tcp", false, ""),
+        (
+            "False positive",
+            "9.0",
+            "100",
+            "192.0.2.5",
+            "25/tcp",
+            true,
+            "",
+        ),
+        (
+            "Scanner error",
+            "0.0",
+            "100",
+            "192.0.2.6",
+            "0/tcp",
+            false,
+            "Error",
+        ),
+    ] {
+        let mut result = Resource::new("result", name);
+        result.set_attr("report_id", SCAN_REPORT_ID);
+        result.set_attr("severity", severity);
+        result.set_attr("qod", qod);
+        result.set_attr("host", host);
+        result.set_attr("port", port);
+        if false_positive {
+            result.set_attr("false_positive", "1");
+        }
+        if !threat.is_empty() {
+            result.set_attr("threat", threat);
+        }
+        store.seed(result);
+    }
+}
+
+#[tokio::test]
+async fn next_client_get_scan_report_uses_stateful_mock_transport() {
+    let server = match MockGmpServer::builder()
+        .mode(ServerMode::Stateful)
+        .version(MockVersion::V22_8)
+        .unix_socket_auto()
+        .seed(seed_scan_report_fixture)
+        .build()
+        .await
+    {
+        Ok(server) => server,
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return,
+        Err(error) => panic!("server should start: {error}"),
+    };
+
+    let mut client = GmpVersioned::connect(unix_connection(&server))
+        .await
+        .expect("client should connect");
+    client
+        .call(authenticate("admin", "admin"))
+        .await
+        .expect("authentication should succeed");
+    let mut client = match client {
+        GmpVersioned::Next(client) => client,
+        other => panic!("expected Next client, got {other:?}"),
+    };
+    server.clear_history();
+
+    let response = client
+        .get_scan_report(
+            &EntityId::new(SCAN_REPORT_ID).expect("valid report ID"),
+            GetScanReportOpts {
+                filter_string: Some("levels=l".into()),
+                filter_id: Some(EntityId::new(SCAN_REPORT_FILTER_ID).expect("valid filter ID")),
+            },
+        )
+        .await
+        .expect("get_scan_report should succeed");
+    let xml = response.as_str().expect("response should be UTF-8");
+
+    assert!(xml.starts_with("<get_scan_report_response status=\"200\""));
+    assert!(xml.contains(&format!("<report id=\"{SCAN_REPORT_ID}\">")));
+    assert!(xml.contains("<scan_run_status>Done</scan_run_status>"));
+    assert!(xml.contains("<hosts><count>6</count></hosts>"));
+    assert!(xml.contains("<vulns><count>7</count></vulns>"));
+    assert!(xml.contains("<errors><count>1</count></errors>"));
+    assert!(xml.contains(&format!("<task id=\"{SCAN_REPORT_TASK_ID}\">")));
+    assert!(xml.contains(&format!("<target id=\"{SCAN_REPORT_TARGET_ID}\">")));
+    assert!(xml.contains("<target_type>target</target_type>"));
+    assert!(xml.contains("<full>7</full><filtered>2</filtered>"));
+    assert!(xml.contains("<severity><full>9.5</full><filtered>9.5</filtered></severity>"));
+    assert!(xml.contains(&format!("<filters id=\"{SCAN_REPORT_FILTER_ID}\">")));
+    assert!(xml.contains("<column>levels</column>"));
+    assert!(xml.contains("<sort><field>severity<order>descending</order></field></sort>"));
+    assert!(xml.contains("<scan_report start=\"1\" max=\"1\"/>"));
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].command_name(), "get_scan_report");
+    assert_eq!(
+        std::str::from_utf8(history[0].raw_xml()).expect("request should be UTF-8"),
+        format!(
+            "<get_scan_report filt_id=\"{SCAN_REPORT_FILTER_ID}\" filter=\"levels=l\" \
+             scan_report_id=\"{SCAN_REPORT_ID}\"/>"
+        )
+    );
 
     server.shutdown().await;
 }
