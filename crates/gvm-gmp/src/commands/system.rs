@@ -73,11 +73,12 @@ pub struct FilteredGetOpts {
 /// Build a `help` request.
 #[must_use]
 pub fn help(format: Option<HelpFormat>) -> impl Request {
-    let mut cmd = XmlCommand::new("help");
-    if let Some(format) = format {
-        cmd.set_attribute("format", format.as_gmp_str());
+    match format {
+        Some(format) => {
+            crate::commands::help::help_with_mode(crate::commands::help::HelpMode::Schema(format))
+        }
+        None => crate::commands::help::help_with_mode(crate::commands::help::HelpMode::Text),
     }
-    cmd
 }
 
 /// Build a `get_feeds` request.

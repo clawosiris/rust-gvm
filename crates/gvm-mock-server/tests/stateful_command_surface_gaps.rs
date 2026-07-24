@@ -532,11 +532,52 @@ async fn stateful_help_returns_command_listing() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let resp = send_recv(&mut stream, br#"<help format="brief"/>"#).await;
+    let resp = send_recv(&mut stream, br#"<help format="xml" type="brief"/>"#).await;
     assert_eq!(resp.status_code(), Some(200));
     let text = resp.as_str().expect("utf8");
-    assert!(text.contains("<command>get_feeds</command>"));
-    assert!(text.contains("<command>get_tasks</command>"));
+    assert!(text.contains("<schema format=\"XML\""));
+    assert!(text.contains("<command><name>get_feeds</name>"));
+    assert!(text.contains("<command><name>get_tasks</name>"));
+
+    let plain = send_recv(&mut stream, br#"<help/>"#).await;
+    assert_eq!(plain.status_code(), Some(200));
+    assert!(plain
+        .as_str()
+        .expect("utf8")
+        .contains("get_tasks - Get tasks"));
+
+    let invalid = send_recv(&mut stream, br#"<help format="brief"/>"#).await;
+    assert_eq!(invalid.status_code(), Some(404));
+
+    let invalid_type = send_recv(&mut stream, br#"<help type="full"/>"#).await;
+    assert_eq!(invalid_type.status_code(), Some(400));
+
+    let invalid_brief_format =
+        send_recv(&mut stream, br#"<help format="html" type="brief"/>"#).await;
+    assert_eq!(invalid_brief_format.status_code(), Some(400));
+
+    let missing_brief_format = send_recv(&mut stream, br#"<help type="brief"/>"#).await;
+    assert_eq!(missing_brief_format.status_code(), Some(400));
+
+    let full_xml = send_recv(&mut stream, br#"<help format="xml"/>"#).await;
+    assert_eq!(full_xml.status_code(), Some(200));
+    let full_xml_text = full_xml.as_str().expect("utf8");
+    assert!(full_xml_text.contains("<protocol>"));
+    assert!(full_xml_text.contains("<command><name>get_tasks</name>"));
+
+    let html = send_recv(&mut stream, br#"<help format="html"/>"#).await;
+    assert_eq!(html.status_code(), Some(200));
+    assert!(html
+        .as_str()
+        .expect("utf8")
+        .contains("<schema format=\"html\""));
+
+    let rnc = send_recv(&mut stream, br#"<help format="rnc"/>"#).await;
+    assert_eq!(rnc.status_code(), Some(200));
+    assert!(rnc
+        .as_str()
+        .expect("utf8")
+        .contains("<schema format=\"rnc\""));
 
     server.shutdown().await;
 }

@@ -80,6 +80,7 @@ pub use gvm_gmp::commands::agents::{
 pub use gvm_gmp::commands::credentials::{
     CredentialStoreCredentialOpts, GetCredentialStoresOpts, ModifyCredentialStoreCredentialOpts,
 };
+pub use gvm_gmp::commands::help::HelpMode;
 pub use gvm_gmp::commands::integration_configs::{
     GetIntegrationConfigsOpts, ModifyIntegrationConfigOpts,
 };
