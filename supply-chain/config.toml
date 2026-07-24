@@ -51,7 +51,7 @@ version = "0.6.0-rc.8"
 criteria = "safe-to-deploy"
 
 [[exemptions.async-trait]]
-version = "0.1.89"
+version = "0.1.91"
 criteria = "safe-to-deploy"
 
 [[exemptions.autocfg]]
@@ -135,15 +135,15 @@ version = "0.5.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.clap]]
-version = "4.6.0"
+version = "4.6.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.clap_builder]]
-version = "4.6.0"
+version = "4.6.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.clap_derive]]
-version = "4.6.0"
+version = "4.6.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.clap_lex]]
@@ -199,7 +199,7 @@ version = "0.4.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.curve25519-dalek]]
-version = "5.0.0-rc.1"
+version = "5.0.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.curve25519-dalek-derive]]
@@ -243,7 +243,7 @@ version = "3.0.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.ed25519-dalek]]
-version = "3.0.0-rc.1"
+version = "3.0.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.elliptic-curve]]
@@ -483,15 +483,15 @@ version = "1.70.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.p256]]
-version = "0.14.0-rc.15"
+version = "0.14.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.p384]]
-version = "0.14.0-rc.15"
+version = "0.14.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.p521]]
-version = "0.14.0-rc.15"
+version = "0.14.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.pageant]]
@@ -639,7 +639,7 @@ version = "0.26.1"
 criteria = "safe-to-run"
 
 [[exemptions.russh]]
-version = "0.62.2"
+version = "0.62.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.russh-cryptovec]]
@@ -659,7 +659,7 @@ version = "1.1.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.rustls]]
-version = "0.23.41"
+version = "0.23.42"
 criteria = "safe-to-deploy"
 
 [[exemptions.rustls-pemfile]]
@@ -734,6 +734,10 @@ criteria = "safe-to-deploy"
 version = "0.11.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.sha3]]
+version = "0.12.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.sharded-slab]]
 version = "0.1.7"
 criteria = "safe-to-deploy"
@@ -766,6 +770,10 @@ criteria = "safe-to-deploy"
 version = "0.8.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.sponge-cursor]]
+version = "0.1.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.ssh-cipher]]
 version = "0.3.0"
 criteria = "safe-to-deploy"
@@ -786,16 +794,20 @@ criteria = "safe-to-deploy"
 version = "2.0.118"
 criteria = "safe-to-deploy"
 
+[[exemptions.syn]]
+version = "3.0.3"
+criteria = "safe-to-deploy"
+
 [[exemptions.tempfile]]
 version = "3.27.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.thiserror]]
-version = "2.0.18"
+version = "2.0.19"
 criteria = "safe-to-deploy"
 
 [[exemptions.thiserror-impl]]
-version = "2.0.18"
+version = "2.0.19"
 criteria = "safe-to-deploy"
 
 [[exemptions.thread_local]]
@@ -803,7 +815,7 @@ version = "1.1.9"
 criteria = "safe-to-deploy"
 
 [[exemptions.tokio]]
-version = "1.50.0"
+version = "1.53.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.tokio-macros]]
@@ -879,7 +891,7 @@ version = "0.9.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.uuid]]
-version = "1.23.4"
+version = "1.24.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.valuable]]
