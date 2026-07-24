@@ -4,8 +4,10 @@
 #![allow(clippy::print_stdout, clippy::unwrap_used, missing_docs)]
 #![cfg(feature = "unix-socket-tests")]
 
+use std::time::Duration;
+
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConfig, UnixSocketConnection};
-use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
+use gvm_mock_server::{Fault, FaultKind, GmpVersion, MockGmpServer, ServerMode};
 use gvm_protocol::{Request, Response, XmlCommand};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixListener;
@@ -128,6 +130,90 @@ async fn reconnect_flow() {
 }
 
 #[tokio::test]
+async fn response_timeout_invalidates_connection() {
+    let server = match MockGmpServer::builder()
+        .mode(ServerMode::Stateful)
+        .version(GmpVersion::V22_5)
+        .inject_fault(Fault::once(FaultKind::Delay(Duration::from_millis(250))))
+        .unix_socket_auto()
+        .build()
+        .await
+    {
+        Ok(server) => server,
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return,
+        Err(error) => panic!("mock server start failed: {error}"),
+    };
+    let config = UnixSocketConfig::new(server.socket_path().expect("socket path"))
+        .with_timeout(Duration::from_millis(50));
+    let mut connection = UnixSocketConnection::new(config);
+    connection.connect().await.expect("connect");
+    connection
+        .send(b"<get_version/>")
+        .await
+        .expect("send request");
+
+    assert!(matches!(
+        connection.read().await,
+        Err(ConnectionError::Timeout(_))
+    ));
+    assert!(!connection.is_connected());
+    assert!(matches!(
+        connection.send(b"<get_version/>").await,
+        Err(ConnectionError::NotConnected)
+    ));
+    assert!(matches!(
+        connection.read().await,
+        Err(ConnectionError::NotConnected)
+    ));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn outbound_timeout_invalidates_connection_and_allows_clean_reconnect() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let socket_path = directory.path().join("outbound-timeout.sock");
+    let listener = UnixListener::bind(&socket_path).expect("bind socket");
+    let server = tokio::spawn(async move {
+        let (first, _) = listener.accept().await.expect("first connection");
+        tokio::time::sleep(Duration::from_millis(75)).await;
+        drop(first);
+
+        let (mut second, _) = listener.accept().await.expect("second connection");
+        let mut request = [0_u8; 64];
+        let _ = second.read(&mut request).await.expect("second request");
+        second
+            .write_all(b"<fresh_response/>")
+            .await
+            .expect("fresh response");
+    });
+
+    let config = UnixSocketConfig::new(&socket_path).with_timeout(Duration::from_millis(50));
+    let mut connection = UnixSocketConnection::new(config);
+    connection.connect().await.expect("first connect");
+
+    let request = vec![0_u8; 16 * 1024 * 1024];
+    assert!(matches!(
+        connection.send(&request).await,
+        Err(ConnectionError::Timeout(_))
+    ));
+    assert!(!connection.is_connected());
+    assert!(matches!(
+        connection.send(b"<request/>").await,
+        Err(ConnectionError::NotConnected)
+    ));
+
+    connection.connect().await.expect("second connect");
+    connection.send(b"<request/>").await.expect("second send");
+    assert_eq!(
+        connection.read().await.expect("fresh response"),
+        b"<fresh_response/>"
+    );
+
+    server.await.expect("server task");
+}
+
+#[tokio::test]
 async fn connect_not_connected_errors() {
     let mut conn = UnixSocketConnection::with_path("/nonexistent/socket.sock");
     assert!(!conn.is_connected());
@@ -223,6 +309,50 @@ async fn reconnect_discards_a_pending_response_tail() {
         b"<current_response/>"
     );
     connection.disconnect().await.expect("disconnect");
+
+    connection.connect().await.expect("second connect");
+    connection.send(b"<request/>").await.expect("second send");
+    assert_eq!(
+        connection.read().await.expect("fresh response"),
+        b"<fresh_response/>"
+    );
+
+    server.await.expect("server task");
+}
+
+#[tokio::test]
+async fn reconnect_after_partial_response_timeout_discards_parser_state() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let socket_path = directory.path().join("timeout-reconnect.sock");
+    let listener = UnixListener::bind(&socket_path).expect("bind socket");
+    let server = tokio::spawn(async move {
+        let (mut first, _) = listener.accept().await.expect("first connection");
+        let mut request = [0_u8; 64];
+        let _ = first.read(&mut request).await.expect("first request");
+        first
+            .write_all(b"<stale_response>")
+            .await
+            .expect("partial response");
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        drop(first);
+
+        let (mut second, _) = listener.accept().await.expect("second connection");
+        let _ = second.read(&mut request).await.expect("second request");
+        second
+            .write_all(b"<fresh_response/>")
+            .await
+            .expect("fresh response");
+    });
+
+    let config = UnixSocketConfig::new(&socket_path).with_timeout(Duration::from_millis(200));
+    let mut connection = UnixSocketConnection::new(config);
+    connection.connect().await.expect("first connect");
+    connection.send(b"<request/>").await.expect("first send");
+    assert!(matches!(
+        connection.read().await,
+        Err(ConnectionError::Timeout(_))
+    ));
+    assert!(!connection.is_connected());
 
     connection.connect().await.expect("second connect");
     connection.send(b"<request/>").await.expect("second send");

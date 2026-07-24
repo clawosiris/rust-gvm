@@ -16,7 +16,7 @@ use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
 
-use crate::connection::GvmConnection;
+use crate::connection::{write_all_and_flush_with_timeout, GvmConnection};
 use crate::error::{ConnectionError, Result};
 
 const DEFAULT_GVM_PORT: u16 = 9390;
@@ -98,7 +98,7 @@ pub struct TlsConfig {
     pub port: u16,
     /// DNS name or IP address required in the server certificate SAN.
     pub server_name: String,
-    /// TCP connect, TLS handshake, and response-read timeout.
+    /// TCP connect, TLS handshake, request-write/flush, and response-read timeout.
     pub timeout: Duration,
     /// Read buffer size in bytes.
     pub read_buffer_size: usize,
@@ -186,7 +186,7 @@ impl TlsConfig {
         self
     }
 
-    /// Set the timeout.
+    /// Set the transport operation timeout.
     #[must_use]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
@@ -339,11 +339,14 @@ impl GvmConnection for TlsConnection {
     }
 
     async fn send(&mut self, data: &[u8]) -> Result<()> {
-        let stream = self.stream.as_mut().ok_or(ConnectionError::NotConnected)?;
-        stream
-            .write_all(data)
-            .await
-            .map_err(ConnectionError::SendFailed)
+        let result = {
+            let stream = self.stream.as_mut().ok_or(ConnectionError::NotConnected)?;
+            write_all_and_flush_with_timeout(stream, data, self.config.timeout).await
+        };
+        if result.is_err() {
+            self.invalidate_connection();
+        }
+        result
     }
 
     async fn read(&mut self) -> Result<Vec<u8>> {
@@ -370,11 +373,21 @@ impl GvmConnection for TlsConnection {
         let mut buffer = vec![0_u8; self.config.read_buffer_size];
 
         loop {
-            let stream = self.stream.as_mut().ok_or(ConnectionError::NotConnected)?;
-            let read = tokio::time::timeout(self.config.timeout, stream.read(&mut buffer))
-                .await
-                .map_err(|_| ConnectionError::Timeout(self.config.timeout))?
-                .map_err(ConnectionError::ReadFailed)?;
+            let read_result = {
+                let stream = self.stream.as_mut().ok_or(ConnectionError::NotConnected)?;
+                tokio::time::timeout(self.config.timeout, stream.read(&mut buffer)).await
+            };
+            let read = match read_result {
+                Ok(Ok(read)) => read,
+                Ok(Err(error)) => {
+                    self.invalidate_connection();
+                    return Err(ConnectionError::ReadFailed(error));
+                }
+                Err(_) => {
+                    self.invalidate_connection();
+                    return Err(ConnectionError::Timeout(self.config.timeout));
+                }
+            };
 
             if read == 0 {
                 self.invalidate_connection();
