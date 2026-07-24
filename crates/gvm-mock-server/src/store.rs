@@ -833,7 +833,7 @@ impl ResourceStore {
             let referenced = inner.resources.values().any(|candidate| {
                 candidate.resource_type == "task"
                     && candidate.attr(reference_key) == Some(id.as_str())
-                    && (ultimate || !candidate.trashed)
+                    && !candidate.trashed
             });
             if referenced {
                 return Err(StoreError::InUse(referenced_type));
@@ -1616,6 +1616,40 @@ mod tests {
             .expect("delete task graph");
         assert!(store.get(&report_id).is_none());
         assert!(store.get(&result_id).is_none());
+    }
+
+    #[test]
+    fn trashed_tasks_do_not_block_permanent_reference_deletion() {
+        let store = ResourceStore::new();
+        let target_id = store.create(Resource::new("target", "Disposable Target"));
+        let config_id = store.create(Resource::new("config", "Disposable Config"));
+        let scanner_id = store.create(Resource::new("scanner", "Disposable Scanner"));
+        let task_id = store
+            .create_task(
+                Resource::new("task", "Trashed Task"),
+                TaskReferences {
+                    target: Some(target_id),
+                    specialized_target: None,
+                    config: Some(config_id),
+                    scanner: Some(scanner_id),
+                },
+            )
+            .expect("create task");
+
+        store
+            .delete_typed(&task_id, "task", false)
+            .expect("trash task");
+
+        for (id, resource_type) in [
+            (target_id, "target"),
+            (config_id, "config"),
+            (scanner_id, "scanner"),
+        ] {
+            store
+                .delete_typed(&id, resource_type, true)
+                .expect("trashed task must not block permanent deletion");
+            assert!(store.get(&id).is_none());
+        }
     }
 
     #[test]

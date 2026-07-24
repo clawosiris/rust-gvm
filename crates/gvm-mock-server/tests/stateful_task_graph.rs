@@ -252,7 +252,7 @@ async fn referenced_resources_cannot_be_removed_or_addressed_as_another_type() {
         format!("<delete_target target_id=\"{target_id}\" ultimate=\"1\"/>").as_bytes(),
     )
     .await;
-    assert_eq!(ultimate_target.status_code(), Some(409));
+    assert_eq!(ultimate_target.status_code(), Some(200));
 
     server.shutdown().await;
 }
