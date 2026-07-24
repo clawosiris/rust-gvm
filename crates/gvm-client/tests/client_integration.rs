@@ -13,6 +13,7 @@ use gvm_client::{
     UsageType, WireTraceDirection, WireTraceEvent,
 };
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
+use gvm_gmp::commands::aggregates::{get_aggregates as get_aggregates_legacy, GetAggregatesOpts};
 use gvm_gmp::commands::alerts::{trigger_alert, TriggerAlertOpts};
 use gvm_gmp::commands::assets::{
     AssetType, CreateAssetOpts, DeleteAssetOpts, GetAssetsOpts, ModifyAssetOpts,
@@ -285,6 +286,50 @@ async fn typed_aggregates_round_trip_current_shape_over_stateful_unix_transport(
          usage_type=\"audit\"><sort field=\"qod&amp;&lt;\" \
          order=\"descending\" stat=\"max\"/><data_column>qod&amp;&lt;</data_column>\
          <text_column>name&amp;&lt;</text_column></get_aggregates>"
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn legacy_aggregates_round_trip_comma_separated_columns_over_stateful_unix_transport() {
+    let Some(server) = stateful_server_with_version(MockVersion::V22_8).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate");
+    server.clear_history();
+
+    let response = client
+        .call(get_aggregates_legacy(
+            "task",
+            GetAggregatesOpts {
+                data_columns: Some("qod, severity".into()),
+                text_columns: Some("name, comment".into()),
+                ..Default::default()
+            },
+        ))
+        .await
+        .expect("legacy aggregate request should succeed");
+
+    let xml = response.as_str().expect("response should be UTF-8");
+    for column in ["qod", "severity"] {
+        assert!(xml.contains(&format!("<data_column>{column}</data_column>")));
+        assert!(xml.contains(&format!("<stats column=\"{column}\">")));
+    }
+    for column in ["name", "comment"] {
+        assert!(xml.contains(&format!("<text_column>{column}</text_column>")));
+        assert!(xml.contains(&format!("<text column=\"{column}\">All</text>")));
+    }
+    assert_eq!(
+        server.command_history()[0].raw_xml(),
+        br#"<get_aggregates data_columns="qod, severity" text_columns="name, comment" type="task"/>"#
     );
 
     server.shutdown().await;

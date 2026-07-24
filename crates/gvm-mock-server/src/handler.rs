@@ -2329,14 +2329,31 @@ fn render_aggregates_response(cmd: &ParsedCommand) -> Vec<u8> {
             if !data_column.is_empty() {
                 data_columns.push(data_column);
             }
+        } else if let Some(legacy_columns) = cmd.attr("data_columns") {
+            data_columns.extend(
+                legacy_columns
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|column| !column.is_empty()),
+            );
         }
     }
-    let text_columns: Vec<&str> = cmd
+    let mut text_columns: Vec<&str> = cmd
         .children
         .iter()
         .filter(|child| child.name == "text_column")
         .filter_map(|child| child.text.as_deref())
         .collect();
+    if text_columns.is_empty() {
+        if let Some(legacy_columns) = cmd.attr("text_columns") {
+            text_columns.extend(
+                legacy_columns
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|column| !column.is_empty()),
+            );
+        }
+    }
 
     let mut aggregate = format!(
         "<aggregate><data_type>{}</data_type>",
