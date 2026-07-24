@@ -46,6 +46,15 @@ pub struct GetReportsOpts {
     pub ignore_pagination: Option<bool>,
 }
 
+/// Options for `get_scan_report` requests.
+#[derive(Debug, Clone, Default)]
+pub struct GetScanReportOpts {
+    /// Optional inline result filter expression.
+    pub filter_string: Option<String>,
+    /// Optional saved result filter identifier.
+    pub filter_id: Option<EntityId>,
+}
+
 /// Options for `get_reports` report-format export requests.
 #[derive(Debug, Clone)]
 pub struct GetReportExportOpts {
@@ -177,6 +186,19 @@ pub fn get_report(report_id: &EntityId) -> impl Request {
     XmlCommand::new("get_reports")
         .attribute("report_id", report_id.as_str())
         .attribute("details", "1")
+}
+
+/// Build a `get_scan_report` request for a structured vulnerability report.
+#[must_use]
+pub fn get_scan_report(scan_report_id: &EntityId, opts: GetScanReportOpts) -> impl Request {
+    let mut cmd =
+        XmlCommand::new("get_scan_report").attribute("scan_report_id", scan_report_id.as_str());
+    add_filter_attrs(
+        &mut cmd,
+        opts.filter_string.as_deref(),
+        opts.filter_id.as_ref(),
+    );
+    cmd
 }
 
 /// Build a `get_reports` export request for a specific report format.

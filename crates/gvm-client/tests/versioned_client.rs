@@ -17,6 +17,7 @@ use gvm_connection::{GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::agents::get_agents;
 use gvm_gmp::commands::credentials::{create_credential, verify_credential_store, CredentialOpts};
 use gvm_gmp::commands::oci_image_targets::get_oci_image_targets;
+use gvm_gmp::commands::reports::{get_scan_report, GetScanReportOpts};
 use gvm_gmp::{EntityId, GmpVersion};
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 
@@ -650,6 +651,39 @@ async fn versioned_client_rejects_agent_commands_before_next() {
             version: GmpVersion(22, 7),
             required: "22.8",
         } if command == "get_agents"
+    ));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn versioned_client_rejects_get_scan_report_before_next() {
+    let Some(server) = stateful_server(MockVersion::V22_7).await else {
+        return;
+    };
+    let mut client = GmpVersioned::connect(unix_connection(&server))
+        .await
+        .expect("client should connect");
+    client
+        .call(gvm_gmp::commands::authentication::authenticate(
+            "admin", "admin",
+        ))
+        .await
+        .expect("authenticate should succeed");
+
+    let report_id = EntityId::new("10000000-0000-4000-8000-000000000001").expect("valid report ID");
+    let error = client
+        .call(get_scan_report(&report_id, GetScanReportOpts::default()))
+        .await
+        .expect_err("22.7 should reject get_scan_report");
+
+    assert!(matches!(
+        error,
+        GvmError::UnsupportedCommand {
+            command,
+            version: GmpVersion(22, 7),
+            required: "22.8",
+        } if command == "get_scan_report"
     ));
 
     server.shutdown().await;

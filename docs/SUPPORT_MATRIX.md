@@ -11,26 +11,33 @@ not a claim of full conformance with every gvmd deployment or feature build.
 | 22.5 | `Gmp225` | 115 | `V22_5` |
 | 22.6 | `Gmp226` | 120 | `V22_6` |
 | 22.7 | `Gmp227` | 120 | `V22_7` |
-| 22.8 and newer | `GmpNext` | 154 | `V22_8` |
+| 22.8 and newer | `GmpNext` | 155 | `V22_8` |
 
 The command count is derived from
 `gvm_gmp::capabilities::COMMAND_CAPABILITIES`. Five commands require GMP 22.6
-and another 34 require GMP 22.8. It describes typed-client gates and stateful
+and another 35 require GMP 22.8. It describes typed-client gates and stateful
 mock behavior, not the commands enabled in every gvmd build. The client
 deliberately permits unknown raw commands for forward compatibility; standard
 mock responses reject commands absent from the registry. Explicit fixture and
 scenario configuration remains programmable by design.
 
+`get_scan_report` follows the public python-gvm `GMPNext` placement and is
+therefore gated at 22.8. Current gvmd source compiles the command
+unconditionally even in builds that may still advertise 22.7, so applications
+using such a deployment can send the public builder through a lower-level
+connection path, but the versioned high-level client will reject it until the
+server advertises 22.8.
+
 ## Command and mock qualification
 
-The registry contains 154 wire command names:
+The registry contains 155 wire command names:
 
 | Qualification | Count | Meaning |
 |---|---:|---|
-| Stateful mock behavior | 137 | Bespoke behavior or deterministic generic CRUD |
+| Stateful mock behavior | 138 | Bespoke behavior or deterministic generic CRUD |
 | Fixture mock behavior | 10 | Deterministic built-in fixture response |
 | Echo-only mock behavior | 7 | Intentionally limited to a generic success response |
-| Current pinned `GMP.xml.in` | 151 | Present in the public schema snapshot |
+| Current pinned `GMP.xml.in` | 152 | Present in the public schema snapshot |
 | Public gvmd source only | 2 | Implemented publicly but omitted from that schema |
 | Legacy compatibility | 1 | Retained for public legacy-client compatibility |
 
@@ -51,12 +58,12 @@ The three commands outside the pinned schema are explicitly qualified:
 ## Pinned public evidence and drift audit
 
 The deterministic snapshot is extracted from Greenbone's public gvmd commit
-[`aa53bc1057a4d535557d568a85c459bfb7780c81`](https://github.com/greenbone/gvmd/commit/aa53bc1057a4d535557d568a85c459bfb7780c81),
+[`fb21137097f41e5eb83bb45ee43170b775dbea49`](https://github.com/greenbone/gvmd/commit/fb21137097f41e5eb83bb45ee43170b775dbea49),
 file
-[`src/schema_formats/XML/GMP.xml.in`](https://github.com/greenbone/gvmd/blob/aa53bc1057a4d535557d568a85c459bfb7780c81/src/schema_formats/XML/GMP.xml.in).
-The snapshot records the source file SHA-256 and its 151 unique top-level
+[`src/schema_formats/XML/GMP.xml.in`](https://github.com/greenbone/gvmd/blob/fb21137097f41e5eb83bb45ee43170b775dbea49/src/schema_formats/XML/GMP.xml.in).
+The snapshot records the source file SHA-256 and its 152 unique top-level
 commands. The source-only qualification is backed by the same commit's
-[credential-store implementation](https://github.com/greenbone/gvmd/blob/aa53bc1057a4d535557d568a85c459bfb7780c81/src/gmp_credential_stores.c).
+[credential-store implementation](https://github.com/greenbone/gvmd/blob/fb21137097f41e5eb83bb45ee43170b775dbea49/src/gmp_credential_stores.c).
 The legacy qualification is backed by public python-gvm commit
 [`2bb100fd03f02e598f046e2032e12550b5b14751`](https://github.com/greenbone/python-gvm/blob/2bb100fd03f02e598f046e2032e12550b5b14751/gvm/protocols/gmp/requests/v224/_tls_certificates.py).
 

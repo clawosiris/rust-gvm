@@ -3,6 +3,7 @@
 
 //! GMP session handler — processes commands and generates responses.
 
+use std::collections::BTreeSet;
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
@@ -643,6 +644,11 @@ impl SessionHandler {
         if let Some(scheduler_cron_time) = parse_element_text(raw_xml, "scheduler_cron_time") {
             resource.set_attr("scheduler_cron_time", &scheduler_cron_time);
         }
+        if resource_type == "filter" {
+            if let Some(term) = parse_element_text(raw_xml, "term") {
+                resource.set_attr("term", &term);
+            }
+        }
         if resource_type == "oci_image_target" {
             if let Some(image_references) = parse_element_text(raw_xml, "image_references") {
                 resource.set_attr("image_references", &image_references);
@@ -845,6 +851,7 @@ impl SessionHandler {
         match cmd.name.as_str() {
             "get_feeds" => return render_feeds_response(cmd),
             "get_aggregates" => return render_aggregates_response(cmd),
+            "get_scan_report" => return self.render_scan_report_response(cmd, store),
             "get_system_reports" => return render_system_reports_response(cmd, store),
             "get_info" => return render_secinfo_response(cmd),
             "get_vulns" => return render_vulnerabilities_response(cmd),
@@ -1006,6 +1013,7 @@ impl SessionHandler {
         let new_active = parse_element_text(raw_xml, "active");
         let new_usage_type = parse_element_text(raw_xml, "usage_type");
         let new_value = parse_element_text(raw_xml, "value");
+        let new_term = parse_element_text(raw_xml, "term");
         let new_credential_store_id = parse_element_text(raw_xml, "credential_store_id");
         let new_vault_id = parse_element_text(raw_xml, "vault_id");
         let new_host_identifier = parse_element_text(raw_xml, "host_identifier");
@@ -1144,6 +1152,11 @@ impl SessionHandler {
             }
             if let Some(ref value) = new_value {
                 r.set_attr("value", value);
+            }
+            if resource_type == "filter" {
+                if let Some(ref term) = new_term {
+                    r.set_attr("term", term);
+                }
             }
             if resource_type == "credential" {
                 if let Some(ref credential_store_id) = new_credential_store_id {
@@ -1364,6 +1377,128 @@ impl SessionHandler {
         .into_bytes()
     }
 
+    fn render_scan_report_response(&self, cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
+        let Some(report_id) = cmd.attr("scan_report_id") else {
+            return error_response(&cmd.name, 400, "Missing required attribute: scan_report_id");
+        };
+        let Ok(report_id) = Uuid::parse_str(report_id) else {
+            return error_response(&cmd.name, 400, "Invalid UUID");
+        };
+        let Some(report) = store.get_typed(&report_id, "report") else {
+            return error_response(&cmd.name, 404, "Resource not found");
+        };
+        if report.attr("usage_type") == Some("audit") {
+            return error_response(
+                &cmd.name,
+                400,
+                "Audit and compliance reports are not supported",
+            );
+        }
+
+        let (filter_id, filter) = match cmd.attr("filt_id") {
+            Some(filter_id) => {
+                let Ok(filter_id) = Uuid::parse_str(filter_id) else {
+                    return error_response(&cmd.name, 400, "Invalid filter UUID");
+                };
+                let Some(saved_filter) = store.get_typed(&filter_id, "filter") else {
+                    return error_response(&cmd.name, 400, "Saved filter not found");
+                };
+                (
+                    filter_id.to_string(),
+                    saved_filter.attr("term").unwrap_or_default().to_string(),
+                )
+            }
+            None => (
+                String::new(),
+                cmd.attr("filter").unwrap_or_default().to_string(),
+            ),
+        };
+
+        let filter = resolve_scan_report_filter(&filter);
+        let (sort_field, sort_order) = scan_report_sort(&filter);
+        let report_id_text = report_id.to_string();
+        let results: Vec<Resource> = store
+            .list("result")
+            .into_iter()
+            .filter(|result| result.attr("report_id") == Some(report_id_text.as_str()))
+            .collect();
+        let filtered_results: Vec<&Resource> = results
+            .iter()
+            .filter(|result| scan_report_result_matches(result, &filter))
+            .collect();
+        let full_counts = ScanReportResultCounts::from_results(results.iter());
+        let filtered_counts =
+            ScanReportResultCounts::from_results(filtered_results.iter().copied());
+
+        let task = report
+            .attr("task_id")
+            .and_then(|task_id| Uuid::parse_str(task_id).ok())
+            .and_then(|task_id| store.get_typed(&task_id, "task"));
+        let task_xml = task.as_ref().map_or_else(
+            || "<task/>".to_string(),
+            |task| render_scan_report_task(task, store),
+        );
+        let status = report.attr("status").unwrap_or("Done");
+        let scan_end = if matches!(status, "Done" | "Stopped" | "Interrupted") {
+            report.modification_time.as_str()
+        } else {
+            ""
+        };
+        let filter_keywords = render_scan_report_filter_keywords(&filter);
+
+        format!(
+            "<get_scan_report_response status=\"200\" status_text=\"OK\">\
+             <report id=\"{report_id}\">\
+             <owner><name>admin</name></owner>\
+             <name>{report_name}</name>\
+             <comment>{comment}</comment>\
+             <creation_time>{creation_time}</creation_time>\
+             <modification_time>{modification_time}</modification_time>\
+             <writable>0</writable><in_use>0</in_use>\
+             <scan_run_status>{status}</scan_run_status>\
+             <hosts><count>{hosts}</count></hosts>\
+             <closed_cves><count>0</count></closed_cves>\
+             <cves><count>0</count></cves>\
+             <vulns><count>{vulns}</count></vulns>\
+             <os><count>0</count></os>\
+             <apps><count>0</count></apps>\
+             <ssl_certs><count>0</count></ssl_certs>\
+             <ports><count>{ports}</count></ports>\
+             <errors><count>{errors}</count></errors>\
+             {task_xml}\
+             <timestamp>{creation_time}</timestamp>\
+             <scan_start>{creation_time}</scan_start>\
+             <timezone>UTC</timezone><timezone_abbrev>UTC</timezone_abbrev>\
+             {result_count_xml}\
+             <severity><full>{full_severity:.1}</full><filtered>{filtered_severity:.1}</filtered></severity>\
+             <scan_end>{scan_end}</scan_end>\
+             </report>\
+             <filters id=\"{filter_id}\"><term>{filter}</term><keywords>{filter_keywords}</keywords></filters>\
+             <sort><field>{sort_field}<order>{sort_order}</order></field></sort>\
+             <scan_report start=\"1\" max=\"1\"/>\
+             <scan_report_count>1<filtered>1</filtered><page>0</page></scan_report_count>\
+             </get_scan_report_response>",
+            report_id = report.id,
+            report_name = xml_escape(&report.name),
+            comment = xml_escape(&report.comment),
+            creation_time = xml_escape(&report.creation_time),
+            modification_time = xml_escape(&report.modification_time),
+            status = xml_escape(status),
+            hosts = full_counts.hosts,
+            vulns = full_counts.total,
+            ports = full_counts.ports,
+            errors = full_counts.errors,
+            result_count_xml = render_scan_report_result_counts(&full_counts, &filtered_counts),
+            full_severity = full_counts.max_severity,
+            filtered_severity = filtered_counts.max_severity,
+            filter_id = xml_escape_attr(&filter_id),
+            filter = xml_escape(&filter),
+            scan_end = xml_escape(scan_end),
+            sort_field = xml_escape(&sort_field),
+        )
+        .into_bytes()
+    }
+
     fn render_report_detail_response(&self, cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
         let Some(report_id) = cmd.attr("report_id") else {
             return error_response(&cmd.name, 400, "Missing required attribute: report_id");
@@ -1508,6 +1643,228 @@ fn render_report_result_xml(result: &Resource) -> String {
 
     xml.push_str("</result>");
     xml
+}
+
+#[derive(Default)]
+struct ScanReportResultCounts {
+    total: usize,
+    critical: usize,
+    high: usize,
+    medium: usize,
+    low: usize,
+    log: usize,
+    false_positive: usize,
+    errors: usize,
+    hosts: usize,
+    ports: usize,
+    max_severity: f64,
+}
+
+impl ScanReportResultCounts {
+    fn from_results<'a>(results: impl Iterator<Item = &'a Resource>) -> Self {
+        let mut counts = Self::default();
+        let mut hosts = BTreeSet::new();
+        let mut ports = BTreeSet::new();
+        for result in results {
+            counts.total += 1;
+            let severity = scan_report_result_severity(result);
+            counts.max_severity = counts.max_severity.max(severity);
+            if result.attr("false_positive") == Some("1") {
+                counts.false_positive += 1;
+            } else if severity >= 9.0 {
+                counts.critical += 1;
+            } else if severity >= 7.0 {
+                counts.high += 1;
+            } else if severity >= 4.0 {
+                counts.medium += 1;
+            } else if severity > 0.0 {
+                counts.low += 1;
+            } else {
+                counts.log += 1;
+            }
+            if result.attr("threat") == Some("Error") {
+                counts.errors += 1;
+            }
+            if let Some(host) = result.attr("host") {
+                hosts.insert(host);
+            }
+            if let Some(port) = result.attr("port") {
+                ports.insert(port);
+            }
+        }
+        counts.hosts = hosts.len();
+        counts.ports = ports.len();
+        counts
+    }
+}
+
+fn scan_report_result_severity(result: &Resource) -> f64 {
+    result
+        .attr("severity")
+        .and_then(|severity| severity.parse().ok())
+        .unwrap_or_default()
+}
+
+fn scan_report_result_matches(result: &Resource, filter: &str) -> bool {
+    let severity = scan_report_result_severity(result);
+    for predicate in filter.split_whitespace() {
+        let Some((key, value)) = predicate.split_once('=') else {
+            continue;
+        };
+        match key {
+            "levels" => {
+                let level = if result.attr("false_positive") == Some("1") {
+                    'f'
+                } else if severity >= 9.0 {
+                    'c'
+                } else if severity >= 7.0 {
+                    'h'
+                } else if severity >= 4.0 {
+                    'm'
+                } else if severity > 0.0 {
+                    'l'
+                } else {
+                    'g'
+                };
+                if !value.contains(level) {
+                    return false;
+                }
+            }
+            "min_qod" => {
+                let minimum = value.parse::<u32>().unwrap_or_default();
+                let qod = result
+                    .attr("qod")
+                    .and_then(|qod| qod.parse().ok())
+                    .unwrap_or(100);
+                if qod < minimum {
+                    return false;
+                }
+            }
+            "first" | "rows" | "sort" | "sort-reverse" | "apply_overrides"
+            | "result_hosts_only" => {}
+            _ => {}
+        }
+    }
+    true
+}
+
+fn resolve_scan_report_filter(filter: &str) -> String {
+    let mut resolved = filter.trim().to_string();
+    let has_keyword = |filter: &str, expected: &str| {
+        filter.split_whitespace().any(|predicate| {
+            predicate
+                .split_once('=')
+                .is_some_and(|(key, _)| key == expected)
+        })
+    };
+    if !has_keyword(&resolved, "min_qod") {
+        resolved = format!("min_qod=70 {resolved}").trim_end().to_string();
+    }
+    if !has_keyword(&resolved, "apply_overrides") {
+        resolved = format!("apply_overrides=0 {resolved}")
+            .trim_end()
+            .to_string();
+    }
+    resolved
+}
+
+fn scan_report_sort(filter: &str) -> (String, &'static str) {
+    for predicate in filter.split_whitespace() {
+        match predicate.split_once('=') {
+            Some(("sort", field)) => return (field.to_string(), "ascending"),
+            Some(("sort-reverse", field)) => return (field.to_string(), "descending"),
+            _ => {}
+        }
+    }
+    ("name".to_string(), "ascending")
+}
+
+fn render_scan_report_result_counts(
+    full: &ScanReportResultCounts,
+    filtered: &ScanReportResultCounts,
+) -> String {
+    format!(
+        "<result_count>{total}\
+         <full>{total}</full><filtered>{filtered_total}</filtered>\
+         <critical><full>{critical}</full><filtered>{filtered_critical}</filtered></critical>\
+         <hole deprecated=\"1\"><full>{high}</full><filtered>{filtered_high}</filtered></hole>\
+         <high><full>{high}</full><filtered>{filtered_high}</filtered></high>\
+         <info deprecated=\"1\"><full>{low}</full><filtered>{filtered_low}</filtered></info>\
+         <low><full>{low}</full><filtered>{filtered_low}</filtered></low>\
+         <log><full>{log}</full><filtered>{filtered_log}</filtered></log>\
+         <warning deprecated=\"1\"><full>{medium}</full><filtered>{filtered_medium}</filtered></warning>\
+         <medium><full>{medium}</full><filtered>{filtered_medium}</filtered></medium>\
+         <false_positive><full>{false_positive}</full><filtered>{filtered_false_positive}</filtered></false_positive>\
+         </result_count>",
+        total = full.total,
+        filtered_total = filtered.total,
+        critical = full.critical,
+        filtered_critical = filtered.critical,
+        high = full.high,
+        filtered_high = filtered.high,
+        low = full.low,
+        filtered_low = filtered.low,
+        log = full.log,
+        filtered_log = filtered.log,
+        medium = full.medium,
+        filtered_medium = filtered.medium,
+        false_positive = full.false_positive,
+        filtered_false_positive = filtered.false_positive,
+    )
+}
+
+fn render_scan_report_task(task: &Resource, store: &ResourceStore) -> String {
+    let target = [
+        ("target_id", "target"),
+        ("agent_group_id", "agent_group"),
+        ("oci_image_target_id", "oci_image_target"),
+        ("web_application_target_id", "web_application_target"),
+    ]
+    .into_iter()
+    .find_map(|(attribute, resource_type)| {
+        task.attr(attribute)
+            .and_then(|id| Uuid::parse_str(id).ok())
+            .and_then(|id| store.get_typed(&id, resource_type))
+            .map(|target| {
+                let target_type = resource_type
+                    .strip_suffix("_target")
+                    .unwrap_or(resource_type);
+                format!(
+                    "<target id=\"{id}\"><trash>0</trash><name>{name}</name>\
+                     <comment>{comment}</comment><target_type>{target_type}</target_type></target>",
+                    id = target.id,
+                    name = xml_escape(&target.name),
+                    comment = xml_escape(&target.comment),
+                )
+            })
+    })
+    .unwrap_or_else(|| "<target/>".to_string());
+    let progress = if task.attr("status") == Some("Done") {
+        100
+    } else {
+        0
+    };
+    format!(
+        "<task id=\"{id}\"><name>{name}</name><comment>{comment}</comment>\
+         {target}<progress>{progress}</progress></task>",
+        id = task.id,
+        name = xml_escape(&task.name),
+        comment = xml_escape(&task.comment),
+    )
+}
+
+fn render_scan_report_filter_keywords(filter: &str) -> String {
+    filter
+        .split_whitespace()
+        .filter_map(|predicate| predicate.split_once('='))
+        .map(|(column, value)| {
+            format!(
+                "<keyword><column>{}</column><relation>=</relation><value>{}</value></keyword>",
+                xml_escape(column),
+                xml_escape(value),
+            )
+        })
+        .collect()
 }
 
 fn render_agent_installer_instruction_response(cmd: &ParsedCommand) -> Vec<u8> {
@@ -2209,5 +2566,31 @@ mod tests {
         let response = String::from_utf8(response).expect("UTF-8 response");
         assert!(response.contains("status=\"409\""));
         assert!(response.contains("Task graph is inconsistent: task report"));
+    }
+
+    #[test]
+    fn scan_report_task_renders_running_specialized_target() {
+        let store = ResourceStore::new();
+        let target = Resource::new("oci_image_target", "Container Target");
+        let target_id = target.id;
+        store.seed(target);
+
+        let mut task = Resource::new("task", "Container Task");
+        task.set_attr("oci_image_target_id", &target_id.to_string());
+        task.set_attr("status", "Running");
+
+        let xml = render_scan_report_task(&task, &store);
+        assert!(xml.contains("<target_type>oci_image</target_type>"));
+        assert!(xml.contains("<progress>0</progress>"));
+    }
+
+    #[test]
+    fn scan_report_task_renders_empty_target_when_unlinked() {
+        let store = ResourceStore::new();
+        let task = Resource::new("task", "Import Task");
+
+        let xml = render_scan_report_task(&task, &store);
+        assert!(xml.contains("<target/>"));
+        assert!(xml.contains("<progress>0</progress>"));
     }
 }
