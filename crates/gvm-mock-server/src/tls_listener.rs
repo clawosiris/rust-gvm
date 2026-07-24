@@ -4,7 +4,6 @@
 //! TLS listener support for the mock GMP server.
 
 use std::future::Future;
-use std::io::Cursor;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::Path;
 use std::str::FromStr;
@@ -14,6 +13,7 @@ use std::time::Duration;
 use p256::ecdsa::{DerSignature, SigningKey};
 use p256::elliptic_curve::Generate;
 use p256::pkcs8::{EncodePrivateKey, EncodePublicKey};
+use rustls::pki_types::pem::{Error as PemError, PemObject};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use rustls::server::WebPkiClientVerifier;
 use rustls::{RootCertStore, ServerConfig};
@@ -159,8 +159,9 @@ async fn handle_tls_stream(
 }
 
 fn parse_certificates(pem: &[u8]) -> std::io::Result<Vec<CertificateDer<'static>>> {
-    let certificates =
-        rustls_pemfile::certs(&mut Cursor::new(pem)).collect::<std::io::Result<Vec<_>>>()?;
+    let certificates = CertificateDer::pem_slice_iter(pem)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| invalid_data(legacy_pem_error_message(error)))?;
     if certificates.is_empty() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -172,6 +173,27 @@ fn parse_certificates(pem: &[u8]) -> std::io::Result<Vec<CertificateDer<'static>
 
 fn invalid_input(error: impl std::fmt::Display) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::InvalidInput, error.to_string())
+}
+
+fn invalid_data(error: impl std::fmt::Display) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
+}
+
+fn legacy_pem_error_message(error: PemError) -> String {
+    match error {
+        PemError::MissingSectionEnd { end_marker } => format!(
+            "section end {:?} missing",
+            String::from_utf8_lossy(&end_marker)
+        ),
+        PemError::IllegalSectionStart { line } => {
+            format!(
+                "illegal section start: {:?}",
+                String::from_utf8_lossy(&line)
+            )
+        }
+        PemError::Base64Decode(error) => error,
+        error => format!("{error:?}"),
+    }
 }
 
 fn log_accept_error(error: &std::io::Error) {
@@ -225,6 +247,42 @@ mod tests {
         .await;
 
         drop(client);
+    }
+
+    #[test]
+    fn client_ca_parser_preserves_empty_and_malformed_error_kinds() {
+        let empty = parse_certificates(b"").expect_err("empty client CA");
+        let malformed =
+            parse_certificates(b"-----BEGIN CERTIFICATE-----\n%%%\n-----END CERTIFICATE-----\n")
+                .expect_err("malformed client CA");
+
+        assert_eq!(empty.kind(), std::io::ErrorKind::InvalidInput);
+        assert_eq!(malformed.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(malformed.to_string(), "InvalidCharacter(37)");
+    }
+
+    #[test]
+    fn legacy_pem_error_mapping_covers_all_native_error_classes() {
+        assert_eq!(
+            legacy_pem_error_message(PemError::MissingSectionEnd {
+                end_marker: b"CERTIFICATE".to_vec(),
+            }),
+            "section end \"CERTIFICATE\" missing"
+        );
+        assert_eq!(
+            legacy_pem_error_message(PemError::IllegalSectionStart {
+                line: b"-----BEGIN".to_vec(),
+            }),
+            "illegal section start: \"-----BEGIN\""
+        );
+        assert_eq!(
+            legacy_pem_error_message(PemError::Base64Decode("bad data".to_owned())),
+            "bad data"
+        );
+        assert_eq!(
+            legacy_pem_error_message(PemError::SectionTooLarge),
+            "SectionTooLarge"
+        );
     }
 
     #[tokio::test]

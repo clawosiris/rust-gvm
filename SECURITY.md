@@ -60,7 +60,6 @@ Accepted advisories are documented in [`deny.toml`](deny.toml) with rationale:
 | Advisory | Crate | Reason |
 |----------|-------|--------|
 | RUSTSEC-2023-0071 | `rsa` | Transitive via `russh`; Marvin attack requires RSA key exchange — mitigated by preferring Ed25519/ECDSA keys |
-| RUSTSEC-2025-0134 | `rustls-pemfile` | Unmaintained; will migrate when `rustls` ecosystem provides replacement |
 
 ### Supply Chain
 
