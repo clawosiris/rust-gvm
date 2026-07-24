@@ -21,6 +21,7 @@ async-trait.workspace = true
 gvm-connection.workspace = true
 gvm-protocol.workspace = true
 gvm-gmp.workspace = true
+quick-xml.workspace = true
 tokio.workspace = true
 thiserror.workspace = true
 

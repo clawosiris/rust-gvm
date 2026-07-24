@@ -21,8 +21,10 @@ use gvm_gmp::commands::configs::{
     GetConfigsOpts, ModifyConfigOpts,
 };
 use gvm_gmp::commands::credentials::{
-    create_credential_store_credential, get_credential, modify_credential_store_credential,
+    create_credential_store_credential, get_credential, modify_credential_store,
+    modify_credential_store_credential, CredentialStorePreference,
     ModifyCredentialStoreCredentialOpts as GmpModifyCredentialStoreCredentialOpts,
+    ModifyCredentialStoreOpts,
 };
 use gvm_gmp::commands::help::HelpMode;
 use gvm_gmp::commands::nvts::{
@@ -277,7 +279,7 @@ async fn live_wire_trace_observes_typed_helper_with_redaction() {
             })
             .map(event_text)
             .expect("authenticate request trace event");
-        assert!(auth_request.contains("<password><redacted></password>"));
+        assert!(auth_request.contains("<password><redacted/></password>"));
         assert!(!auth_request.contains("<password>admin</password>"));
 
         assert!(events.iter().any(|event| {
@@ -285,6 +287,80 @@ async fn live_wire_trace_observes_typed_helper_with_redaction() {
                 && event_text(event).contains("<authenticate_response")
         }));
     }
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn live_wire_trace_redacts_credential_store_preference_values() {
+    const CREDENTIAL_STORE_ID: &str = "40000000-0000-4000-8000-000000000001";
+    let server = match MockGmpServer::builder()
+        .mode(ServerMode::Stateful)
+        .version(MockVersion::V22_8)
+        .unix_socket_auto()
+        .seed(|store| {
+            store.seed(Resource::with_id(
+                "credential_store",
+                "Trace Store",
+                CREDENTIAL_STORE_ID.parse().expect("valid UUID"),
+            ));
+        })
+        .build()
+        .await
+    {
+        Ok(server) => server,
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return,
+        Err(error) => panic!("server should start: {error}"),
+    };
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let trace_events = Arc::clone(&events);
+    let mut client = GmpClient::connect_with_wire_trace(unix_connection(&server), move |event| {
+        trace_events.lock().expect("trace lock").push(event);
+    })
+    .await
+    .expect("client should connect");
+    client
+        .call(authenticate("admin", "admin"))
+        .await
+        .expect("authentication should succeed");
+    server.clear_history();
+    events.lock().expect("trace lock").clear();
+
+    client
+        .call(modify_credential_store(
+            &EntityId::new(CREDENTIAL_STORE_ID).expect("valid ID"),
+            ModifyCredentialStoreOpts {
+                host: Some("store.example".into()),
+                preferences: vec![CredentialStorePreference {
+                    name: "token".into(),
+                    value: "transport-preference-sentinel".into(),
+                }],
+                ..Default::default()
+            },
+        ))
+        .await
+        .expect("credential store modification should succeed");
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 1);
+    let raw = std::str::from_utf8(history[0].raw_xml()).expect("UTF-8 request");
+    assert!(raw.contains("<value>transport-preference-sentinel</value>"));
+
+    let request = {
+        let events = events.lock().expect("trace lock");
+        events
+            .iter()
+            .find(|event| {
+                event.direction == WireTraceDirection::Request
+                    && event_text(event).contains("<modify_credential_store")
+            })
+            .map(event_text)
+            .expect("credential-store request trace")
+    };
+    assert!(request.contains("<host>store.example</host>"));
+    assert!(request.contains("<name>token</name>"));
+    assert!(request.contains("<value><redacted/></value>"));
+    assert!(!request.contains("transport-preference-sentinel"));
+
     server.shutdown().await;
 }
 
