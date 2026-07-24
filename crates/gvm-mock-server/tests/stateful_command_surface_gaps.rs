@@ -605,6 +605,29 @@ async fn stateful_help_returns_command_listing() {
     server.shutdown().await;
 }
 
+async fn assert_aggregate_column_precedence(stream: &mut UnixStream) {
+    let conflicting_columns = send_recv(
+        stream,
+        br#"<get_aggregates type="task" data_column="singular" data_columns="legacy-data" text_columns="legacy-text"><data_column>current-data</data_column><text_column>current-text</text_column></get_aggregates>"#,
+    )
+    .await;
+    let conflicting_text = conflicting_columns.as_str().expect("utf8");
+    assert!(conflicting_text.contains("<data_column>current-data</data_column>"));
+    assert!(conflicting_text.contains("<text_column>current-text</text_column>"));
+    assert!(!conflicting_text.contains("singular"));
+    assert!(!conflicting_text.contains("legacy-data"));
+    assert!(!conflicting_text.contains("legacy-text"));
+
+    let singular_precedence = send_recv(
+        stream,
+        br#"<get_aggregates type="task" data_column="singular" data_columns="legacy-data"/>"#,
+    )
+    .await;
+    let singular_text = singular_precedence.as_str().expect("utf8");
+    assert!(singular_text.contains("<data_column>singular</data_column>"));
+    assert!(!singular_text.contains("legacy-data"));
+}
+
 #[tokio::test]
 async fn stateful_aggregates_returns_fixture_response() {
     let Some(server) = stateful_server().await else {
@@ -628,26 +651,7 @@ async fn stateful_aggregates_returns_fixture_response() {
     assert!(text.contains("<text column=\"name&amp;&lt;\">High</text>"));
     assert!(!text.contains("task&<"));
 
-    let conflicting_columns = send_recv(
-        &mut stream,
-        br#"<get_aggregates type="task" data_column="singular" data_columns="legacy-data" text_columns="legacy-text"><data_column>current-data</data_column><text_column>current-text</text_column></get_aggregates>"#,
-    )
-    .await;
-    let conflicting_text = conflicting_columns.as_str().expect("utf8");
-    assert!(conflicting_text.contains("<data_column>current-data</data_column>"));
-    assert!(conflicting_text.contains("<text_column>current-text</text_column>"));
-    assert!(!conflicting_text.contains("singular"));
-    assert!(!conflicting_text.contains("legacy-data"));
-    assert!(!conflicting_text.contains("legacy-text"));
-
-    let singular_precedence = send_recv(
-        &mut stream,
-        br#"<get_aggregates type="task" data_column="singular" data_columns="legacy-data"/>"#,
-    )
-    .await;
-    let singular_text = singular_precedence.as_str().expect("utf8");
-    assert!(singular_text.contains("<data_column>singular</data_column>"));
-    assert!(!singular_text.contains("legacy-data"));
+    assert_aggregate_column_precedence(&mut stream).await;
 
     let no_columns = send_recv(
         &mut stream,
