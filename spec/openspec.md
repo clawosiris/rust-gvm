@@ -640,7 +640,7 @@ Generated in release and nightly workflows using `cargo-cyclonedx`:
   - GitHub Actions: weekly, grouped
   - pip: monthly
 - **cargo-deny** (`deny.toml`): license allowlist, advisory database, v2 schema
-  - Ignored advisories: RUSTSEC-2023-0071 (rsa Marvin Attack, transitive via russh), RUSTSEC-2025-0134 (rustls-pemfile unmaintained)
+  - Ignored advisory: RUSTSEC-2023-0071 (rsa Marvin Attack, transitive via russh)
 
 ### Makefile
 

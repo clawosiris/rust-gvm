@@ -4,12 +4,12 @@
 //! Verified TLS transport for gvmd.
 
 use std::fmt;
-use std::io::Cursor;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use rustls::pki_types::ServerName;
+use rustls::pki_types::pem::{Error as PemError, PemObject};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName};
 use rustls::{ClientConfig, RootCertStore};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -58,20 +58,9 @@ impl TlsClientIdentity {
         ))
     }
 
-    fn parse(
-        &self,
-    ) -> Result<(
-        Vec<rustls::pki_types::CertificateDer<'static>>,
-        rustls::pki_types::PrivateKeyDer<'static>,
-    )> {
+    fn parse(&self) -> Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>)> {
         let certificates = parse_certificates(&self.certificate_chain_pem, "client certificate")?;
-        let private_key = rustls_pemfile::private_key(&mut Cursor::new(&self.private_key_pem))
-            .map_err(|error| invalid_configuration(format!("invalid client private key: {error}")))?
-            .ok_or_else(|| {
-                invalid_configuration(
-                    "client private key is missing, encrypted, or in an unsupported PEM format",
-                )
-            })?;
+        let private_key = parse_private_key(&self.private_key_pem)?;
         Ok((certificates, private_key))
     }
 }
@@ -427,19 +416,50 @@ fn protocol_read_error(error: &gvm_protocol::ProtocolError) -> ConnectionError {
     ))
 }
 
-fn parse_certificates(
-    pem: &[u8],
-    description: &str,
-) -> Result<Vec<rustls::pki_types::CertificateDer<'static>>> {
-    let certificates = rustls_pemfile::certs(&mut Cursor::new(pem))
-        .collect::<std::io::Result<Vec<_>>>()
-        .map_err(|error| invalid_configuration(format!("invalid {description}: {error}")))?;
+fn parse_certificates(pem: &[u8], description: &str) -> Result<Vec<CertificateDer<'static>>> {
+    let certificates = CertificateDer::pem_slice_iter(pem)
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|error| {
+            invalid_configuration(format!(
+                "invalid {description}: {}",
+                legacy_pem_error_message(error)
+            ))
+        })?;
     if certificates.is_empty() {
         return Err(invalid_configuration(format!(
             "{description} PEM contains no certificates"
         )));
     }
     Ok(certificates)
+}
+
+fn parse_private_key(pem: &[u8]) -> Result<PrivateKeyDer<'static>> {
+    PrivateKeyDer::from_pem_slice(pem).map_err(|error| match error {
+        PemError::NoItemsFound => invalid_configuration(
+            "client private key is missing, encrypted, or in an unsupported PEM format",
+        ),
+        error => invalid_configuration(format!(
+            "invalid client private key: {}",
+            legacy_pem_error_message(error)
+        )),
+    })
+}
+
+fn legacy_pem_error_message(error: PemError) -> String {
+    match error {
+        PemError::MissingSectionEnd { end_marker } => format!(
+            "section end {:?} missing",
+            String::from_utf8_lossy(&end_marker)
+        ),
+        PemError::IllegalSectionStart { line } => {
+            format!(
+                "illegal section start: {:?}",
+                String::from_utf8_lossy(&line)
+            )
+        }
+        PemError::Base64Decode(error) => error,
+        error => format!("{error:?}"),
+    }
 }
 
 fn invalid_configuration(message: impl Into<String>) -> ConnectionError {
@@ -460,6 +480,10 @@ fn log_native_root_load(error_count: usize, ignored: usize, added: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pem(label: &str, body: &str) -> Vec<u8> {
+        format!("-----BEGIN {label}-----\n{body}\n-----END {label}-----\n").into_bytes()
+    }
 
     #[test]
     fn default_config_is_verified_and_uses_gvmd_port() {
@@ -496,5 +520,95 @@ mod tests {
         TlsConfig::default()
             .client_config()
             .expect("platform trust store should contain usable roots");
+    }
+
+    #[test]
+    fn native_pem_parser_preserves_certificate_chain_order() {
+        let certificates = parse_certificates(
+            b"-----BEGIN CERTIFICATE-----\nAQ==\n-----END CERTIFICATE-----\n\
+              -----BEGIN CERTIFICATE-----\nAg==\n-----END CERTIFICATE-----\n",
+            "test certificate",
+        )
+        .expect("certificate chain");
+
+        assert_eq!(certificates.len(), 2);
+        assert_eq!(certificates[0].as_ref(), &[1]);
+        assert_eq!(certificates[1].as_ref(), &[2]);
+    }
+
+    #[test]
+    fn native_pem_parser_accepts_all_documented_private_key_labels() {
+        let pkcs1 = parse_private_key(&pem("RSA PRIVATE KEY", "AQ==")).expect("PKCS#1 key");
+        let pkcs8 = parse_private_key(&pem("PRIVATE KEY", "Ag==")).expect("PKCS#8 key");
+        let sec1 = parse_private_key(&pem("EC PRIVATE KEY", "Aw==")).expect("SEC1 key");
+
+        assert!(matches!(pkcs1, PrivateKeyDer::Pkcs1(_)));
+        assert!(matches!(pkcs8, PrivateKeyDer::Pkcs8(_)));
+        assert!(matches!(sec1, PrivateKeyDer::Sec1(_)));
+    }
+
+    #[test]
+    fn native_pem_parser_preserves_missing_or_unsupported_key_diagnostic() {
+        let error = parse_private_key(&pem("ENCRYPTED PRIVATE KEY", "AQ=="))
+            .expect_err("encrypted key must be rejected");
+
+        assert_eq!(
+            error.to_string(),
+            "invalid connection configuration: client private key is missing, encrypted, or in an unsupported PEM format"
+        );
+    }
+
+    #[test]
+    fn native_pem_parser_reports_malformed_certificate_and_key_data() {
+        let certificate_error = parse_certificates(
+            b"-----BEGIN CERTIFICATE-----\n%%%\n-----END CERTIFICATE-----\n",
+            "test certificate",
+        )
+        .expect_err("malformed certificate");
+        let key_error = parse_private_key(&pem("PRIVATE KEY", "%%%")).expect_err("malformed key");
+
+        assert_eq!(
+            certificate_error.to_string(),
+            "invalid connection configuration: invalid test certificate: InvalidCharacter(37)"
+        );
+        assert_eq!(
+            key_error.to_string(),
+            "invalid connection configuration: invalid client private key: InvalidCharacter(37)"
+        );
+    }
+
+    #[test]
+    fn native_pem_parser_preserves_missing_end_marker_diagnostic() {
+        let error = parse_certificates(b"-----BEGIN CERTIFICATE-----\nAQ==\n", "test certificate")
+            .expect_err("certificate without an end marker");
+
+        assert_eq!(
+            error.to_string(),
+            "invalid connection configuration: invalid test certificate: section end \"CERTIFICATE\" missing"
+        );
+    }
+
+    #[test]
+    fn legacy_pem_error_mapping_covers_all_native_error_classes() {
+        assert_eq!(
+            legacy_pem_error_message(PemError::MissingSectionEnd {
+                end_marker: b"CERTIFICATE".to_vec(),
+            }),
+            "section end \"CERTIFICATE\" missing"
+        );
+        assert_eq!(
+            legacy_pem_error_message(PemError::IllegalSectionStart {
+                line: b"-----BEGIN".to_vec(),
+            }),
+            "illegal section start: \"-----BEGIN\""
+        );
+        assert_eq!(
+            legacy_pem_error_message(PemError::Base64Decode("bad data".to_owned())),
+            "bad data"
+        );
+        assert_eq!(
+            legacy_pem_error_message(PemError::SectionTooLarge),
+            "SectionTooLarge"
+        );
     }
 }
