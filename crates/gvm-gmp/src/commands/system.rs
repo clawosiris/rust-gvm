@@ -11,7 +11,11 @@ use crate::types::EntityId;
 
 pub use super::system_reports::{get_system_reports, GetSystemReportsOpts};
 
-/// Options for `get_aggregates` requests.
+/// Legacy system-module options for `get_aggregates` requests.
+///
+/// This type and [`get_aggregates`] are retained for source compatibility.
+/// They predate current gvmd's required aggregate resource type. New code
+/// should use [`crate::commands::aggregates::get_aggregates_request`].
 #[derive(Debug, Clone, Default)]
 pub struct GetAggregatesOpts {
     /// Optional aggregate data column.
@@ -111,7 +115,11 @@ pub fn get_timezones() -> impl Request {
     XmlCommand::new("get_timezones")
 }
 
-/// Build a `get_aggregates` request.
+/// Build a legacy system-module `get_aggregates` request.
+///
+/// New code should use
+/// [`crate::commands::aggregates::get_aggregates_request`], which includes the
+/// required resource type and models repeated sort and column elements.
 #[must_use]
 pub fn get_aggregates(opts: GetAggregatesOpts) -> impl Request {
     let mut cmd = XmlCommand::new("get_aggregates");

@@ -79,6 +79,9 @@ pub use gvm_gmp::commands::agents::{
     AgentRetryConfig, AgentScriptExecutorConfig, GetAgentsOpts, ModifyAgentControlScanConfigOpts,
     ModifyAgentOpts,
 };
+pub use gvm_gmp::commands::aggregates::{
+    AggregateMode, AggregateSort, AggregateSortStatistic, GetAggregatesRequestOpts,
+};
 pub use gvm_gmp::commands::credentials::{
     CredentialStoreCredentialOpts, GetCredentialStoresOpts, ModifyCredentialStoreCredentialOpts,
 };
@@ -97,6 +100,7 @@ pub use gvm_gmp::commands::system_reports::GetSystemReportsOpts;
 pub use gvm_gmp::commands::tasks::CreateAgentGroupTaskOpts;
 pub use gvm_gmp::commands::tasks::CreateOciImageTargetTaskOpts;
 pub use gvm_gmp::commands::tasks::CreateWebApplicationTaskOpts;
+pub use gvm_gmp::commands::usage_type::UsageType;
 pub use gvm_gmp::commands::web_application_targets::{
     CreateWebApplicationTargetOpts, GetWebApplicationTargetsOpts, ModifyWebApplicationTargetOpts,
 };

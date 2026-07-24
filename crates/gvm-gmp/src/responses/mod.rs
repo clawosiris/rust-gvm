@@ -60,7 +60,11 @@ pub use agent_group::{
     AgentGroup, CloneAgentGroupResponse, CreateAgentGroupResponse, DeleteAgentGroupResponse,
     GetAgentGroupsResponse, ModifyAgentGroupResponse,
 };
-pub use aggregates::{AggregateGroup, AggregateStats, AggregateSubgroup, GetAggregatesResponse};
+pub use aggregates::{
+    AggregateColumnInfo, AggregateFilter, AggregateFilterKeyword, AggregateGroup, AggregateOverall,
+    AggregateResult, AggregateStatisticValues, AggregateStats, AggregateSubgroup, AggregateText,
+    GetAggregatesResponse,
+};
 pub use alert::{
     Alert, CreateAlertResponse, DeleteAlertResponse, GetAlertsResponse, ModifyAlertResponse,
 };

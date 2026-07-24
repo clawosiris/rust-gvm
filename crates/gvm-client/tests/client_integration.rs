@@ -5,13 +5,15 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_client::{
-    CreateOciImageTargetOpts, CreateWebApplicationTargetOpts, CredentialStoreCredentialOpts,
-    CredentialStoreCredentialType, GetCredentialStoresOpts, GetScanReportOpts,
-    GetSystemReportsOpts, GmpClient, GmpNextCommands, GmpVersioned, GvmError, ImportReportOpts,
+    AggregateMode, AggregateSort, AggregateSortStatistic, CreateOciImageTargetOpts,
+    CreateWebApplicationTargetOpts, CredentialStoreCredentialOpts, CredentialStoreCredentialType,
+    GetAggregatesRequestOpts, GetCredentialStoresOpts, GetScanReportOpts, GetSystemReportsOpts,
+    GmpClient, GmpNextCommands, GmpVersioned, GvmError, ImportReportOpts,
     ModifyCredentialStoreCredentialOpts, ModifyOciImageTargetOpts, ModifyWebApplicationTargetOpts,
-    WireTraceDirection, WireTraceEvent,
+    UsageType, WireTraceDirection, WireTraceEvent,
 };
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
+use gvm_gmp::commands::aggregates::{get_aggregates as get_aggregates_legacy, GetAggregatesOpts};
 use gvm_gmp::commands::alerts::{trigger_alert, TriggerAlertOpts};
 use gvm_gmp::commands::assets::{
     AssetType, CreateAssetOpts, DeleteAssetOpts, GetAssetsOpts, ModifyAssetOpts,
@@ -51,7 +53,7 @@ use gvm_gmp::responses::{
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
-use gvm_gmp::FeedType;
+use gvm_gmp::{FeedType, SortOrder};
 use gvm_mock_server::{
     GmpVersion as MockVersion, MockGmpServer, Resource, ResourceStore, ServerMode,
 };
@@ -215,6 +217,174 @@ async fn typed_feature_discovery_parses_current_gvmd_shape_over_unix_transport()
     assert_eq!(response.features[1].name, "ENABLE_JWT_AUTH");
     assert!(response.features[1].compiled_in);
     assert!(!response.features[1].enabled);
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_aggregates_round_trip_current_shape_over_stateful_unix_transport() {
+    let Some(server) = stateful_server_with_version(MockVersion::V22_8).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate");
+    server.clear_history();
+
+    let response = client
+        .get_aggregates(
+            "task&<",
+            GetAggregatesRequestOpts {
+                filter_string: Some("owner=me & rows=-1".into()),
+                data_columns: vec!["qod&<".into()],
+                group_column: Some("status&<".into()),
+                sorts: vec![AggregateSort {
+                    field: "qod&<".into(),
+                    statistic: Some(AggregateSortStatistic::Maximum),
+                    order: Some(SortOrder::Descending),
+                }],
+                text_columns: vec!["name&<".into()],
+                first_group: Some(1),
+                max_groups: Some(-1),
+                usage_type: Some(UsageType::Audit),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("typed aggregate response should parse");
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 1);
+    let request = String::from_utf8(history[0].raw_xml().to_vec()).expect("request is UTF-8");
+    assert_eq!(response.aggregates.len(), 1);
+    let aggregate = &response.aggregates[0];
+    assert_eq!(
+        aggregate.data_type, "task&<",
+        "unexpected response for request {request}"
+    );
+    assert_eq!(aggregate.data_columns, vec!["qod&<".to_string()]);
+    assert_eq!(aggregate.group_column.as_deref(), Some("status&<"));
+    assert_eq!(aggregate.groups.len(), 2);
+    assert_eq!(aggregate.groups[0].count, 3);
+    assert_eq!(aggregate.groups[1].c_count, Some(8));
+    assert_eq!(aggregate.groups[0].statistics[0].column, "qod&<");
+    assert_eq!(aggregate.groups[0].texts[0].column, "name&<");
+    assert_eq!(
+        response.filter.as_ref().expect("filter metadata").term,
+        "owner=me & rows=-1"
+    );
+
+    assert_eq!(
+        request,
+        "<get_aggregates filter=\"owner=me &amp; rows=-1\" first_group=\"1\" \
+         group_column=\"status&amp;&lt;\" max_groups=\"-1\" type=\"task&amp;&lt;\" \
+         usage_type=\"audit\"><sort field=\"qod&amp;&lt;\" \
+         order=\"descending\" stat=\"max\"/><data_column>qod&amp;&lt;</data_column>\
+         <text_column>name&amp;&lt;</text_column></get_aggregates>"
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn legacy_aggregates_round_trip_comma_separated_columns_over_stateful_unix_transport() {
+    let Some(server) = stateful_server_with_version(MockVersion::V22_8).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate");
+    server.clear_history();
+
+    let response = client
+        .call(get_aggregates_legacy(
+            "task",
+            GetAggregatesOpts {
+                data_columns: Some("qod, severity".into()),
+                text_columns: Some("name, comment".into()),
+                ..Default::default()
+            },
+        ))
+        .await
+        .expect("legacy aggregate request should succeed");
+
+    let xml = response.as_str().expect("response should be UTF-8");
+    for column in ["qod", "severity"] {
+        assert!(xml.contains(&format!("<data_column>{column}</data_column>")));
+        assert!(xml.contains(&format!("<stats column=\"{column}\">")));
+    }
+    for column in ["name", "comment"] {
+        assert!(xml.contains(&format!("<text_column>{column}</text_column>")));
+        assert!(xml.contains(&format!("<text column=\"{column}\">All</text>")));
+    }
+    assert_eq!(
+        server.command_history()[0].raw_xml(),
+        br#"<get_aggregates data_columns="qod, severity" text_columns="name, comment" type="task"/>"#
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_word_count_aggregates_parse_current_gvmd_shape_over_unix_transport() {
+    let Some(server) = stateful_server_with_version(MockVersion::V22_8).await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate");
+    server.clear_history();
+
+    let response = client
+        .get_aggregates(
+            "task",
+            GetAggregatesRequestOpts {
+                group_column: Some("comment".into()),
+                mode: Some(AggregateMode::WordCounts),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("current gvmd word-count response should parse");
+
+    let aggregate = &response.aggregates[0];
+    assert_eq!(aggregate.data_type, "task");
+    assert_eq!(aggregate.group_column.as_deref(), Some("comment"));
+    assert_eq!(aggregate.groups.len(), 2);
+    assert_eq!(aggregate.groups[0].value, "security");
+    assert_eq!(aggregate.groups[0].c_count, None);
+    assert!(aggregate.groups[0].statistics.is_empty());
+    assert!(aggregate.groups[0].texts.is_empty());
+    assert_eq!(
+        aggregate
+            .column_info
+            .iter()
+            .map(|column| column.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["value", "count"]
+    );
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 1);
+    assert_eq!(
+        history[0].raw_xml(),
+        br#"<get_aggregates group_column="comment" mode="word_counts" type="task"/>"#
+    );
 
     server.shutdown().await;
 }
