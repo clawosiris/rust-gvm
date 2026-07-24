@@ -90,6 +90,7 @@ use gvm_gmp::commands::system::{
     describe_auth, get_settings, get_timezones, get_vulnerability as get_vulnerability_cmd,
     get_vulns, FilteredGetOpts,
 };
+use gvm_gmp::commands::system_reports::{get_system_reports, GetSystemReportsOpts};
 use gvm_gmp::commands::tags::{create_tag, get_tags, GetTagsOpts, TagOpts};
 use gvm_gmp::commands::targets::{create_target, get_targets, CreateTargetOpts, GetTargetsOpts};
 use gvm_gmp::commands::tasks::{
@@ -129,9 +130,9 @@ use gvm_gmp::responses::{
     GetReportHostsResponse, GetReportOperatingSystemsResponse, GetReportPortsResponse,
     GetReportTlsCertificatesResponse, GetReportVulnsResponse, GetReportsResponse,
     GetResultsResponse, GetRolesResponse, GetScanConfigsResponse, GetScannersResponse,
-    GetSchedulesResponse, GetSettingsResponse, GetTagsResponse, GetTargetsResponse,
-    GetTasksResponse, GetTicketsResponse, GetTimezonesResponse, GetTlsCertificatesResponse,
-    GetUsersResponse, GetVersionResponse, GetVulnerabilitiesResponse,
+    GetSchedulesResponse, GetSettingsResponse, GetSystemReportsResponse, GetTagsResponse,
+    GetTargetsResponse, GetTasksResponse, GetTicketsResponse, GetTimezonesResponse,
+    GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse, GetVulnerabilitiesResponse,
     GetWebApplicationTargetsResponse, HelpResponse, ModifyAssetResponse, ModifyCredentialResponse,
     ModifyIntegrationConfigResponse, ModifyOciImageTargetResponse, ModifyScanConfigResponse,
     ModifyScannerResponse, ModifyWebApplicationTargetResponse, ReportExport, RestoreResponse,
@@ -1871,6 +1872,18 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     pub async fn get_settings(&mut self) -> Result<GetSettingsResponse, GvmError> {
         let response = self.send(get_settings(FilteredGetOpts::default())).await?;
         GetSettingsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `get_system_reports` request and return typed report metadata and payloads.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_system_reports(
+        &mut self,
+        opts: GetSystemReportsOpts,
+    ) -> Result<GetSystemReportsResponse, GvmError> {
+        let response = self.send(get_system_reports(opts)).await?;
+        GetSystemReportsResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     /// Send a `help` request and return a typed [`HelpResponse`].

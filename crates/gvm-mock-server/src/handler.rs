@@ -20,7 +20,7 @@ use crate::response_gen::{
 };
 use crate::scenario::{ScenarioEngine, ScenarioMode, ScenarioOutcome, ScenarioStep};
 use crate::store::{AssetInputProfile, DeleteAssetResult, Resource, ResourceStore, TaskStatus};
-use crate::util::xml_escape;
+use crate::util::{xml_escape, xml_escape_attr};
 use crate::version::{command_available, GmpVersion};
 use crate::ServerMode;
 
@@ -816,7 +816,7 @@ impl SessionHandler {
         match cmd.name.as_str() {
             "get_feeds" => return render_feeds_response(),
             "get_aggregates" => return render_aggregates_response(cmd),
-            "get_system_reports" => return render_system_reports_response(),
+            "get_system_reports" => return render_system_reports_response(cmd, store),
             "get_info" => return render_secinfo_response(cmd),
             "get_vulns" => return render_vulnerabilities_response(cmd),
             "get_report_hosts"
@@ -1750,18 +1750,75 @@ fn render_aggregates_response(cmd: &ParsedCommand) -> Vec<u8> {
     .into_bytes()
 }
 
-fn render_system_reports_response() -> Vec<u8> {
-    "<get_system_reports_response status=\"200\" status_text=\"OK\">\
-     <system_report id=\"system-report-1\">\
-     <name>GVMD Performance Snapshot</name>\
-     <comment>Mock system report</comment>\
-     <created>2026-03-18T00:00:00Z</created>\
-     <duration>15m</duration>\
-     </system_report>\
-     <system_report_count>1<filtered>1</filtered></system_report_count>\
-     </get_system_reports_response>"
-        .as_bytes()
-        .to_vec()
+fn render_system_reports_response(cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
+    const REPORTS: [(&str, &str); 2] = [("proc", "Processes"), ("load", "System Load")];
+    let selected_name = cmd.attr("name");
+    let brief = match cmd.attr("brief") {
+        None | Some("0") | Some("false") => false,
+        Some("1") | Some("true") => true,
+        Some(_) => return error_response("get_system_reports", 400, "Invalid brief value"),
+    };
+    let duration = match cmd.attr("duration") {
+        Some(value) => match value.parse::<u64>() {
+            Ok(duration) => Some(duration),
+            Err(_) => return error_response("get_system_reports", 400, "Invalid duration"),
+        },
+        None => None,
+    };
+    if selected_name.is_some_and(|selected| {
+        !REPORTS
+            .iter()
+            .any(|(name, _)| selected.eq_ignore_ascii_case(name))
+    }) {
+        return error_response("get_system_reports", 404, "System report not found");
+    }
+    if let Some(slave_id) = cmd.attr("slave_id") {
+        let Ok(slave_id) = Uuid::parse_str(slave_id) else {
+            return error_response("get_system_reports", 400, "Invalid slave ID");
+        };
+        if store
+            .get(&slave_id)
+            .is_none_or(|resource| resource.resource_type != "scanner")
+        {
+            return error_response("get_system_reports", 404, "Slave not found");
+        }
+    }
+    let start_time = cmd.attr("start_time").unwrap_or_default();
+    let end_time = cmd.attr("end_time").unwrap_or_default();
+    let duration = duration.map(|value| value.to_string()).unwrap_or_else(|| {
+        if !start_time.is_empty() && !end_time.is_empty() {
+            String::new()
+        } else {
+            "86400".to_string()
+        }
+    });
+    let mut reports = String::new();
+
+    for (name, title) in REPORTS {
+        if selected_name.is_some_and(|selected| !selected.eq_ignore_ascii_case(name)) {
+            continue;
+        }
+        reports.push_str("<system_report><name>");
+        reports.push_str(name);
+        reports.push_str("</name><title>");
+        reports.push_str(title);
+        reports.push_str("</title>");
+        if !brief {
+            reports.push_str("<report format=\"png\" start_time=\"");
+            reports.push_str(&xml_escape_attr(start_time));
+            reports.push_str("\" end_time=\"");
+            reports.push_str(&xml_escape_attr(end_time));
+            reports.push_str("\" duration=\"");
+            reports.push_str(&duration);
+            reports.push_str("\">iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB</report>");
+        }
+        reports.push_str("</system_report>");
+    }
+
+    format!(
+        "<get_system_reports_response status=\"200\" status_text=\"OK\">{reports}</get_system_reports_response>"
+    )
+    .into_bytes()
 }
 
 fn render_secinfo_response(cmd: &ParsedCommand) -> Vec<u8> {

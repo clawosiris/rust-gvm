@@ -89,6 +89,7 @@ pub use gvm_gmp::commands::oci_image_targets::{
 };
 pub use gvm_gmp::commands::report_configs::ModifyReportConfigOpts;
 pub use gvm_gmp::commands::reports::{GetReportDetailsOpts, GetReportExportOpts, ImportReportOpts};
+pub use gvm_gmp::commands::system_reports::GetSystemReportsOpts;
 pub use gvm_gmp::commands::tasks::CreateAgentGroupTaskOpts;
 pub use gvm_gmp::commands::tasks::CreateOciImageTargetTaskOpts;
 pub use gvm_gmp::commands::tasks::CreateWebApplicationTaskOpts;
