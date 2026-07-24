@@ -5,8 +5,6 @@
 ignore = [
     # rsa crate Marvin Attack — transitive via russh; no fix available yet in russh dependency tree
     "RUSTSEC-2023-0071",
-    # rustls-pemfile unmaintained — workspace dep for TLS feature; will migrate when rustls ecosystem settles
-    "RUSTSEC-2025-0134",
 ]
 
 [licenses]

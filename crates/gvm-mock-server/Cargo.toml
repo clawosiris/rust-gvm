@@ -19,7 +19,6 @@ unix-socket-tests = []
 tls = [
     "dep:tokio-rustls",
     "dep:rustls",
-    "dep:rustls-pemfile",
     "dep:x509-cert",
     "dep:p256",
     "dep:sha2",
@@ -40,7 +39,6 @@ clap.workspace = true
 # Feature-gated
 tokio-rustls = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
-rustls-pemfile = { workspace = true, optional = true }
 x509-cert = { workspace = true, optional = true }
 p256 = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
