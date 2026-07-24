@@ -228,9 +228,16 @@ async fn stateful_session_isolation() {
     .await;
     assert_eq!(auth_resp.status_code(), Some(200));
 
+    let target_resp = send_recv(
+        &mut client_a,
+        b"<create_target><name>Shared Target</name><hosts>127.0.0.1</hosts></create_target>",
+    )
+    .await;
+    let target_id = target_resp.id().expect("target should have id");
     let create_resp = send_recv(
         &mut client_a,
-        b"<create_task><name>Shared Task</name><target id=\"t1\"/></create_task>",
+        format!("<create_task><name>Shared Task</name><target id=\"{target_id}\"/></create_task>")
+            .as_bytes(),
     )
     .await;
     assert_eq!(create_resp.status_code(), Some(201));

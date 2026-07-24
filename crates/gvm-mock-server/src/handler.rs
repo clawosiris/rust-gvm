@@ -19,7 +19,11 @@ use crate::response_gen::{
     generate_xml_report_export, is_known_command, LargeReportConfig, REPORT_EXPORT_XML_FORMAT_ID,
 };
 use crate::scenario::{ScenarioEngine, ScenarioMode, ScenarioOutcome, ScenarioStep};
-use crate::store::{AssetInputProfile, DeleteAssetResult, Resource, ResourceStore, TaskStatus};
+use crate::store::{
+    AssetInputProfile, DeleteAssetResult, Resource, ResourceStore, SpecializedTaskTarget,
+    StoreError, TaskReferenceUpdates, TaskReferences, TaskStatus, DEFAULT_CONFIG_ID,
+    DEFAULT_SCANNER_ID,
+};
 use crate::util::{xml_escape, xml_escape_attr};
 use crate::version::{command_available, GmpVersion};
 use crate::ServerMode;
@@ -547,14 +551,17 @@ impl SessionHandler {
         // Check for clone (copy element)
         if let Some(copy_id) = parse_element_text(raw_xml, "copy") {
             if let Ok(uuid) = Uuid::parse_str(&copy_id) {
-                if let Some(new_id) = store.clone_resource(&uuid) {
-                    return format!(
-                        "<{}_response status=\"201\" \
-                         status_text=\"OK, resource created\" \
-                         id=\"{new_id}\"/>",
-                        cmd.name
-                    )
-                    .into_bytes();
+                match store.clone_typed(&uuid, resource_type) {
+                    Ok(new_id) => {
+                        return format!(
+                            "<{}_response status=\"201\" \
+                             status_text=\"OK, resource created\" \
+                             id=\"{new_id}\"/>",
+                            cmd.name
+                        )
+                        .into_bytes();
+                    }
+                    Err(error) => return store_error_response(&cmd.name, error),
                 }
             }
             return error_response(&cmd.name, 404, "Resource to clone not found");
@@ -732,14 +739,20 @@ impl SessionHandler {
             resource.set_attr("status", TaskStatus::New.as_str());
         }
 
+        let report_task_id = if resource_type == "report" {
+            match optional_child_uuid(cmd, "task") {
+                Ok(task_id) => task_id,
+                Err(message) => return error_response(&cmd.name, 400, message),
+            }
+        } else {
+            None
+        };
+
         if resource_type == "report" {
-            if let Some(task_id) = cmd.child_attr("task", "id") {
-                resource.set_attr("task_id", task_id);
-                if let Ok(task_uuid) = Uuid::parse_str(task_id) {
-                    if let Some(task) = store.get(&task_uuid) {
-                        if let Some(usage_type) = task.attr("usage_type") {
-                            resource.set_attr("usage_type", usage_type);
-                        }
+            if let Some(task_id) = report_task_id {
+                if let Some(task) = store.get_typed(&task_id, "task") {
+                    if let Some(usage_type) = task.attr("usage_type") {
+                        resource.set_attr("usage_type", usage_type);
                     }
                 }
             }
@@ -802,7 +815,23 @@ impl SessionHandler {
             }
         }
 
-        let id = store.create(resource);
+        let id = match resource_type {
+            "task" => {
+                let references = match task_references(cmd) {
+                    Ok(references) => references,
+                    Err(message) => return error_response(&cmd.name, 400, message),
+                };
+                match store.create_task(resource, references) {
+                    Ok(id) => id,
+                    Err(error) => return store_error_response(&cmd.name, error),
+                }
+            }
+            "report" => match store.create_linked_report(resource, report_task_id) {
+                Ok(id) => id,
+                Err(error) => return store_error_response(&cmd.name, error),
+            },
+            _ => store.create(resource),
+        };
         format!(
             "<{}_response status=\"201\" \
              status_text=\"OK, resource created\" \
@@ -845,27 +874,28 @@ impl SessionHandler {
         // Check for single resource by ID
         let id_attr = format!("{resource_type}_id");
         if let Some(id_str) = cmd.attr(&id_attr) {
-            if let Ok(uuid) = Uuid::parse_str(id_str) {
-                if let Some(resource) = store.get(&uuid) {
-                    if !usage_type_matches(&resource, requested_usage_type) {
-                        return error_response(&cmd.name, 404, "Resource not found");
-                    }
-                    if cmd.name == "get_reports" {
-                        return self.render_single_report_response(cmd, &resource, store);
-                    }
-                    let xml = if cmd.name == "get_integration_configs" {
-                        resource.to_integration_config_xml(cmd.attr("details") == Some("1"))
-                    } else {
-                        resource.to_xml()
-                    };
-                    return format!(
-                        "<{}_response status=\"200\" status_text=\"OK\">\
-                         {xml}\
-                         </{}_response>",
-                        cmd.name, cmd.name
-                    )
-                    .into_bytes();
+            let Ok(uuid) = Uuid::parse_str(id_str) else {
+                return error_response(&cmd.name, 400, "Invalid UUID");
+            };
+            if let Some(resource) = store.get_typed(&uuid, resource_type) {
+                if !usage_type_matches(&resource, requested_usage_type) {
+                    return error_response(&cmd.name, 404, "Resource not found");
                 }
+                if cmd.name == "get_reports" {
+                    return self.render_single_report_response(cmd, &resource, store);
+                }
+                let xml = if cmd.name == "get_integration_configs" {
+                    resource.to_integration_config_xml(cmd.attr("details") == Some("1"))
+                } else {
+                    resource.to_xml()
+                };
+                return format!(
+                    "<{}_response status=\"200\" status_text=\"OK\">\
+                     {xml}\
+                     </{}_response>",
+                    cmd.name, cmd.name
+                )
+                .into_bytes();
             }
             return error_response(&cmd.name, 404, "Resource not found");
         }
@@ -979,6 +1009,14 @@ impl SessionHandler {
         let new_credential_store_id = parse_element_text(raw_xml, "credential_store_id");
         let new_vault_id = parse_element_text(raw_xml, "vault_id");
         let new_host_identifier = parse_element_text(raw_xml, "host_identifier");
+        let task_reference_updates = if resource_type == "task" {
+            match task_reference_updates(cmd) {
+                Ok(references) => references,
+                Err(message) => return error_response(&cmd.name, 400, message),
+            }
+        } else {
+            TaskReferenceUpdates::default()
+        };
         let (
             new_service_url,
             new_service_cacert,
@@ -1040,7 +1078,7 @@ impl SessionHandler {
             }
         }
 
-        let modified = store.modify(&uuid, |r| {
+        let update_resource = |r: &mut Resource| {
             if matches!(resource_type, "note" | "override") {
                 if let Some(ref text) = new_text {
                     r.name.clone_from(text);
@@ -1141,7 +1179,17 @@ impl SessionHandler {
                     r.set_attr("status", status);
                 }
             }
-        });
+        };
+
+        if resource_type == "task" {
+            return match store.modify_task(&uuid, task_reference_updates, update_resource) {
+                Ok(()) => format!("<{}_response status=\"200\" status_text=\"OK\"/>", cmd.name)
+                    .into_bytes(),
+                Err(error) => store_error_response(&cmd.name, error),
+            };
+        }
+
+        let modified = store.modify_typed(&uuid, resource_type, update_resource);
 
         if modified {
             format!("<{}_response status=\"200\" status_text=\"OK\"/>", cmd.name).into_bytes()
@@ -1178,10 +1226,11 @@ impl SessionHandler {
 
         let ultimate = cmd.attr("ultimate") == Some("1");
 
-        if store.delete(&uuid, ultimate) {
-            format!("<{}_response status=\"200\" status_text=\"OK\"/>", cmd.name).into_bytes()
-        } else {
-            error_response(&cmd.name, 404, "Resource not found")
+        match store.delete_typed(&uuid, resource_type, ultimate) {
+            Ok(()) => {
+                format!("<{}_response status=\"200\" status_text=\"OK\"/>", cmd.name).into_bytes()
+            }
+            Err(error) => store_error_response(&cmd.name, error),
         }
     }
 
@@ -1193,34 +1242,14 @@ impl SessionHandler {
             return error_response(&cmd.name, 400, "Invalid UUID");
         };
 
-        let (current_status, task_name) = store
-            .get(&uuid)
-            .map(|r| (r.attr("status").map(String::from), r.name))
-            .unwrap_or((None, "Task Report".to_string()));
-
-        match current_status.as_deref() {
-            Some("New") | Some("Stopped") | Some("Done") => {
-                let report_id = Uuid::new_v4();
-                let mut report =
-                    Resource::with_id("report", &format!("Report for {task_name}"), report_id);
-                report.set_attr("task_id", &uuid.to_string());
-                let _ = store.create(report);
-                store.modify(&uuid, |r| {
-                    r.set_attr("status", TaskStatus::Running.as_str());
-                    r.set_attr("report_id", &report_id.to_string());
-                });
-                format!(
-                    "<start_task_response status=\"202\" status_text=\"OK\">\
+        match store.start_task(&uuid) {
+            Ok(report_id) => format!(
+                "<start_task_response status=\"202\" status_text=\"OK\">\
                      <report_id>{report_id}</report_id>\
                      </start_task_response>"
-                )
-                .into_bytes()
-            }
-            Some("Running") | Some("Requested") => {
-                error_response(&cmd.name, 409, "Task is already running")
-            }
-            None => error_response(&cmd.name, 404, "Task not found"),
-            _ => error_response(&cmd.name, 409, "Task cannot be started in current state"),
+            )
+            .into_bytes(),
+            Err(error) => store_error_response(&cmd.name, error),
         }
     }
 
@@ -1232,20 +1261,9 @@ impl SessionHandler {
             return error_response(&cmd.name, 400, "Invalid UUID");
         };
 
-        let current_status = store
-            .get(&uuid)
-            .and_then(|r| r.attr("status").map(String::from));
-
-        match current_status.as_deref() {
-            Some("Running") | Some("Requested") => {
-                store.modify(&uuid, |r| {
-                    r.set_attr("status", TaskStatus::Stopped.as_str());
-                });
-                b"<stop_task_response status=\"200\" status_text=\"OK\"/>".to_vec()
-            }
-            Some("Stopped") => error_response(&cmd.name, 409, "Task is already stopped"),
-            None => error_response(&cmd.name, 404, "Task not found"),
-            _ => error_response(&cmd.name, 409, "Task cannot be stopped in current state"),
+        match store.stop_task(&uuid) {
+            Ok(()) => b"<stop_task_response status=\"200\" status_text=\"OK\"/>".to_vec(),
+            Err(error) => store_error_response(&cmd.name, error),
         }
     }
 
@@ -1257,36 +1275,14 @@ impl SessionHandler {
             return error_response(&cmd.name, 400, "Invalid UUID");
         };
 
-        let (current_status, task_name) = store
-            .get(&uuid)
-            .map(|r| (r.attr("status").map(String::from), r.name))
-            .unwrap_or((None, "Task Report".to_string()));
-
-        match current_status.as_deref() {
-            Some("Stopped") => {
-                let report_id = Uuid::new_v4();
-                let mut report =
-                    Resource::with_id("report", &format!("Report for {task_name}"), report_id);
-                report.set_attr("task_id", &uuid.to_string());
-                let _ = store.create(report);
-                store.modify(&uuid, |r| {
-                    r.set_attr("status", TaskStatus::Running.as_str());
-                    r.set_attr("report_id", &report_id.to_string());
-                });
-                format!(
-                    "<resume_task_response status=\"202\" status_text=\"OK\">\
+        match store.resume_task(&uuid) {
+            Ok(report_id) => format!(
+                "<resume_task_response status=\"202\" status_text=\"OK\">\
                      <report_id>{report_id}</report_id>\
                      </resume_task_response>"
-                )
-                .into_bytes()
-            }
-            Some("Running") => error_response(&cmd.name, 409, "Task is already running"),
-            None => error_response(&cmd.name, 404, "Task not found"),
-            _ => error_response(
-                &cmd.name,
-                409,
-                "Task can only be resumed from Stopped state",
-            ),
+            )
+            .into_bytes(),
+            Err(error) => store_error_response(&cmd.name, error),
         }
     }
 
@@ -1298,12 +1294,11 @@ impl SessionHandler {
             return error_response("restore", 400, "Invalid UUID");
         };
 
-        if store.restore(&uuid) {
-            "<restore_response status=\"200\" status_text=\"OK\"/>"
+        match store.restore_checked(&uuid) {
+            Ok(()) => "<restore_response status=\"200\" status_text=\"OK\"/>"
                 .as_bytes()
-                .to_vec()
-        } else {
-            error_response("restore", 404, "Resource not found in trashcan")
+                .to_vec(),
+            Err(error) => store_error_response("restore", error),
         }
     }
 
@@ -1336,6 +1331,14 @@ impl SessionHandler {
             .collect();
         let count = results.len();
         let results_xml: String = results.iter().map(render_report_result_xml).collect();
+        let report_metadata: String = ["task_id", "status", "usage_type"]
+            .into_iter()
+            .filter_map(|key| {
+                report
+                    .attr(key)
+                    .map(|value| format!("<{key}>{}</{key}>", xml_escape(value)))
+            })
+            .collect();
 
         format!(
             "<{name}_response status=\"200\" status_text=\"OK\">\
@@ -1344,6 +1347,7 @@ impl SessionHandler {
              <comment>{comment}</comment>\
              <creation_time>{creation_time}</creation_time>\
              <modification_time>{modification_time}</modification_time>\
+             {report_metadata}\
              <report id=\"{id}\">\
              <results max=\"100\" start=\"1\">{results_xml}</results>\
              <result_count><full>{count}</full><filtered>{count}</filtered></result_count>\
@@ -1369,7 +1373,7 @@ impl SessionHandler {
             return error_response(&cmd.name, 400, "Invalid UUID");
         };
 
-        if store.get(&report_uuid).is_none() {
+        if store.get_typed(&report_uuid, "report").is_none() {
             return error_response(&cmd.name, 404, "Resource not found");
         }
 
@@ -1655,6 +1659,126 @@ fn usage_type_matches(resource: &Resource, requested_usage_type: Option<&str>) -
     match requested_usage_type {
         Some(usage_type) => resource.attr("usage_type") == Some(usage_type),
         None => true,
+    }
+}
+
+fn optional_child_uuid(
+    cmd: &ParsedCommand,
+    child_name: &'static str,
+) -> Result<Option<Uuid>, &'static str> {
+    let Some(child) = cmd.children.iter().find(|child| child.name == child_name) else {
+        return Ok(None);
+    };
+    let Some(id) = child.attributes.get("id") else {
+        return Err(match child_name {
+            "target" => "Missing target id",
+            "config" => "Missing config id",
+            "scanner" => "Missing scanner id",
+            "task" => "Missing task id",
+            _ => "Missing resource id",
+        });
+    };
+    Uuid::parse_str(id).map(Some).map_err(|_| match child_name {
+        "target" => "Invalid target UUID",
+        "config" => "Invalid config UUID",
+        "scanner" => "Invalid scanner UUID",
+        "task" => "Invalid task UUID",
+        _ => "Invalid resource UUID",
+    })
+}
+
+fn task_references(cmd: &ParsedCommand) -> Result<TaskReferences, &'static str> {
+    let target = cmd.children.iter().find(|child| child.name == "target");
+    let target_id = target.and_then(|child| child.attributes.get("id"));
+    let specialized_target = specialized_task_target(cmd)?;
+    if target_id.map(String::as_str) == Some("0") {
+        if specialized_target.is_some() {
+            return Err("A task cannot have multiple target types");
+        }
+        return Ok(TaskReferences {
+            target: None,
+            specialized_target: None,
+            config: None,
+            scanner: None,
+        });
+    }
+    if let Some(specialized_target) = specialized_target {
+        if target.is_some() {
+            return Err("A task cannot have multiple target types");
+        }
+        return Ok(TaskReferences {
+            target: None,
+            specialized_target: Some(specialized_target),
+            config: optional_child_uuid(cmd, "config")?,
+            scanner: Some(optional_child_uuid(cmd, "scanner")?.ok_or("A scanner is required")?),
+        });
+    }
+    let target = optional_child_uuid(cmd, "target")?.ok_or("A target is required")?;
+    let config = optional_child_uuid(cmd, "config")?.unwrap_or(DEFAULT_CONFIG_ID);
+    let scanner = optional_child_uuid(cmd, "scanner")?.unwrap_or(DEFAULT_SCANNER_ID);
+    Ok(TaskReferences {
+        target: Some(target),
+        specialized_target: None,
+        config: Some(config),
+        scanner: Some(scanner),
+    })
+}
+
+fn task_reference_updates(cmd: &ParsedCommand) -> Result<TaskReferenceUpdates, &'static str> {
+    let target = optional_child_uuid(cmd, "target")?;
+    let specialized_target = specialized_task_target(cmd)?;
+    if target.is_some() && specialized_target.is_some() {
+        return Err("A task cannot have multiple target types");
+    }
+    Ok(TaskReferenceUpdates {
+        target,
+        specialized_target,
+        config: optional_child_uuid(cmd, "config")?,
+        scanner: optional_child_uuid(cmd, "scanner")?,
+    })
+}
+
+fn specialized_task_target(
+    cmd: &ParsedCommand,
+) -> Result<Option<SpecializedTaskTarget>, &'static str> {
+    let mut targets = cmd.children.iter().filter_map(|child| {
+        let kind = match child.name.as_str() {
+            "agent_group" => SpecializedTaskTarget::AgentGroup,
+            "oci_image_target" => SpecializedTaskTarget::OciImageTarget,
+            "web_application_target" => SpecializedTaskTarget::WebApplicationTarget,
+            _ => return None,
+        };
+        Some((child, kind))
+    });
+    let Some((child, kind)) = targets.next() else {
+        return Ok(None);
+    };
+    if targets.next().is_some() {
+        return Err("A task cannot have multiple specialized targets");
+    }
+    let id = child
+        .attributes
+        .get("id")
+        .filter(|id| !id.is_empty())
+        .ok_or("Missing specialized target id")?;
+    let id = Uuid::parse_str(id).map_err(|_| "Invalid specialized target UUID")?;
+    Ok(Some(kind(id)))
+}
+
+fn store_error_response(command_name: &str, error: StoreError) -> Vec<u8> {
+    match error {
+        StoreError::NotFound(resource_type) => {
+            error_response(command_name, 404, &format!("{resource_type} not found"))
+        }
+        StoreError::InUse(resource_type) => {
+            error_response(command_name, 409, &format!("{resource_type} is in use"))
+        }
+        StoreError::InvalidState(message) => error_response(command_name, 409, message),
+        StoreError::Inconsistent(resource_type) => error_response(
+            command_name,
+            409,
+            &format!("Task graph is inconsistent: {resource_type}"),
+        ),
     }
 }
 
@@ -1987,5 +2111,103 @@ fn singularize_resource_type(plural: &str) -> &str {
         "results" => "result",
         s if s.ends_with('s') => &s[..s.len() - 1],
         s => s,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::command_parser::parse_command;
+
+    #[test]
+    fn optional_child_uuid_reports_specific_missing_and_invalid_ids() {
+        for (child_name, missing_message, invalid_message) in [
+            ("target", "Missing target id", "Invalid target UUID"),
+            ("config", "Missing config id", "Invalid config UUID"),
+            ("scanner", "Missing scanner id", "Invalid scanner UUID"),
+            ("task", "Missing task id", "Invalid task UUID"),
+            ("resource", "Missing resource id", "Invalid resource UUID"),
+        ] {
+            let missing = parse_command(format!("<command><{child_name}/></command>").as_bytes())
+                .expect("parse missing-id command");
+            assert_eq!(
+                optional_child_uuid(&missing, child_name),
+                Err(missing_message)
+            );
+
+            let invalid = parse_command(
+                format!("<command><{child_name} id=\"not-a-uuid\"/></command>").as_bytes(),
+            )
+            .expect("parse invalid-id command");
+            assert_eq!(
+                optional_child_uuid(&invalid, child_name),
+                Err(invalid_message)
+            );
+        }
+    }
+
+    #[test]
+    fn task_reference_parsing_rejects_competing_target_shapes() {
+        let target_id = Uuid::new_v4();
+        let agent_group_id = Uuid::new_v4();
+        let oci_target_id = Uuid::new_v4();
+
+        let import_and_specialized = parse_command(
+            format!(
+                "<create_task><target id=\"0\"/><agent_group id=\"{agent_group_id}\"/></create_task>"
+            )
+            .as_bytes(),
+        )
+        .expect("parse import and specialized targets");
+        assert_eq!(
+            task_references(&import_and_specialized),
+            Err("A task cannot have multiple target types")
+        );
+
+        let regular_and_specialized = parse_command(
+            format!(
+                "<create_task><target id=\"{target_id}\"/><agent_group id=\"{agent_group_id}\"/></create_task>"
+            )
+            .as_bytes(),
+        )
+        .expect("parse regular and specialized targets");
+        assert_eq!(
+            task_references(&regular_and_specialized),
+            Err("A task cannot have multiple target types")
+        );
+        assert_eq!(
+            task_reference_updates(&regular_and_specialized),
+            Err("A task cannot have multiple target types")
+        );
+
+        let empty_regular_and_specialized = parse_command(
+            format!("<create_task><target/><agent_group id=\"{agent_group_id}\"/></create_task>")
+                .as_bytes(),
+        )
+        .expect("parse empty regular and specialized targets");
+        assert_eq!(
+            task_references(&empty_regular_and_specialized),
+            Err("A task cannot have multiple target types")
+        );
+
+        let multiple_specialized = parse_command(
+            format!(
+                "<create_task><agent_group id=\"{agent_group_id}\"/><oci_image_target id=\"{oci_target_id}\"/></create_task>"
+            )
+            .as_bytes(),
+        )
+        .expect("parse multiple specialized targets");
+        assert_eq!(
+            task_references(&multiple_specialized),
+            Err("A task cannot have multiple specialized targets")
+        );
+    }
+
+    #[test]
+    fn inconsistent_store_errors_are_rendered_as_conflicts() {
+        let response = store_error_response("start_task", StoreError::Inconsistent("task report"));
+        let response = String::from_utf8(response).expect("UTF-8 response");
+        assert!(response.contains("status=\"409\""));
+        assert!(response.contains("Task graph is inconsistent: task report"));
     }
 }

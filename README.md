@@ -231,6 +231,17 @@ with GMP(connection=conn, transform=EtreeCheckCommandTransform()) as gmp:
     print(targets)
 ```
 
+Stateful task creation requires an existing target. If omitted, the config and
+scanner references use the mock's seeded Full and fast config
+(`daba56c8-73ec-11df-a475-002264764cea`) and OpenVAS scanner
+(`08b69003-5fc2-4037-a479-93b440211c73`). Explicit target, config, scanner,
+and imported-report task IDs must resolve to the expected resource type.
+Referenced resources cannot be deleted while a live task uses them.
+
+Task actions are synchronous mock transitions; they do not run a scanner.
+`start_task` creates one linked report, `stop_task` marks both resources
+Stopped, and `resume_task` continues that same report.
+
 ## Mock Server
 
 The mock server is the most developed component. It's designed to be a drop-in test server for any GMP client library — Rust, Python, Go, or shell scripts.
@@ -249,7 +260,7 @@ The mock server is the most developed component. It's designed to be a drop-in t
 - **4 server modes** — from simple echo to full stateful CRUD
 - **Unix socket, TCP, and TLS listeners** — TLS uses a generated certificate and can optionally require a trusted client certificate
 - **Per-session authentication** — supports python-gvm's two-connection flow (version probe + auth session)
-- **Task lifecycle** — New → Running → Stopped → Done state machine
+- **Task lifecycle** — deterministic New → Running → Stopped transitions with linked report resumption
 - **Fault injection** — disconnect, delay, malformed XML, error codes, truncated responses
 - **Scenario playback** — deterministic scripted sequences for regression tests
 - **Command history** — inspect what the server received after tests

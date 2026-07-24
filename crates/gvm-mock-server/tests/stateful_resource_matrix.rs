@@ -149,7 +149,7 @@ async fn matrix_configs_create_get_list() {
     let list_text = list_resp.as_str().expect("valid utf8");
     assert!(list_text.contains(&config_id));
     assert!(list_text.contains("Matrix Config"));
-    assert!(list_text.contains("<config_count>1") || list_text.contains("<filtered>1</filtered>"));
+    assert!(list_text.contains("<config_count>2") || list_text.contains("<filtered>2</filtered>"));
 
     server.shutdown().await;
 }

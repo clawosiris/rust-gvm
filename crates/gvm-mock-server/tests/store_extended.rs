@@ -39,12 +39,12 @@ fn crud_configs() {
     assert_eq!(config.name, "Base Config");
 
     let configs = store.list("config");
-    assert_eq!(configs.len(), 1);
-    assert_eq!(configs[0].id, id);
+    assert_eq!(configs.len(), 2);
+    assert!(configs.iter().any(|config| config.id == id));
 
     assert!(store.delete(&id, true));
     assert!(store.get(&id).is_none());
-    assert!(store.list("config").is_empty());
+    assert_eq!(store.list("config").len(), 1);
 }
 
 #[test]
@@ -59,7 +59,7 @@ fn crud_scanners() {
     assert_ne!(id, cloned_id);
     assert!(store.get(&id).is_some());
     assert!(store.get(&cloned_id).is_some());
-    assert_eq!(store.list("scanner").len(), 2);
+    assert_eq!(store.list("scanner").len(), 3);
 }
 
 #[test]
@@ -109,10 +109,10 @@ fn crud_mixed_types() {
 
     assert_eq!(tasks.len(), 1);
     assert_eq!(targets.len(), 1);
-    assert_eq!(configs.len(), 1);
+    assert_eq!(configs.len(), 2);
     assert_eq!(tasks[0].id, task_id);
     assert_eq!(targets[0].id, target_id);
-    assert_eq!(configs[0].id, config_id);
+    assert!(configs.iter().any(|config| config.id == config_id));
 }
 
 #[test]

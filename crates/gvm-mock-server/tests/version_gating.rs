@@ -512,7 +512,7 @@ async fn assert_web_application_targets_and_tasks_work_on_next(stream: &mut Unix
         create_web_application_task(
             "Version Gated Web Task",
             &web_target_id,
-            &id("scanner-web-gate"),
+            &id("08b69003-5fc2-4037-a479-93b440211c73"),
             CreateWebApplicationTaskOpts::default(),
         ),
     )

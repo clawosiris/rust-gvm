@@ -81,6 +81,27 @@ fn extract_id(resp: &Response) -> String {
     resp.id().expect("response should contain id")
 }
 
+async fn create_task(stream: &mut UnixStream, name: &str, usage_type: &str) -> String {
+    let target = send_recv(
+        stream,
+        format!(
+            "<create_target><name>{name} Target</name><hosts>127.0.0.1</hosts></create_target>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    let target_id = extract_id(&target);
+    let task = send_recv(
+        stream,
+        format!(
+            "<create_task><name>{name}</name><usage_type>{usage_type}</usage_type><target id=\"{target_id}\"/></create_task>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    extract_id(&task)
+}
+
 fn id(value: &str) -> EntityId {
     EntityId::new(value).expect("valid id")
 }
@@ -471,6 +492,13 @@ async fn stateful_policies_round_trip_with_usage_type_filtering() {
     assert!(get_one_text.contains("<usage_type>policy</usage_type>"));
     assert!(get_one_text.contains("<comment>updated</comment>"));
 
+    let wrong_usage_type = send_recv(
+        &mut stream,
+        format!("<get_configs config_id=\"{policy_id}\" usage_type=\"scan\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(wrong_usage_type.status_code(), Some(404));
+
     server.shutdown().await;
 }
 
@@ -482,17 +510,8 @@ async fn stateful_audits_round_trip_with_usage_type_filtering() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let audit_resp = send_recv(
-        &mut stream,
-        b"<create_task><name>Audit One</name><usage_type>audit</usage_type><target id=\"t1\"/><config id=\"c1\"/><scanner id=\"s1\"/></create_task>",
-    )
-    .await;
-    let audit_id = extract_id(&audit_resp);
-    send_recv(
-        &mut stream,
-        b"<create_task><name>Scan One</name><usage_type>scan</usage_type><target id=\"t2\"/><config id=\"c2\"/><scanner id=\"s2\"/></create_task>",
-    )
-    .await;
+    let audit_id = create_task(&mut stream, "Audit One", "audit").await;
+    create_task(&mut stream, "Scan One", "scan").await;
 
     let audits = send_recv(&mut stream, br#"<get_tasks usage_type="audit"/>"#).await;
     let audits_text = audits.as_str().expect("utf8");
@@ -815,18 +834,8 @@ async fn stateful_audit_reports_filter_by_usage_type() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let audit_task = send_recv(
-        &mut stream,
-        b"<create_task><name>Audit Task</name><usage_type>audit</usage_type><target id=\"t1\"/><config id=\"c1\"/><scanner id=\"s1\"/></create_task>",
-    )
-    .await;
-    let scan_task = send_recv(
-        &mut stream,
-        b"<create_task><name>Scan Task</name><usage_type>scan</usage_type><target id=\"t2\"/><config id=\"c2\"/><scanner id=\"s2\"/></create_task>",
-    )
-    .await;
-    let audit_task_id = extract_id(&audit_task);
-    let scan_task_id = extract_id(&scan_task);
+    let audit_task_id = create_task(&mut stream, "Audit Task", "audit").await;
+    let scan_task_id = create_task(&mut stream, "Scan Task", "scan").await;
 
     let audit_report = send_recv(
         &mut stream,
@@ -865,9 +874,14 @@ async fn stateful_import_report_persists_task_and_in_assets() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
+    let task_id = create_task(&mut stream, "Imported Report Task", "scan").await;
+
     let create = send_recv(
         &mut stream,
-        br#"<create_report><task id="task-import"/><report id="imported-report"><name>Imported</name><in_assets>0</in_assets></report><in_assets>1</in_assets></create_report>"#,
+        format!(
+            "<create_report><task id=\"{task_id}\"/><report id=\"imported-report\"><name>Imported</name><in_assets>0</in_assets></report><in_assets>1</in_assets></create_report>"
+        )
+        .as_bytes(),
     )
     .await;
     let create_text = create.as_str().expect("response XML should be UTF-8");
@@ -878,7 +892,7 @@ async fn stateful_import_report_persists_task_and_in_assets() {
     let listed_text = listed.as_str().expect("response XML should be UTF-8");
 
     assert!(
-        listed_text.contains("<task_id>task-import</task_id>"),
+        listed_text.contains(&format!("<task_id>{task_id}</task_id>")),
         "{listed_text}"
     );
     assert!(
