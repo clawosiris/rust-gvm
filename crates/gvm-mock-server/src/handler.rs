@@ -1435,7 +1435,7 @@ impl SessionHandler {
             .and_then(|task_id| Uuid::parse_str(task_id).ok())
             .and_then(|task_id| store.get_typed(&task_id, "task"));
         let task_xml = task.as_ref().map_or_else(
-            || "<task><name></name><comment></comment><progress>0</progress></task>".to_string(),
+            || "<task/>".to_string(),
             |task| render_scan_report_task(task, store),
         );
         let status = report.attr("status").unwrap_or("Done");
@@ -1838,7 +1838,7 @@ fn render_scan_report_task(task: &Resource, store: &ResourceStore) -> String {
                 )
             })
     })
-    .unwrap_or_default();
+    .unwrap_or_else(|| "<target/>".to_string());
     let progress = if task.attr("status") == Some("Done") {
         100
     } else {
@@ -2581,6 +2581,16 @@ mod tests {
 
         let xml = render_scan_report_task(&task, &store);
         assert!(xml.contains("<target_type>oci_image</target_type>"));
+        assert!(xml.contains("<progress>0</progress>"));
+    }
+
+    #[test]
+    fn scan_report_task_renders_empty_target_when_unlinked() {
+        let store = ResourceStore::new();
+        let task = Resource::new("task", "Import Task");
+
+        let xml = render_scan_report_task(&task, &store);
+        assert!(xml.contains("<target/>"));
         assert!(xml.contains("<progress>0</progress>"));
     }
 }

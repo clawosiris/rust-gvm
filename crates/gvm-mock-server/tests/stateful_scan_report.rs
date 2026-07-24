@@ -14,6 +14,8 @@ use tokio::net::UnixStream;
 const SCAN_REPORT_ID: &str = "10000000-0000-4000-8000-000000000001";
 const AUDIT_REPORT_ID: &str = "10000000-0000-4000-8000-000000000002";
 const ABSENT_REPORT_ID: &str = "10000000-0000-4000-8000-000000000003";
+const IMPORT_TASK_ID: &str = "20000000-0000-4000-8000-000000000001";
+const IMPORT_REPORT_ID: &str = "20000000-0000-4000-8000-000000000002";
 const ABSENT_FILTER_ID: &str = "40000000-0000-4000-8000-000000000001";
 
 async fn send_recv(stream: &mut UnixStream, xml: &[u8]) -> Response {
@@ -61,6 +63,26 @@ async fn scan_report_server() -> Option<MockGmpServer> {
             audit_report.set_attr("status", "Done");
             audit_report.set_attr("usage_type", "audit");
             store.seed(audit_report);
+
+            let mut import_task = Resource::with_id(
+                "task",
+                "Imported Report Task",
+                IMPORT_TASK_ID.parse().expect("valid import task UUID"),
+            );
+            import_task.set_attr("status", "Done");
+            import_task.set_attr("usage_type", "scan");
+            import_task.set_attr("import_task", "1");
+            store.seed(import_task);
+
+            let mut import_report = Resource::with_id(
+                "report",
+                "Imported Report",
+                IMPORT_REPORT_ID.parse().expect("valid import report UUID"),
+            );
+            import_report.set_attr("status", "Done");
+            import_report.set_attr("usage_type", "scan");
+            import_report.set_attr("task_id", IMPORT_TASK_ID);
+            store.seed(import_report);
         })
         .unix_socket_auto()
         .build()
@@ -120,7 +142,7 @@ async fn assert_scan_report_filter_resolution(stream: &mut UnixStream) {
     let xml = response.as_str().expect("valid UTF-8 response");
     assert!(xml.contains("<writable>0</writable><in_use>0</in_use>"));
     assert!(xml.contains("<scan_run_status>Running</scan_run_status>"));
-    assert!(xml.contains("<task><name></name><comment></comment><progress>0</progress></task>"));
+    assert!(xml.contains("<task/>"));
     assert!(xml.contains("<result_count>0<full>0</full><filtered>0</filtered>"));
     assert!(xml.contains("<scan_end></scan_end>"));
     assert!(xml.contains("<filters id=\"\"><term>apply_overrides=0 min_qod=70</term><keywords>"));
@@ -178,6 +200,17 @@ async fn assert_scan_report_filter_resolution(stream: &mut UnixStream) {
         .as_str()
         .expect("valid UTF-8 response")
         .contains("<term>apply_overrides=0 min_qod=70 levels=hm</term>"));
+
+    let response = send_recv(
+        stream,
+        format!("<get_scan_report scan_report_id=\"{IMPORT_REPORT_ID}\"/>").as_bytes(),
+    )
+    .await;
+    let xml = response.as_str().expect("valid UTF-8 response");
+    assert!(xml.contains(&format!(
+        "<task id=\"{IMPORT_TASK_ID}\"><name>Imported Report Task</name>\
+         <comment></comment><target/><progress>100</progress></task>"
+    )));
 }
 
 #[tokio::test]
