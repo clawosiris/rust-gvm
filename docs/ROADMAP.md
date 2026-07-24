@@ -24,7 +24,10 @@ The current codebase negotiates GMP 22.4 through 22.8+:
 - GMP 22.8 and newer currently map to `GmpNext`/`GmpVersioned::Next`.
 - GMP versions older than 22.4 are rejected as unsupported.
 
-This is a code-level support snapshot, not a full conformance guarantee. Real gvmd validation and a published support matrix should be tracked separately.
+This is a code-level support snapshot, not a full conformance guarantee. See
+[SUPPORT_MATRIX.md](SUPPORT_MATRIX.md) for the qualified command/version
+matrix, public evidence pin, and deterministic schema drift audit. Real gvmd
+validation remains a separate follow-up.
 
 ## Compatibility Policy
 
@@ -59,15 +62,12 @@ Existing issues:
 
 Follow-up issues or milestones should cover:
 
-- Define a published GMP/GVMD version support matrix.
 - Add real gvmd end-to-end or conformance validation for supported versions.
-- Add an automated command coverage audit against upstream `GMP.xml.in`.
 - Document python-gvm migration compatibility expectations and known differences.
 
 ## Near-Term Implementation Order
 
 1. Finish the remaining high-value GMP coverage gaps from #172.
 2. Fix known protocol drift in command options and response models.
-3. Publish the version support matrix.
-4. Add real gvmd conformance coverage.
-5. Expand migration documentation for python-gvm users.
+3. Add real gvmd conformance coverage.
+4. Expand migration documentation for python-gvm users.

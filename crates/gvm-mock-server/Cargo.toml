@@ -27,6 +27,7 @@ tls = [
 ssh = ["dep:russh"]
 
 [dependencies]
+gvm-gmp.workspace = true
 gvm-protocol.workspace = true
 tokio.workspace = true
 quick-xml.workspace = true
@@ -48,7 +49,6 @@ getrandom.workspace = true
 
 [dev-dependencies]
 base64.workspace = true
-gvm-gmp.workspace = true
 pretty_assertions.workspace = true
 rstest.workspace = true
 tokio-test.workspace = true
