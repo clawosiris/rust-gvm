@@ -17,7 +17,8 @@ use gvm_gmp::commands::assets::{
 };
 use gvm_gmp::commands::authentication::authenticate;
 use gvm_gmp::commands::configs::{
-    CloneConfigOpts, ConfigUsageType, CreateConfigOpts, GetConfigsOpts,
+    CloneConfigOpts, ConfigUsageType, CreateConfigOpts, DeleteConfigOpts, GetConfigOpts,
+    GetConfigsOpts, ModifyConfigOpts,
 };
 use gvm_gmp::commands::credentials::{
     create_credential_store_credential, get_credential, modify_credential_store_credential,
@@ -44,7 +45,7 @@ use gvm_gmp::commands::targets::{
 };
 use gvm_gmp::commands::tasks::{create_task, delete_task, get_task, start_task, stop_task};
 use gvm_gmp::responses::{
-    Asset, ConfigUsageKind, CreateScanConfigResponse, GetScanConfigsResponse,
+    Asset, ConfigUsageKind, CreateScanConfigResponse, GetConfigsResponse, GetScanConfigsResponse,
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
@@ -522,6 +523,121 @@ async fn typed_generic_configs_round_trip_through_mock_server() {
         .await
         .expect("generic config clone should parse");
     assert_ne!(cloned.id, config.id);
+
+    server.shutdown().await;
+}
+
+fn assert_single_generic_config(
+    response: &GetConfigsResponse,
+    id: &EntityId,
+    name: &str,
+    comment: &str,
+    usage_type: ConfigUsageKind,
+) {
+    assert_eq!(response.items.len(), 1);
+    assert_eq!(&response.items[0].meta.id, id);
+    assert_eq!(response.items[0].meta.name, name);
+    assert_eq!(response.items[0].meta.comment.as_deref(), Some(comment));
+    assert_eq!(response.items[0].usage_type, Some(usage_type));
+}
+
+#[tokio::test]
+async fn typed_generic_config_get_modify_and_delete_round_trip() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let config = client
+        .create_config(CreateConfigOpts {
+            name: "Mutable policy".into(),
+            base_id: None,
+            comment: Some("before modification".into()),
+            usage_type: Some(ConfigUsageType::Policy),
+        })
+        .await
+        .expect("generic config create should parse");
+
+    let fetched = client
+        .get_config(&config.id, GetConfigOpts::default())
+        .await
+        .expect("single generic config should parse");
+    assert_single_generic_config(
+        &fetched,
+        &config.id,
+        "Mutable policy",
+        "before modification",
+        ConfigUsageKind::Policy,
+    );
+
+    client
+        .modify_config(
+            &config.id,
+            ModifyConfigOpts {
+                name: Some("Updated policy".into()),
+                comment: Some("after modification".into()),
+                usage_type: Some(ConfigUsageType::Audit),
+            },
+        )
+        .await
+        .expect("generic config modify should parse");
+
+    let updated = client
+        .get_config(
+            &config.id,
+            GetConfigOpts {
+                usage_type: Some(ConfigUsageType::Audit),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("modified generic config should parse");
+    assert_single_generic_config(
+        &updated,
+        &config.id,
+        "Updated policy",
+        "after modification",
+        ConfigUsageKind::Audit,
+    );
+
+    client
+        .delete_config(&config.id, DeleteConfigOpts::default())
+        .await
+        .expect("generic config trash should parse");
+    let trashed = client
+        .get_configs(GetConfigsOpts {
+            trash: Some(true),
+            ..Default::default()
+        })
+        .await
+        .expect("trashed generic configs should parse");
+    assert!(trashed.items.iter().any(|item| item.meta.id == config.id));
+
+    client
+        .delete_config(
+            &config.id,
+            DeleteConfigOpts {
+                ultimate: Some(true),
+            },
+        )
+        .await
+        .expect("ultimate generic config deletion should parse");
+    let remaining = client
+        .get_configs(GetConfigsOpts {
+            trash: Some(true),
+            ..Default::default()
+        })
+        .await
+        .expect("trash listing after ultimate deletion should parse");
+    assert!(remaining.items.iter().all(|item| item.meta.id != config.id));
 
     server.shutdown().await;
 }
