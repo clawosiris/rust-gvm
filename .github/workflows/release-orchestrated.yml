@@ -46,7 +46,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
 
       - name: Set up Python and pontos
-        uses: greenbone/actions/setup-pontos@v3
+        uses: greenbone/actions/setup-pontos@aa49604a7c2a28d7810d23addac6513af7d8e11f # v3.36.12
 
       - name: Configure git
         run: |
@@ -91,7 +91,7 @@ jobs:
           fi
 
       - name: Trigger release.yml and wait for completion
-        uses: greenbone/actions/trigger-workflow@v3
+        uses: greenbone/actions/trigger-workflow@aa49604a7c2a28d7810d23addac6513af7d8e11f # v3.36.12
         with:
           token: ${{ secrets.RELEASE_TOKEN }}
           repository: ${{ github.repository }}
