@@ -20,7 +20,6 @@ use gvm_gmp::commands::credentials::{
     create_credential_store_credential, get_credential, modify_credential_store_credential,
     ModifyCredentialStoreCredentialOpts as GmpModifyCredentialStoreCredentialOpts,
 };
-use gvm_gmp::commands::feed::get_feed;
 use gvm_gmp::commands::help::HelpMode;
 use gvm_gmp::commands::nvts::{
     get_nvt_preference, get_nvt_preferences, GetNvtPreferencesOpts, GetNvtsOpts,
