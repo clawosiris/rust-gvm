@@ -160,6 +160,12 @@ mod tests {
         assert!(command_supported("get_features", GmpVersion(22, 6)));
         assert!(!command_supported("get_report_hosts", GmpVersion(22, 7)));
         assert!(command_supported("get_report_hosts", GmpVersion(22, 8)));
+        assert!(!command_supported("get_scan_report", GmpVersion(22, 7)));
+        assert!(command_supported("get_scan_report", GmpVersion(22, 8)));
+        assert_eq!(
+            minimum_version_for_command("get_scan_report"),
+            Some(GmpVersion(22, 8))
+        );
         assert!(command_supported(
             "unknown_future_command",
             GmpVersion(22, 4)

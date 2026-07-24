@@ -191,7 +191,7 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 | Version-specific command rejection | ✅ | Returns 400 for commands unavailable in configured version |
 | `report_config` commands (22.5+) | ✅ | create, get, modify, delete |
 | `features` command (22.6+) | ✅ | get_features |
-| REST-support GMP helpers (22.8+) | ✅ | report drill-downs, get_timezones, get_credential_stores |
+| REST-support GMP helpers (22.8+) | ✅ | raw structured scan report, report drill-downs, get_timezones, get_credential_stores |
 | Version range metadata in responses | ✅ | Status text includes version requirement |
 
 ### CLI (Standalone Binary)

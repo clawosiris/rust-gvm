@@ -48,7 +48,7 @@ use gvm_gmp::commands::report_configs::{
 use gvm_gmp::commands::reports::{
     get_report_applications, get_report_closed_cves, get_report_cves, get_report_errors,
     get_report_hosts, get_report_operating_systems, get_report_ports, get_report_tls_certificates,
-    get_report_vulns,
+    get_report_vulns, get_scan_report,
 };
 use gvm_gmp::commands::system::get_timezones;
 use gvm_gmp::commands::tasks::create_agent_group_task;
@@ -88,7 +88,9 @@ pub use gvm_gmp::commands::oci_image_targets::{
     CreateOciImageTargetOpts, GetOciImageTargetsOpts, ModifyOciImageTargetOpts,
 };
 pub use gvm_gmp::commands::report_configs::ModifyReportConfigOpts;
-pub use gvm_gmp::commands::reports::{GetReportDetailsOpts, GetReportExportOpts, ImportReportOpts};
+pub use gvm_gmp::commands::reports::{
+    GetReportDetailsOpts, GetReportExportOpts, GetScanReportOpts, ImportReportOpts,
+};
 pub use gvm_gmp::commands::system_reports::GetSystemReportsOpts;
 pub use gvm_gmp::commands::tasks::CreateAgentGroupTaskOpts;
 pub use gvm_gmp::commands::tasks::CreateOciImageTargetTaskOpts;
@@ -756,6 +758,19 @@ impl<C: GvmConnection> GmpClient<C> {
         .await
     }
 
+    /// Get one structured vulnerability report.
+    ///
+    /// # Errors
+    /// Returns an error if the server does not support the command, the transport fails,
+    /// parsing fails, or the server returns a non-success status.
+    pub async fn get_scan_report(
+        &mut self,
+        scan_report_id: &EntityId,
+        opts: GetScanReportOpts,
+    ) -> Result<Response, GvmError> {
+        self.call(get_scan_report(scan_report_id, opts)).await
+    }
+
     /// Get host summaries for a report.
     ///
     /// # Errors
@@ -1202,6 +1217,13 @@ pub trait GmpNextCommands {
         &mut self,
         integration_config_id: &EntityId,
         opts: ModifyIntegrationConfigOpts,
+    ) -> Result<Response, GvmError>;
+
+    /// Get one structured vulnerability report.
+    async fn get_scan_report(
+        &mut self,
+        scan_report_id: &EntityId,
+        opts: GetScanReportOpts,
     ) -> Result<Response, GvmError>;
 
     /// Get report host summaries.
@@ -1762,6 +1784,14 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
         self.0
             .modify_integration_config(integration_config_id, opts)
             .await
+    }
+
+    async fn get_scan_report(
+        &mut self,
+        scan_report_id: &EntityId,
+        opts: GetScanReportOpts,
+    ) -> Result<Response, GvmError> {
+        self.0.get_scan_report(scan_report_id, opts).await
     }
 
     async fn get_report_hosts(

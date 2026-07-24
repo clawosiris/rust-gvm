@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use gvm_gmp::capabilities::{GvmdEvidence, MockSupport, COMMAND_CAPABILITIES};
 use gvm_gmp::GmpVersion;
 
-const PINNED_COMMANDS: &str = include_str!("data/gvmd-gmp-commands-aa53bc1.txt");
+const PINNED_COMMANDS: &str = include_str!("data/gvmd-gmp-commands-fb21137.txt");
 
 fn pinned_commands() -> BTreeSet<&'static str> {
     PINNED_COMMANDS
@@ -39,7 +39,7 @@ fn pinned_schema_matches_qualified_registry() {
         registry_only.is_empty(),
         "commands marked PinnedSchema but absent from pinned GMP.xml.in: {registry_only:?}"
     );
-    assert_eq!(pinned.len(), 151);
+    assert_eq!(pinned.len(), 152);
 }
 
 #[test]

@@ -119,6 +119,28 @@ fn test_report_get_and_delete() {
 }
 
 #[test]
+fn test_get_scan_report_with_filters() {
+    assert_eq!(
+        xml(get_scan_report(
+            &id("r1"),
+            GetScanReportOpts {
+                filter_string: Some("levels=chml min_qod=70".into()),
+                filter_id: Some(id("f1")),
+            },
+        )),
+        "<get_scan_report filt_id=\"f1\" filter=\"levels=chml min_qod=70\" scan_report_id=\"r1\"/>"
+    );
+}
+
+#[test]
+fn test_get_scan_report_without_filters() {
+    assert_eq!(
+        xml(get_scan_report(&id("r1"), Default::default())),
+        "<get_scan_report scan_report_id=\"r1\"/>"
+    );
+}
+
+#[test]
 fn test_report_export_with_report_config() {
     let mut opts = GetReportExportOpts::new(id("rf1"));
     opts.report_config_id = Some(id("rc1"));

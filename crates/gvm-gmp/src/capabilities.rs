@@ -163,6 +163,7 @@ command_capabilities! {
     ("get_resource_names", Stateful, None, PinnedSchema),
     ("get_results", Stateful, None, PinnedSchema),
     ("get_roles", Stateful, None, PinnedSchema),
+    ("get_scan_report", Stateful, Some(GmpVersion(22, 8)), PinnedSchema),
     ("get_scanners", Stateful, None, PinnedSchema),
     ("get_schedules", Stateful, None, PinnedSchema),
     ("get_settings", Stateful, None, PinnedSchema),
