@@ -292,8 +292,13 @@ impl SshConnection {
                 key_path,
                 passphrase,
             } => {
-                let key_pair = keys::load_secret_key(key_path, passphrase.as_deref())
-                    .map_err(Self::connect_error)?;
+                let key_pair =
+                    keys::load_secret_key(key_path, passphrase.as_deref()).map_err(|error| {
+                        Self::connect_error(format!(
+                            "failed to load SSH private key {}: {error}",
+                            key_path.display()
+                        ))
+                    })?;
                 let hash_alg =
                     tokio::time::timeout(config.timeout, session.best_supported_rsa_hash())
                         .await
@@ -313,14 +318,26 @@ impl SshConnection {
                 .map_err(Self::connect_error)?
             }
             SshAuth::Agent => {
+                let agent_socket = std::env::var_os("SSH_AUTH_SOCK").map_or_else(
+                    || "<unset>".into(),
+                    |path| path.to_string_lossy().into_owned(),
+                );
                 let mut agent = tokio::time::timeout(config.timeout, AgentClient::connect_env())
                     .await
                     .map_err(|_| ConnectionError::Timeout(config.timeout))?
-                    .map_err(Self::connect_error)?;
+                    .map_err(|error| {
+                        Self::connect_error(format!(
+                            "failed to connect to ssh-agent at {agent_socket}: {error}"
+                        ))
+                    })?;
                 let identity = tokio::time::timeout(config.timeout, agent.request_identities())
                     .await
                     .map_err(|_| ConnectionError::Timeout(config.timeout))?
-                    .map_err(Self::connect_error)?
+                    .map_err(|error| {
+                        Self::connect_error(format!(
+                            "failed to request identities from ssh-agent: {error}"
+                        ))
+                    })?
                     .into_iter()
                     .next()
                     .ok_or_else(|| {

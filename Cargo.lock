@@ -970,6 +970,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-rustls",
+ "tokio-stream",
  "tokio-test",
  "tracing",
  "x509-cert",

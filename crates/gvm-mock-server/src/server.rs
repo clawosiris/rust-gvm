@@ -15,6 +15,8 @@ use tokio::task::JoinHandle;
 use crate::fault::FaultEngine;
 use crate::fixtures::FixtureStore;
 use crate::history::{CommandHistory, CommandRecord};
+#[cfg(feature = "ssh")]
+use crate::listener::SshTestState;
 use crate::listener::{run_tcp_listener, run_unix_listener, ListenerState};
 use crate::response_gen::LargeReportConfig;
 use crate::scenario::{ScenarioMode, ScenarioStep};
@@ -35,6 +37,12 @@ pub(crate) struct ServerOptions {
     pub(crate) scenario_config: Option<(ScenarioMode, Vec<ScenarioStep>)>,
     pub(crate) large_report: Option<LargeReportConfig>,
     pub(crate) max_request_bytes: Option<usize>,
+    #[cfg(feature = "ssh")]
+    pub(crate) ssh_authorized_keys: Vec<(String, String)>,
+    #[cfg(feature = "ssh")]
+    pub(crate) ssh_auth_delay_once: Option<std::time::Duration>,
+    #[cfg(feature = "ssh")]
+    pub(crate) ssh_channel_open_delay_once: Option<std::time::Duration>,
 }
 
 /// A running mock GMP server.
@@ -88,6 +96,12 @@ impl MockGmpServer {
             scenario_config,
             large_report,
             max_request_bytes,
+            #[cfg(feature = "ssh")]
+            ssh_authorized_keys,
+            #[cfg(feature = "ssh")]
+            ssh_auth_delay_once,
+            #[cfg(feature = "ssh")]
+            ssh_channel_open_delay_once,
         } = options;
         let UnixSocketBinding {
             path: socket_path,
@@ -114,6 +128,12 @@ impl MockGmpServer {
             large_report,
             max_request_bytes,
             fault_engine: fault_engine.clone(),
+            #[cfg(feature = "ssh")]
+            ssh_test: SshTestState::new(
+                ssh_authorized_keys,
+                ssh_auth_delay_once,
+                ssh_channel_open_delay_once,
+            ),
             shutdown: Arc::clone(&shutdown),
         });
 
@@ -155,6 +175,12 @@ impl MockGmpServer {
             scenario_config,
             large_report,
             max_request_bytes,
+            #[cfg(feature = "ssh")]
+            ssh_authorized_keys,
+            #[cfg(feature = "ssh")]
+            ssh_auth_delay_once,
+            #[cfg(feature = "ssh")]
+            ssh_channel_open_delay_once,
         } = options;
         let listener = TcpListener::bind(addr).await?;
         let local_addr = listener.local_addr()?;
@@ -172,6 +198,12 @@ impl MockGmpServer {
             large_report,
             max_request_bytes,
             fault_engine: fault_engine.clone(),
+            #[cfg(feature = "ssh")]
+            ssh_test: SshTestState::new(
+                ssh_authorized_keys,
+                ssh_auth_delay_once,
+                ssh_channel_open_delay_once,
+            ),
             shutdown: Arc::clone(&shutdown),
         });
 
@@ -216,6 +248,12 @@ impl MockGmpServer {
             scenario_config,
             large_report,
             max_request_bytes,
+            #[cfg(feature = "ssh")]
+            ssh_authorized_keys,
+            #[cfg(feature = "ssh")]
+            ssh_auth_delay_once,
+            #[cfg(feature = "ssh")]
+            ssh_channel_open_delay_once,
         } = options;
         let listener = TcpListener::bind(addr).await?;
         let local_addr = listener.local_addr()?;
@@ -234,6 +272,12 @@ impl MockGmpServer {
             large_report,
             max_request_bytes,
             fault_engine: fault_engine.clone(),
+            #[cfg(feature = "ssh")]
+            ssh_test: SshTestState::new(
+                ssh_authorized_keys,
+                ssh_auth_delay_once,
+                ssh_channel_open_delay_once,
+            ),
             shutdown: Arc::clone(&shutdown),
         });
 
@@ -274,6 +318,9 @@ impl MockGmpServer {
             scenario_config,
             large_report,
             max_request_bytes,
+            ssh_authorized_keys,
+            ssh_auth_delay_once,
+            ssh_channel_open_delay_once,
         } = options;
         let listener = TcpListener::bind(addr).await?;
         let local_addr = listener.local_addr()?;
@@ -297,6 +344,11 @@ impl MockGmpServer {
             large_report,
             max_request_bytes,
             fault_engine: fault_engine.clone(),
+            ssh_test: SshTestState::new(
+                ssh_authorized_keys,
+                ssh_auth_delay_once,
+                ssh_channel_open_delay_once,
+            ),
             shutdown: Arc::clone(&shutdown),
         });
 

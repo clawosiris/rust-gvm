@@ -88,10 +88,40 @@ impl server::Handler for MockSshHandler {
     type Error = russh::Error;
 
     async fn auth_password(&mut self, user: &str, password: &str) -> Result<Auth, Self::Error> {
+        if let Some(delay) = self.state.ssh_test.take_auth_delay() {
+            tokio::time::sleep(delay).await;
+        }
+
         let accepted = match &self.state.store {
             Some(store) => store.credentials_match(user, password),
             None => true,
         };
+
+        if accepted {
+            Ok(Auth::Accept)
+        } else {
+            Ok(Auth::reject())
+        }
+    }
+
+    async fn auth_publickey(
+        &mut self,
+        user: &str,
+        public_key: &russh::keys::PublicKey,
+    ) -> Result<Auth, Self::Error> {
+        if let Some(delay) = self.state.ssh_test.take_auth_delay() {
+            tokio::time::sleep(delay).await;
+        }
+
+        let public_key = public_key.to_openssh().ok();
+        let accepted =
+            self.state
+                .ssh_test
+                .authorized_keys
+                .iter()
+                .any(|(authorized_user, authorized_key)| {
+                    authorized_user == user && public_key.as_deref() == Some(authorized_key)
+                });
 
         if accepted {
             Ok(Auth::Accept)
@@ -109,6 +139,10 @@ impl server::Handler for MockSshHandler {
     ) -> Result<(), Self::Error> {
         tracing::debug!("SSH direct-streamlocal open for {socket_path}");
         reply.accept().await;
+
+        if let Some(delay) = self.state.ssh_test.take_channel_open_delay() {
+            tokio::time::sleep(delay).await;
+        }
 
         let state = Arc::clone(&self.state);
         let session_id = state.next_session_id();
