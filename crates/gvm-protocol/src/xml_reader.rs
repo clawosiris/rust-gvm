@@ -246,6 +246,11 @@ impl FrameProgress<'_> {
         parsed_len: usize,
         buffer: &[u8],
     ) -> Result<(), ProtocolError> {
+        let token_start = self.resume_offset.saturating_add(parsed_len);
+        if is_partial_markup_opener(&buffer[token_start..]) {
+            *self.resume_offset = token_start;
+            return Ok(());
+        }
         if matches!(error, XmlError::Syntax(SyntaxError::UnclosedDoctype)) {
             return Err(xml_parse_error("DOCTYPE declarations are not supported"));
         }
@@ -256,7 +261,9 @@ impl FrameProgress<'_> {
         *self.resume_offset += parsed_len;
         if let Some(mut token) = PendingToken::from_error(error, *self.resume_offset) {
             let ready = token.scan_until_ready(buffer);
-            debug_assert!(!ready, "quick-xml reported a complete token as incomplete");
+            if ready {
+                return Err(xml_parse_error(error));
+            }
             *self.pending_token = Some(token);
         }
         Ok(())
@@ -944,6 +951,17 @@ fn is_incomplete_xml_error(error: &XmlError) -> bool {
     )
 }
 
+fn is_partial_markup_opener(input: &[u8]) -> bool {
+    input.len() >= 2
+        && [
+            b"<!--".as_slice(),
+            b"<![CDATA[".as_slice(),
+            b"<!DOCTYPE".as_slice(),
+        ]
+        .iter()
+        .any(|opener| input.len() < opener.len() && opener.starts_with(input))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1394,6 +1412,307 @@ mod tests {
         reader.feed(br#""/>"#).expect("completed tag");
         assert!(reader.is_complete());
         assert!(reader.pending_token.is_none());
+    }
+
+    fn pending_token_label(token: &PendingToken) -> &'static str {
+        match token {
+            PendingToken::Tag { .. } => "tag",
+            PendingToken::Sequence { terminator, .. } => match terminator {
+                TokenTerminator::ProcessingInstruction => "processing-instruction",
+                TokenTerminator::Comment => "comment",
+                TokenTerminator::CData => "cdata",
+                TokenTerminator::Reference => "reference",
+            },
+        }
+    }
+
+    fn assert_all_split_boundaries(label: &str, document: &[u8]) {
+        const NEXT_FRAMES: &[u8] = b"<next/><last/>";
+
+        let mut input = document.to_vec();
+        input.extend_from_slice(NEXT_FRAMES);
+
+        let mut single_feed = XmlReader::new();
+        single_feed.feed(&input).expect("single-buffer feed");
+        let expected_frame = single_feed.frame().expect("single-buffer frame").to_vec();
+        let expected_tail = single_feed.tail().expect("single-buffer tail").to_vec();
+        assert_eq!(expected_frame, document, "{label}: single feed frame");
+        assert_eq!(expected_tail, NEXT_FRAMES, "{label}: single feed tail");
+
+        let mut single_frame = XmlReader::new();
+        let expected_consumed = single_frame
+            .feed_frame(&input)
+            .expect("single-buffer feed_frame");
+        assert_eq!(expected_consumed, document.len(), "{label}: consumed");
+        assert_eq!(
+            single_frame.frame(),
+            Some(document),
+            "{label}: feed_frame frame"
+        );
+        assert_eq!(
+            &input[expected_consumed..],
+            NEXT_FRAMES,
+            "{label}: feed_frame external tail"
+        );
+
+        for split in 0..=input.len() {
+            let mut feed = XmlReader::new();
+            feed.feed(&input[..split])
+                .unwrap_or_else(|error| panic!("{label}: feed prefix {split}: {error}"));
+            feed.feed(&input[split..])
+                .unwrap_or_else(|error| panic!("{label}: feed suffix {split}: {error}"));
+            assert_eq!(
+                feed.frame(),
+                Some(expected_frame.as_slice()),
+                "{label}: feed frame at split {split}"
+            );
+            assert_eq!(
+                feed.tail(),
+                Some(expected_tail.as_slice()),
+                "{label}: feed tail at split {split}"
+            );
+
+            let mut framed = XmlReader::new();
+            let first_consumed = framed
+                .feed_frame(&input[..split])
+                .unwrap_or_else(|error| panic!("{label}: feed_frame prefix {split}: {error}"));
+            let total_consumed = if framed.is_complete() {
+                first_consumed
+            } else {
+                assert_eq!(
+                    first_consumed, split,
+                    "{label}: incomplete prefix consumption at split {split}"
+                );
+                split
+                    + framed.feed_frame(&input[split..]).unwrap_or_else(|error| {
+                        panic!("{label}: feed_frame suffix {split}: {error}")
+                    })
+            };
+            assert_eq!(
+                total_consumed, expected_consumed,
+                "{label}: total consumption at split {split}"
+            );
+            assert_eq!(
+                framed.frame(),
+                Some(expected_frame.as_slice()),
+                "{label}: feed_frame frame at split {split}"
+            );
+            assert_eq!(
+                &input[total_consumed..],
+                expected_tail,
+                "{label}: feed_frame external tail at split {split}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_partial_xml_tokens_match_single_buffer_at_every_byte_boundary() {
+        for (label, document) in [
+            (
+                "declaration",
+                br#"<?xml version="1.0" encoding="UTF-8"?><root/>"#.as_slice(),
+            ),
+            (
+                "processing-instruction",
+                b"<?gmp inspect?><root/>".as_slice(),
+            ),
+            ("comment", b"<!-- safe-comment --><root/>".as_slice()),
+            (
+                "cdata-fallback-overlap",
+                b"<root><![CDATA[content]]]]></root>".as_slice(),
+            ),
+            (
+                "entity-references",
+                br#"<root attr="&quot;">&amp;&lt;</root>"#.as_slice(),
+            ),
+            (
+                "numeric-references",
+                b"<root>&#65;&#x1F642;</root>".as_slice(),
+            ),
+        ] {
+            assert_all_split_boundaries(label, document);
+        }
+    }
+
+    #[test]
+    fn test_valid_split_inventory_reaches_every_pending_token_variant() {
+        let documents = [
+            br#"<?xml version="1.0"?><root/>"#.as_slice(),
+            b"<?gmp inspect?><root/>".as_slice(),
+            b"<!-- safe-comment --><root/>".as_slice(),
+            b"<root><![CDATA[data]]></root>".as_slice(),
+            b"<root>&amp;&#65;&#x41;</root>".as_slice(),
+        ];
+        let mut reached = std::collections::BTreeSet::new();
+
+        for document in documents {
+            for split in 0..document.len() {
+                let mut reader = XmlReader::new();
+                reader
+                    .feed(&document[..split])
+                    .unwrap_or_else(|error| panic!("valid prefix at {split}: {error}"));
+                if let Some(token) = reader.pending_token.as_ref() {
+                    reached.insert(pending_token_label(token));
+                }
+            }
+        }
+
+        assert_eq!(
+            reached,
+            std::collections::BTreeSet::from([
+                "tag",
+                "processing-instruction",
+                "comment",
+                "cdata",
+                "reference",
+            ])
+        );
+    }
+
+    #[test]
+    fn test_pending_sequence_scans_are_monotonic_and_cover_fallback_overlaps() {
+        for (terminator, bytes, overlap_match) in [
+            (TokenTerminator::ProcessingInstruction, b"??>".as_slice(), 1),
+            (TokenTerminator::Comment, b"--->".as_slice(), 2),
+            (TokenTerminator::CData, b"]]]>".as_slice(), 2),
+            (TokenTerminator::Reference, b"x;".as_slice(), 0),
+        ] {
+            let mut token = PendingToken::Sequence {
+                scan_offset: 0,
+                terminator,
+                matched: 0,
+            };
+            let mut buffer = Vec::new();
+            let mut previous_scan = 0;
+
+            for (index, byte) in bytes.iter().copied().enumerate() {
+                buffer.push(byte);
+                let ready = token.scan_until_ready(&buffer);
+                let PendingToken::Sequence {
+                    scan_offset,
+                    matched,
+                    ..
+                } = token
+                else {
+                    unreachable!("constructed a sequence token");
+                };
+                assert_eq!(scan_offset, buffer.len());
+                assert_eq!(scan_offset - previous_scan, 1);
+                previous_scan = scan_offset;
+                if index + 1 == bytes.len() {
+                    assert!(ready, "{terminator:?} did not find its terminator");
+                } else {
+                    assert!(!ready, "{terminator:?} completed too early at {index}");
+                    if index + 1 == bytes.len() - 1 {
+                        assert_eq!(
+                            matched, overlap_match,
+                            "{terminator:?} fallback overlap state"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_bytewise_partial_token_recovery_cursor_is_monotonic() {
+        for document in [
+            br#"<?xml version="1.0"?><root/>"#.as_slice(),
+            b"<?gmp inspect?><root/>".as_slice(),
+            b"<!-- safe-comment --><root/>".as_slice(),
+            b"<root><![CDATA[content]]]]></root>".as_slice(),
+            b"<root>&amp;&#65;&#x41;</root>".as_slice(),
+        ] {
+            let mut reader = XmlReader::new();
+            let mut previous_cursor = 0;
+
+            for byte in document {
+                reader.feed(&[*byte]).expect("valid bytewise document");
+                let cursor = reader.frame_end.unwrap_or_else(|| {
+                    reader.pending_token.as_ref().map_or(
+                        reader.resume_offset,
+                        |token| match token {
+                            PendingToken::Tag { scan_offset, .. }
+                            | PendingToken::Sequence { scan_offset, .. } => *scan_offset,
+                        },
+                    )
+                });
+                assert!(
+                    cursor >= previous_cursor,
+                    "resume/scan cursor regressed from {previous_cursor} to {cursor}"
+                );
+                assert!(cursor <= reader.buffer.len());
+                assert!(
+                    reader.buffer.len().saturating_sub(cursor) <= b"<![CDATA[".len(),
+                    "recovery cursor lag exceeded the longest bounded markup opener"
+                );
+                previous_cursor = cursor;
+            }
+
+            assert!(reader.is_complete());
+            assert!(previous_cursor <= document.len());
+        }
+    }
+
+    #[test]
+    fn test_unterminated_partial_tokens_fail_at_the_frame_size_limit() {
+        for input in [
+            br#"<?xml version="1.0""#.as_slice(),
+            b"<?gmp inspect".as_slice(),
+            b"<root><!-- comment".as_slice(),
+            b"<root><![CDATA[data".as_slice(),
+            b"<root>&amp".as_slice(),
+            b"<root>&#65".as_slice(),
+            b"<root>&#x41".as_slice(),
+        ] {
+            let mut feed = XmlReader::with_max_buffer(input.len());
+            feed.feed(input)
+                .expect("unterminated prefix at exact limit");
+            assert!(!feed.is_complete());
+            assert!(matches!(
+                feed.feed(b"x"),
+                Err(ProtocolError::BufferOverflow { max }) if max == input.len()
+            ));
+
+            let mut framed = XmlReader::with_max_buffer(input.len());
+            assert!(matches!(
+                framed.feed_frame(input),
+                Err(ProtocolError::BufferOverflow { max }) if max == input.len()
+            ));
+        }
+    }
+
+    #[test]
+    fn test_malformed_partial_token_families_remain_rejected_at_size_limit() {
+        for input in [
+            br#"<?xml version="1.1"?>"#.as_slice(),
+            b"<?1bad?>".as_slice(),
+            b"<!-- bad--comment -->".as_slice(),
+            b"<![CDATA[data]]>".as_slice(),
+            b"<root>&bogus;</root>".as_slice(),
+            b"<root>&#0;</root>".as_slice(),
+            b"<root>&#x0;</root>".as_slice(),
+        ] {
+            let mut feed = XmlReader::with_max_buffer(input.len());
+            assert!(matches!(feed.feed(input), Err(ProtocolError::XmlParse(_))));
+
+            let mut framed = XmlReader::with_max_buffer(input.len());
+            assert!(matches!(
+                framed.feed_frame(input),
+                Err(ProtocolError::XmlParse(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn test_partial_markup_opener_suspension_does_not_accept_near_misses() {
+        for input in [
+            b"<!x><root/>".as_slice(),
+            b"<![CDX[data]]><root/>".as_slice(),
+            b"<!DOCX root><root/>".as_slice(),
+        ] {
+            assert_rejected_single_and_byte_chunks(input);
+        }
     }
 
     #[test]
