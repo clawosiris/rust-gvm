@@ -33,6 +33,12 @@ pub struct MockGmpServerBuilder {
     asset_input_profile: AssetInputProfile,
     #[cfg(feature = "tls")]
     client_ca_certificate: Option<PathBuf>,
+    #[cfg(feature = "ssh")]
+    ssh_authorized_keys: Vec<(String, String)>,
+    #[cfg(feature = "ssh")]
+    ssh_auth_delay_once: Option<std::time::Duration>,
+    #[cfg(feature = "ssh")]
+    ssh_channel_open_delay_once: Option<std::time::Duration>,
 }
 
 enum Transport {
@@ -63,6 +69,12 @@ impl MockGmpServerBuilder {
             asset_input_profile: AssetInputProfile::GvmdStrict,
             #[cfg(feature = "tls")]
             client_ca_certificate: None,
+            #[cfg(feature = "ssh")]
+            ssh_authorized_keys: Vec::new(),
+            #[cfg(feature = "ssh")]
+            ssh_auth_delay_once: None,
+            #[cfg(feature = "ssh")]
+            ssh_channel_open_delay_once: None,
         }
     }
 
@@ -137,6 +149,44 @@ impl MockGmpServerBuilder {
     #[must_use]
     pub fn ssh(mut self, addr: impl Into<String>) -> Self {
         self.transport = Transport::Ssh(addr.into());
+        self
+    }
+
+    /// Authorize one OpenSSH public key for an SSH username.
+    ///
+    /// This narrow test control lets clients exercise private-key and agent
+    /// authentication against the in-process mock server.
+    #[cfg(feature = "ssh")]
+    #[must_use]
+    pub fn ssh_authorized_key(
+        mut self,
+        username: impl Into<String>,
+        public_key: impl Into<String>,
+    ) -> Self {
+        self.ssh_authorized_keys
+            .push((username.into(), public_key.into()));
+        self
+    }
+
+    /// Delay the first SSH authentication attempt by the given duration.
+    ///
+    /// The delay is consumed once across all connections to the server so a
+    /// client can prove that retry after an authentication timeout is clean.
+    #[cfg(feature = "ssh")]
+    #[must_use]
+    pub fn ssh_auth_delay_once(mut self, delay: std::time::Duration) -> Self {
+        self.ssh_auth_delay_once = Some(delay);
+        self
+    }
+
+    /// Delay the first SSH direct-streamlocal channel open.
+    ///
+    /// The delay is consumed once across all connections to the server so a
+    /// client can retry after a channel-open timeout.
+    #[cfg(feature = "ssh")]
+    #[must_use]
+    pub fn ssh_channel_open_delay_once(mut self, delay: std::time::Duration) -> Self {
+        self.ssh_channel_open_delay_once = Some(delay);
         self
     }
 
@@ -232,6 +282,12 @@ impl MockGmpServerBuilder {
             asset_input_profile,
             #[cfg(feature = "tls")]
             client_ca_certificate,
+            #[cfg(feature = "ssh")]
+            ssh_authorized_keys,
+            #[cfg(feature = "ssh")]
+            ssh_auth_delay_once,
+            #[cfg(feature = "ssh")]
+            ssh_channel_open_delay_once,
         } = self;
 
         if max_request_bytes == Some(0) {
@@ -288,6 +344,12 @@ impl MockGmpServerBuilder {
             scenario_config,
             large_report,
             max_request_bytes,
+            #[cfg(feature = "ssh")]
+            ssh_authorized_keys,
+            #[cfg(feature = "ssh")]
+            ssh_auth_delay_once,
+            #[cfg(feature = "ssh")]
+            ssh_channel_open_delay_once,
         };
 
         match transport {

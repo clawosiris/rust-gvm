@@ -3,6 +3,8 @@
 
 //! Network listeners for Unix sockets and TCP.
 
+#[cfg(feature = "ssh")]
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -19,6 +21,48 @@ use crate::scenario::{ScenarioMode, ScenarioStep};
 use crate::store::ResourceStore;
 use crate::version::GmpVersion;
 use crate::ServerMode;
+
+#[cfg(feature = "ssh")]
+pub(crate) struct SshTestState {
+    pub(crate) authorized_keys: Vec<(String, String)>,
+    auth_delay_once: Option<std::time::Duration>,
+    channel_open_delay_once: Option<std::time::Duration>,
+    auth_delay_used: AtomicBool,
+    channel_open_delay_used: AtomicBool,
+}
+
+#[cfg(feature = "ssh")]
+impl SshTestState {
+    pub(crate) fn new(
+        authorized_keys: Vec<(String, String)>,
+        auth_delay_once: Option<std::time::Duration>,
+        channel_open_delay_once: Option<std::time::Duration>,
+    ) -> Self {
+        Self {
+            authorized_keys,
+            auth_delay_once,
+            channel_open_delay_once,
+            auth_delay_used: AtomicBool::new(false),
+            channel_open_delay_used: AtomicBool::new(false),
+        }
+    }
+
+    pub(crate) fn take_auth_delay(&self) -> Option<std::time::Duration> {
+        self.auth_delay_once.filter(|_| {
+            !self
+                .auth_delay_used
+                .swap(true, std::sync::atomic::Ordering::Relaxed)
+        })
+    }
+
+    pub(crate) fn take_channel_open_delay(&self) -> Option<std::time::Duration> {
+        self.channel_open_delay_once.filter(|_| {
+            !self
+                .channel_open_delay_used
+                .swap(true, std::sync::atomic::Ordering::Relaxed)
+        })
+    }
+}
 
 /// Shared state across all sessions.
 pub struct ListenerState {
@@ -42,6 +86,9 @@ pub struct ListenerState {
     pub(crate) max_request_bytes: Option<usize>,
     /// Fault injection engine.
     pub(crate) fault_engine: FaultEngine,
+    /// SSH-only deterministic authentication and channel test controls.
+    #[cfg(feature = "ssh")]
+    pub(crate) ssh_test: SshTestState,
     /// Shutdown signal.
     pub(crate) shutdown: Arc<Notify>,
 }

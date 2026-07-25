@@ -39,6 +39,7 @@ russh = { workspace = true, optional = true }
 pretty_assertions.workspace = true
 tempfile.workspace = true
 tokio-test.workspace = true
+tokio-stream.workspace = true
 gvm-gmp.workspace = true
 gvm-mock-server.workspace = true
 getrandom.workspace = true

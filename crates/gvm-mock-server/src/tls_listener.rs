@@ -223,6 +223,8 @@ mod tests {
             large_report: None,
             max_request_bytes: Some(64 * 1024 * 1024),
             fault_engine: FaultEngine::none(),
+            #[cfg(feature = "ssh")]
+            ssh_test: crate::listener::SshTestState::new(Vec::new(), None, None),
             shutdown: Arc::new(Notify::new()),
         })
     }
