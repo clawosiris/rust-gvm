@@ -175,7 +175,7 @@ fn test_scan_config_get_delete_sync() {
     );
     assert_eq!(
         xml(get_scan_config(&id("c1"))),
-        "<get_configs config_id=\"c1\" details=\"1\"/>"
+        "<get_configs config_id=\"c1\" details=\"1\" usage_type=\"scan\"/>"
     );
     assert_eq!(
         xml(sync_config(&id("c1"))),

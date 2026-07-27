@@ -146,20 +146,21 @@ fn test_scan_configs_wrappers_match_generic_xml() {
         }))
     );
     assert_eq!(
+        xml(get_scan_configs(GetScanConfigsOpts::default())),
+        "<get_configs usage_type=\"scan\"/>"
+    );
+    assert_eq!(
         xml(get_scan_configs(GetScanConfigsOpts {
             filter_string: Some("name=foo".into()),
+            filter_id: Some(id("f1")),
+            trash: Some(false),
             details: Some(true),
-            ..Default::default()
         })),
-        xml(get_configs(GetConfigsOpts {
-            filter_string: Some("name=foo".into()),
-            details: Some(true),
-            ..Default::default()
-        }))
+        "<get_configs details=\"1\" filt_id=\"f1\" filter=\"name=foo\" trash=\"0\" usage_type=\"scan\"/>"
     );
     assert_eq!(
         xml(get_scan_config(&id("c1"))),
-        xml(get_config(&id("c1"), GetConfigOpts::default()))
+        "<get_configs config_id=\"c1\" details=\"1\" usage_type=\"scan\"/>"
     );
     assert_eq!(
         xml(modify_scan_config(
