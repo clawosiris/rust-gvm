@@ -2685,10 +2685,15 @@ fn set_permission_references(resource: &mut Resource, cmd: &ParsedCommand) {
         ("subject", "subject_id", "subject_type"),
         ("resource", "resource_id", "resource_type"),
     ] {
-        if let Some(id) = cmd.child_attr(element, "id") {
+        if let Some(id) = cmd
+            .child_attr(element, "id")
+            .filter(|value| !value.is_empty())
+        {
             resource.set_attr(id_key, id);
         }
-        if let Some(reference_type) = nested_child_text(cmd, &[element, "type"]) {
+        if let Some(reference_type) =
+            nested_child_text(cmd, &[element, "type"]).filter(|value| !value.is_empty())
+        {
             resource.set_attr(type_key, &reference_type);
         }
     }
@@ -2708,6 +2713,29 @@ fn singularize_resource_type(plural: &str) -> &str {
 mod tests {
     use super::*;
     use crate::command_parser::parse_command;
+
+    #[test]
+    fn permission_references_ignore_empty_ids_and_types() {
+        let command = parse_command(
+            br#"<create_permission>
+                <subject id=""><type>role</type></subject>
+                <resource id="target-1"><type/></resource>
+            </create_permission>"#,
+        )
+        .expect("parse permission command");
+        let mut permission = Resource::new("permission", "get_targets");
+
+        set_permission_references(&mut permission, &command);
+
+        assert_eq!(permission.attr("subject_id"), None);
+        assert_eq!(permission.attr("subject_type"), Some("role"));
+        assert_eq!(permission.attr("resource_id"), Some("target-1"));
+        assert_eq!(permission.attr("resource_type"), None);
+        let xml = permission.to_xml();
+        assert!(!xml.contains("<subject"));
+        assert!(xml.contains(r#"<resource id="target-1"><name></name></resource>"#));
+        assert!(!xml.contains("<type>"));
+    }
 
     #[test]
     fn optional_child_uuid_reports_specific_missing_and_invalid_ids() {

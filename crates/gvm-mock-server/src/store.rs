@@ -317,12 +317,17 @@ impl Resource {
                 ("subject", "subject_id", "subject_type"),
                 ("resource", "resource_id", "resource_type"),
             ] {
-                if let Some(id) = self.attr(id_key) {
+                if let Some(id) = self.attr(id_key).filter(|value| !value.is_empty()) {
                     xml.push_str(&format!(
-                        "<{element} id=\"{}\"><name></name><type>{}</type></{element}>",
+                        "<{element} id=\"{}\"><name></name>",
                         xml_escape_attr(id),
-                        xml_escape(self.attr(type_key).unwrap_or_default()),
                     ));
+                    if let Some(reference_type) =
+                        self.attr(type_key).filter(|value| !value.is_empty())
+                    {
+                        xml.push_str(&format!("<type>{}</type>", xml_escape(reference_type)));
+                    }
+                    xml.push_str(&format!("</{element}>"));
                 }
             }
         }
