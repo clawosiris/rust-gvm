@@ -34,9 +34,11 @@ use gvm_gmp::commands::nvts::{
     get_nvt_preference, get_nvt_preferences, GetNvtPreferencesOpts, GetNvtsOpts,
 };
 use gvm_gmp::commands::operating_systems::{get_operating_systems, GetOperatingSystemsOpts};
+use gvm_gmp::commands::permissions::{modify_permission, GetPermissionsOpts, PermissionOpts};
 use gvm_gmp::commands::reports::{
     get_report_export, get_report_hosts, get_report_vulnerabilities, get_reports, GetReportsOpts,
 };
+use gvm_gmp::commands::roles::RoleOpts;
 use gvm_gmp::commands::scan_configs::{
     create_policy, get_policies, get_scan_config_preference, get_scan_config_preferences,
     ConfigOpts, GetPolicyOpts, GetScanConfigPreferencesOpts, GetScanConfigsOpts,
@@ -49,11 +51,12 @@ use gvm_gmp::commands::targets::{
 };
 use gvm_gmp::commands::tasks::{create_task, delete_task, get_task, start_task, stop_task};
 use gvm_gmp::responses::{
-    Asset, ConfigUsageKind, CreateScanConfigResponse, GetConfigsResponse, GetScanConfigsResponse,
+    Asset, ConfigUsageKind, CreateScanConfigResponse, GetConfigsResponse, GetPermissionsResponse,
+    GetScanConfigsResponse, Permission,
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
-use gvm_gmp::{FeedType, SortOrder};
+use gvm_gmp::{FeedType, PermissionSubjectType, SortOrder};
 use gvm_mock_server::{
     GmpVersion as MockVersion, MockGmpServer, Resource, ResourceStore, ServerMode,
 };
@@ -130,6 +133,17 @@ fn unix_connection(server: &MockGmpServer) -> UnixSocketConnection {
 
 fn event_text(event: &WireTraceEvent) -> String {
     String::from_utf8(event.bytes.clone()).expect("trace event should be UTF-8")
+}
+
+fn permission_by_id<'a>(
+    permissions: &'a GetPermissionsResponse,
+    permission_id: &EntityId,
+) -> &'a Permission {
+    permissions
+        .items
+        .iter()
+        .find(|item| item.meta.id == *permission_id)
+        .expect("permission should be listed")
 }
 
 #[tokio::test]
@@ -2253,6 +2267,112 @@ async fn typed_policy_getters_filter_stateful_mock_resources() {
             policy.id.as_str()
         )
     );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_permission_lifecycle_uses_nested_references() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let role = client
+        .create_role("Permission Role", RoleOpts::default())
+        .await
+        .expect("role should be created");
+    let target = client
+        .create_target(
+            "Permission Target",
+            CreateTargetOpts {
+                hosts: vec!["192.0.2.1".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("target should be created");
+    server.clear_history();
+    let permission = client
+        .create_permission(PermissionOpts {
+            comment: Some("permission comment".into()),
+            name: Some("get_targets".into()),
+            resource_id: Some(target.id.clone()),
+            resource_type: Some("target".into()),
+            subject_type: Some(PermissionSubjectType::Role),
+            subject_id: Some(role.id.clone()),
+        })
+        .await
+        .expect("permission should be created");
+
+    let permissions = client
+        .get_permissions(GetPermissionsOpts::default())
+        .await
+        .expect("permission should be retrieved");
+    let fetched = permission_by_id(&permissions, &permission.id);
+    assert_eq!(fetched.meta.name, "get_targets");
+    assert_eq!(fetched.subject_type.as_deref(), Some("role"));
+    assert_eq!(fetched.subject.as_ref().expect("subject").id, role.id);
+    assert_eq!(fetched.resource_type.as_deref(), Some("target"));
+    assert_eq!(fetched.resource.as_ref().expect("resource").id, target.id);
+
+    client
+        .call(modify_permission(
+            &permission.id,
+            PermissionOpts {
+                comment: Some("updated".into()),
+                resource_id: Some(target.id.clone()),
+                resource_type: Some("target".into()),
+                subject_type: Some(PermissionSubjectType::Role),
+                subject_id: Some(role.id.clone()),
+                ..Default::default()
+            },
+        ))
+        .await
+        .expect("permission should be modified");
+
+    let permissions = client
+        .get_permissions(GetPermissionsOpts::default())
+        .await
+        .expect("modified permission should be retrieved");
+    let fetched = permission_by_id(&permissions, &permission.id);
+    assert_eq!(fetched.meta.comment.as_deref(), Some("updated"));
+    assert_eq!(fetched.subject_type.as_deref(), Some("role"));
+    assert_eq!(fetched.resource_type.as_deref(), Some("target"));
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 4);
+    let commands = history
+        .iter()
+        .map(|record| String::from_utf8(record.raw_xml().to_vec()).expect("xml is utf-8"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        commands[0],
+        format!(
+            "<create_permission><comment>permission comment</comment><name>get_targets</name><resource id=\"{}\"><type>target</type></resource><subject id=\"{}\"><type>role</type></subject></create_permission>",
+            target.id.as_str(),
+            role.id.as_str(),
+        )
+    );
+    assert_eq!(commands[1], "<get_permissions/>");
+    assert_eq!(
+        commands[2],
+        format!(
+            "<modify_permission permission_id=\"{}\"><comment>updated</comment><resource id=\"{}\"><type>target</type></resource><subject id=\"{}\"><type>role</type></subject></modify_permission>",
+            permission.id.as_str(),
+            target.id.as_str(),
+            role.id.as_str(),
+        )
+    );
+    assert_eq!(commands[3], "<get_permissions/>");
 
     server.shutdown().await;
 }

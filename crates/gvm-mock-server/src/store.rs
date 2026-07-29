@@ -312,8 +312,30 @@ impl Resource {
             ct = self.creation_time,
             mt = self.modification_time,
         );
+        if self.resource_type == "permission" {
+            for (element, id_key, type_key) in [
+                ("subject", "subject_id", "subject_type"),
+                ("resource", "resource_id", "resource_type"),
+            ] {
+                if let Some(id) = self.attr(id_key) {
+                    xml.push_str(&format!(
+                        "<{element} id=\"{}\"><name></name><type>{}</type></{element}>",
+                        xml_escape_attr(id),
+                        xml_escape(self.attr(type_key).unwrap_or_default()),
+                    ));
+                }
+            }
+        }
         // Add type-specific attributes
         for (k, v) in &self.attrs {
+            if self.resource_type == "permission"
+                && matches!(
+                    k.as_str(),
+                    "subject_id" | "subject_type" | "resource_id" | "resource_type"
+                )
+            {
+                continue;
+            }
             if self.resource_type == "nvt"
                 && matches!(
                     k.as_str(),

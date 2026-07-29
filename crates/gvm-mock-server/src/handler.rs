@@ -695,6 +695,9 @@ impl SessionHandler {
                 resource.set_attr("host_identifier", &host_identifier);
             }
         }
+        if resource_type == "permission" {
+            set_permission_references(&mut resource, cmd);
+        }
 
         // Task-specific: extract references
         if resource_type == "task" {
@@ -1168,6 +1171,9 @@ impl SessionHandler {
                 if let Some(ref host_identifier) = new_host_identifier {
                     r.set_attr("host_identifier", host_identifier);
                 }
+            }
+            if resource_type == "permission" {
+                set_permission_references(r, cmd);
             }
             if let Some(ref service_url) = new_service_url {
                 r.set_attr("service_url", service_url);
@@ -2672,6 +2678,20 @@ fn nested_child_text(cmd: &ParsedCommand, path: &[&str]) -> Option<String> {
         element = element.children.iter().find(|child| child.name == **name)?;
     }
     Some(element.text.clone().unwrap_or_default())
+}
+
+fn set_permission_references(resource: &mut Resource, cmd: &ParsedCommand) {
+    for (element, id_key, type_key) in [
+        ("subject", "subject_id", "subject_type"),
+        ("resource", "resource_id", "resource_type"),
+    ] {
+        if let Some(id) = cmd.child_attr(element, "id") {
+            resource.set_attr(id_key, id);
+        }
+        if let Some(reference_type) = nested_child_text(cmd, &[element, "type"]) {
+            resource.set_attr(type_key, &reference_type);
+        }
+    }
 }
 
 fn singularize_resource_type(plural: &str) -> &str {
