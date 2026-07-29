@@ -1064,6 +1064,7 @@ criteria = "safe-to-deploy"
 
 [[exemptions.wnaf]]
 version = "0.14.0"
+criteria = "safe-to-deploy"
 
 [[exemptions.x509-cert]]
 version = "0.3.0"
