@@ -33,6 +33,16 @@ fn test_create_report_format_with_optionals() {
 }
 
 #[test]
+fn test_import_report_format_with_nested_empty_element_before_sibling() {
+    let report_format_xml = r#"<get_report_formats_response status="200" status_text="OK"><report_format id="rf-1"><name>HTML</name><comment/><content_type>text/html</content_type></report_format></get_report_formats_response>"#;
+
+    assert_eq!(
+        xml(import_report_format(report_format_xml).expect("valid report format XML")),
+        r#"<create_report_format><get_report_formats_response status="200" status_text="OK"><report_format id="rf-1"><name>HTML</name><comment/><content_type>text/html</content_type></report_format></get_report_formats_response></create_report_format>"#
+    );
+}
+
+#[test]
 fn test_report_format_get_delete_verify() {
     assert_eq!(
         xml(get_report_format(&id("rf1"))),

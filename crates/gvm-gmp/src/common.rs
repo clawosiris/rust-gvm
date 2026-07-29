@@ -105,7 +105,7 @@ pub(crate) fn validate_single_xml_document(
                     validate_root_name(event.name().as_ref(), field, expected_root)?;
                 }
                 saw_root = true;
-                completed_root = true;
+                completed_root = depth == 0;
             }
             Event::End(_) => {
                 if depth == 0 {
@@ -177,4 +177,40 @@ fn validate_root_name(
 #[cfg(test)]
 pub(crate) fn xml(request: impl gvm_protocol::Request) -> String {
     String::from_utf8(request.to_bytes()).expect("request XML should be valid UTF-8")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn single_xml_document_allows_nested_empty_element_before_sibling() {
+        validate_single_xml_document(
+            "<report><summary/><results/></report>",
+            "report_xml",
+            Some("report"),
+        )
+        .expect("nested empty elements must not complete the root document");
+    }
+
+    #[test]
+    fn single_xml_document_allows_self_closing_root() {
+        validate_single_xml_document("<report/>", "report_xml", Some("report"))
+            .expect("a self-closing root is a complete document");
+    }
+
+    #[test]
+    fn single_xml_document_rejects_second_root_after_self_closing_root() {
+        let error =
+            validate_single_xml_document("<report/><report/>", "report_xml", Some("report"))
+                .expect_err("a second top-level root must be rejected");
+
+        match error {
+            ParseError::InvalidValue { field, value } => {
+                assert_eq!(field, "report_xml");
+                assert_eq!(value, "multiple root elements");
+            }
+            error => panic!("expected invalid-value error, got {error:?}"),
+        }
+    }
 }
