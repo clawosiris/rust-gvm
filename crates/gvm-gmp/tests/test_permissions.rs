@@ -18,7 +18,33 @@ fn test_create_permission_basic() {
 }
 
 #[test]
-fn test_create_permission_with_optionals() {
+fn test_create_permission_with_nested_subject() {
+    assert_eq!(
+        xml(create_permission(PermissionOpts {
+            name: Some("get_tasks".into()),
+            subject_type: Some(PermissionSubjectType::Role),
+            subject_id: Some(id("s1")),
+            ..Default::default()
+        })),
+        "<create_permission><name>get_tasks</name><subject id=\"s1\"><type>role</type></subject></create_permission>"
+    );
+}
+
+#[test]
+fn test_create_permission_with_nested_resource() {
+    assert_eq!(
+        xml(create_permission(PermissionOpts {
+            name: Some("get_tasks".into()),
+            resource_id: Some(id("r1")),
+            resource_type: Some("task".into()),
+            ..Default::default()
+        })),
+        "<create_permission><name>get_tasks</name><resource id=\"r1\"><type>task</type></resource></create_permission>"
+    );
+}
+
+#[test]
+fn test_create_permission_with_nested_subject_and_resource() {
     assert_eq!(
         xml(create_permission(PermissionOpts {
             comment: Some("c".into()),
@@ -28,7 +54,36 @@ fn test_create_permission_with_optionals() {
             subject_type: Some(PermissionSubjectType::Role),
             subject_id: Some(id("s1")),
         })),
-        "<create_permission><comment>c</comment><name>get_tasks</name><resource_type>task</resource_type><resource_id>r1</resource_id><subject_type>role</subject_type><subject_id>s1</subject_id></create_permission>"
+        "<create_permission><comment>c</comment><name>get_tasks</name><resource id=\"r1\"><type>task</type></resource><subject id=\"s1\"><type>role</type></subject></create_permission>"
+    );
+}
+
+#[test]
+fn test_modify_permission_with_nested_subject_and_resource() {
+    assert_eq!(
+        xml(modify_permission(
+            &id("p1"),
+            PermissionOpts {
+                resource_id: Some(id("r1")),
+                resource_type: Some("task".into()),
+                subject_type: Some(PermissionSubjectType::Role),
+                subject_id: Some(id("s1")),
+                ..Default::default()
+            }
+        )),
+        "<modify_permission permission_id=\"p1\"><resource id=\"r1\"><type>task</type></resource><subject id=\"s1\"><type>role</type></subject></modify_permission>"
+    );
+}
+
+#[test]
+fn test_permission_partial_references_remain_nested() {
+    assert_eq!(
+        xml(create_permission(PermissionOpts {
+            resource_id: Some(id("r1")),
+            subject_type: Some(PermissionSubjectType::Role),
+            ..Default::default()
+        })),
+        "<create_permission><resource id=\"r1\"/><subject><type>role</type></subject></create_permission>"
     );
 }
 

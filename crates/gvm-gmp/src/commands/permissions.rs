@@ -14,15 +14,15 @@ use crate::types::EntityId;
 pub struct PermissionOpts {
     /// Optional comment text included in the request.
     pub comment: Option<String>,
-    /// Optional resource name.
+    /// Optional permission name.
     pub name: Option<String>,
-    /// Optional related resource identifier.
+    /// Optional resource identifier; pair with `resource_type` for a valid request.
     pub resource_id: Option<EntityId>,
-    /// Optional related resource type.
+    /// Optional resource type; pair with `resource_id` for a valid request.
     pub resource_type: Option<String>,
-    /// Optional permission subject type.
+    /// Optional permission subject type; pair with `subject_id` for a valid request.
     pub subject_type: Option<PermissionSubjectType>,
-    /// Optional permission subject identifier.
+    /// Optional permission subject identifier; pair with `subject_type` for a valid request.
     pub subject_id: Option<EntityId>,
 }
 
@@ -95,15 +95,36 @@ pub fn delete_permission(permission_id: &EntityId, ultimate: bool) -> impl Reque
 fn add_permission_body(cmd: &mut XmlCommand, opts: &PermissionOpts) {
     add_text_element(cmd, "comment", opts.comment.as_deref());
     add_text_element(cmd, "name", opts.name.as_deref());
-    add_text_element(cmd, "resource_type", opts.resource_type.as_deref());
-    if let Some(resource_id) = opts.resource_id.as_ref() {
-        cmd.add_element_with_text("resource_id", resource_id.as_str());
+    add_permission_reference(
+        cmd,
+        "resource",
+        opts.resource_id.as_ref(),
+        opts.resource_type.as_deref(),
+    );
+    add_permission_reference(
+        cmd,
+        "subject",
+        opts.subject_id.as_ref(),
+        opts.subject_type.map(PermissionSubjectType::as_gmp_str),
+    );
+}
+
+fn add_permission_reference(
+    cmd: &mut XmlCommand,
+    element_name: &str,
+    id: Option<&EntityId>,
+    reference_type: Option<&str>,
+) {
+    if id.is_none() && reference_type.is_none() {
+        return;
     }
-    if let Some(subject_type) = opts.subject_type {
-        cmd.add_element_with_text("subject_type", subject_type.as_gmp_str());
+
+    let reference = cmd.add_element(element_name);
+    if let Some(id) = id {
+        reference.set_attribute("id", id.as_str());
     }
-    if let Some(subject_id) = opts.subject_id.as_ref() {
-        cmd.add_element_with_text("subject_id", subject_id.as_str());
+    if let Some(reference_type) = reference_type {
+        reference.add_child_with_text("type", reference_type);
     }
 }
 
@@ -124,7 +145,10 @@ mod tests {
             subject_id: Some(id("r1")),
             ..Default::default()
         }));
-        assert!(rendered.contains("<subject_type>role</subject_type>"));
+        assert_eq!(
+            rendered,
+            "<create_permission><name>get_tasks</name><subject id=\"r1\"><type>role</type></subject></create_permission>"
+        );
         assert_eq!(
             xml(clone_permission(&id("p1"))),
             "<create_permission><copy>p1</copy></create_permission>"
