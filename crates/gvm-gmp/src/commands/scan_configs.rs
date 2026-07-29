@@ -111,6 +111,7 @@ pub fn get_scan_configs(opts: GetScanConfigsOpts) -> impl Request {
         filter_id: opts.filter_id,
         trash: opts.trash,
         details: opts.details,
+        usage_type: Some(ConfigUsageType::from(UsageType::Scan)),
         ..Default::default()
     })
 }
@@ -118,7 +119,13 @@ pub fn get_scan_configs(opts: GetScanConfigsOpts) -> impl Request {
 /// Build a `get_scan_config` request.
 #[must_use]
 pub fn get_scan_config(config_id: &EntityId) -> impl Request {
-    get_config(config_id, GetConfigOpts::default())
+    get_config(
+        config_id,
+        GetConfigOpts {
+            usage_type: Some(ConfigUsageType::from(UsageType::Scan)),
+            ..Default::default()
+        },
+    )
 }
 
 /// Build a `get_preferences` request for scan-config preferences.
@@ -692,11 +699,22 @@ mod tests {
 
     #[test]
     fn scan_config_get_modify_delete_sync_build_xml() {
+        assert_eq!(
+            xml(get_scan_configs(GetScanConfigsOpts::default())),
+            "<get_configs usage_type=\"scan\"/>"
+        );
         let rendered = xml(get_scan_configs(GetScanConfigsOpts {
             filter_string: Some("name=foo".into()),
             ..Default::default()
         }));
-        assert!(rendered.contains("filter=\"name=foo\""));
+        assert_eq!(
+            rendered,
+            "<get_configs filter=\"name=foo\" usage_type=\"scan\"/>"
+        );
+        assert_eq!(
+            xml(get_scan_config(&id("c1"))),
+            "<get_configs config_id=\"c1\" details=\"1\" usage_type=\"scan\"/>"
+        );
         let rendered = xml(modify_scan_config(
             &id("c1"),
             ConfigOpts {

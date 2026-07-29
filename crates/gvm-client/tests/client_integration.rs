@@ -2189,7 +2189,7 @@ async fn typed_scan_config_nvt_helpers_use_stateful_mock_server_filters() {
 }
 
 #[tokio::test]
-async fn typed_policy_getters_filter_stateful_mock_resources() {
+async fn typed_config_getters_filter_stateful_mock_resources() {
     let Some(server) = stateful_server().await else {
         return;
     };
@@ -2203,7 +2203,7 @@ async fn typed_policy_getters_filter_stateful_mock_resources() {
         .await
         .expect("authenticate should succeed");
 
-    client
+    let scan_config = client
         .create_scan_config(
             "Scan Config One",
             None,
@@ -2229,6 +2229,23 @@ async fn typed_policy_getters_filter_stateful_mock_resources() {
 
     server.clear_history();
 
+    let scan_configs = client
+        .get_scan_configs(GetScanConfigsOpts::default())
+        .await
+        .expect("scan configs should be fetched");
+    assert!(scan_configs
+        .items
+        .iter()
+        .all(|item| item.usage_type.as_deref() == Some("scan")));
+    assert!(scan_configs
+        .items
+        .iter()
+        .any(|item| item.meta.id == scan_config.id));
+    assert!(!scan_configs
+        .items
+        .iter()
+        .any(|item| item.meta.id == policy.id));
+
     let policies = client
         .get_policies(GetScanConfigsOpts::default())
         .await
@@ -2251,7 +2268,7 @@ async fn typed_policy_getters_filter_stateful_mock_resources() {
     assert_eq!(fetched.items[0].usage_type.as_deref(), Some("policy"));
 
     let history = server.command_history();
-    assert_eq!(history.len(), 2);
+    assert_eq!(history.len(), 3);
     assert!(history
         .iter()
         .all(|record| record.command_name() == "get_configs"));
@@ -2259,9 +2276,10 @@ async fn typed_policy_getters_filter_stateful_mock_resources() {
         .iter()
         .map(|record| String::from_utf8(record.raw_xml().to_vec()).expect("xml is utf-8"))
         .collect::<Vec<_>>();
-    assert_eq!(commands[0], "<get_configs usage_type=\"policy\"/>");
+    assert_eq!(commands[0], "<get_configs usage_type=\"scan\"/>");
+    assert_eq!(commands[1], "<get_configs usage_type=\"policy\"/>");
     assert_eq!(
-        commands[1],
+        commands[2],
         format!(
             "<get_configs config_id=\"{}\" details=\"1\" tasks=\"1\" usage_type=\"policy\"/>",
             policy.id.as_str()
