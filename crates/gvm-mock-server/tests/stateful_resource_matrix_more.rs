@@ -203,7 +203,7 @@ async fn matrix_tickets_create_delete_ultimate() {
 
     let ticket_id = create_and_get_id(
         &mut stream,
-        b"<create_ticket><name>Matrix Ticket</name><comment>ticket</comment></create_ticket>",
+        b"<create_ticket><result id=\"11111111-1111-1111-1111-111111111111\"/><assigned_to><user id=\"22222222-2222-2222-2222-222222222222\"/></assigned_to><open_note>Matrix ticket</open_note><comment>ticket</comment></create_ticket>",
         "create_ticket",
     )
     .await;

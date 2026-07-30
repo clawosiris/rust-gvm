@@ -53,6 +53,7 @@ use gvm_gmp::commands::targets::{
     create_target, delete_target, get_targets, CreateTargetOpts, GetTargetsOpts,
 };
 use gvm_gmp::commands::tasks::{create_task, delete_task, get_task, start_task, stop_task};
+use gvm_gmp::commands::tickets::{CreateTicketOpts, GetTicketsOpts, ModifyTicketOpts};
 use gvm_gmp::commands::users::{GetUsersOpts, ModifyUserOpts, UserOpts};
 use gvm_gmp::responses::{
     Asset, ConfigUsageKind, CreateScanConfigResponse, GetConfigsResponse, GetPermissionsResponse,
@@ -62,6 +63,7 @@ use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
 use gvm_gmp::{
     AlertCondition, AlertEvent, AlertMethod, FeedType, PermissionSubjectType, SortOrder,
+    TicketStatus,
 };
 use gvm_mock_server::{
     GmpVersion as MockVersion, MockGmpServer, Resource, ResourceStore, ServerMode,
@@ -825,6 +827,86 @@ async fn typed_alert_data_maps_and_rename_round_trip() {
         None,
         "7.0",
         "nested-name@example.com",
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_ticket_create_read_and_reassign_round_trip() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let result_id = EntityId::new("result-1").expect("valid id");
+    let first_assignee = EntityId::new("user-1").expect("valid id");
+    let created = client
+        .create_ticket(
+            &result_id,
+            CreateTicketOpts {
+                assigned_to: first_assignee.clone(),
+                open_note: "Please investigate".into(),
+                comment: Some("Typed ticket".into()),
+            },
+        )
+        .await
+        .expect("create_ticket should succeed");
+
+    let fetched = client
+        .get_tickets(GetTicketsOpts::default())
+        .await
+        .expect("get_tickets should succeed");
+    assert_eq!(fetched.items.len(), 1);
+    assert_eq!(
+        fetched.items[0].assigned_to.as_ref().map(|user| &user.id),
+        Some(&first_assignee)
+    );
+    assert_eq!(
+        fetched.items[0].result.as_ref().map(|result| &result.id),
+        Some(&result_id)
+    );
+    assert_eq!(
+        fetched.items[0].open_note.as_deref(),
+        Some("Please investigate")
+    );
+
+    let second_assignee = EntityId::new("user-2").expect("valid id");
+    client
+        .modify_ticket(
+            &created.id,
+            ModifyTicketOpts {
+                assigned_to: Some(second_assignee.clone()),
+                status: Some(TicketStatus::Fixed),
+                fixed_note: Some("Fixed in update".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("modify_ticket should succeed");
+
+    let reassigned = client
+        .get_tickets(GetTicketsOpts::default())
+        .await
+        .expect("get_tickets after reassign should succeed");
+    assert_eq!(
+        reassigned.items[0]
+            .assigned_to
+            .as_ref()
+            .map(|user| &user.id),
+        Some(&second_assignee)
+    );
+    assert_eq!(reassigned.items[0].status.as_deref(), Some("Fixed"));
+    assert_eq!(
+        reassigned.items[0].fixed_note.as_deref(),
+        Some("Fixed in update")
     );
 
     server.shutdown().await;

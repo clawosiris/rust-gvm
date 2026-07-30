@@ -111,6 +111,7 @@ const INTEGRATION_COVERED: &[&str] = &[
     "create_tag",
     "get_tickets",
     "create_ticket",
+    "modify_ticket",
     "get_users",
     "create_user",
     "modify_user",

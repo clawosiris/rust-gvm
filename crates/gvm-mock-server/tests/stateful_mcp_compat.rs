@@ -190,7 +190,7 @@ async fn create_and_modify_ticket_handles_comment_and_status() {
 
     let create_resp = send_recv(
         &mut stream,
-        b"<create_ticket><result id=\"11111111-1111-1111-1111-111111111111\"/><comment>Investigating</comment></create_ticket>",
+        b"<create_ticket><result id=\"11111111-1111-1111-1111-111111111111\"/><assigned_to><user id=\"22222222-2222-2222-2222-222222222222\"/></assigned_to><open_note>Please investigate</open_note><comment>Investigating</comment></create_ticket>",
     )
     .await;
     assert_eq!(create_resp.status_code(), Some(201));
@@ -199,7 +199,7 @@ async fn create_and_modify_ticket_handles_comment_and_status() {
     let modify_resp = send_recv(
         &mut stream,
         format!(
-            "<modify_ticket ticket_id=\"{ticket_id}\"><comment>Resolved</comment><status>closed</status></modify_ticket>"
+            "<modify_ticket ticket_id=\"{ticket_id}\"><comment>Resolved</comment><status>closed</status><assigned_to><user id=\"33333333-3333-3333-3333-333333333333\"/></assigned_to></modify_ticket>"
         )
         .as_bytes(),
     )
@@ -215,7 +215,8 @@ async fn create_and_modify_ticket_handles_comment_and_status() {
     let text = get_resp.as_str().expect("valid utf8");
     assert!(text.contains("<comment>Resolved</comment>"));
     assert!(text.contains("<status>closed</status>"));
-    assert!(text.contains("<result_id>11111111-1111-1111-1111-111111111111</result_id>"));
+    assert!(text.contains("<result id=\"11111111-1111-1111-1111-111111111111\">"));
+    assert!(text.contains("<assigned_to id=\"33333333-3333-3333-3333-333333333333\">"));
 
     server.shutdown().await;
 }

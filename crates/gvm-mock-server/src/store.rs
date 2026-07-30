@@ -377,6 +377,20 @@ impl Resource {
                 ));
             }
         }
+        if self.resource_type == "ticket" {
+            for (field, element) in [
+                ("assigned_to_id", "assigned_to"),
+                ("result_id", "result"),
+                ("task_id", "task"),
+            ] {
+                if let Some(id) = self.attr(field) {
+                    xml.push_str(&format!(
+                        "<{element} id=\"{}\"><name></name></{element}>",
+                        xml_escape_attr(id),
+                    ));
+                }
+            }
+        }
         for (k, v) in &self.attrs {
             if self.resource_type == "scanner" && k == "credential_id" {
                 xml.push_str(&format!(
@@ -390,6 +404,11 @@ impl Resource {
                     || k.starts_with("event_data:")
                     || k.starts_with("condition_data:")
                     || k.starts_with("method_data:"))
+            {
+                continue;
+            }
+            if self.resource_type == "ticket"
+                && matches!(k.as_str(), "assigned_to_id" | "result_id" | "task_id")
             {
                 continue;
             }

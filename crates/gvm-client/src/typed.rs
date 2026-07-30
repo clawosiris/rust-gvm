@@ -109,7 +109,9 @@ use gvm_gmp::commands::tasks::{
     create_import_task, create_task, get_tasks, resume_task, start_task, CreateTaskOpts,
     GetTasksOpts,
 };
-use gvm_gmp::commands::tickets::{create_ticket, get_tickets, GetTicketsOpts, TicketOpts};
+use gvm_gmp::commands::tickets::{
+    create_ticket, get_tickets, modify_ticket, CreateTicketOpts, GetTicketsOpts, ModifyTicketOpts,
+};
 use gvm_gmp::commands::tls_certificates::{
     create_tls_certificate, get_tls_certificates, GetTlsCertificatesOpts, TlsCertificateOpts,
 };
@@ -152,7 +154,7 @@ use gvm_gmp::responses::{
     GetVulnerabilitiesResponse, GetWebApplicationTargetsResponse, HelpResponse,
     ModifyAlertResponse, ModifyAssetResponse, ModifyConfigResponse, ModifyCredentialResponse,
     ModifyIntegrationConfigResponse, ModifyOciImageTargetResponse, ModifyPortListResponse,
-    ModifyScanConfigResponse, ModifyScannerResponse, ModifyUserResponse,
+    ModifyScanConfigResponse, ModifyScannerResponse, ModifyTicketResponse, ModifyUserResponse,
     ModifyWebApplicationTargetResponse, ReportExport, RestoreResponse, ResumeTaskResponse,
     StartTaskResponse, SyncConfigResponse, VerifyCredentialStoreResponse, VerifyScannerResponse,
 };
@@ -1584,10 +1586,23 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     pub async fn create_ticket(
         &mut self,
         result_id: &EntityId,
-        opts: TicketOpts,
+        opts: CreateTicketOpts,
     ) -> Result<CreateTicketResponse, GvmError> {
         let response = self.send(create_ticket(result_id, opts)).await?;
         CreateTicketResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `modify_ticket` request and return a typed [`ModifyTicketResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_ticket(
+        &mut self,
+        ticket_id: &EntityId,
+        opts: ModifyTicketOpts,
+    ) -> Result<ModifyTicketResponse, GvmError> {
+        let response = self.send(modify_ticket(ticket_id, opts)).await?;
+        ModifyTicketResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     // ── Users ─────────────────────────────────────────────────────────────────

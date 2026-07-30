@@ -629,6 +629,31 @@ impl SessionHandler {
         {
             return error_response(&cmd.name, 400, "Missing required element: host_identifier");
         }
+        let (ticket_result_id, ticket_assignee_id, ticket_open_note) = if resource_type == "ticket"
+        {
+            let Some(result_id) = cmd.child_attr("result", "id") else {
+                return error_response(&cmd.name, 400, "Missing required element: result");
+            };
+            let Some(assignee_id) = nested_child_attr(cmd, &["assigned_to", "user"], "id") else {
+                return error_response(
+                    &cmd.name,
+                    400,
+                    "Missing required element: assigned_to/user",
+                );
+            };
+            let Some(open_note) =
+                parse_element_text(raw_xml, "open_note").filter(|note| !note.trim().is_empty())
+            else {
+                return error_response(&cmd.name, 400, "Missing required element: open_note");
+            };
+            (
+                Some(result_id.to_string()),
+                Some(assignee_id),
+                Some(open_note),
+            )
+        } else {
+            (None, None, None)
+        };
 
         let mut resource = Resource::new(resource_type, &name);
 
@@ -648,6 +673,17 @@ impl SessionHandler {
         if resource_type == "filter" {
             if let Some(term) = parse_element_text(raw_xml, "term") {
                 resource.set_attr("term", &term);
+            }
+        }
+        if resource_type == "ticket" {
+            if let Some(result_id) = ticket_result_id {
+                resource.set_attr("result_id", &result_id);
+            }
+            if let Some(assignee_id) = ticket_assignee_id {
+                resource.set_attr("assigned_to_id", &assignee_id);
+            }
+            if let Some(open_note) = ticket_open_note {
+                resource.set_attr("open_note", &open_note);
             }
         }
         if resource_type == "oci_image_target" {
@@ -1027,6 +1063,9 @@ impl SessionHandler {
         let new_urls = parse_element_text(raw_xml, "urls");
         let new_exclude_urls = parse_element_text(raw_xml, "exclude_urls");
         let new_status = parse_element_text(raw_xml, "status");
+        let new_open_note = parse_element_text(raw_xml, "open_note");
+        let new_fixed_note = parse_element_text(raw_xml, "fixed_note");
+        let new_closed_note = parse_element_text(raw_xml, "closed_note");
         let new_scheduler_cron_time = parse_element_text(raw_xml, "scheduler_cron_time");
         let new_nvt_oid = parse_element_text(raw_xml, "nvt_oid")
             .or_else(|| cmd.child_attr("nvt", "oid").map(str::to_string));
@@ -1034,6 +1073,7 @@ impl SessionHandler {
             .or_else(|| cmd.child_attr("result", "id").map(str::to_string));
         let new_task_id = cmd.child_attr("task", "id").map(str::to_string);
         let new_credential_id = cmd.child_attr("credential", "id").map(str::to_string);
+        let new_assignee_id = nested_child_attr(cmd, &["assigned_to", "user"], "id");
         let new_port = parse_element_text(raw_xml, "port");
         let new_type = parse_element_text(raw_xml, "type");
         let new_ca_pub = parse_element_text(raw_xml, "ca_pub");
@@ -1250,6 +1290,18 @@ impl SessionHandler {
             if resource_type == "ticket" {
                 if let Some(ref status) = new_status {
                     r.set_attr("status", status);
+                }
+                if let Some(ref assignee_id) = new_assignee_id {
+                    r.set_attr("assigned_to_id", assignee_id);
+                }
+                for (value, field) in [
+                    (&new_open_note, "open_note"),
+                    (&new_fixed_note, "fixed_note"),
+                    (&new_closed_note, "closed_note"),
+                ] {
+                    if let Some(value) = value {
+                        r.set_attr(field, value);
+                    }
                 }
             }
         };
@@ -3534,6 +3586,15 @@ fn set_alert_fields(resource: &mut Resource, cmd: &ParsedCommand) {
     if let Some(filter_id) = cmd.child_attr("filter", "id") {
         resource.set_attr("filter_id", filter_id);
     }
+}
+
+fn nested_child_attr(cmd: &ParsedCommand, path: &[&str], attr: &str) -> Option<String> {
+    let (first, rest) = path.split_first()?;
+    let mut element = cmd.children.iter().find(|child| child.name == *first)?;
+    for name in rest {
+        element = element.children.iter().find(|child| child.name == **name)?;
+    }
+    element.attributes.get(attr).cloned()
 }
 
 fn set_permission_references(resource: &mut Resource, cmd: &ParsedCommand) {
