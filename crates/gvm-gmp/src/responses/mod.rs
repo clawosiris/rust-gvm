@@ -124,7 +124,9 @@ pub use permission::{
     CreatePermissionResponse, DeletePermissionResponse, GetPermissionsResponse,
     ModifyPermissionResponse, Permission,
 };
-pub use port_list::{CreatePortListResponse, GetPortListsResponse, PortList};
+pub use port_list::{
+    CreatePortListResponse, GetPortListsResponse, ModifyPortListResponse, PortList,
+};
 pub use report::{
     CreateReportResponse, DeleteReportResponse, GetReportApplicationsResponse,
     GetReportClosedCvesResponse, GetReportCvesResponse, GetReportErrorsResponse,

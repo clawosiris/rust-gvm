@@ -61,7 +61,8 @@ use gvm_gmp::commands::permissions::{
     create_permission, get_permissions, GetPermissionsOpts, PermissionOpts,
 };
 use gvm_gmp::commands::port_lists::{
-    create_port_list, get_port_lists, GetPortListsOpts, PortListOpts,
+    create_port_list, get_port_lists, modify_port_list, GetPortListsOpts, ModifyPortListOpts,
+    PortListOpts,
 };
 use gvm_gmp::commands::report_configs::{
     clone_report_config, get_report_configs_opts, GetReportConfigsOpts,
@@ -113,7 +114,9 @@ use gvm_gmp::commands::tls_certificates::{
     create_tls_certificate, get_tls_certificates, GetTlsCertificatesOpts, TlsCertificateOpts,
 };
 use gvm_gmp::commands::trashcan::{empty_trashcan, restore_from_trashcan};
-use gvm_gmp::commands::users::{create_user, get_users, GetUsersOpts, UserOpts};
+use gvm_gmp::commands::users::{
+    create_user, get_users, modify_user, GetUsersOpts, ModifyUserOpts, UserOpts,
+};
 use gvm_gmp::commands::version::get_version;
 use gvm_gmp::commands::web_application_targets::{
     clone_web_application_target, create_web_application_target, delete_web_application_target,
@@ -148,10 +151,10 @@ use gvm_gmp::responses::{
     GetTimezonesResponse, GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse,
     GetVulnerabilitiesResponse, GetWebApplicationTargetsResponse, HelpResponse,
     ModifyAssetResponse, ModifyConfigResponse, ModifyCredentialResponse,
-    ModifyIntegrationConfigResponse, ModifyOciImageTargetResponse, ModifyScanConfigResponse,
-    ModifyScannerResponse, ModifyWebApplicationTargetResponse, ReportExport, RestoreResponse,
-    ResumeTaskResponse, StartTaskResponse, SyncConfigResponse, VerifyCredentialStoreResponse,
-    VerifyScannerResponse,
+    ModifyIntegrationConfigResponse, ModifyOciImageTargetResponse, ModifyPortListResponse,
+    ModifyScanConfigResponse, ModifyScannerResponse, ModifyUserResponse,
+    ModifyWebApplicationTargetResponse, ReportExport, RestoreResponse, ResumeTaskResponse,
+    StartTaskResponse, SyncConfigResponse, VerifyCredentialStoreResponse, VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::{CredentialStoreCredentialType, FeedType};
@@ -725,6 +728,20 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ) -> Result<CreatePortListResponse, GvmError> {
         let response = self.send(create_port_list(name, opts)).await?;
         CreatePortListResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `modify_port_list` request and return a typed
+    /// [`ModifyPortListResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_port_list(
+        &mut self,
+        port_list_id: &EntityId,
+        opts: ModifyPortListOpts,
+    ) -> Result<ModifyPortListResponse, GvmError> {
+        let response = self.send(modify_port_list(port_list_id, opts)).await?;
+        ModifyPortListResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     // ── Tasks ─────────────────────────────────────────────────────────────────
@@ -1567,6 +1584,19 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ) -> Result<CreateUserResponse, GvmError> {
         let response = self.send(create_user(name, opts)).await?;
         CreateUserResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `modify_user` request and return a typed [`ModifyUserResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_user(
+        &mut self,
+        user_id: &EntityId,
+        opts: ModifyUserOpts,
+    ) -> Result<ModifyUserResponse, GvmError> {
+        let response = self.send(modify_user(user_id, opts)).await?;
+        ModifyUserResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     // ── Groups ────────────────────────────────────────────────────────────────

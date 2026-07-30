@@ -24,6 +24,36 @@ pub struct UserOpts {
     pub auth_type: Option<UserAuthType>,
 }
 
+/// Optional fields for user modify requests.
+#[derive(Debug, Clone, Default)]
+pub struct ModifyUserOpts {
+    /// Optional replacement name.
+    pub new_name: Option<String>,
+    /// Optional comment text included in the request.
+    pub comment: Option<String>,
+    /// Optional password value.
+    pub password: Option<String>,
+    /// Optional host-access restrictions.
+    pub host_access: Option<UserHostAccess>,
+    /// Role identifiers assigned to the user.
+    pub role_ids: Vec<EntityId>,
+    /// Optional user authentication type.
+    pub auth_type: Option<UserAuthType>,
+}
+
+impl From<UserOpts> for ModifyUserOpts {
+    fn from(opts: UserOpts) -> Self {
+        Self {
+            new_name: None,
+            comment: opts.comment,
+            password: opts.password,
+            host_access: opts.host_access,
+            role_ids: opts.role_ids,
+            auth_type: opts.auth_type,
+        }
+    }
+}
+
 /// User host-access restrictions.
 ///
 /// `hosts` is the comma-separated GMP host expression string accepted by gvmd.
@@ -124,9 +154,11 @@ pub fn get_user(user_id: &EntityId) -> impl Request {
 
 /// Build a `modify_user` request.
 #[must_use]
-pub fn modify_user(user_id: &EntityId, opts: UserOpts) -> impl Request {
+pub fn modify_user(user_id: &EntityId, opts: impl Into<ModifyUserOpts>) -> impl Request {
+    let opts = opts.into();
     let mut cmd = XmlCommand::new("modify_user").attribute("user_id", user_id.as_str());
-    add_user_body(&mut cmd, &opts);
+    add_text_element(&mut cmd, "new_name", opts.new_name.as_deref());
+    add_modify_user_body(&mut cmd, &opts);
     cmd
 }
 
@@ -139,6 +171,23 @@ pub fn delete_user(user_id: &EntityId, ultimate: bool) -> impl Request {
 }
 
 fn add_user_body(cmd: &mut XmlCommand, opts: &UserOpts) {
+    add_text_element(cmd, "comment", opts.comment.as_deref());
+    add_text_element(cmd, "password", opts.password.as_deref());
+    if let Some(host_access) = &opts.host_access {
+        cmd.add_element("hosts")
+            .set_attribute("allow", bool_str(host_access.allow))
+            .set_text(&host_access.hosts);
+    }
+    if let Some(auth_type) = opts.auth_type {
+        cmd.add_element_with_text("authentication", auth_type.as_gmp_str());
+    }
+    for role_id in &opts.role_ids {
+        cmd.add_element("role")
+            .set_attribute("id", role_id.as_str());
+    }
+}
+
+fn add_modify_user_body(cmd: &mut XmlCommand, opts: &ModifyUserOpts) {
     add_text_element(cmd, "comment", opts.comment.as_deref());
     add_text_element(cmd, "password", opts.password.as_deref());
     if let Some(host_access) = &opts.host_access {
@@ -196,14 +245,19 @@ mod tests {
         assert!(rendered.contains("details=\"1\""));
         let rendered = xml(modify_user(
             &id("u1"),
-            UserOpts {
+            ModifyUserOpts {
+                new_name: Some("alice-renamed".into()),
                 comment: Some("updated".into()),
                 ..Default::default()
             },
         ));
         assert_eq!(
             rendered,
-            "<modify_user user_id=\"u1\"><comment>updated</comment></modify_user>"
+            "<modify_user user_id=\"u1\"><new_name>alice-renamed</new_name><comment>updated</comment></modify_user>"
+        );
+        assert_eq!(
+            xml(modify_user(&id("u1"), ModifyUserOpts::default())),
+            "<modify_user user_id=\"u1\"/>"
         );
         let rendered = xml(delete_user(&id("u1"), true));
         assert!(rendered.contains("<delete_user "));
