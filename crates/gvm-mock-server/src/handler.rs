@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
+use base64::Engine as _;
 use uuid::Uuid;
 
 use crate::command_parser::{parse_command, parse_element_text, ParsedCommand, ParsedElement};
@@ -1020,6 +1021,25 @@ impl SessionHandler {
         let new_active = parse_element_text(raw_xml, "active");
         let new_usage_type = parse_element_text(raw_xml, "usage_type");
         let new_value = parse_element_text(raw_xml, "value");
+        let new_value = if resource_type == "setting" {
+            let Some(value) = new_value else {
+                return error_response(&cmd.name, 400, "Missing required element: value");
+            };
+            let decoded = match base64::engine::general_purpose::STANDARD.decode(value.as_bytes()) {
+                Ok(decoded) => decoded,
+                Err(_) => {
+                    return error_response(&cmd.name, 400, "Value cannot be decoded to valid UTF-8")
+                }
+            };
+            match String::from_utf8(decoded) {
+                Ok(value) => Some(value),
+                Err(_) => {
+                    return error_response(&cmd.name, 400, "Value cannot be decoded to valid UTF-8")
+                }
+            }
+        } else {
+            new_value
+        };
         let new_term = parse_element_text(raw_xml, "term");
         let new_credential_store_id = parse_element_text(raw_xml, "credential_store_id");
         let new_vault_id = parse_element_text(raw_xml, "vault_id");

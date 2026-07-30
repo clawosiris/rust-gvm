@@ -5,6 +5,7 @@
 
 use gvm_protocol::{Request, XmlCommand};
 
+use crate::commands::user_settings::{modify_user_setting, ModifyUserSettingOpts};
 use crate::common::add_filter_attrs;
 use crate::enums::{AggregateStatistic, FeedType, HelpFormat, InfoType, ResourceType, SortOrder};
 use crate::types::EntityId;
@@ -251,12 +252,15 @@ pub fn modify_license(key: &str) -> impl Request {
     XmlCommand::new("modify_license").child_with_text("key", key)
 }
 
-/// Build a `modify_setting` request.
+/// Build a `modify_setting` request, Base64-encoding the UTF-8 value for GMP.
 #[must_use]
 pub fn modify_setting(setting_id: &EntityId, value: &str) -> impl Request {
-    XmlCommand::new("modify_setting")
-        .attribute("setting_id", setting_id.as_str())
-        .child_with_text("value", value)
+    modify_user_setting(
+        setting_id,
+        ModifyUserSettingOpts {
+            value: value.to_string(),
+        },
+    )
 }
 
 /// Build a `run_wizard` request.
@@ -344,8 +348,8 @@ mod tests {
             "<modify_license><key>abc</key></modify_license>"
         );
         assert_eq!(
-            xml(modify_setting(&id("s1"), "v")),
-            "<modify_setting setting_id=\"s1\"><value>v</value></modify_setting>"
+            xml(modify_setting(&id("s1"), "Europe/Berlin")),
+            "<modify_setting setting_id=\"s1\"><value>RXVyb3BlL0Jlcmxpbg==</value></modify_setting>"
         );
         let rendered = xml(run_wizard("quick", &[("target".into(), "10.0.0.1".into())]));
         assert!(rendered.contains("<param name=\"target\">10.0.0.1</param>"));

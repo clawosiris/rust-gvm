@@ -743,7 +743,7 @@ async fn stateful_user_settings_get_and_modify() {
     let modify = send_recv(
         &mut stream,
         format!(
-            "<modify_setting setting_id=\"{setting_id}\"><value>Europe/Berlin</value></modify_setting>"
+            "<modify_setting setting_id=\"{setting_id}\"><value>RXVyb3BlL0Jlcmxpbg==</value></modify_setting>"
         )
         .as_bytes(),
     )
@@ -757,6 +757,32 @@ async fn stateful_user_settings_get_and_modify() {
     .await;
     let get_one_text = get_one.as_str().expect("utf8");
     assert!(get_one_text.contains("<value>Europe/Berlin</value>"));
+
+    for invalid_value in ["not-valid-base64!", "//8="] {
+        let invalid = send_recv(
+            &mut stream,
+            format!(
+                "<modify_setting setting_id=\"{setting_id}\"><value>{invalid_value}</value></modify_setting>"
+            )
+            .as_bytes(),
+        )
+        .await;
+        assert_eq!(invalid.status_code(), Some(400));
+        assert!(invalid
+            .as_str()
+            .expect("utf8")
+            .contains("Value cannot be decoded to valid UTF-8"));
+    }
+
+    let unchanged = send_recv(
+        &mut stream,
+        format!("<get_settings setting_id=\"{setting_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert!(unchanged
+        .as_str()
+        .expect("utf8")
+        .contains("<value>Europe/Berlin</value>"));
 
     server.shutdown().await;
 }
