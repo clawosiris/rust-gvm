@@ -668,6 +668,16 @@ impl SessionHandler {
                 resource.set_attr("credential_id", credential_id);
             }
         }
+        if resource_type == "scanner" {
+            for field in ["host", "port", "type", "ca_pub"] {
+                if let Some(value) = parse_element_text(raw_xml, field) {
+                    resource.set_attr(field, &value);
+                }
+            }
+            if let Some(credential_id) = cmd.child_attr("credential", "id") {
+                resource.set_attr("credential_id", credential_id);
+            }
+        }
 
         if matches!(resource_type, "config" | "task") {
             let usage_type = if has_config_import_payload {
@@ -1015,6 +1025,8 @@ impl SessionHandler {
         let new_task_id = cmd.child_attr("task", "id").map(str::to_string);
         let new_credential_id = cmd.child_attr("credential", "id").map(str::to_string);
         let new_port = parse_element_text(raw_xml, "port");
+        let new_type = parse_element_text(raw_xml, "type");
+        let new_ca_pub = parse_element_text(raw_xml, "ca_pub");
         let new_severity = parse_element_text(raw_xml, "severity");
         let new_new_severity = parse_element_text(raw_xml, "new_severity");
         let new_active = parse_element_text(raw_xml, "active");
@@ -1132,18 +1144,24 @@ impl SessionHandler {
             if let Some(ref task_id) = new_task_id {
                 r.set_attr("task_id", task_id);
             }
-            if resource_type == "oci_image_target" {
-                if let Some(ref credential_id) = new_credential_id {
-                    r.set_attr("credential_id", credential_id);
-                }
-            }
-            if resource_type == "web_application_target" {
+            if matches!(
+                resource_type,
+                "oci_image_target" | "web_application_target" | "scanner"
+            ) {
                 if let Some(ref credential_id) = new_credential_id {
                     r.set_attr("credential_id", credential_id);
                 }
             }
             if let Some(ref port) = new_port {
                 r.set_attr("port", port);
+            }
+            if resource_type == "scanner" {
+                if let Some(ref scanner_type) = new_type {
+                    r.set_attr("type", scanner_type);
+                }
+                if let Some(ref ca_pub) = new_ca_pub {
+                    r.set_attr("ca_pub", ca_pub);
+                }
             }
             if let Some(ref severity) = new_severity {
                 r.set_attr("severity", severity);

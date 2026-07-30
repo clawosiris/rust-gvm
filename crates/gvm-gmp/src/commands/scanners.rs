@@ -12,6 +12,8 @@ use crate::types::EntityId;
 /// Optional fields for scanner create and modify requests.
 #[derive(Debug, Clone, Default)]
 pub struct ScannerOpts {
+    /// Optional replacement name used by modify requests.
+    pub name: Option<String>,
     /// Optional comment text included in the request.
     pub comment: Option<String>,
     /// Optional host name or address.
@@ -20,6 +22,8 @@ pub struct ScannerOpts {
     pub port: Option<u16>,
     /// Optional scanner type.
     pub scanner_type: Option<ScannerType>,
+    /// Optional CA certificate in PEM format.
+    pub ca_pub: Option<String>,
     /// Optional credential identifier.
     pub credential_id: Option<EntityId>,
 }
@@ -56,6 +60,7 @@ pub fn create_scanner(name: &str, opts: ScannerOpts) -> impl Request {
     if let Some(scanner_type) = opts.scanner_type {
         cmd.add_element_with_text("type", scanner_type.as_scanner_type());
     }
+    add_text_element(&mut cmd, "ca_pub", opts.ca_pub.as_deref());
     if let Some(credential_id) = opts.credential_id.as_ref() {
         cmd.add_element("credential")
             .set_attribute("id", credential_id.as_str());
@@ -89,11 +94,19 @@ pub fn get_scanner(scanner_id: &EntityId) -> impl Request {
 #[must_use]
 pub fn modify_scanner(scanner_id: &EntityId, opts: ScannerOpts) -> impl Request {
     let mut cmd = XmlCommand::new("modify_scanner").attribute("scanner_id", scanner_id.as_str());
-    add_text_element(&mut cmd, "name", Some(""));
+    add_text_element(&mut cmd, "name", opts.name.as_deref());
     add_text_element(&mut cmd, "comment", opts.comment.as_deref());
     add_text_element(&mut cmd, "host", opts.host.as_deref());
     if let Some(port) = opts.port {
         cmd.add_element_with_text("port", &port.to_string());
+    }
+    if let Some(scanner_type) = opts.scanner_type {
+        cmd.add_element_with_text("type", scanner_type.as_scanner_type());
+    }
+    add_text_element(&mut cmd, "ca_pub", opts.ca_pub.as_deref());
+    if let Some(credential_id) = opts.credential_id.as_ref() {
+        cmd.add_element("credential")
+            .set_attribute("id", credential_id.as_str());
     }
     cmd
 }
@@ -129,12 +142,15 @@ mod tests {
                 host: Some("127.0.0.1".into()),
                 port: Some(9390),
                 scanner_type: Some(ScannerType::OpenVasScanner),
+                ca_pub: Some("CA certificate".into()),
                 credential_id: Some(id("cred1")),
                 ..Default::default()
             },
         ));
-        assert!(rendered.contains("<type>2</type>"));
-        assert!(rendered.contains("<credential id=\"cred1\"/>"));
+        assert_eq!(
+            rendered,
+            "<create_scanner><name>scanner</name><host>127.0.0.1</host><port>9390</port><type>2</type><ca_pub>CA certificate</ca_pub><credential id=\"cred1\"/></create_scanner>"
+        );
         assert_eq!(
             xml(clone_scanner(&id("s1"))),
             "<create_scanner><copy>s1</copy></create_scanner>"
@@ -155,13 +171,22 @@ mod tests {
         let rendered = xml(modify_scanner(
             &id("s1"),
             ScannerOpts {
+                name: Some("Renamed scanner".into()),
+                comment: Some("updated".into()),
                 host: Some("localhost".into()),
-                ..Default::default()
+                port: Some(9390),
+                scanner_type: Some(ScannerType::OpenVasScanner),
+                ca_pub: Some("Replacement CA".into()),
+                credential_id: Some(id("cred2")),
             },
         ));
         assert_eq!(
             rendered,
-            "<modify_scanner scanner_id=\"s1\"><host>localhost</host></modify_scanner>"
+            "<modify_scanner scanner_id=\"s1\"><name>Renamed scanner</name><comment>updated</comment><host>localhost</host><port>9390</port><type>2</type><ca_pub>Replacement CA</ca_pub><credential id=\"cred2\"/></modify_scanner>"
+        );
+        assert_eq!(
+            xml(modify_scanner(&id("s1"), ScannerOpts::default())),
+            "<modify_scanner scanner_id=\"s1\"/>"
         );
         assert_eq!(
             xml(delete_scanner(&id("s1"), true)),

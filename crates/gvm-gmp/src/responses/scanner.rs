@@ -19,6 +19,7 @@ pub struct Scanner {
     pub scanner_type: Option<String>,
     pub host: Option<String>,
     pub port: Option<u16>,
+    pub ca_pub: Option<String>,
     pub credential: Option<NamedEntity>,
 }
 
@@ -48,6 +49,7 @@ impl Scanner {
             scanner_type: node.optional_child_text("type"),
             host: node.optional_child_text("host"),
             port: optional_u16(node, "port", "port")?,
+            ca_pub: node.optional_child_text("ca_pub"),
             credential: parse_named_entity(node, "credential")?,
         })
     }
@@ -112,6 +114,7 @@ mod tests {
                     <type>OpenVAS</type>
                     <host>127.0.0.1</host>
                     <port>9390</port>
+                    <ca_pub>CA certificate</ca_pub>
                     <credential id="cred-1"><name>OSP Credential</name></credential>
                 </scanner>
                 <scanner id="scanner-2">
@@ -126,6 +129,17 @@ mod tests {
         assert_eq!(parsed.items.len(), 2);
         assert_eq!(parsed.items[0].scanner_type.as_deref(), Some("OpenVAS"));
         assert_eq!(parsed.items[0].port, Some(9390));
+        assert_eq!(parsed.items[0].ca_pub.as_deref(), Some("CA certificate"));
+        assert!(parsed.items[0].meta.writable);
+        assert!(!parsed.items[0].meta.in_use);
+        assert_eq!(
+            parsed.items[0]
+                .meta
+                .owner
+                .as_ref()
+                .map(|owner| owner.name.as_str()),
+            Some("admin")
+        );
         assert_eq!(
             parsed.items[0]
                 .credential
@@ -189,6 +203,7 @@ mod tests {
 
         assert_eq!(scanner.host, None);
         assert_eq!(scanner.port, None);
+        assert_eq!(scanner.ca_pub, None);
         assert_eq!(scanner.credential, None);
     }
 }
