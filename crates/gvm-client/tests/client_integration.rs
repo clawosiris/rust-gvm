@@ -14,7 +14,9 @@ use gvm_client::{
 };
 use gvm_connection::{ConnectionError, GvmConnection, UnixSocketConnection};
 use gvm_gmp::commands::aggregates::{get_aggregates as get_aggregates_legacy, GetAggregatesOpts};
-use gvm_gmp::commands::alerts::{trigger_alert, TriggerAlertOpts};
+use gvm_gmp::commands::alerts::{
+    trigger_alert, AlertData, AlertOpts, GetAlertsOpts, TriggerAlertOpts,
+};
 use gvm_gmp::commands::assets::{
     AssetType, CreateAssetOpts, DeleteAssetOpts, GetAssetsOpts, ModifyAssetOpts,
 };
@@ -58,7 +60,9 @@ use gvm_gmp::responses::{
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
-use gvm_gmp::{FeedType, PermissionSubjectType, SortOrder};
+use gvm_gmp::{
+    AlertCondition, AlertEvent, AlertMethod, FeedType, PermissionSubjectType, SortOrder,
+};
 use gvm_mock_server::{
     GmpVersion as MockVersion, MockGmpServer, Resource, ResourceStore, ServerMode,
 };
@@ -689,6 +693,115 @@ async fn trigger_alert_sends_get_reports_command() {
         std::str::from_utf8(command.raw_xml()).expect("valid UTF-8 command"),
         "<get_reports alert_id=\"alert-1\" delta_report_id=\"delta-1\" filt_id=\"filter-1\" filter=\"severity&gt;5\" format_id=\"format-1\" report_id=\"report-1\"/>"
     );
+
+    server.shutdown().await;
+}
+
+fn only_alert(response: &gvm_gmp::responses::GetAlertsResponse) -> &gvm_gmp::responses::Alert {
+    assert_eq!(response.items.len(), 1);
+    &response.items[0]
+}
+
+fn assert_alert_data(
+    alert: &gvm_gmp::responses::Alert,
+    name: &str,
+    event_status: Option<&str>,
+    severity: &str,
+    to_address: &str,
+) {
+    assert_eq!(alert.meta.name, name);
+    assert_eq!(
+        alert.event_data.get("status").map(String::as_str),
+        event_status
+    );
+    assert_eq!(
+        alert.condition_data.get("severity").map(String::as_str),
+        Some(severity)
+    );
+    assert_eq!(
+        alert.method_data.get("to_address").map(String::as_str),
+        Some(to_address)
+    );
+}
+
+#[tokio::test]
+async fn typed_alert_data_maps_and_rename_round_trip() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let created = client
+        .create_alert(
+            "Typed Alert",
+            AlertOpts {
+                event: Some(AlertEvent::TaskRunStatusChanged),
+                event_data: vec![AlertData::new("status", "Done")],
+                condition: Some(AlertCondition::SeverityAtLeast),
+                condition_data: vec![AlertData::new("severity", "5.5")],
+                method: Some(AlertMethod::Email),
+                method_data: vec![AlertData::new("to_address", "ops@example.com")],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("create_alert should succeed");
+
+    let fetched = client
+        .get_alerts(GetAlertsOpts::default())
+        .await
+        .expect("get_alerts should succeed");
+    let alert = only_alert(&fetched);
+    assert_eq!(alert.meta.id, created.id);
+    assert_alert_data(alert, "Typed Alert", Some("Done"), "5.5", "ops@example.com");
+
+    client
+        .modify_alert(
+            &created.id,
+            AlertOpts {
+                name: Some("Renamed Alert".into()),
+                event: Some(AlertEvent::TaskRunStatusChanged),
+                event_data: vec![],
+                condition: Some(AlertCondition::SeverityAtLeast),
+                condition_data: vec![AlertData::new("severity", "7.0")],
+                method: Some(AlertMethod::Email),
+                method_data: vec![AlertData::new("to_address", "soc@example.com")],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("modify_alert should succeed");
+
+    let modified = client
+        .get_alerts(GetAlertsOpts::default())
+        .await
+        .expect("get_alerts after modify should succeed");
+    let alert = only_alert(&modified);
+    assert_alert_data(alert, "Renamed Alert", None, "7.0", "soc@example.com");
+
+    client
+        .modify_alert(
+            &created.id,
+            AlertOpts {
+                comment: Some("data omitted".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("partial modify_alert should succeed");
+    let partially_modified = client
+        .get_alerts(GetAlertsOpts::default())
+        .await
+        .expect("get_alerts after partial modify should succeed");
+    let alert = only_alert(&partially_modified);
+    assert_alert_data(alert, "Renamed Alert", None, "7.0", "soc@example.com");
 
     server.shutdown().await;
 }

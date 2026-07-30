@@ -679,6 +679,9 @@ impl SessionHandler {
                 resource.set_attr("credential_id", credential_id);
             }
         }
+        if resource_type == "alert" {
+            set_alert_fields(&mut resource, cmd);
+        }
 
         if matches!(resource_type, "config" | "task") {
             let usage_type = if has_config_import_payload {
@@ -1206,6 +1209,9 @@ impl SessionHandler {
                 if let Some(ref term) = new_term {
                     r.set_attr("term", term);
                 }
+            }
+            if resource_type == "alert" {
+                set_alert_fields(r, cmd);
             }
             if resource_type == "credential" {
                 if let Some(ref credential_store_id) = new_credential_store_id {
@@ -3501,6 +3507,31 @@ fn nested_child_text(cmd: &ParsedCommand, path: &[&str]) -> Option<String> {
         element = element.children.iter().find(|child| child.name == **name)?;
     }
     Some(element.text.clone().unwrap_or_default())
+}
+
+fn set_alert_fields(resource: &mut Resource, cmd: &ParsedCommand) {
+    for field in ["event", "condition", "method"] {
+        let Some(element) = cmd.children.iter().find(|child| child.name == field) else {
+            continue;
+        };
+        resource.set_attr(field, element.text.as_deref().unwrap_or_default());
+        let data_prefix = format!("{field}_data:");
+        resource
+            .attrs
+            .retain(|key, _| !key.starts_with(&data_prefix));
+        for data in element.children.iter().filter(|child| child.name == "data") {
+            let Some(name) = element_child_text(data, "name") else {
+                continue;
+            };
+            resource.set_attr(
+                &format!("{data_prefix}{name}"),
+                data.text.as_deref().unwrap_or_default(),
+            );
+        }
+    }
+    if let Some(filter_id) = cmd.child_attr("filter", "id") {
+        resource.set_attr("filter_id", filter_id);
+    }
 }
 
 fn set_permission_references(resource: &mut Resource, cmd: &ParsedCommand) {

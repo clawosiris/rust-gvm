@@ -25,12 +25,16 @@ fn test_create_alert_with_all_optionals() {
             AlertOpts {
                 comment: Some("c".into()),
                 event: Some(AlertEvent::TaskRunStatusChanged),
-                condition: Some(AlertCondition::Always),
+                event_data: vec![AlertData::new("status", "Done")],
+                condition: Some(AlertCondition::SeverityAtLeast),
+                condition_data: vec![AlertData::new("severity", "5.5")],
                 method: Some(AlertMethod::Email),
+                method_data: vec![AlertData::new("to_address", "ops@example.com")],
                 filter_id: Some(id("f1")),
+                ..Default::default()
             }
         )),
-        "<create_alert><name>a</name><comment>c</comment><event>Task run status changed</event><condition>Always</condition><method>Email</method><filter id=\"f1\"/></create_alert>"
+        "<create_alert><name>a</name><comment>c</comment><event>Task run status changed<data>Done<name>status</name></data></event><condition>Severity at least<data>5.5<name>severity</name></data></condition><method>Email<data>ops@example.com<name>to_address</name></data></method><filter id=\"f1\"/></create_alert>"
     );
 }
 
@@ -48,13 +52,15 @@ fn test_alert_get_modify_delete_and_test() {
         xml(modify_alert(
             &id("a1"),
             AlertOpts {
+                name: Some("renamed".into()),
                 event: Some(AlertEvent::TaskRunStatusChanged),
+                event_data: vec![AlertData::new("status", "Done")],
                 condition: Some(AlertCondition::Always),
                 method: Some(AlertMethod::SysLog),
                 ..Default::default()
             }
         )),
-        "<modify_alert alert_id=\"a1\"><event>Task run status changed</event><condition>Always</condition><method>Syslog</method></modify_alert>"
+        "<modify_alert alert_id=\"a1\"><name>renamed</name><event>Task run status changed<data>Done<name>status</name></data></event><condition>Always</condition><method>Syslog</method></modify_alert>"
     );
     assert_eq!(
         xml(delete_alert(&id("a1"), false)),

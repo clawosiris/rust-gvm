@@ -9,17 +9,44 @@ use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_b
 use crate::enums::{AlertCondition, AlertEvent, AlertMethod};
 use crate::types::EntityId;
 
+/// A name/value entry nested below an alert event, condition, or method.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlertData {
+    /// Protocol-defined data name.
+    pub name: String,
+    /// Data value.
+    pub value: String,
+}
+
+impl AlertData {
+    /// Create an alert data entry.
+    pub fn new(name: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            value: value.into(),
+        }
+    }
+}
+
 /// Optional fields for alert create and modify requests.
 #[derive(Debug, Clone, Default)]
 pub struct AlertOpts {
+    /// Optional replacement name used by modify requests.
+    pub name: Option<String>,
     /// Optional comment text included in the request.
     pub comment: Option<String>,
     /// Optional alert event value.
     pub event: Option<AlertEvent>,
+    /// Data entries applied when `event` is present.
+    pub event_data: Vec<AlertData>,
     /// Optional alert condition value.
     pub condition: Option<AlertCondition>,
+    /// Data entries applied when `condition` is present.
+    pub condition_data: Vec<AlertData>,
     /// Optional alert delivery method.
     pub method: Option<AlertMethod>,
+    /// Data entries applied when `method` is present.
+    pub method_data: Vec<AlertData>,
     /// Optional saved filter identifier.
     pub filter_id: Option<EntityId>,
 }
@@ -91,6 +118,7 @@ pub fn get_alert(alert_id: &EntityId) -> impl Request {
 #[must_use]
 pub fn modify_alert(alert_id: &EntityId, opts: AlertOpts) -> impl Request {
     let mut cmd = XmlCommand::new("modify_alert").attribute("alert_id", alert_id.as_str());
+    add_text_element(&mut cmd, "name", opts.name.as_deref());
     add_alert_body(&mut cmd, &opts);
     cmd
 }
@@ -135,18 +163,45 @@ pub fn trigger_alert(
 
 fn add_alert_body(cmd: &mut XmlCommand, opts: &AlertOpts) {
     add_text_element(cmd, "comment", opts.comment.as_deref());
-    if let Some(event) = opts.event {
-        cmd.add_element_with_text("event", event.as_alert_name());
-    }
-    if let Some(condition) = opts.condition {
-        cmd.add_element_with_text("condition", condition.as_alert_name());
-    }
-    if let Some(method) = opts.method {
-        cmd.add_element_with_text("method", method.as_alert_name());
-    }
+    add_alert_field(
+        cmd,
+        "event",
+        opts.event.map(AlertEvent::as_alert_name),
+        &opts.event_data,
+    );
+    add_alert_field(
+        cmd,
+        "condition",
+        opts.condition.map(AlertCondition::as_alert_name),
+        &opts.condition_data,
+    );
+    add_alert_field(
+        cmd,
+        "method",
+        opts.method.map(AlertMethod::as_alert_name),
+        &opts.method_data,
+    );
     if let Some(filter_id) = opts.filter_id.as_ref() {
         cmd.add_element("filter")
             .set_attribute("id", filter_id.as_str());
+    }
+}
+
+fn add_alert_field(
+    cmd: &mut XmlCommand,
+    field_name: &str,
+    field_value: Option<&str>,
+    data: &[AlertData],
+) {
+    let Some(field_value) = field_value else {
+        return;
+    };
+    let field = cmd.add_element(field_name);
+    field.set_text(field_value);
+    for entry in data {
+        let data_element = field.add_child("data");
+        data_element.set_text(&entry.value);
+        data_element.add_child_with_text("name", &entry.name);
     }
 }
 
@@ -165,16 +220,18 @@ mod tests {
             "alert",
             AlertOpts {
                 event: Some(AlertEvent::TaskRunStatusChanged),
+                event_data: vec![AlertData::new("status", "Done")],
                 condition: Some(AlertCondition::Always),
                 method: Some(AlertMethod::Email),
+                method_data: vec![AlertData::new("to_address", "ops@example.com")],
                 filter_id: Some(id("f1")),
                 ..Default::default()
             },
         ));
-        assert!(rendered.contains("<event>Task run status changed</event>"));
-        assert!(rendered.contains("<condition>Always</condition>"));
-        assert!(rendered.contains("<method>Email</method>"));
-        assert!(rendered.contains("<filter id=\"f1\"/>"));
+        assert_eq!(
+            rendered,
+            "<create_alert><name>alert</name><event>Task run status changed<data>Done<name>status</name></data></event><condition>Always</condition><method>Email<data>ops@example.com<name>to_address</name></data></method><filter id=\"f1\"/></create_alert>"
+        );
         assert_eq!(
             xml(clone_alert(&id("a1"))),
             "<create_alert><copy>a1</copy></create_alert>"
@@ -195,14 +252,21 @@ mod tests {
         let rendered = xml(modify_alert(
             &id("a1"),
             AlertOpts {
+                name: Some("Renamed & Escaped".into()),
                 comment: Some("updated".into()),
+                event: Some(AlertEvent::TaskRunStatusChanged),
+                event_data: vec![AlertData::new("key&name", "value <&>")],
                 method: Some(AlertMethod::SysLog),
                 ..Default::default()
             },
         ));
         assert_eq!(
             rendered,
-            "<modify_alert alert_id=\"a1\"><comment>updated</comment><method>Syslog</method></modify_alert>"
+            "<modify_alert alert_id=\"a1\"><name>Renamed &amp; Escaped</name><comment>updated</comment><event>Task run status changed<data>value &lt;&amp;&gt;<name>key&amp;name</name></data></event><method>Syslog</method></modify_alert>"
+        );
+        assert_eq!(
+            xml(modify_alert(&id("a1"), AlertOpts::default())),
+            "<modify_alert alert_id=\"a1\"/>"
         );
         assert_eq!(
             xml(delete_alert(&id("a1"), false)),
