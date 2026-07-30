@@ -94,7 +94,8 @@ pub use gvm_gmp::commands::oci_image_targets::{
 };
 pub use gvm_gmp::commands::report_configs::ModifyReportConfigOpts;
 pub use gvm_gmp::commands::reports::{
-    GetReportDetailsOpts, GetReportExportOpts, GetScanReportOpts, ImportReportOpts,
+    GetAuditReportHostsOpts, GetAuditReportOpts, GetReportDetailsOpts, GetReportExportOpts,
+    GetScanReportOpts, ImportReportOpts,
 };
 pub use gvm_gmp::commands::system_reports::GetSystemReportsOpts;
 pub use gvm_gmp::commands::tasks::CreateAgentGroupTaskOpts;
@@ -928,6 +929,24 @@ pub trait Gmp226Commands {
     async fn delete_report_config(&mut self, id: &str) -> Result<Response, GvmError>;
 }
 
+/// Structured audit-report commands available in GMP 22.7 and later.
+#[async_trait::async_trait]
+pub trait Gmp227Commands {
+    /// Get one structured audit report.
+    async fn get_audit_report(
+        &mut self,
+        audit_report_id: &EntityId,
+        opts: GetAuditReportOpts,
+    ) -> Result<gvm_gmp::responses::GetAuditReportResponse, GvmError>;
+
+    /// Get structured host summaries for an audit report.
+    async fn get_audit_report_hosts(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetAuditReportHostsOpts,
+    ) -> Result<gvm_gmp::responses::GetAuditReportHostsResponse, GvmError>;
+}
+
 /// Commands available only in GMP 22.8 and later.
 #[async_trait::async_trait]
 pub trait GmpNextCommands {
@@ -1322,6 +1341,29 @@ macro_rules! impl_gmp226_commands {
     };
 }
 
+macro_rules! impl_gmp227_commands {
+    ($client:ident) => {
+        #[async_trait::async_trait]
+        impl<C: GvmConnection + Send> Gmp227Commands for $client<C> {
+            async fn get_audit_report(
+                &mut self,
+                audit_report_id: &EntityId,
+                opts: GetAuditReportOpts,
+            ) -> Result<gvm_gmp::responses::GetAuditReportResponse, GvmError> {
+                self.0.get_audit_report(audit_report_id, opts).await
+            }
+
+            async fn get_audit_report_hosts(
+                &mut self,
+                report_id: &EntityId,
+                opts: GetAuditReportHostsOpts,
+            ) -> Result<gvm_gmp::responses::GetAuditReportHostsResponse, GvmError> {
+                self.0.get_audit_report_hosts(report_id, opts).await
+            }
+        }
+    };
+}
+
 /// Versioned GMP client wrapper selected during negotiation.
 #[derive(Debug)]
 pub enum GmpVersioned<C: GvmConnection> {
@@ -1427,6 +1469,8 @@ impl<C: GvmConnection> GmpVersioned<C> {
 impl_gmp226_commands!(Gmp226);
 impl_gmp226_commands!(Gmp227);
 impl_gmp226_commands!(GmpNext);
+impl_gmp227_commands!(Gmp227);
+impl_gmp227_commands!(GmpNext);
 
 #[async_trait::async_trait]
 impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {

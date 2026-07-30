@@ -19,7 +19,7 @@ struct Args {
     mode: String,
 
     /// GMP version to advertise
-    #[arg(long, default_value = "22.5")]
+    #[arg(long, default_value = "22.7")]
     version: String,
 
     /// Unix socket path

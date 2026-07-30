@@ -17,7 +17,7 @@
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let server = MockGmpServer::builder()
 //!     .mode(ServerMode::Echo)
-//!     .version(GmpVersion::V22_5)
+//!     .version(GmpVersion::V22_7)
 //!     .unix_socket_auto()
 //!     .build()
 //!     .await?;

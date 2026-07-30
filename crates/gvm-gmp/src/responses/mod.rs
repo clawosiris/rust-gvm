@@ -11,6 +11,7 @@ pub mod agent_group;
 pub mod aggregates;
 pub mod alert;
 pub mod asset;
+pub mod audit_report;
 pub mod auth;
 pub mod common;
 pub mod config;
@@ -72,6 +73,13 @@ pub use asset::{
     Asset, AssetIdentifier, AssetKind, CreateAssetResponse, DeleteAssetResponse, GenericAsset,
     GetAssetsResponse, GetOperatingSystemAssetsResponse, ModifyAssetResponse, OperatingSystemAsset,
     OperatingSystemHost,
+};
+pub use audit_report::{
+    AuditComplianceClassCount, AuditReport, AuditReportCompliance, AuditReportComplianceCounts,
+    AuditReportHost, AuditReportHostComplianceCounts, AuditReportHostDetail,
+    AuditReportHostDetailSource, ComplianceValue, GetAuditReportHostsResponse,
+    GetAuditReportResponse, ReportFilter, ReportFilterKeyword, ReportPage, ReportSort,
+    StructuredReportResourceCounts, StructuredReportTarget, StructuredReportTask,
 };
 pub use auth::AuthenticateResponse;
 pub use common::{ActionResponse, CountInfo, EntityMeta, NamedEntity, Owner, ParseError};

@@ -71,11 +71,12 @@ use gvm_gmp::commands::report_formats::{
     GetReportFormatsOpts, ReportFormatOpts,
 };
 use gvm_gmp::commands::reports::{
-    get_report_applications, get_report_closed_cves, get_report_cves, get_report_errors,
-    get_report_export, get_report_export_with_opts, get_report_hosts, get_report_operating_systems,
-    get_report_ports, get_report_tls_certificates, get_report_vulnerabilities, get_report_vulns,
-    get_reports, import_report, GetReportDetailsOpts, GetReportExportOpts, GetReportsOpts,
-    ImportReportOpts,
+    get_audit_report, get_audit_report_hosts, get_report_applications, get_report_closed_cves,
+    get_report_cves, get_report_errors, get_report_export, get_report_export_with_opts,
+    get_report_hosts, get_report_operating_systems, get_report_ports, get_report_tls_certificates,
+    get_report_vulnerabilities, get_report_vulns, get_reports, import_report,
+    GetAuditReportHostsOpts, GetAuditReportOpts, GetReportDetailsOpts, GetReportExportOpts,
+    GetReportsOpts, ImportReportOpts,
 };
 use gvm_gmp::commands::results::{get_results, GetResultsOpts};
 use gvm_gmp::commands::roles::{create_role, get_roles, GetRolesOpts, RoleOpts};
@@ -130,11 +131,12 @@ use gvm_gmp::responses::{
     CreateWebApplicationTargetResponse, DeleteAssetResponse, DeleteConfigResponse,
     DeleteOciImageTargetResponse, DeleteScanConfigResponse, DeleteScannerResponse,
     DeleteWebApplicationTargetResponse, DescribeAuthResponse, EmptyTrashcanResponse,
-    GetAggregatesResponse, GetAlertsResponse, GetAssetsResponse, GetCertBundAdvisoriesResponse,
-    GetConfigsResponse, GetCpesResponse, GetCredentialStoresResponse, GetCredentialsResponse,
-    GetCvesResponse, GetDfnCertAdvisoriesResponse, GetFeaturesResponse, GetFeedsResponse,
-    GetFiltersResponse, GetGroupsResponse, GetHostsResponse, GetIntegrationConfigsResponse,
-    GetNotesResponse, GetNvtFamiliesResponse, GetNvtsResponse, GetOciImageTargetsResponse,
+    GetAggregatesResponse, GetAlertsResponse, GetAssetsResponse, GetAuditReportHostsResponse,
+    GetAuditReportResponse, GetCertBundAdvisoriesResponse, GetConfigsResponse, GetCpesResponse,
+    GetCredentialStoresResponse, GetCredentialsResponse, GetCvesResponse,
+    GetDfnCertAdvisoriesResponse, GetFeaturesResponse, GetFeedsResponse, GetFiltersResponse,
+    GetGroupsResponse, GetHostsResponse, GetIntegrationConfigsResponse, GetNotesResponse,
+    GetNvtFamiliesResponse, GetNvtsResponse, GetOciImageTargetsResponse,
     GetOperatingSystemAssetsResponse, GetOverridesResponse, GetPermissionsResponse,
     GetPortListsResponse, GetReportApplicationsResponse, GetReportClosedCvesResponse,
     GetReportConfigsResponse, GetReportCvesResponse, GetReportErrorsResponse,
@@ -810,6 +812,32 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     }
 
     // ── Reports ───────────────────────────────────────────────────────────────
+
+    /// Send a `get_audit_report` request and return a typed structured report.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_audit_report(
+        &mut self,
+        audit_report_id: &EntityId,
+        opts: GetAuditReportOpts,
+    ) -> Result<GetAuditReportResponse, GvmError> {
+        let response = self.send(get_audit_report(audit_report_id, opts)).await?;
+        GetAuditReportResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `get_audit_report_hosts` request and return typed host summaries.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_audit_report_hosts(
+        &mut self,
+        report_id: &EntityId,
+        opts: GetAuditReportHostsOpts,
+    ) -> Result<GetAuditReportHostsResponse, GvmError> {
+        let response = self.send(get_audit_report_hosts(report_id, opts)).await?;
+        GetAuditReportHostsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
 
     /// Send a `get_reports` request and return a typed [`GetReportsResponse`].
     ///
