@@ -242,9 +242,11 @@ async fn stateful_create_agent_group_task_preserves_agent_group_id() {
     let text = get_resp.as_str().expect("valid utf8");
     assert!(text.contains("Agent Group Task"));
     assert!(text.contains(&format!(
-        "<agent_group_id>{agent_group_id}</agent_group_id>"
+        "<agent_group id=\"{agent_group_id}\"><name></name></agent_group>"
     )));
-    assert!(text.contains(&format!("<scanner_id>{DEFAULT_SCANNER_ID}</scanner_id>")));
+    assert!(text.contains(&format!(
+        "<scanner id=\"{DEFAULT_SCANNER_ID}\"><name></name></scanner>"
+    )));
 
     let replacement = send_recv(
         &mut stream,
@@ -271,7 +273,7 @@ async fn stateful_create_agent_group_task_preserves_agent_group_id() {
         .as_str()
         .expect("valid utf8")
         .contains(&format!(
-            "<agent_group_id>{replacement_id}</agent_group_id>"
+            "<agent_group id=\"{replacement_id}\"><name></name></agent_group>"
         )));
 
     let start_resp = send_recv(
@@ -337,9 +339,11 @@ async fn stateful_create_oci_image_target_task_preserves_target_id() {
     let text = get_resp.as_str().expect("valid utf8");
     assert!(text.contains("OCI Target Task"));
     assert!(text.contains(&format!(
-        "<oci_image_target_id>{target_id}</oci_image_target_id>"
+        "<oci_image_target id=\"{target_id}\"><name></name></oci_image_target>"
     )));
-    assert!(text.contains(&format!("<scanner_id>{DEFAULT_SCANNER_ID}</scanner_id>")));
+    assert!(text.contains(&format!(
+        "<scanner id=\"{DEFAULT_SCANNER_ID}\"><name></name></scanner>"
+    )));
 
     server.shutdown().await;
 }
@@ -388,9 +392,11 @@ async fn stateful_create_web_application_task_preserves_target_id() {
 
     let text = get_resp.as_str().expect("valid utf8");
     assert!(text.contains(&format!(
-        "<web_application_target_id>{target_id}</web_application_target_id>"
+        "<web_application_target id=\"{target_id}\"><name></name></web_application_target>"
     )));
-    assert!(text.contains(&format!("<scanner_id>{DEFAULT_SCANNER_ID}</scanner_id>")));
+    assert!(text.contains(&format!(
+        "<scanner id=\"{DEFAULT_SCANNER_ID}\"><name></name></scanner>"
+    )));
 
     server.shutdown().await;
 }

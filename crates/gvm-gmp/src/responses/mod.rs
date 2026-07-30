@@ -174,6 +174,7 @@ pub use target::{CreateTargetResponse, GetTargetsResponse, Target};
 pub use task::{
     CreateTaskResponse, DeleteTaskResponse, GetTasksResponse, LastReport, ModifyTaskResponse,
     MoveTaskResponse, ResumeTaskResponse, StartTaskResponse, StopTaskResponse, Task,
+    TaskTargetReference,
 };
 pub use ticket::{
     CreateTicketResponse, DeleteTicketResponse, GetTicketsResponse, ModifyTicketResponse, Ticket,

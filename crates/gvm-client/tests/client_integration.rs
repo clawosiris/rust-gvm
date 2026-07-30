@@ -2907,6 +2907,23 @@ async fn full_crud_lifecycle_succeeds() {
     let task_id = task_response.id().expect("task id");
     let task_entity_id = task_id.parse().expect("entity id");
 
+    let typed_tasks = client
+        .get_tasks(Default::default())
+        .await
+        .expect("typed get_tasks should succeed");
+    let typed_task = typed_tasks
+        .items
+        .iter()
+        .find(|task| task.meta.id == task_entity_id)
+        .expect("created classic task should be returned");
+    assert_eq!(
+        typed_task.target.as_ref().map(|target| &target.id),
+        Some(&target_entity_id)
+    );
+    assert_eq!(typed_task.agent_group, None);
+    assert_eq!(typed_task.oci_image_target, None);
+    assert_eq!(typed_task.web_application_target, None);
+
     let start_response = client
         .call(start_task(&task_entity_id))
         .await

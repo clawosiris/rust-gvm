@@ -23,6 +23,14 @@ pub struct Task {
     pub progress: Option<i32>,
     pub alterable: Option<bool>,
     pub target: Option<NamedEntity>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub agent_group: Option<NamedEntity>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub oci_image_target: Option<NamedEntity>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub web_application_target: Option<NamedEntity>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub additional_targets: Vec<TaskTargetReference>,
     pub config: Option<NamedEntity>,
     pub scanner: Option<NamedEntity>,
     pub schedule: Option<NamedEntity>,
@@ -35,6 +43,14 @@ pub struct Task {
     pub trend: Option<String>,
     pub usage_type: Option<String>,
     pub hosts_ordering: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct TaskTargetReference {
+    pub kind: String,
+    pub entity: NamedEntity,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,6 +122,18 @@ pub struct ResumeTaskResponse {
 
 impl Task {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
+        let target = parse_named_entity(node, "target")?;
+        let agent_group = parse_named_entity(node, "agent_group")?;
+        let oci_image_target = parse_named_entity(node, "oci_image_target")?;
+        let web_application_target = parse_named_entity(node, "web_application_target")?;
+        let additional_targets = parse_additional_targets(node)?;
+        validate_target_selectors(
+            target.as_ref(),
+            agent_group.as_ref(),
+            oci_image_target.as_ref(),
+            web_application_target.as_ref(),
+            &additional_targets,
+        )?;
         Ok(Self {
             meta: parse_entity_meta(node)?,
             status: node.optional_child_text("status"),
@@ -122,7 +150,11 @@ impl Task {
                 .optional_child_text("alterable")
                 .map(|value| parse_bool(&value, "alterable"))
                 .transpose()?,
-            target: parse_named_entity(node, "target")?,
+            target,
+            agent_group,
+            oci_image_target,
+            web_application_target,
+            additional_targets,
             config: parse_named_entity(node, "config")?,
             scanner: parse_named_entity(node, "scanner")?,
             schedule: parse_named_entity(node, "schedule")?,
@@ -149,6 +181,62 @@ impl Task {
             hosts_ordering: node.optional_child_text("hosts_ordering"),
         })
     }
+}
+
+fn parse_additional_targets(node: &XmlNode) -> Result<Vec<TaskTargetReference>, ParseError> {
+    node.children
+        .iter()
+        .filter(|child| {
+            child.name.ends_with("_target")
+                && !matches!(
+                    child.name.as_str(),
+                    "oci_image_target" | "web_application_target"
+                )
+        })
+        .map(|child| {
+            let raw_id = child
+                .attr("id")
+                .ok_or_else(|| ParseError::MissingElement(format!("{}.id", child.name)))?;
+            let entity = NamedEntity {
+                id: parse_entity_id(raw_id, &format!("{}.id", child.name))?,
+                name: child.required_child_text("name")?,
+            };
+            Ok(TaskTargetReference {
+                kind: child.name.clone(),
+                entity,
+            })
+        })
+        .collect()
+}
+
+fn validate_target_selectors(
+    target: Option<&NamedEntity>,
+    agent_group: Option<&NamedEntity>,
+    oci_image_target: Option<&NamedEntity>,
+    web_application_target: Option<&NamedEntity>,
+    additional_targets: &[TaskTargetReference],
+) -> Result<(), ParseError> {
+    let mut selectors = Vec::new();
+    if target.is_some() {
+        selectors.push("target");
+    }
+    if agent_group.is_some() {
+        selectors.push("agent_group");
+    }
+    if oci_image_target.is_some() {
+        selectors.push("oci_image_target");
+    }
+    if web_application_target.is_some() {
+        selectors.push("web_application_target");
+    }
+    selectors.extend(additional_targets.iter().map(|target| target.kind.as_str()));
+    if selectors.len() > 1 {
+        return Err(ParseError::InvalidValue {
+            field: "task.target_selector".to_string(),
+            value: selectors.join(", "),
+        });
+    }
+    Ok(())
 }
 
 impl GetTasksResponse {
@@ -371,6 +459,13 @@ mod tests {
         assert_eq!(parsed.items[0].status.as_deref(), Some("Done"));
         assert_eq!(parsed.items[0].progress, Some(100));
         assert_eq!(parsed.items[0].alterable, Some(true));
+        assert_eq!(
+            parsed.items[0]
+                .target
+                .as_ref()
+                .map(|target| target.id.as_str()),
+            Some("t-1")
+        );
         assert_eq!(parsed.items[0].alerts.len(), 2);
         let observers = parsed.items[0].observers.as_ref().expect("observers parse");
         assert_eq!(
@@ -399,6 +494,92 @@ mod tests {
         );
         assert_eq!(parsed.items[0].schedule_periods, Some(3));
         assert_eq!(parsed.items[1].progress, Some(42));
+    }
+
+    #[test]
+    fn parses_specialized_future_and_targetless_tasks() {
+        let response = Response::from(
+            r#"<get_tasks_response status="200" status_text="OK">
+                <task id="task-agent">
+                    <name>Agent task</name>
+                    <target id=""><name></name></target>
+                    <agent_group id="group-1"><name>Agents</name></agent_group>
+                </task>
+                <task id="task-oci">
+                    <name>OCI task</name>
+                    <target id=""><name></name></target>
+                    <oci_image_target id="oci-1"><name>Container</name></oci_image_target>
+                </task>
+                <task id="task-web">
+                    <name>Web task</name>
+                    <target id=""><name></name></target>
+                    <web_application_target id="web-1"><name>Web app</name></web_application_target>
+                </task>
+                <task id="task-import">
+                    <name>Import task</name>
+                    <target id=""><name></name></target>
+                </task>
+                <task id="task-future">
+                    <name>Future task</name>
+                    <cloud_target id="cloud-1"><name>Cloud</name></cloud_target>
+                </task>
+                <task_count>5<filtered>5</filtered></task_count>
+            </get_tasks_response>"#,
+        );
+
+        let parsed = GetTasksResponse::from_response(&response).expect("task variants parse");
+
+        assert_eq!(
+            parsed.items[0]
+                .agent_group
+                .as_ref()
+                .map(|target| target.id.as_str()),
+            Some("group-1")
+        );
+        assert_eq!(parsed.items[0].target, None);
+        assert_eq!(
+            parsed.items[1]
+                .oci_image_target
+                .as_ref()
+                .map(|target| target.id.as_str()),
+            Some("oci-1")
+        );
+        assert_eq!(
+            parsed.items[2]
+                .web_application_target
+                .as_ref()
+                .map(|target| target.id.as_str()),
+            Some("web-1")
+        );
+        assert_eq!(parsed.items[3].target, None);
+        assert!(parsed.items[3].additional_targets.is_empty());
+        assert_eq!(parsed.items[4].additional_targets.len(), 1);
+        assert_eq!(parsed.items[4].additional_targets[0].kind, "cloud_target");
+        assert_eq!(
+            parsed.items[4].additional_targets[0].entity.id.as_str(),
+            "cloud-1"
+        );
+    }
+
+    #[test]
+    fn rejects_tasks_with_multiple_target_selectors() {
+        let response = Response::from(
+            r#"<get_tasks_response status="200" status_text="OK">
+                <task id="task-invalid">
+                    <name>Invalid task</name>
+                    <target id="target-1"><name>Classic</name></target>
+                    <agent_group id="group-1"><name>Agents</name></agent_group>
+                </task>
+            </get_tasks_response>"#,
+        );
+
+        let error = GetTasksResponse::from_response(&response).expect_err("multiple targets fail");
+
+        assert!(matches!(
+            error,
+            ParseError::InvalidValue { field, value }
+                if field == "task.target_selector" && value == "target, agent_group"
+        ));
     }
 
     #[test]

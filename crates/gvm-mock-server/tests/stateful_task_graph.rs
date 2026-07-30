@@ -291,10 +291,9 @@ async fn task_reference_updates_are_validated_and_only_allowed_while_new() {
         format!("<get_tasks task_id=\"{task_id}\"/>").as_bytes(),
     )
     .await;
-    assert!(task
-        .as_str()
-        .expect("UTF-8 response")
-        .contains(&format!("<target_id>{second_target_id}</target_id>")));
+    assert!(task.as_str().expect("UTF-8 response").contains(&format!(
+        "<target id=\"{second_target_id}\"><name></name></target>"
+    )));
 
     let old_target_delete = send_recv(
         &mut stream,
