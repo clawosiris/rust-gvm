@@ -3,7 +3,7 @@
 
 //! GMP session handler — processes commands and generates responses.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
@@ -854,6 +854,10 @@ impl SessionHandler {
         match cmd.name.as_str() {
             "get_feeds" => return render_feeds_response(cmd),
             "get_aggregates" => return render_aggregates_response(cmd),
+            "get_audit_report" => return self.render_audit_report_response(cmd, store),
+            "get_audit_report_hosts" => {
+                return self.render_audit_report_hosts_response(cmd, store);
+            }
             "get_scan_report" => return self.render_scan_report_response(cmd, store),
             "get_system_reports" => return render_system_reports_response(cmd, store),
             "get_info" => return render_secinfo_response(cmd),
@@ -1505,6 +1509,201 @@ impl SessionHandler {
         .into_bytes()
     }
 
+    fn render_audit_report_response(&self, cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
+        let Some(report_id) = cmd.attr("audit_report_id") else {
+            return error_response(&cmd.name, 400, "Missing audit_report_id attribute");
+        };
+        let Ok(report_id) = Uuid::parse_str(report_id) else {
+            return error_response(&cmd.name, 400, "Invalid UUID");
+        };
+        let Some(report) = store.get_typed(&report_id, "report") else {
+            return error_response(&cmd.name, 404, "Resource not found");
+        };
+        if report.attr("usage_type") != Some("audit") {
+            return error_response(&cmd.name, 400, "Report type is not supported");
+        }
+
+        let (filter_id, filter) = match audit_filter_from_command(cmd, store) {
+            Ok(filter) => filter,
+            Err(message) => return error_response(&cmd.name, 400, message),
+        };
+        let filter = match AuditFilter::parse(&filter, audit_rows_per_page(store)) {
+            Ok(filter) => filter,
+            Err(message) => return error_response(&cmd.name, 400, message),
+        };
+        let report_id_text = report_id.to_string();
+        let results: Vec<Resource> = store
+            .list("result")
+            .into_iter()
+            .filter(|result| result.attr("report_id") == Some(report_id_text.as_str()))
+            .collect();
+        let filtered_results: Vec<&Resource> = results
+            .iter()
+            .filter(|result| filter.result_matches(result))
+            .collect();
+        let full_counts = AuditComplianceCounts::from_results(results.iter());
+        let filtered_counts = AuditComplianceCounts::from_results(filtered_results.iter().copied());
+        let hosts = results
+            .iter()
+            .filter_map(|result| result.attr("host"))
+            .collect::<BTreeSet<_>>()
+            .len();
+        let ports = results
+            .iter()
+            .filter_map(|result| result.attr("port"))
+            .filter(|port| !port.is_empty() && !port.starts_with("general/"))
+            .collect::<BTreeSet<_>>()
+            .len();
+        let applications = results
+            .iter()
+            .filter_map(|result| result.attr("application"))
+            .collect::<BTreeSet<_>>()
+            .len();
+        let errors = results
+            .iter()
+            .filter(|result| result.attr("threat") == Some("Error"))
+            .count();
+        let task = report
+            .attr("task_id")
+            .and_then(|task_id| Uuid::parse_str(task_id).ok())
+            .and_then(|task_id| store.get_typed(&task_id, "task"));
+        let task_xml = task.as_ref().map_or_else(
+            || "<task/>".to_string(),
+            |task| render_scan_report_task(task, store),
+        );
+        let status = report.attr("status").unwrap_or("Done");
+        let scan_end = if matches!(status, "Done" | "Stopped" | "Interrupted") {
+            report.modification_time.as_str()
+        } else {
+            ""
+        };
+        let filter_keywords = render_scan_report_filter_keywords(&filter.raw);
+        let (sort_field, sort_order) = filter.sort_metadata("type", "descending");
+
+        format!(
+            "<get_audit_report_response status=\"200\" status_text=\"OK\">\
+             <report id=\"{report_id}\">\
+             <owner><name>admin</name></owner>\
+             <name>{report_name}</name><comment>{comment}</comment>\
+             <creation_time>{creation_time}</creation_time>\
+             <modification_time>{modification_time}</modification_time>\
+             <writable>0</writable><in_use>0</in_use>\
+             <scan_run_status>{status}</scan_run_status>\
+             <hosts><count>{hosts}</count></hosts>\
+             <closed_cves><count>0</count></closed_cves>\
+             <cves><count>0</count></cves>\
+             <vulns><count>{vulns}</count></vulns>\
+             <os><count>0</count></os>\
+             <apps><count>{applications}</count></apps>\
+             <ssl_certs><count>0</count></ssl_certs>\
+             <ports><count>{ports}</count></ports>\
+             <errors><count>{errors}</count></errors>\
+             {task_xml}\
+             <timestamp>{creation_time}</timestamp><scan_start>{creation_time}</scan_start>\
+             <timezone>UTC</timezone><timezone_abbrev>UTC</timezone_abbrev>\
+             {compliance_count_xml}\
+             <compliance><full>{full_compliance}</full><filtered>{filtered_compliance}</filtered></compliance>\
+             <scan_end>{scan_end}</scan_end>\
+             </report>\
+             <filters id=\"{filter_id}\"><term>{filter_term}</term><keywords>{filter_keywords}</keywords></filters>\
+             <sort><field>{sort_field}<order>{sort_order}</order></field></sort>\
+             <audit_report start=\"1\" max=\"1\"/>\
+             <audit_report_count>1<filtered>1</filtered><page>0</page></audit_report_count>\
+             </get_audit_report_response>",
+            report_id = report.id,
+            report_name = xml_escape(&report.name),
+            comment = xml_escape(&report.comment),
+            creation_time = xml_escape(&report.creation_time),
+            modification_time = xml_escape(&report.modification_time),
+            status = xml_escape(status),
+            vulns = results.len(),
+            compliance_count_xml =
+                render_audit_compliance_counts(&full_counts, &filtered_counts),
+            full_compliance = full_counts.compliance(),
+            filtered_compliance = filtered_counts.compliance(),
+            filter_id = xml_escape_attr(&filter_id),
+            filter_term = xml_escape(&filter.raw),
+            sort_field = xml_escape(sort_field),
+            scan_end = xml_escape(scan_end),
+        )
+        .into_bytes()
+    }
+
+    fn render_audit_report_hosts_response(
+        &self,
+        cmd: &ParsedCommand,
+        store: &ResourceStore,
+    ) -> Vec<u8> {
+        let Some(report_id) = cmd.attr("report_id") else {
+            return error_response(&cmd.name, 400, "Missing report_id attribute");
+        };
+        let Ok(report_id) = Uuid::parse_str(report_id) else {
+            return error_response(&cmd.name, 400, "Invalid UUID");
+        };
+        let Some(report) = store.get_typed(&report_id, "report") else {
+            return error_response(&cmd.name, 404, "Resource not found");
+        };
+        if report.attr("usage_type") != Some("audit") {
+            return error_response(&cmd.name, 400, "Report is not an audit report");
+        }
+
+        let (filter_id, filter) = match audit_filter_from_command(cmd, store) {
+            Ok(filter) => filter,
+            Err(message) => return error_response(&cmd.name, 400, message),
+        };
+        let filter = match AuditFilter::parse(&filter, audit_rows_per_page(store)) {
+            Ok(filter) => filter,
+            Err(message) => return error_response(&cmd.name, 400, message),
+        };
+        let report_id_text = report_id.to_string();
+        let results: Vec<Resource> = store
+            .list("result")
+            .into_iter()
+            .filter(|result| result.attr("report_id") == Some(report_id_text.as_str()))
+            .collect();
+        let mut hosts = audit_hosts_from_results(&results, &filter);
+        let total = results
+            .iter()
+            .filter_map(|result| result.attr("host"))
+            .collect::<BTreeSet<_>>()
+            .len();
+        let filtered = hosts.len();
+        hosts.sort_by(|left, right| filter.compare_hosts(left, right));
+
+        let start = filter.first.saturating_sub(1).min(hosts.len());
+        let end = filter.rows.page_end(start, hosts.len());
+        let page_hosts = &hosts[start..end];
+        let page = page_hosts.len();
+        let details = matches!(cmd.attr("details"), Some("1" | "true"));
+        let lean = matches!(cmd.attr("lean"), Some("1" | "true"));
+        let items = if details {
+            page_hosts
+                .iter()
+                .map(|host| host.to_xml(lean))
+                .collect::<String>()
+        } else {
+            String::new()
+        };
+        let max = filter.rows;
+        let filter_keywords = render_scan_report_filter_keywords(&filter.raw);
+        let (sort_field, sort_order) = filter.sort_metadata("ip", "ascending");
+
+        format!(
+            "<get_audit_report_hosts_response status=\"200\" status_text=\"OK\">\
+             {items}\
+             <filters id=\"{filter_id}\"><term>{filter_term}</term><keywords>{filter_keywords}</keywords></filters>\
+             <sort><field>{sort_field}<order>{sort_order}</order></field></sort>\
+             <audit_report_hosts start=\"{first}\" max=\"{max}\"/>\
+             <audit_report_host_count>{total}<filtered>{filtered}</filtered><page>{page}</page></audit_report_host_count>\
+             </get_audit_report_hosts_response>",
+            filter_id = xml_escape_attr(&filter_id),
+            filter_term = xml_escape(&filter.raw),
+            sort_field = xml_escape(sort_field),
+            first = filter.first,
+        )
+        .into_bytes()
+    }
+
     fn render_report_detail_response(&self, cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
         let Some(report_id) = cmd.attr("report_id") else {
             return error_response(&cmd.name, 400, "Missing required attribute: report_id");
@@ -1649,6 +1848,577 @@ fn render_report_result_xml(result: &Resource) -> String {
 
     xml.push_str("</result>");
     xml
+}
+
+fn audit_filter_from_command(
+    cmd: &ParsedCommand,
+    store: &ResourceStore,
+) -> Result<(String, String), &'static str> {
+    let (filter_id, filter) = match cmd.attr("filt_id") {
+        Some(filter_id) => {
+            let filter_id = Uuid::parse_str(filter_id).map_err(|_| "Invalid filter UUID")?;
+            let saved_filter = store
+                .get_typed(&filter_id, "filter")
+                .ok_or("Failed to find filter")?;
+            (
+                filter_id.to_string(),
+                saved_filter.attr("term").unwrap_or_default().to_string(),
+            )
+        }
+        None => (
+            String::new(),
+            cmd.attr("filter").unwrap_or_default().to_string(),
+        ),
+    };
+    Ok((filter_id, resolve_audit_filter(&filter)))
+}
+
+fn resolve_audit_filter(filter: &str) -> String {
+    let mut resolved = filter.trim().to_string();
+    let has_keyword = |filter: &str, expected: &str| {
+        filter.split_whitespace().any(|predicate| {
+            predicate
+                .split_once('=')
+                .is_some_and(|(key, _)| key == expected)
+        })
+    };
+    if !has_keyword(&resolved, "min_qod") {
+        resolved = format!("min_qod=70 {resolved}").trim_end().to_string();
+    }
+    if !has_keyword(&resolved, "apply_overrides") {
+        resolved = format!("apply_overrides=0 {resolved}")
+            .trim_end()
+            .to_string();
+    }
+    resolved
+}
+
+fn audit_rows_per_page(store: &ResourceStore) -> usize {
+    store
+        .list("setting")
+        .into_iter()
+        .find(|setting| setting.name == "rows_per_page")
+        .and_then(|setting| {
+            setting
+                .attr("value")
+                .and_then(|value| value.parse::<i32>().ok())
+                .and_then(|value| usize::try_from(value).ok())
+        })
+        .filter(|rows| *rows > 0)
+        .unwrap_or(1)
+}
+
+#[derive(Clone, Copy, Debug)]
+enum AuditPageSize {
+    Unlimited,
+    Limited(usize),
+}
+
+impl AuditPageSize {
+    fn page_end(&self, start: usize, available: usize) -> usize {
+        match self {
+            Self::Unlimited => available,
+            Self::Limited(rows) => start.saturating_add(*rows).min(available),
+        }
+    }
+}
+
+impl std::fmt::Display for AuditPageSize {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unlimited => formatter.write_str("-1"),
+            Self::Limited(rows) => rows.fmt(formatter),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct AuditFilter {
+    raw: String,
+    first: usize,
+    rows: AuditPageSize,
+    sort_field: Option<String>,
+    reverse: bool,
+    compliance_levels: Option<String>,
+    minimum_qod: u32,
+    result_hosts_only: bool,
+    ip: Option<String>,
+    asset_id: Option<String>,
+    host_id: Option<String>,
+    start: Option<String>,
+    end: Option<String>,
+    severity: Option<String>,
+}
+
+impl AuditFilter {
+    fn parse(raw: &str, rows_per_page: usize) -> Result<Self, &'static str> {
+        let mut parsed = Self {
+            raw: raw.to_string(),
+            first: 1,
+            rows: AuditPageSize::Limited(rows_per_page.max(1)),
+            sort_field: None,
+            reverse: false,
+            compliance_levels: None,
+            minimum_qod: 0,
+            result_hosts_only: false,
+            ip: None,
+            asset_id: None,
+            host_id: None,
+            start: None,
+            end: None,
+            severity: None,
+        };
+
+        for predicate in raw.split_whitespace() {
+            let Some((key, value)) = predicate.split_once('=') else {
+                return Err("Malformed filter");
+            };
+            if key.is_empty() || value.is_empty() {
+                return Err("Malformed filter");
+            }
+            match key {
+                "first" => {
+                    let value = value
+                        .parse::<i32>()
+                        .map_err(|_| "Invalid first filter value")?;
+                    parsed.first = if value <= 0 {
+                        1
+                    } else {
+                        usize::try_from(value).map_err(|_| "Invalid first filter value")?
+                    };
+                }
+                "rows" => {
+                    let value = value
+                        .parse::<i32>()
+                        .map_err(|_| "Invalid rows filter value")?;
+                    parsed.rows = match value {
+                        -2 => AuditPageSize::Limited(rows_per_page.max(1)),
+                        -1 => AuditPageSize::Unlimited,
+                        value if value < -2 => AuditPageSize::Unlimited,
+                        value => AuditPageSize::Limited(
+                            usize::try_from(value.max(1))
+                                .map_err(|_| "Invalid rows filter value")?,
+                        ),
+                    };
+                }
+                "sort" => {
+                    parsed.sort_field = Some(value.to_string());
+                    parsed.reverse = false;
+                }
+                "sort-reverse" => {
+                    parsed.sort_field = Some(value.to_string());
+                    parsed.reverse = true;
+                }
+                "compliance_levels" | "levels" => {
+                    if !value.chars().all(|level| "yniu".contains(level)) {
+                        return Err("Invalid compliance levels");
+                    }
+                    parsed.compliance_levels = Some(value.to_string());
+                }
+                "min_qod" => {
+                    parsed.minimum_qod = value
+                        .parse::<u32>()
+                        .map_err(|_| "Invalid min_qod filter value")?;
+                }
+                "apply_overrides" => {
+                    parse_filter_bool(value).ok_or("Invalid apply_overrides filter value")?;
+                }
+                "result_hosts_only" => {
+                    parsed.result_hosts_only =
+                        parse_filter_bool(value).ok_or("Invalid result_hosts_only filter value")?;
+                }
+                "ip" => parsed.ip = Some(value.to_string()),
+                "asset_id" => parsed.asset_id = Some(value.to_string()),
+                "uuid" => parsed.host_id = Some(value.to_string()),
+                "start" => parsed.start = Some(value.to_string()),
+                "end" => parsed.end = Some(value.to_string()),
+                "severity" => parsed.severity = Some(value.to_string()),
+                // Current gvmd accepts a broad result-filter vocabulary. The
+                // mock validates syntax while deliberately emulating only the
+                // audit fields represented by its stateful result resources.
+                _ => {}
+            }
+        }
+        Ok(parsed)
+    }
+
+    fn result_matches(&self, result: &Resource) -> bool {
+        if let Some(levels) = &self.compliance_levels {
+            let level = audit_compliance_level(result);
+            if !levels.contains(level) {
+                return false;
+            }
+        }
+        let qod = result
+            .attr("qod")
+            .and_then(|qod| qod.parse::<u32>().ok())
+            .unwrap_or(100);
+        if qod < self.minimum_qod {
+            return false;
+        }
+        if self
+            .ip
+            .as_deref()
+            .is_some_and(|ip| result.attr("host") != Some(ip))
+        {
+            return false;
+        }
+        if self
+            .asset_id
+            .as_deref()
+            .is_some_and(|id| result.attr("asset_id") != Some(id))
+        {
+            return false;
+        }
+        true
+    }
+
+    fn host_matches(&self, host: &AuditHost) -> bool {
+        self.ip.as_deref().is_none_or(|ip| ip == host.ip)
+            && self
+                .asset_id
+                .as_deref()
+                .is_none_or(|id| host.asset_id.as_deref() == Some(id))
+            && self
+                .host_id
+                .as_deref()
+                .is_none_or(|id| host.host_id.as_deref() == Some(id))
+            && self
+                .start
+                .as_deref()
+                .is_none_or(|start| host.start.as_deref() == Some(start))
+            && self
+                .end
+                .as_deref()
+                .is_none_or(|end| host.end.as_deref() == Some(end))
+            && self.severity.as_deref().is_none_or(|severity| {
+                severity
+                    .parse::<f64>()
+                    .is_ok_and(|severity| host.severity == severity)
+            })
+    }
+
+    fn compare_hosts(&self, left: &AuditHost, right: &AuditHost) -> std::cmp::Ordering {
+        let field = self.sort_field.as_deref().unwrap_or("ip");
+        let order = match field {
+            "severity" => left.severity.total_cmp(&right.severity),
+            "asset_id" => left.asset_id.cmp(&right.asset_id),
+            "start" => left.start.cmp(&right.start),
+            "end" => left.end.cmp(&right.end),
+            _ => left.ip.cmp(&right.ip),
+        }
+        .then_with(|| left.ip.cmp(&right.ip));
+        if self.reverse {
+            order.reverse()
+        } else {
+            order
+        }
+    }
+
+    fn sort_metadata<'a>(
+        &'a self,
+        default_field: &'a str,
+        default_order: &'a str,
+    ) -> (&'a str, &'a str) {
+        (
+            self.sort_field.as_deref().unwrap_or(default_field),
+            if self.sort_field.is_some() {
+                if self.reverse {
+                    "descending"
+                } else {
+                    "ascending"
+                }
+            } else {
+                default_order
+            },
+        )
+    }
+}
+
+fn parse_filter_bool(value: &str) -> Option<bool> {
+    match value {
+        "1" | "true" => Some(true),
+        "0" | "false" => Some(false),
+        _ => None,
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct AuditComplianceCounts {
+    yes: usize,
+    no: usize,
+    incomplete: usize,
+    undefined: usize,
+}
+
+impl AuditComplianceCounts {
+    fn from_results<'a>(results: impl Iterator<Item = &'a Resource>) -> Self {
+        let mut counts = Self::default();
+        for result in results {
+            match result
+                .attr("compliance")
+                .unwrap_or("undefined")
+                .to_ascii_lowercase()
+                .as_str()
+            {
+                "yes" => counts.yes += 1,
+                "no" => counts.no += 1,
+                "incomplete" => counts.incomplete += 1,
+                _ => counts.undefined += 1,
+            }
+        }
+        counts
+    }
+
+    fn total(self) -> usize {
+        self.yes + self.no + self.incomplete + self.undefined
+    }
+
+    fn compliance(self) -> &'static str {
+        if self.no > 0 {
+            "no"
+        } else if self.incomplete > 0 {
+            "incomplete"
+        } else if self.yes > 0 {
+            "yes"
+        } else {
+            "undefined"
+        }
+    }
+}
+
+fn audit_compliance_level(result: &Resource) -> char {
+    match result
+        .attr("compliance")
+        .unwrap_or("undefined")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "yes" => 'y',
+        "no" => 'n',
+        "incomplete" => 'i',
+        _ => 'u',
+    }
+}
+
+fn render_audit_compliance_counts(
+    full: &AuditComplianceCounts,
+    filtered: &AuditComplianceCounts,
+) -> String {
+    format!(
+        "<compliance_count>{total}\
+         <full>{total}</full><filtered>{filtered_total}</filtered>\
+         <yes><full>{yes}</full><filtered>{filtered_yes}</filtered></yes>\
+         <no><full>{no}</full><filtered>{filtered_no}</filtered></no>\
+         <incomplete><full>{incomplete}</full><filtered>{filtered_incomplete}</filtered></incomplete>\
+         <undefined><full>{undefined}</full><filtered>{filtered_undefined}</filtered></undefined>\
+         </compliance_count>",
+        total = full.total(),
+        filtered_total = filtered.total(),
+        yes = full.yes,
+        filtered_yes = filtered.yes,
+        no = full.no,
+        filtered_no = filtered.no,
+        incomplete = full.incomplete,
+        filtered_incomplete = filtered.incomplete,
+        undefined = full.undefined,
+        filtered_undefined = filtered.undefined,
+    )
+}
+
+#[derive(Debug)]
+struct AuditHost {
+    ip: String,
+    host_id: Option<String>,
+    asset_id: Option<String>,
+    asset_snapshot_key: Option<String>,
+    start: Option<String>,
+    end: Option<String>,
+    hostname: Option<String>,
+    port_count: usize,
+    application_count: usize,
+    counts: AuditComplianceCounts,
+    severity: f64,
+    details: Vec<AuditHostDetail>,
+}
+
+#[derive(Debug)]
+struct AuditHostDetail {
+    name: String,
+    value: String,
+    source_type: Option<String>,
+    source_name: String,
+    source_description: Option<String>,
+    extra: Option<String>,
+}
+
+impl AuditHost {
+    fn to_xml(&self, lean: bool) -> String {
+        let mut xml = format!("<host><ip>{}</ip>", xml_escape(&self.ip));
+        match &self.asset_id {
+            Some(asset_id) => xml.push_str(&format!(
+                "<asset asset_id=\"{}\"/>",
+                xml_escape_attr(asset_id)
+            )),
+            None if !lean => xml.push_str("<asset asset_id=\"\"/>"),
+            None => {}
+        }
+        if let Some(asset_key) = &self.asset_snapshot_key {
+            xml.push_str(&format!(
+                "<asset_snapshot asset_key=\"{}\"/>",
+                xml_escape_attr(asset_key)
+            ));
+        }
+        xml.push_str(&format!(
+            "<start>{start}</start><end>{end}</end>\
+             <port_count><page>{ports}</page></port_count>\
+             <compliance_count><page>{total}</page>\
+             <yes><page>{yes}</page></yes><no><page>{no}</page></no>\
+             <incomplete><page>{incomplete}</page></incomplete>\
+             <undefined><page>{undefined}</page></undefined></compliance_count>\
+             <host_compliance>{compliance}</host_compliance>\
+             <app_count><page>{applications}</page></app_count>",
+            start = xml_escape(self.start.as_deref().unwrap_or_default()),
+            end = xml_escape(self.end.as_deref().unwrap_or_default()),
+            ports = self.port_count,
+            total = self.counts.total(),
+            yes = self.counts.yes,
+            no = self.counts.no,
+            incomplete = self.counts.incomplete,
+            undefined = self.counts.undefined,
+            compliance = self.counts.compliance(),
+            applications = self.application_count,
+        ));
+        match &self.hostname {
+            Some(hostname) if !hostname.is_empty() => {
+                xml.push_str(&format!("<hostname>{}</hostname>", xml_escape(hostname)));
+            }
+            _ if !lean => xml.push_str("<hostname></hostname>"),
+            _ => {}
+        }
+        for detail in &self.details {
+            if lean
+                && matches!(
+                    detail.name.as_str(),
+                    "EXIT_CODE"
+                        | "scanned_with_scanner"
+                        | "scanned_with_feedtype"
+                        | "scanned_with_feedversion"
+                        | "OS"
+                        | "traceroute"
+                )
+            {
+                continue;
+            }
+            xml.push_str(&format!(
+                "<detail><name>{}</name><value>{}</value><source>",
+                xml_escape(&detail.name),
+                xml_escape(&detail.value),
+            ));
+            if !lean {
+                xml.push_str(&format!(
+                    "<type>{}</type>",
+                    xml_escape(detail.source_type.as_deref().unwrap_or_default())
+                ));
+            }
+            xml.push_str(&format!("<name>{}</name>", xml_escape(&detail.source_name)));
+            match &detail.source_description {
+                Some(description) if !description.is_empty() => xml.push_str(&format!(
+                    "<description>{}</description>",
+                    xml_escape(description)
+                )),
+                _ if !lean => xml.push_str("<description></description>"),
+                _ => {}
+            }
+            xml.push_str("</source>");
+            match &detail.extra {
+                Some(extra) if !extra.is_empty() => {
+                    xml.push_str(&format!("<extra>{}</extra>", xml_escape(extra)));
+                }
+                _ if !lean => xml.push_str("<extra></extra>"),
+                _ => {}
+            }
+            xml.push_str("</detail>");
+        }
+        xml.push_str("</host>");
+        xml
+    }
+}
+
+fn audit_hosts_from_results(results: &[Resource], filter: &AuditFilter) -> Vec<AuditHost> {
+    let mut full_by_host: BTreeMap<&str, Vec<&Resource>> = BTreeMap::new();
+    let mut filtered_by_host: BTreeMap<&str, Vec<&Resource>> = BTreeMap::new();
+    for result in results {
+        let Some(host) = result.attr("host") else {
+            continue;
+        };
+        full_by_host.entry(host).or_default().push(result);
+        if filter.result_matches(result) {
+            filtered_by_host.entry(host).or_default().push(result);
+        }
+    }
+
+    full_by_host
+        .into_iter()
+        .filter_map(|(ip, full_results)| {
+            let filtered_results = filtered_by_host.remove(ip).unwrap_or_default();
+            if filter.result_hosts_only && filtered_results.is_empty() {
+                return None;
+            }
+            let representative = full_results[0];
+            let counts = AuditComplianceCounts::from_results(filtered_results.iter().copied());
+            let ports = filtered_results
+                .iter()
+                .filter_map(|result| result.attr("port"))
+                .filter(|port| !port.is_empty() && !port.starts_with("general/"))
+                .collect::<BTreeSet<_>>()
+                .len();
+            let applications = filtered_results
+                .iter()
+                .filter_map(|result| result.attr("application"))
+                .collect::<BTreeSet<_>>()
+                .len();
+            let severity = filtered_results
+                .iter()
+                .map(|result| scan_report_result_severity(result))
+                .fold(0.0, f64::max);
+            let details = filtered_results
+                .iter()
+                .filter_map(|result| {
+                    Some(AuditHostDetail {
+                        name: result.attr("detail_name")?.to_string(),
+                        value: result.attr("detail_value")?.to_string(),
+                        source_type: result.attr("detail_source_type").map(ToString::to_string),
+                        source_name: result
+                            .attr("detail_source_name")
+                            .unwrap_or("mock-audit")
+                            .to_string(),
+                        source_description: result
+                            .attr("detail_source_description")
+                            .map(ToString::to_string),
+                        extra: result.attr("detail_extra").map(ToString::to_string),
+                    })
+                })
+                .collect();
+            let host = AuditHost {
+                ip: ip.to_string(),
+                host_id: representative.attr("host_id").map(ToString::to_string),
+                asset_id: representative.attr("asset_id").map(ToString::to_string),
+                asset_snapshot_key: representative
+                    .attr("asset_snapshot_key")
+                    .map(ToString::to_string),
+                start: representative.attr("host_start").map(ToString::to_string),
+                end: representative.attr("host_end").map(ToString::to_string),
+                hostname: representative.attr("hostname").map(ToString::to_string),
+                port_count: ports,
+                application_count: applications,
+                counts,
+                severity,
+                details,
+            };
+            filter.host_matches(&host).then_some(host)
+        })
+        .collect()
 }
 
 #[derive(Default)]

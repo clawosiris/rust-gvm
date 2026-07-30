@@ -175,5 +175,5 @@ async fn version_default() {
         return;
     };
 
-    assert_version_response(server, "22.5").await;
+    assert_version_response(server, "22.7").await;
 }

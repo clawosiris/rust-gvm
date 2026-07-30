@@ -81,7 +81,7 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Mode selection | ✅ | `.mode(ServerMode::Stateful)` |
-| Version configuration | ✅ | `.version(GmpVersion::V22_5)` — supports 22.4–22.8 |
+| Version configuration | ✅ | Defaults to `V22_7`; explicit 22.4–22.8 emulation remains available |
 | Unix socket (path) | ✅ | `.unix_socket("/tmp/gvmd.sock")` |
 | Unix socket (auto temp) | ✅ | `.unix_socket_auto()` |
 | TCP listener | ✅ | `.tcp("127.0.0.1:9390")` |
@@ -136,6 +136,7 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 | authenticate (credential validation) | ✅ | Per-session state |
 | direct-host asset lifecycle and canonical `get_assets` | ✅ | Strict gvmd behavior by default; legacy flat inputs are explicit opt-in; report-import/bulk-delete paths are not modeled |
 | get_report (nested results XML) | ✅ | Proper `<report><report><results>` nesting |
+| structured audit reports (22.7+) | ✅ | Typed summaries and hosts with compliance filtering, pagination, details, and lean output |
 | create_note/override (text + nvt_oid) | ✅ | Non-standard element parsing |
 | create_ticket (result_id + comment) | ✅ | Non-standard element parsing |
 | modify_ticket (status attribute) | ✅ | Ticket-specific handling |
@@ -189,8 +190,9 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Version-specific command rejection | ✅ | Returns 400 for commands unavailable in configured version |
-| `report_config` commands (22.5+) | ✅ | create, get, modify, delete |
+| `report_config` commands (22.6+) | ✅ | create, get, modify, delete |
 | `features` command (22.6+) | ✅ | get_features |
+| structured audit-report commands (22.7+) | ✅ | get_audit_report and get_audit_report_hosts |
 | REST-support GMP helpers (22.8+) | ✅ | raw structured scan report, report drill-downs, get_timezones, get_credential_stores |
 | Version range metadata in responses | ✅ | Status text includes version requirement |
 
@@ -199,7 +201,7 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 | Feature | Status |
 |---------|--------|
 | `--mode echo\|fixture\|stateful` | ✅ |
-| `--version 22.4\|22.5\|22.6\|22.7` | ✅ |
+| `--version 22.4\|22.5\|22.6\|22.7\|22.8` | ✅ (22.7 default) |
 | `--socket <path>` | ✅ |
 | `--tcp <addr:port>` | ✅ |
 | `--max-request-bytes <bytes>` | ✅ (64 MiB default) |

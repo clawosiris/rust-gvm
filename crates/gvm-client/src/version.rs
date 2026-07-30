@@ -24,6 +24,7 @@ pub fn command_supported(command_name: &str, version: GmpVersion) -> bool {
 pub fn required_version_label(command_name: &str) -> Option<&'static str> {
     match minimum_version_for_command(command_name) {
         Some(GmpVersion(22, 6)) => Some("22.6"),
+        Some(GmpVersion(22, 7)) => Some("22.7"),
         Some(GmpVersion(22, 8)) => Some("22.8"),
         Some(_) | None => None,
     }
@@ -253,6 +254,16 @@ mod tests {
         assert_eq!(
             minimum_version_for_command("create_web_application_target"),
             Some(GmpVersion(22, 8))
+        );
+    }
+
+    #[test]
+    fn structured_audit_commands_require_22_7() {
+        assert!(!command_supported("get_audit_report", GmpVersion(22, 6)));
+        assert!(command_supported("get_audit_report", GmpVersion(22, 7)));
+        assert_eq!(
+            required_version_label("get_audit_report_hosts"),
+            Some("22.7")
         );
     }
 }

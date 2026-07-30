@@ -130,6 +130,8 @@ command_capabilities! {
     ("get_aggregates", Fixture, None, PinnedSchema),
     ("get_alerts", Stateful, None, PinnedSchema),
     ("get_assets", Stateful, None, PinnedSchema),
+    ("get_audit_report", Stateful, Some(GmpVersion(22, 7)), PinnedSchema),
+    ("get_audit_report_hosts", Stateful, Some(GmpVersion(22, 7)), PinnedSchema),
     ("get_configs", Stateful, None, PinnedSchema),
     ("get_credential_stores", Fixture, Some(GmpVersion(22, 8)), PinnedSchema),
     ("get_credentials", Stateful, None, PinnedSchema),
@@ -272,6 +274,14 @@ mod tests {
 
         let reports = command_capability("get_reports").expect("known command");
         assert!(reports.available_in(GmpVersion(22, 4)));
+        let audit_report =
+            command_capability("get_audit_report").expect("known structured audit command");
+        assert!(!audit_report.available_in(GmpVersion(22, 6)));
+        assert!(audit_report.available_in(GmpVersion(22, 7)));
+        let audit_hosts =
+            command_capability("get_audit_report_hosts").expect("known audit host command");
+        assert!(!audit_hosts.available_in(GmpVersion(22, 6)));
+        assert!(audit_hosts.available_in(GmpVersion(22, 7)));
         assert_eq!(
             minimum_version_for_command("get_report_export"),
             Some(GmpVersion(22, 8))

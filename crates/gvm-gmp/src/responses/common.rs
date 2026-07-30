@@ -274,6 +274,13 @@ pub(crate) fn parse_u32(value: &str, field: &str) -> Result<u32, ParseError> {
     })
 }
 
+pub(crate) fn parse_i32(value: &str, field: &str) -> Result<i32, ParseError> {
+    value.parse::<i32>().map_err(|_| ParseError::InvalidValue {
+        field: field.to_string(),
+        value: value.to_string(),
+    })
+}
+
 pub(crate) fn parse_score(value: &str) -> Option<f64> {
     value.parse::<f64>().ok().filter(|score| score.is_finite())
 }

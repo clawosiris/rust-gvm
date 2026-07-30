@@ -9,11 +9,11 @@ pub enum GmpVersion {
     /// GMP 22.4
     V22_4,
     /// GMP 22.5
-    #[default]
     V22_5,
     /// GMP 22.6
     V22_6,
     /// GMP 22.7
+    #[default]
     V22_7,
     /// GMP 22.8
     V22_8,
@@ -80,7 +80,7 @@ mod tests {
 
     #[test]
     fn test_default() {
-        assert_eq!(GmpVersion::default(), GmpVersion::V22_5);
+        assert_eq!(GmpVersion::default(), GmpVersion::V22_7);
     }
 
     #[test]
@@ -235,5 +235,14 @@ mod tests {
             "create_web_application_target",
             GmpVersion::V22_8
         ));
+    }
+
+    #[test]
+    fn test_command_available_for_structured_audit_reports() {
+        for command in ["get_audit_report", "get_audit_report_hosts"] {
+            assert!(!command_available(command, GmpVersion::V22_6));
+            assert!(command_available(command, GmpVersion::V22_7));
+            assert!(command_available(command, GmpVersion::V22_8));
+        }
     }
 }

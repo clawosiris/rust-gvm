@@ -187,7 +187,7 @@ use gvm_mock_server::{MockGmpServer, ServerMode, GmpVersion};
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let server = MockGmpServer::builder()
         .mode(ServerMode::Stateful)
-        .version(GmpVersion::V22_5)
+        .version(GmpVersion::V22_7)
         .credentials("admin", "admin")
         .unix_socket_auto()
         .build()
@@ -205,14 +205,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ```bash
 # Start a stateful mock server on a Unix socket
-gvm-mock-server --mode stateful --version 22.5 --socket /tmp/gvmd.sock
+gvm-mock-server --mode stateful --version 22.7 --socket /tmp/gvmd.sock
 
 # Or on TCP
-gvm-mock-server --mode stateful --version 22.5 --tcp 127.0.0.1:9390
+gvm-mock-server --mode stateful --version 22.7 --tcp 127.0.0.1:9390
 
 # Override the default 64 MiB per-request XML limit
 gvm-mock-server --mode echo --tcp 127.0.0.1:9390 --max-request-bytes 1048576
 ```
+
+The library and CLI default to GMP 22.7, matching a current default gvmd
+build. Select 22.8 explicitly when testing agent, container-scanning, or other
+feature-enabled 22.8 surfaces.
 
 The request-size limit applies independently to each XML command. XML nesting
 is always limited to 256 elements, including when the byte limit is disabled.

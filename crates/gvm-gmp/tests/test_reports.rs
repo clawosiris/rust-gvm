@@ -141,6 +141,38 @@ fn test_get_scan_report_without_filters() {
 }
 
 #[test]
+fn test_get_audit_report_matches_current_schema_example() {
+    assert_eq!(
+        xml(get_audit_report(
+            &id("c00e2b2b-6b3a-4be9-a6df-337f76262fe0"),
+            GetAuditReportOpts {
+                filter_string: Some("compliance_levels=yniu min_qod=70".into()),
+                filter_id: None,
+            },
+        )),
+        "<get_audit_report audit_report_id=\"c00e2b2b-6b3a-4be9-a6df-337f76262fe0\" filter=\"compliance_levels=yniu min_qod=70\"/>"
+    );
+}
+
+#[test]
+fn test_get_audit_report_hosts_serializes_schema_attributes() {
+    assert_eq!(
+        xml(get_audit_report_hosts(
+            &id("6587438c-4787-41e6-a0a7-765193dcd44f"),
+            GetAuditReportHostsOpts {
+                filter_string: Some(
+                    "levels=yniu rows=10 min_qod=70 first=1 sort-reverse=severity".into(),
+                ),
+                filter_id: Some(id("f1")),
+                lean: Some(true),
+                details: Some(true),
+            },
+        )),
+        "<get_audit_report_hosts details=\"1\" filt_id=\"f1\" filter=\"levels=yniu rows=10 min_qod=70 first=1 sort-reverse=severity\" lean=\"1\" report_id=\"6587438c-4787-41e6-a0a7-765193dcd44f\"/>"
+    );
+}
+
+#[test]
 fn test_report_export_with_report_config() {
     let mut opts = GetReportExportOpts::new(id("rf1"));
     opts.report_config_id = Some(id("rc1"));

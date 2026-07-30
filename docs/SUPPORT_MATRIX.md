@@ -10,16 +10,28 @@ not a claim of full conformance with every gvmd deployment or feature build.
 | 22.4 | `Gmp224` | 115 | `V22_4` |
 | 22.5 | `Gmp225` | 115 | `V22_5` |
 | 22.6 | `Gmp226` | 120 | `V22_6` |
-| 22.7 | `Gmp227` | 120 | `V22_7` |
-| 22.8 and newer | `GmpNext` | 155 | `V22_8` |
+| 22.7 | `Gmp227` | 122 | `V22_7` |
+| 22.8 and newer | `GmpNext` | 157 | `V22_8` |
 
 The command count is derived from
 `gvm_gmp::capabilities::COMMAND_CAPABILITIES`. Five commands require GMP 22.6
+and later, two structured audit-report commands require GMP 22.7 and later,
 and another 35 require GMP 22.8. It describes typed-client gates and stateful
-mock behavior, not the commands enabled in every gvmd build. The client
+mock behavior, not the commands enabled in every gvmd feature build. The client
 deliberately permits unknown raw commands for forward compatibility; standard
 mock responses reject commands absent from the registry. Explicit fixture and
 scenario configuration remains programmable by design.
+
+`get_audit_report` and `get_audit_report_hosts` are gated at 22.7 and exposed
+through `Gmp227Commands` on both `Gmp227` and `GmpNext`. The placement follows
+the reviewed gvmd build contract rather than commit dates: default builds set
+`GMP_VERSION` to 22.7 and compile the structured audit-report sources that
+exist at that revision. Enabling agent or container-scanning features changes
+the advertised version to 22.8; select `V22_8` explicitly when a test needs
+that feature-enabled surface. `get_audit_report` is present in released
+[`v26.35.0`](https://github.com/greenbone/gvmd/releases/tag/v26.35.0);
+`get_audit_report_hosts` is post-release current-main behavior at the evidence
+pin below.
 
 `get_scan_report` follows the public python-gvm `GMPNext` placement and is
 therefore gated at 22.8. Current gvmd source compiles the command
@@ -30,14 +42,14 @@ server advertises 22.8.
 
 ## Command and mock qualification
 
-The registry contains 155 wire command names:
+The registry contains 157 wire command names:
 
 | Qualification | Count | Meaning |
 |---|---:|---|
-| Stateful mock behavior | 138 | Bespoke behavior or deterministic generic CRUD |
+| Stateful mock behavior | 140 | Bespoke behavior or deterministic generic CRUD |
 | Fixture mock behavior | 10 | Deterministic built-in fixture response |
 | Echo-only mock behavior | 7 | Intentionally limited to a generic success response |
-| Current pinned `GMP.xml.in` | 152 | Present in the public schema snapshot |
+| Current pinned `GMP.xml.in` | 154 | Present in the public schema snapshot |
 | Public gvmd source only | 2 | Implemented publicly but omitted from that schema |
 | Legacy compatibility | 1 | Retained for public legacy-client compatibility |
 
@@ -58,12 +70,19 @@ The three commands outside the pinned schema are explicitly qualified:
 ## Pinned public evidence and drift audit
 
 The deterministic snapshot is extracted from Greenbone's public gvmd commit
-[`fb21137097f41e5eb83bb45ee43170b775dbea49`](https://github.com/greenbone/gvmd/commit/fb21137097f41e5eb83bb45ee43170b775dbea49),
+[`7ac172654b703d9f202481f7a53453964061de2f`](https://github.com/greenbone/gvmd/commit/7ac172654b703d9f202481f7a53453964061de2f),
 file
-[`src/schema_formats/XML/GMP.xml.in`](https://github.com/greenbone/gvmd/blob/fb21137097f41e5eb83bb45ee43170b775dbea49/src/schema_formats/XML/GMP.xml.in).
-The snapshot records the source file SHA-256 and its 152 unique top-level
-commands. The source-only qualification is backed by the same commit's
-[credential-store implementation](https://github.com/greenbone/gvmd/blob/fb21137097f41e5eb83bb45ee43170b775dbea49/src/gmp_credential_stores.c).
+[`src/schema_formats/XML/GMP.xml.in`](https://github.com/greenbone/gvmd/blob/7ac172654b703d9f202481f7a53453964061de2f/src/schema_formats/XML/GMP.xml.in).
+The snapshot records SHA-256
+`d0f8314fcd0bc15e2e07881a336cef3e5cfa8cc2a9b263abb510fe6aad124b7b`
+and its 154 unique top-level commands. The structured audit contracts are
+backed by the same commit's
+[`get_audit_report`](https://github.com/greenbone/gvmd/blob/7ac172654b703d9f202481f7a53453964061de2f/src/gmp_audit_report.c),
+[`get_audit_report_hosts`](https://github.com/greenbone/gvmd/blob/7ac172654b703d9f202481f7a53453964061de2f/src/gmp_audit_report_hosts.c),
+and
+[`GMP_VERSION` selection](https://github.com/greenbone/gvmd/blob/7ac172654b703d9f202481f7a53453964061de2f/CMakeLists.txt).
+The source-only qualification is backed by the same commit's
+[credential-store implementation](https://github.com/greenbone/gvmd/blob/7ac172654b703d9f202481f7a53453964061de2f/src/gmp_credential_stores.c).
 The legacy qualification is backed by public python-gvm commit
 [`2bb100fd03f02e598f046e2032e12550b5b14751`](https://github.com/greenbone/python-gvm/blob/2bb100fd03f02e598f046e2032e12550b5b14751/gvm/protocols/gmp/requests/v224/_tls_certificates.py).
 
@@ -83,5 +102,6 @@ alone is insufficient.
 The support claim covers deterministic serialization/parsing tests, shared
 client/mock version gates, transport-level mock interoperability, and the
 pinned public schema audit. It does not yet include a release-by-release
-real-gvmd conformance suite. That gap should remain explicit until such a suite
-is available.
+real-gvmd conformance suite. The structured audit-report fixtures are derived
+from the pinned public schema, but no live gvmd service was available for this
+snapshot; that gap should remain explicit until live validation is run.

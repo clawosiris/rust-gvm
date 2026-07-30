@@ -55,6 +55,28 @@ pub struct GetScanReportOpts {
     pub filter_id: Option<EntityId>,
 }
 
+/// Options for `get_audit_report` requests.
+#[derive(Debug, Clone, Default)]
+pub struct GetAuditReportOpts {
+    /// Optional inline result filter expression.
+    pub filter_string: Option<String>,
+    /// Optional saved result filter identifier.
+    pub filter_id: Option<EntityId>,
+}
+
+/// Options for `get_audit_report_hosts` requests.
+#[derive(Debug, Clone, Default)]
+pub struct GetAuditReportHostsOpts {
+    /// Optional inline result and host filter expression.
+    pub filter_string: Option<String>,
+    /// Optional saved result filter identifier.
+    pub filter_id: Option<EntityId>,
+    /// Whether to omit selected empty or redundant host details.
+    pub lean: Option<bool>,
+    /// Whether to include host entries rather than count metadata only.
+    pub details: Option<bool>,
+}
+
 /// Options for `get_reports` report-format export requests.
 #[derive(Debug, Clone)]
 pub struct GetReportExportOpts {
@@ -198,6 +220,34 @@ pub fn get_scan_report(scan_report_id: &EntityId, opts: GetScanReportOpts) -> im
         opts.filter_string.as_deref(),
         opts.filter_id.as_ref(),
     );
+    cmd
+}
+
+/// Build a `get_audit_report` request for a structured audit report.
+#[must_use]
+pub fn get_audit_report(audit_report_id: &EntityId, opts: GetAuditReportOpts) -> impl Request {
+    let mut cmd =
+        XmlCommand::new("get_audit_report").attribute("audit_report_id", audit_report_id.as_str());
+    add_filter_attrs(
+        &mut cmd,
+        opts.filter_string.as_deref(),
+        opts.filter_id.as_ref(),
+    );
+    cmd
+}
+
+/// Build a `get_audit_report_hosts` request.
+#[must_use]
+pub fn get_audit_report_hosts(report_id: &EntityId, opts: GetAuditReportHostsOpts) -> impl Request {
+    let mut cmd =
+        XmlCommand::new("get_audit_report_hosts").attribute("report_id", report_id.as_str());
+    add_filter_attrs(
+        &mut cmd,
+        opts.filter_string.as_deref(),
+        opts.filter_id.as_ref(),
+    );
+    set_optional_bool_attr(&mut cmd, "lean", opts.lean);
+    set_optional_bool_attr(&mut cmd, "details", opts.details);
     cmd
 }
 
@@ -403,6 +453,28 @@ mod tests {
         assert_eq!(
             xml(delete_audit_report(&id("r1"))),
             "<delete_report report_id=\"r1\" ultimate=\"0\"/>"
+        );
+        assert_eq!(
+            xml(get_audit_report(
+                &id("r1"),
+                GetAuditReportOpts {
+                    filter_string: Some("compliance_levels=yniu min_qod=70".into()),
+                    filter_id: Some(id("f1")),
+                }
+            )),
+            "<get_audit_report audit_report_id=\"r1\" filt_id=\"f1\" filter=\"compliance_levels=yniu min_qod=70\"/>"
+        );
+        assert_eq!(
+            xml(get_audit_report_hosts(
+                &id("r1"),
+                GetAuditReportHostsOpts {
+                    filter_string: Some("levels=yniu rows=10 first=1".into()),
+                    filter_id: None,
+                    lean: Some(true),
+                    details: Some(false),
+                }
+            )),
+            "<get_audit_report_hosts details=\"0\" filter=\"levels=yniu rows=10 first=1\" lean=\"1\" report_id=\"r1\"/>"
         );
     }
 
