@@ -37,6 +37,7 @@ const INTEGRATION_COVERED: &[&str] = &[
     "delete_scan_config",
     "clone_scan_config",
     "sync_scan_config",
+    "sync_config",
     "get_scanners",
     "create_scanner",
     "get_scanner",

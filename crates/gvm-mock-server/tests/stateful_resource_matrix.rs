@@ -189,11 +189,7 @@ async fn matrix_configs_full_lifecycle_helpers() {
     assert!(get_text.contains("<comment>updated</comment>"));
     assert!(get_text.contains("<usage_type>scan</usage_type>"));
 
-    let sync_resp = send_recv(
-        &mut stream,
-        format!("<sync_config config_id=\"{config_id}\"/>").as_bytes(),
-    )
-    .await;
+    let sync_resp = send_recv(&mut stream, b"<sync_config/>").await;
     assert_eq!(sync_resp.status_code(), Some(200));
 
     let cloned_config_id = create_and_get_id(

@@ -3310,9 +3310,14 @@ async fn typed_scan_config_lifecycle(client: &mut GmpClient<UnixSocketConnection
     );
 
     client
+        .sync_config()
+        .await
+        .expect("sync_config should succeed");
+    #[allow(deprecated)]
+    client
         .sync_scan_config(&config_id)
         .await
-        .expect("sync_scan_config should succeed");
+        .expect("deprecated sync_scan_config compatibility shim should succeed");
 
     let cloned_config = client
         .clone_scan_config(&config_id)

@@ -599,16 +599,31 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         CreateScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
-    /// Send a `sync_config` request and return a typed [`SyncConfigResponse`].
+    /// Send the global `sync_config` request and return a typed
+    /// [`SyncConfigResponse`].
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
+    pub async fn sync_config(&mut self) -> Result<SyncConfigResponse, GvmError> {
+        let response = self.send(sync_config()).await?;
+        SyncConfigResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send the global `sync_config` request and return a typed
+    /// [`SyncConfigResponse`].
+    ///
+    /// The GMP command synchronizes all configs and does not accept a config
+    /// identifier. The argument is retained temporarily for source
+    /// compatibility and is ignored.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    #[deprecated(note = "use sync_config(), which has global semantics")]
     pub async fn sync_scan_config(
         &mut self,
-        config_id: &EntityId,
+        _config_id: &EntityId,
     ) -> Result<SyncConfigResponse, GvmError> {
-        let response = self.send(sync_config(config_id)).await?;
-        SyncConfigResponse::from_response(&response).map_err(GvmError::Parse)
+        self.sync_config().await
     }
 
     // ── Scanners ──────────────────────────────────────────────────────────────
