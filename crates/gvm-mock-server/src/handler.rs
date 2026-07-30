@@ -1766,7 +1766,7 @@ impl SessionHandler {
             "get_report_vulns" => (
                 "vuln",
                 vec![
-                    "<vuln id=\"vuln-1\"><name>OpenSSL Vulnerability</name><host>192.0.2.10</host><port>443/tcp</port><threat>High</threat><severity>8.2</severity><family>General</family><cve>CVE-2026-0001</cve></vuln>"
+                    "<vuln><nvt oid=\"1.3.6.1.4.1.25623.1.0.117761\"><name>SSL/TLS Renegotiation Vulnerability</name></nvt><cves><cve>CVE-2011-1473</cve><cve>CVE-2011-5094</cve></cves><hosts_count>2</hosts_count><occurrences>3</occurrences><severity>5.0</severity><threat>Medium</threat></vuln>"
                         .to_string(),
                 ],
             ),
@@ -1787,7 +1787,7 @@ impl SessionHandler {
             "get_report_closed_cves" => (
                 "closed_cve",
                 vec![
-                    "<closed_cve id=\"closed-1\"><name>CVE-2025-9999</name><host>192.0.2.30</host><severity>5.0</severity></closed_cve>"
+                    "<closed_cve><host>192.0.2.30</host><cve>CVE-2025-9999</cve><nvt oid=\"1.3.6.1.4.1.25623.1.0.100000\"><name>Closed vulnerability check</name></nvt><severity>5.0</severity><threat>Medium</threat></closed_cve>"
                         .to_string(),
                 ],
             ),
@@ -1796,8 +1796,19 @@ impl SessionHandler {
 
         let count = items.len();
         let items = items.join("");
+        let details = match cmd.name.as_str() {
+            "get_report_vulns" => format!(
+                "<vulns>{items}</vulns><report_vuln_count>{count}<filtered>{count}</filtered></report_vuln_count>"
+            ),
+            "get_report_closed_cves" => format!(
+                "<closed_cves>{items}</closed_cves><report_closed_cve_count>{count}<filtered>{count}</filtered></report_closed_cve_count>"
+            ),
+            _ => format!(
+                "{items}<{element_name}_count>{count}<filtered>{count}</filtered></{element_name}_count>"
+            ),
+        };
         format!(
-            "<{name}_response status=\"200\" status_text=\"OK\">{items}<{element_name}_count>{count}<filtered>{count}</filtered></{element_name}_count></{name}_response>",
+            "<{name}_response status=\"200\" status_text=\"OK\">{details}</{name}_response>",
             name = cmd.name,
         )
         .into_bytes()

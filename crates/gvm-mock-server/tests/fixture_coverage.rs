@@ -155,10 +155,10 @@ async fn fixture_get_reports() {
 #[tokio::test]
 async fn fixture_get_report_drill_downs() {
     for (command, marker) in [
-        ("get_report_vulns", "<vuln "),
+        ("get_report_vulns", "<vuln>"),
         ("get_report_tls_certificates", "<tls_certificate "),
         ("get_report_errors", "<error "),
-        ("get_report_closed_cves", "<closed_cve "),
+        ("get_report_closed_cves", "<closed_cve>"),
     ] {
         let Some((server, mut s)) = server_with_version(GmpVersion::V22_8).await else {
             return;

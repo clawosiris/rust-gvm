@@ -371,8 +371,8 @@ impl FixtureStore {
         self.fixtures.insert(
             "get_report_vulns".to_string(),
             "<get_report_vulns_response status=\"200\" status_text=\"OK\">\
-             <vuln id=\"vuln-1\"><name>OpenSSL Vulnerability</name><host>192.0.2.10</host><port>443/tcp</port><threat>High</threat><severity>8.2</severity><family>General</family><cve>CVE-2026-0001</cve></vuln>\
-             <vuln_count>1<filtered>1</filtered></vuln_count>\
+             <vulns><vuln><nvt oid=\"1.3.6.1.4.1.25623.1.0.117761\"><name>SSL/TLS Renegotiation Vulnerability</name></nvt><cves><cve>CVE-2011-1473</cve><cve>CVE-2011-5094</cve></cves><hosts_count>2</hosts_count><occurrences>3</occurrences><severity>5.0</severity><threat>Medium</threat></vuln></vulns>\
+             <report_vuln_count>1<filtered>1</filtered></report_vuln_count>\
              </get_report_vulns_response>"
                 .to_string(),
         );
@@ -395,8 +395,8 @@ impl FixtureStore {
         self.fixtures.insert(
             "get_report_closed_cves".to_string(),
             "<get_report_closed_cves_response status=\"200\" status_text=\"OK\">\
-             <closed_cve id=\"closed-1\"><name>CVE-2025-9999</name><host>192.0.2.30</host><severity>5.0</severity></closed_cve>\
-             <closed_cve_count>1<filtered>1</filtered></closed_cve_count>\
+             <closed_cves><closed_cve><host>192.0.2.30</host><cve>CVE-2025-9999</cve><nvt oid=\"1.3.6.1.4.1.25623.1.0.100000\"><name>Closed vulnerability check</name></nvt><severity>5.0</severity><threat>Medium</threat></closed_cve></closed_cves>\
+             <report_closed_cve_count>1<filtered>1</filtered></report_closed_cve_count>\
              </get_report_closed_cves_response>"
                 .to_string(),
         );
