@@ -830,6 +830,15 @@ impl SessionHandler {
             if let Some(hosts) = parse_element_text(raw_xml, "hosts") {
                 resource.set_attr("hosts", &hosts);
             }
+            if let Some(exclude_hosts) = parse_element_text(raw_xml, "exclude_hosts") {
+                resource.set_attr("exclude_hosts", &exclude_hosts);
+            }
+        }
+
+        if resource_type == "user" {
+            if let Some(role_ids) = role_id_update(cmd) {
+                resource.set_attr("role_ids", &role_ids.join(","));
+            }
         }
 
         if resource_type == "asset" {
@@ -1064,6 +1073,7 @@ impl SessionHandler {
         let new_comment = parse_element_text(raw_xml, "comment");
         let new_host = parse_element_text(raw_xml, "host");
         let new_hosts = parse_element_text(raw_xml, "hosts");
+        let new_exclude_hosts = parse_element_text(raw_xml, "exclude_hosts");
         let new_image_references = parse_element_text(raw_xml, "image_references");
         let new_urls = parse_element_text(raw_xml, "urls");
         let new_exclude_urls = parse_element_text(raw_xml, "exclude_urls");
@@ -1110,6 +1120,11 @@ impl SessionHandler {
         let new_credential_store_id = parse_element_text(raw_xml, "credential_store_id");
         let new_vault_id = parse_element_text(raw_xml, "vault_id");
         let new_host_identifier = parse_element_text(raw_xml, "host_identifier");
+        let new_role_ids = if resource_type == "user" {
+            role_id_update(cmd)
+        } else {
+            None
+        };
         let task_reference_updates = if resource_type == "task" {
             match task_reference_updates(cmd) {
                 Ok(references) => references,
@@ -1195,6 +1210,12 @@ impl SessionHandler {
             }
             if let Some(ref hosts) = new_hosts {
                 r.set_attr("hosts", hosts);
+            }
+            if let Some(ref exclude_hosts) = new_exclude_hosts {
+                r.set_attr("exclude_hosts", exclude_hosts);
+            }
+            if let Some(ref role_ids) = new_role_ids {
+                r.set_attr("role_ids", &role_ids.join(","));
             }
             if resource_type == "oci_image_target" {
                 if let Some(ref image_references) = new_image_references {
@@ -2878,6 +2899,29 @@ fn has_agent_ids(cmd: &ParsedCommand) -> bool {
                 .iter()
                 .any(|agent| agent.name == "agent" && agent.attributes.contains_key("id"))
         })
+}
+
+fn role_id_update(cmd: &ParsedCommand) -> Option<Vec<String>> {
+    let roles = cmd
+        .children
+        .iter()
+        .filter(|child| child.name == "role")
+        .collect::<Vec<_>>();
+    if roles.is_empty() {
+        return None;
+    }
+    if roles
+        .iter()
+        .any(|role| role.attributes.get("id").map(String::as_str) == Some("0"))
+    {
+        return Some(Vec::new());
+    }
+    Some(
+        roles
+            .into_iter()
+            .filter_map(|role| role.attributes.get("id").cloned())
+            .collect(),
+    )
 }
 
 fn has_config_import_payload(cmd: &ParsedCommand) -> bool {

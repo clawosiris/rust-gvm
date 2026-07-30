@@ -24,4 +24,4 @@ pub use enums::*;
 /// Re-exported gvmd filter helpers.
 pub use filtering::{FilterFragment, FilterFragmentError, PaginatedFilter, Pagination};
 /// Re-exported shared GMP types.
-pub use types::{EntityId, EntityIdError, GmpVersion};
+pub use types::{CollectionUpdate, EntityId, EntityIdError, GmpVersion};

@@ -39,7 +39,7 @@ fn test_modify_user_with_host_access_modes() {
     assert_eq!(
         xml(modify_user(
             &id("u1"),
-            UserOpts {
+            ModifyUserOpts {
                 host_access: Some(UserHostAccess::allow("192.0.2.0/24")),
                 ..Default::default()
             }
@@ -49,7 +49,7 @@ fn test_modify_user_with_host_access_modes() {
     assert_eq!(
         xml(modify_user(
             &id("u1"),
-            UserOpts {
+            ModifyUserOpts {
                 host_access: Some(UserHostAccess::deny("192.0.2.0/24")),
                 ..Default::default()
             }
@@ -59,7 +59,7 @@ fn test_modify_user_with_host_access_modes() {
     assert_eq!(
         xml(modify_user(
             &id("u1"),
-            UserOpts {
+            ModifyUserOpts {
                 host_access: Some(UserHostAccess::deny("")),
                 ..Default::default()
             }

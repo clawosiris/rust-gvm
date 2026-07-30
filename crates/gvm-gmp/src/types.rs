@@ -6,6 +6,46 @@
 use std::fmt;
 use std::str::FromStr;
 
+/// A collection-valued update in a GMP modify request.
+///
+/// GMP distinguishes an omitted field (leave the current value unchanged),
+/// a non-empty replacement, and an explicit request to clear the collection.
+/// Command builders map [`Self::Clear`] to each command's gvmd-specific clear
+/// representation.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum CollectionUpdate<T> {
+    /// Omit the field and leave the stored collection unchanged.
+    #[default]
+    Omitted,
+    /// Replace the stored collection with these values.
+    Replace(Vec<T>),
+    /// Explicitly clear the stored collection.
+    Clear,
+}
+
+impl<T> CollectionUpdate<T> {
+    /// Build a replacement for a non-empty collection.
+    ///
+    /// An empty iterator maps to [`Self::Clear`] so callers cannot
+    /// accidentally lose the distinction between omission and clearing.
+    #[must_use]
+    pub fn replace(values: impl IntoIterator<Item = T>) -> Self {
+        let values = values.into_iter().collect::<Vec<_>>();
+        if values.is_empty() {
+            Self::Clear
+        } else {
+            Self::Replace(values)
+        }
+    }
+}
+
+impl<T> From<Vec<T>> for CollectionUpdate<T> {
+    fn from(values: Vec<T>) -> Self {
+        Self::replace(values)
+    }
+}
+
 /// A validated GMP entity identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -110,5 +150,21 @@ mod tests {
     #[test]
     fn gmp_version_formats() {
         assert_eq!(GmpVersion(22, 5).to_string(), "22.5");
+    }
+
+    #[test]
+    fn collection_update_preserves_omitted_replace_and_clear_states() {
+        assert_eq!(
+            CollectionUpdate::<String>::default(),
+            CollectionUpdate::Omitted
+        );
+        assert_eq!(
+            CollectionUpdate::replace(["one".to_string(), "two".to_string()]),
+            CollectionUpdate::Replace(vec!["one".to_string(), "two".to_string()])
+        );
+        assert_eq!(
+            CollectionUpdate::<String>::replace(Vec::new()),
+            CollectionUpdate::Clear
+        );
     }
 }

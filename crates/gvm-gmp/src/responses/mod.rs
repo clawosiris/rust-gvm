@@ -176,7 +176,7 @@ pub use system::{
 };
 pub use system_reports::{GetSystemReportsResponse, SystemReport};
 pub use tag::{CreateTagResponse, DeleteTagResponse, GetTagsResponse, ModifyTagResponse, Tag};
-pub use target::{CreateTargetResponse, GetTargetsResponse, Target};
+pub use target::{CreateTargetResponse, GetTargetsResponse, ModifyTargetResponse, Target};
 pub use task::{
     CreateTaskResponse, CurrentReport, DeleteTaskResponse, GetTasksResponse, LastReport,
     ModifyTaskResponse, MoveTaskResponse, ResumeTaskResponse, StartTaskResponse, StopTaskResponse,
