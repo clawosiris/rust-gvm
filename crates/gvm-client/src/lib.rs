@@ -63,8 +63,9 @@ use gvm_gmp::commands::web_application_targets::{
 use gvm_gmp::responses::{
     CloneAgentGroupResponse, CreateAgentGroupResponse, DeleteAgentGroupResponse,
     DeleteAgentResponse, GetAgentGroupsResponse, GetAgentInstallerInstructionResponse,
-    GetAgentSupportBundleResponse, GetAgentsResponse, ModifyAgentControlScanConfigResponse,
-    ModifyAgentGroupResponse, ModifyAgentResponse, SyncAgentsResponse,
+    GetAgentSupportBundleResponse, GetAgentsResponse, GetScanReportResponse,
+    ModifyAgentControlScanConfigResponse, ModifyAgentGroupResponse, ModifyAgentResponse,
+    SyncAgentsResponse,
 };
 use gvm_gmp::types::{EntityId, GmpVersion};
 use gvm_protocol::{Request, Response};
@@ -782,6 +783,20 @@ impl<C: GvmConnection> GmpClient<C> {
         &mut self,
         scan_report_id: &EntityId,
         opts: GetScanReportOpts,
+    ) -> Result<GetScanReportResponse, GvmError> {
+        let response = self.send(get_scan_report(scan_report_id, opts)).await?;
+        GetScanReportResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Get one structured vulnerability report without typed response parsing.
+    ///
+    /// # Errors
+    /// Returns an error if the server does not support the command, the transport fails,
+    /// parsing fails, or the server returns a non-success status.
+    pub async fn get_scan_report_raw(
+        &mut self,
+        scan_report_id: &EntityId,
+        opts: GetScanReportOpts,
     ) -> Result<Response, GvmError> {
         self.call(get_scan_report(scan_report_id, opts)).await
     }
@@ -1180,6 +1195,13 @@ pub trait GmpNextCommands {
 
     /// Get one structured vulnerability report.
     async fn get_scan_report(
+        &mut self,
+        scan_report_id: &EntityId,
+        opts: GetScanReportOpts,
+    ) -> Result<GetScanReportResponse, GvmError>;
+
+    /// Get one structured vulnerability report without typed response parsing.
+    async fn get_scan_report_raw(
         &mut self,
         scan_report_id: &EntityId,
         opts: GetScanReportOpts,
@@ -1774,8 +1796,16 @@ impl<C: GvmConnection + Send> GmpNextCommands for GmpNext<C> {
         &mut self,
         scan_report_id: &EntityId,
         opts: GetScanReportOpts,
-    ) -> Result<Response, GvmError> {
+    ) -> Result<GetScanReportResponse, GvmError> {
         self.0.get_scan_report(scan_report_id, opts).await
+    }
+
+    async fn get_scan_report_raw(
+        &mut self,
+        scan_report_id: &EntityId,
+        opts: GetScanReportOpts,
+    ) -> Result<Response, GvmError> {
+        self.0.get_scan_report_raw(scan_report_id, opts).await
     }
 
     async fn get_report_hosts(
