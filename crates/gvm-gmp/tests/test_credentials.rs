@@ -8,8 +8,7 @@ mod common;
 use common::{id, xml};
 use gvm_gmp::commands::credentials::*;
 use gvm_gmp::{
-    CredentialFormat, CredentialStoreCredentialType, CredentialType, SnmpAuthAlgorithm,
-    SnmpPrivacyAlgorithm,
+    CredentialStoreCredentialType, CredentialType, SnmpAuthAlgorithm, SnmpPrivacyAlgorithm,
 };
 
 #[test]
@@ -31,13 +30,21 @@ fn test_create_credential_with_all_optionals() {
                 login: Some("u".into()),
                 password: Some("p".into()),
                 private_key: Some("k".into()),
+                key_phrase: Some("phrase".into()),
+                public_key: None,
                 certificate: Some("cert".into()),
+                community: Some("community".into()),
                 auth_algorithm: Some(SnmpAuthAlgorithm::Sha1),
+                privacy_password: Some("privacy".into()),
                 privacy_algorithm: Some(SnmpPrivacyAlgorithm::Aes),
-                format: Some(CredentialFormat::Pem),
+                allow_insecure: Some(true),
+                kdc: Some("legacy-kdc".into()),
+                kdcs: vec!["kdc-1".into(), "kdc-2".into()],
+                realm: Some("EXAMPLE.COM".into()),
+                ..Default::default()
             }
         )),
-        "<create_credential><name>cred</name><comment>c</comment><type>up</type><login>u</login><password>p</password><private>k</private><certificate>cert</certificate><auth_algorithm>sha1</auth_algorithm><privacy_algorithm>aes</privacy_algorithm><format>pem</format></create_credential>"
+        "<create_credential><name>cred</name><comment>c</comment><type>up</type><allow_insecure>1</allow_insecure><certificate>cert</certificate><kdc>legacy-kdc</kdc><kdcs><kdc>kdc-1</kdc><kdc>kdc-2</kdc></kdcs><key><phrase>phrase</phrase><private>k</private></key><login>u</login><password>p</password><auth_algorithm>sha1</auth_algorithm><community>community</community><privacy><algorithm>aes</algorithm><password>privacy</password></privacy><realm>EXAMPLE.COM</realm></create_credential>"
     );
 }
 

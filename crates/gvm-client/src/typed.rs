@@ -27,10 +27,10 @@ use gvm_gmp::commands::configs::{
 };
 use gvm_gmp::commands::credentials::{
     create_credential, create_credential_store_credential, get_credential_store,
-    get_credential_stores, get_credential_stores_with_opts, get_credentials,
+    get_credential_stores, get_credential_stores_with_opts, get_credentials, modify_credential,
     modify_credential_store_credential, verify_credential_store, CredentialOpts,
     CredentialStoreCredentialOpts, GetCredentialStoresOpts, GetCredentialsOpts,
-    ModifyCredentialStoreCredentialOpts,
+    ModifyCredentialOpts, ModifyCredentialStoreCredentialOpts,
 };
 use gvm_gmp::commands::features::get_features;
 use gvm_gmp::commands::feed::{get_feed, get_feeds};
@@ -1408,6 +1408,20 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ) -> Result<CreateCredentialResponse, GvmError> {
         let response = self.send(create_credential(name, opts)).await?;
         CreateCredentialResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `modify_credential` request and return a typed
+    /// [`ModifyCredentialResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_credential(
+        &mut self,
+        credential_id: &EntityId,
+        opts: ModifyCredentialOpts,
+    ) -> Result<ModifyCredentialResponse, GvmError> {
+        let response = self.send(modify_credential(credential_id, opts)).await?;
+        ModifyCredentialResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     /// Send a credential-store-backed `create_credential` request and return a

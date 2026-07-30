@@ -335,13 +335,18 @@ canonical_inventory!(
     CredentialType,
     {
         ClientCertificate => ("cc", ClientCertificate),
+        Kerberos5 => ("krb5", Kerberos5),
         PasswordOnly => ("pw", PasswordOnly),
+        PgpEncryptionKey => ("pgp", PgpEncryptionKey),
+        SmimeCertificate => ("smime", SmimeCertificate),
         SnmpV1Or2c => ("snmp", SnmpV1Or2c),
-        SnmpV3 => ("snmpv3", SnmpV3),
+        SnmpV3 => ("snmp", SnmpV1Or2c),
         UsernamePassword => ("up", UsernamePassword),
         UsernameSshKey => ("usk", UsernameSshKey),
     },
-    aliases {}
+    aliases {
+        "snmpv3" => SnmpV3,
+    }
 );
 
 canonical_inventory!(

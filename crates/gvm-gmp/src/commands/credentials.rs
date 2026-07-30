@@ -3,6 +3,8 @@
 
 //! Credential command builders.
 
+use std::fmt;
+
 use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
@@ -12,8 +14,8 @@ use crate::enums::{
 };
 use crate::types::EntityId;
 
-/// Optional fields for credential create and modify requests.
-#[derive(Debug, Clone, Default)]
+/// Optional fields for credential create requests.
+#[derive(Clone, Default)]
 pub struct CredentialOpts {
     /// Optional comment text included in the request.
     pub comment: Option<String>,
@@ -25,14 +27,131 @@ pub struct CredentialOpts {
     pub password: Option<String>,
     /// Optional private key material.
     pub private_key: Option<String>,
+    /// Optional private-key passphrase.
+    pub key_phrase: Option<String>,
+    /// Optional public key material.
+    pub public_key: Option<String>,
     /// Optional certificate data.
     pub certificate: Option<String>,
+    /// Optional SNMP community value.
+    pub community: Option<String>,
     /// Optional SNMP authentication algorithm.
     pub auth_algorithm: Option<SnmpAuthAlgorithm>,
+    /// Optional SNMP privacy password.
+    pub privacy_password: Option<String>,
     /// Optional SNMP privacy algorithm.
     pub privacy_algorithm: Option<SnmpPrivacyAlgorithm>,
-    /// Optional credential or report format value.
+    /// Whether the credential may be used over an insecure transport.
+    pub allow_insecure: Option<bool>,
+    /// Deprecated comma-separated Kerberos KDC value accepted by gvmd.
+    ///
+    /// Prefer [`Self::kdcs`].
+    pub kdc: Option<String>,
+    /// Kerberos key distribution centers.
+    pub kdcs: Vec<String>,
+    /// Optional Kerberos realm.
+    pub realm: Option<String>,
+    /// Historical credential format field.
+    ///
+    /// Current gvmd does not consume `<format>` in create or modify credential
+    /// requests. This value is retained for source compatibility but is not
+    /// emitted.
+    #[deprecated(note = "current gvmd ignores credential request format")]
     pub format: Option<CredentialFormat>,
+}
+
+/// Optional fields for `modify_credential` requests.
+#[derive(Clone, Default)]
+pub struct ModifyCredentialOpts {
+    /// Optional replacement credential name.
+    pub name: Option<String>,
+    /// Optional comment text included in the request.
+    pub comment: Option<String>,
+    /// Optional login or username value.
+    pub login: Option<String>,
+    /// Optional password value.
+    pub password: Option<String>,
+    /// Optional private key material.
+    pub private_key: Option<String>,
+    /// Optional private-key passphrase.
+    pub key_phrase: Option<String>,
+    /// Optional public key material.
+    pub public_key: Option<String>,
+    /// Optional certificate data.
+    pub certificate: Option<String>,
+    /// Optional SNMP community value.
+    pub community: Option<String>,
+    /// Optional SNMP authentication algorithm.
+    pub auth_algorithm: Option<SnmpAuthAlgorithm>,
+    /// Optional SNMP privacy password.
+    pub privacy_password: Option<String>,
+    /// Optional SNMP privacy algorithm.
+    pub privacy_algorithm: Option<SnmpPrivacyAlgorithm>,
+    /// Whether the credential may be used over an insecure transport.
+    pub allow_insecure: Option<bool>,
+    /// Deprecated comma-separated Kerberos KDC value accepted by gvmd.
+    ///
+    /// Prefer [`Self::kdcs`].
+    pub kdc: Option<String>,
+    /// Kerberos key distribution centers.
+    pub kdcs: Vec<String>,
+    /// Optional Kerberos realm.
+    pub realm: Option<String>,
+}
+
+fn redacted(value: &Option<String>) -> Option<&'static str> {
+    value.as_ref().map(|_| "<redacted>")
+}
+
+fn present(value: &Option<String>) -> Option<&'static str> {
+    value.as_ref().map(|_| "<present>")
+}
+
+impl fmt::Debug for CredentialOpts {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CredentialOpts")
+            .field("comment", &self.comment)
+            .field("credential_type", &self.credential_type)
+            .field("login", &self.login)
+            .field("password", &redacted(&self.password))
+            .field("private_key", &redacted(&self.private_key))
+            .field("key_phrase", &redacted(&self.key_phrase))
+            .field("public_key", &present(&self.public_key))
+            .field("certificate", &present(&self.certificate))
+            .field("community", &redacted(&self.community))
+            .field("auth_algorithm", &self.auth_algorithm)
+            .field("privacy_password", &redacted(&self.privacy_password))
+            .field("privacy_algorithm", &self.privacy_algorithm)
+            .field("allow_insecure", &self.allow_insecure)
+            .field("kdc", &self.kdc)
+            .field("kdcs", &self.kdcs)
+            .field("realm", &self.realm)
+            .field("format", &"<ignored>")
+            .finish()
+    }
+}
+
+impl fmt::Debug for ModifyCredentialOpts {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ModifyCredentialOpts")
+            .field("name", &self.name)
+            .field("comment", &self.comment)
+            .field("login", &self.login)
+            .field("password", &redacted(&self.password))
+            .field("private_key", &redacted(&self.private_key))
+            .field("key_phrase", &redacted(&self.key_phrase))
+            .field("public_key", &present(&self.public_key))
+            .field("certificate", &present(&self.certificate))
+            .field("community", &redacted(&self.community))
+            .field("auth_algorithm", &self.auth_algorithm)
+            .field("privacy_password", &redacted(&self.privacy_password))
+            .field("privacy_algorithm", &self.privacy_algorithm)
+            .field("allow_insecure", &self.allow_insecure)
+            .field("kdc", &self.kdc)
+            .field("kdcs", &self.kdcs)
+            .field("realm", &self.realm)
+            .finish()
+    }
 }
 
 /// Optional fields for credential-store-backed credential creation.
@@ -135,7 +254,11 @@ pub fn clone_credential(credential_id: &EntityId) -> impl Request {
 pub fn create_credential(name: &str, opts: CredentialOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_credential");
     cmd.add_element_with_text("name", name);
-    add_credential_body(&mut cmd, &opts);
+    add_text_element(&mut cmd, "comment", opts.comment.as_deref());
+    if let Some(credential_type) = opts.credential_type {
+        cmd.add_element_with_text("type", credential_type.as_gmp_str());
+    }
+    add_credential_values(&mut cmd, CredentialValues::from(&opts));
     cmd
 }
 
@@ -247,10 +370,12 @@ pub fn modify_credential_store(
 
 /// Build a `modify_credential` request.
 #[must_use]
-pub fn modify_credential(credential_id: &EntityId, opts: CredentialOpts) -> impl Request {
+pub fn modify_credential(credential_id: &EntityId, opts: ModifyCredentialOpts) -> impl Request {
     let mut cmd =
         XmlCommand::new("modify_credential").attribute("credential_id", credential_id.as_str());
-    add_credential_body(&mut cmd, &opts);
+    add_text_element(&mut cmd, "name", opts.name.as_deref());
+    add_text_element(&mut cmd, "comment", opts.comment.as_deref());
+    add_credential_values(&mut cmd, CredentialValues::from(&opts));
     cmd
 }
 
@@ -283,24 +408,105 @@ pub fn delete_credential(credential_id: &EntityId, ultimate: bool) -> impl Reque
         .attribute("ultimate", bool_str(ultimate))
 }
 
-fn add_credential_body(cmd: &mut XmlCommand, opts: &CredentialOpts) {
-    add_text_element(cmd, "comment", opts.comment.as_deref());
-    if let Some(credential_type) = opts.credential_type {
-        cmd.add_element_with_text("type", credential_type.as_gmp_str());
+struct CredentialValues<'a> {
+    login: Option<&'a str>,
+    password: Option<&'a str>,
+    private_key: Option<&'a str>,
+    key_phrase: Option<&'a str>,
+    public_key: Option<&'a str>,
+    certificate: Option<&'a str>,
+    community: Option<&'a str>,
+    auth_algorithm: Option<SnmpAuthAlgorithm>,
+    privacy_password: Option<&'a str>,
+    privacy_algorithm: Option<SnmpPrivacyAlgorithm>,
+    allow_insecure: Option<bool>,
+    kdc: Option<&'a str>,
+    kdcs: &'a [String],
+    realm: Option<&'a str>,
+}
+
+impl<'a> From<&'a CredentialOpts> for CredentialValues<'a> {
+    fn from(opts: &'a CredentialOpts) -> Self {
+        Self {
+            login: opts.login.as_deref(),
+            password: opts.password.as_deref(),
+            private_key: opts.private_key.as_deref(),
+            key_phrase: opts.key_phrase.as_deref(),
+            public_key: opts.public_key.as_deref(),
+            certificate: opts.certificate.as_deref(),
+            community: opts.community.as_deref(),
+            auth_algorithm: opts.auth_algorithm,
+            privacy_password: opts.privacy_password.as_deref(),
+            privacy_algorithm: opts.privacy_algorithm,
+            allow_insecure: opts.allow_insecure,
+            kdc: opts.kdc.as_deref(),
+            kdcs: &opts.kdcs,
+            realm: opts.realm.as_deref(),
+        }
     }
-    add_text_element(cmd, "login", opts.login.as_deref());
-    add_text_element(cmd, "password", opts.password.as_deref());
-    add_text_element(cmd, "private", opts.private_key.as_deref());
-    add_text_element(cmd, "certificate", opts.certificate.as_deref());
-    if let Some(auth_algorithm) = opts.auth_algorithm {
+}
+
+impl<'a> From<&'a ModifyCredentialOpts> for CredentialValues<'a> {
+    fn from(opts: &'a ModifyCredentialOpts) -> Self {
+        Self {
+            login: opts.login.as_deref(),
+            password: opts.password.as_deref(),
+            private_key: opts.private_key.as_deref(),
+            key_phrase: opts.key_phrase.as_deref(),
+            public_key: opts.public_key.as_deref(),
+            certificate: opts.certificate.as_deref(),
+            community: opts.community.as_deref(),
+            auth_algorithm: opts.auth_algorithm,
+            privacy_password: opts.privacy_password.as_deref(),
+            privacy_algorithm: opts.privacy_algorithm,
+            allow_insecure: opts.allow_insecure,
+            kdc: opts.kdc.as_deref(),
+            kdcs: &opts.kdcs,
+            realm: opts.realm.as_deref(),
+        }
+    }
+}
+
+fn add_credential_values(cmd: &mut XmlCommand, values: CredentialValues<'_>) {
+    if let Some(allow_insecure) = values.allow_insecure {
+        cmd.add_element_with_text("allow_insecure", bool_str(allow_insecure));
+    }
+    add_text_element(cmd, "certificate", values.certificate);
+    add_text_element(cmd, "kdc", values.kdc);
+    if !values.kdcs.is_empty() {
+        let kdcs = cmd.add_element("kdcs");
+        for kdc in values.kdcs {
+            kdcs.add_child_with_text("kdc", kdc);
+        }
+    }
+    if values.private_key.is_some() || values.key_phrase.is_some() || values.public_key.is_some() {
+        let key = cmd.add_element("key");
+        if let Some(phrase) = values.key_phrase {
+            key.add_child_with_text("phrase", phrase);
+        }
+        if let Some(private_key) = values.private_key {
+            key.add_child_with_text("private", private_key);
+        }
+        if let Some(public_key) = values.public_key {
+            key.add_child_with_text("public", public_key);
+        }
+    }
+    add_text_element(cmd, "login", values.login);
+    add_text_element(cmd, "password", values.password);
+    if let Some(auth_algorithm) = values.auth_algorithm {
         cmd.add_element_with_text("auth_algorithm", auth_algorithm.as_gmp_str());
     }
-    if let Some(privacy_algorithm) = opts.privacy_algorithm {
-        cmd.add_element_with_text("privacy_algorithm", privacy_algorithm.as_gmp_str());
+    add_text_element(cmd, "community", values.community);
+    if values.privacy_algorithm.is_some() || values.privacy_password.is_some() {
+        let privacy = cmd.add_element("privacy");
+        if let Some(privacy_algorithm) = values.privacy_algorithm {
+            privacy.add_child_with_text("algorithm", privacy_algorithm.as_gmp_str());
+        }
+        if let Some(privacy_password) = values.privacy_password {
+            privacy.add_child_with_text("password", privacy_password);
+        }
     }
-    if let Some(format) = opts.format {
-        cmd.add_element_with_text("format", format.as_gmp_str());
-    }
+    add_text_element(cmd, "realm", values.realm);
 }
 
 #[cfg(test)]
@@ -313,6 +519,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn credential_commands_build_xml() {
         let rendered = xml(create_credential(
             "cred",
@@ -326,6 +533,7 @@ mod tests {
         ));
         assert!(rendered.contains("<type>up</type>"));
         assert!(rendered.contains("<password>pass</password>"));
+        assert!(!rendered.contains("<format>"));
         assert_eq!(
             xml(create_credential_store_credential(
                 "stored",
@@ -396,7 +604,7 @@ mod tests {
         assert!(rendered.contains("details=\"1\""));
         let rendered = xml(modify_credential(
             &id("c1"),
-            CredentialOpts {
+            ModifyCredentialOpts {
                 comment: Some("updated".into()),
                 ..Default::default()
             },
@@ -426,5 +634,152 @@ mod tests {
             xml(delete_credential(&id("c1"), true)),
             "<delete_credential credential_id=\"c1\" ultimate=\"1\"/>"
         );
+    }
+
+    #[test]
+    fn credential_value_variants_match_current_gvmd_shape() {
+        assert_eq!(
+            xml(create_credential(
+                "username-password",
+                CredentialOpts {
+                    credential_type: Some(CredentialType::UsernamePassword),
+                    login: Some("user".into()),
+                    password: Some("password".into()),
+                    ..Default::default()
+                }
+            )),
+            "<create_credential><name>username-password</name><type>up</type><login>user</login><password>password</password></create_credential>"
+        );
+        assert_eq!(
+            xml(create_credential(
+                "password-only",
+                CredentialOpts {
+                    credential_type: Some(CredentialType::PasswordOnly),
+                    password: Some("password".into()),
+                    ..Default::default()
+                }
+            )),
+            "<create_credential><name>password-only</name><type>pw</type><password>password</password></create_credential>"
+        );
+        assert_eq!(
+            xml(create_credential(
+                "ssh",
+                CredentialOpts {
+                    credential_type: Some(CredentialType::UsernameSshKey),
+                    login: Some("root".into()),
+                    private_key: Some("PRIVATE".into()),
+                    key_phrase: Some("phrase".into()),
+                    ..Default::default()
+                }
+            )),
+            "<create_credential><name>ssh</name><type>usk</type><key><phrase>phrase</phrase><private>PRIVATE</private></key><login>root</login></create_credential>"
+        );
+        assert_eq!(
+            xml(create_credential(
+                "public",
+                CredentialOpts {
+                    credential_type: Some(CredentialType::PgpEncryptionKey),
+                    public_key: Some("PUBLIC".into()),
+                    ..Default::default()
+                }
+            )),
+            "<create_credential><name>public</name><type>pgp</type><key><public>PUBLIC</public></key></create_credential>"
+        );
+        assert_eq!(
+            xml(create_credential(
+                "certificate",
+                CredentialOpts {
+                    credential_type: Some(CredentialType::ClientCertificate),
+                    certificate: Some("CERTIFICATE".into()),
+                    allow_insecure: Some(true),
+                    ..Default::default()
+                }
+            )),
+            "<create_credential><name>certificate</name><type>cc</type><allow_insecure>1</allow_insecure><certificate>CERTIFICATE</certificate></create_credential>"
+        );
+        assert_eq!(
+            xml(create_credential(
+                "community",
+                CredentialOpts {
+                    credential_type: Some(CredentialType::SnmpV1Or2c),
+                    community: Some("public".into()),
+                    ..Default::default()
+                }
+            )),
+            "<create_credential><name>community</name><type>snmp</type><community>public</community></create_credential>"
+        );
+        assert_eq!(
+            xml(create_credential(
+                "snmpv3",
+                CredentialOpts {
+                    credential_type: Some(CredentialType::SnmpV3),
+                    login: Some("snmp-user".into()),
+                    password: Some("auth-secret".into()),
+                    auth_algorithm: Some(SnmpAuthAlgorithm::Sha1),
+                    privacy_password: Some("privacy-secret".into()),
+                    privacy_algorithm: Some(SnmpPrivacyAlgorithm::Aes),
+                    ..Default::default()
+                }
+            )),
+            "<create_credential><name>snmpv3</name><type>snmp</type><login>snmp-user</login><password>auth-secret</password><auth_algorithm>sha1</auth_algorithm><privacy><algorithm>aes</algorithm><password>privacy-secret</password></privacy></create_credential>"
+        );
+        assert_eq!(
+            xml(create_credential(
+                "kerberos",
+                CredentialOpts {
+                    credential_type: Some(CredentialType::Kerberos5),
+                    login: Some("principal".into()),
+                    password: Some("secret".into()),
+                    kdc: Some("legacy.example".into()),
+                    kdcs: vec!["kdc1.example".into(), "kdc2.example".into()],
+                    realm: Some("EXAMPLE.COM".into()),
+                    ..Default::default()
+                }
+            )),
+            "<create_credential><name>kerberos</name><type>krb5</type><kdc>legacy.example</kdc><kdcs><kdc>kdc1.example</kdc><kdc>kdc2.example</kdc></kdcs><login>principal</login><password>secret</password><realm>EXAMPLE.COM</realm></create_credential>"
+        );
+    }
+
+    #[test]
+    fn modify_credential_supports_name_and_nested_secret_updates() {
+        assert_eq!(
+            xml(modify_credential(
+                &id("c1"),
+                ModifyCredentialOpts {
+                    name: Some("renamed".into()),
+                    private_key: Some("PRIVATE".into()),
+                    key_phrase: Some("phrase".into()),
+                    privacy_password: Some("privacy-secret".into()),
+                    privacy_algorithm: Some(SnmpPrivacyAlgorithm::Des),
+                    kdcs: vec!["kdc.example".into()],
+                    realm: Some("EXAMPLE.COM".into()),
+                    ..Default::default()
+                }
+            )),
+            "<modify_credential credential_id=\"c1\"><name>renamed</name><kdcs><kdc>kdc.example</kdc></kdcs><key><phrase>phrase</phrase><private>PRIVATE</private></key><privacy><algorithm>des</algorithm><password>privacy-secret</password></privacy><realm>EXAMPLE.COM</realm></modify_credential>"
+        );
+    }
+
+    #[test]
+    fn credential_debug_output_redacts_secret_values() {
+        let opts = CredentialOpts {
+            password: Some("password-secret".into()),
+            private_key: Some("private-secret".into()),
+            key_phrase: Some("phrase-secret".into()),
+            community: Some("community-secret".into()),
+            privacy_password: Some("privacy-secret".into()),
+            ..Default::default()
+        };
+        let debug = format!("{opts:?}");
+
+        for secret in [
+            "password-secret",
+            "private-secret",
+            "phrase-secret",
+            "community-secret",
+            "privacy-secret",
+        ] {
+            assert!(!debug.contains(secret));
+        }
     }
 }
