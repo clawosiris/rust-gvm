@@ -6,8 +6,8 @@
 use gvm_protocol::Response;
 
 use crate::responses::common::{
-    count_info, parse_document, parse_entity_id, parse_entity_meta, status_from_response,
-    ActionResponse, CountInfo, EntityMeta, ParseError,
+    count_info, optional_u32, parse_document, parse_entity_id, parse_entity_meta,
+    status_from_response, ActionResponse, CountInfo, EntityMeta, ParseError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,7 +19,7 @@ pub struct Schedule {
     pub timezone: Option<String>,
     pub first_run: Option<String>,
     pub next_run: Option<String>,
-    pub duration: Option<String>,
+    pub duration: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,7 +49,7 @@ impl Schedule {
             timezone: node.optional_child_text("timezone"),
             first_run: node.optional_child_text("first_run"),
             next_run: node.optional_child_text("next_run"),
-            duration: node.optional_child_text("duration"),
+            duration: optional_u32(node, "duration", "duration")?,
         })
     }
 }
@@ -139,7 +139,7 @@ mod tests {
             parsed.items[0].next_run.as_deref(),
             Some("2026-01-04T00:00:00Z")
         );
-        assert_eq!(parsed.items[0].duration.as_deref(), Some("3600"));
+        assert_eq!(parsed.items[0].duration, Some(3600));
         assert!(parsed.items[1].meta.in_use);
     }
 
@@ -201,5 +201,21 @@ mod tests {
         assert_eq!(schedule.first_run, None);
         assert_eq!(schedule.next_run, None);
         assert_eq!(schedule.duration, None);
+    }
+
+    #[test]
+    fn rejects_invalid_schedule_duration() {
+        let response = Response::from(
+            r#"<get_schedules_response status="200" status_text="OK">
+                <schedule id="s-1">
+                    <name>Invalid Duration</name>
+                    <duration>forever</duration>
+                </schedule>
+            </get_schedules_response>"#,
+        );
+
+        let error = GetSchedulesResponse::from_response(&response).expect_err("duration must fail");
+        assert!(matches!(error, ParseError::InvalidValue { field, value }
+                if field == "duration" && value == "forever"));
     }
 }

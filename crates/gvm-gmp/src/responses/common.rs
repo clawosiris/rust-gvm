@@ -41,6 +41,15 @@ pub struct NamedEntity {
     pub name: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct NvtReference {
+    pub oid: String,
+    pub name: Option<String>,
+    pub type_: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -238,6 +247,24 @@ pub(crate) fn parse_entity_id(value: &str, field: &str) -> Result<EntityId, Pars
         field: field.to_string(),
         value: value.to_string(),
     })
+}
+
+pub(crate) fn parse_nvt_reference(
+    node: &XmlNode,
+    field: &str,
+) -> Result<Option<NvtReference>, ParseError> {
+    node.child("nvt")
+        .map(|nvt| {
+            Ok(NvtReference {
+                oid: nvt
+                    .attr("oid")
+                    .ok_or_else(|| ParseError::MissingElement(format!("{field}.oid")))?
+                    .to_string(),
+                name: nvt.optional_child_text("name"),
+                type_: nvt.optional_child_text("type"),
+            })
+        })
+        .transpose()
 }
 
 pub(crate) fn parse_bool(value: &str, field: &str) -> Result<bool, ParseError> {
