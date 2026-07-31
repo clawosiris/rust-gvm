@@ -54,7 +54,7 @@ use gvm_gmp::commands::tasks::{create_task, delete_task, get_task, start_task, s
 use gvm_gmp::commands::users::{GetUsersOpts, ModifyUserOpts, UserOpts};
 use gvm_gmp::responses::{
     Asset, ConfigUsageKind, CreateScanConfigResponse, GetConfigsResponse, GetPermissionsResponse,
-    GetScanConfigsResponse, Permission,
+    GetScanConfigsResponse, GetScanReportResponse, Permission,
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
@@ -2884,6 +2884,65 @@ fn seed_scan_report_fixture(store: &ResourceStore) {
     }
 }
 
+fn assert_typed_scan_report(response: &GetScanReportResponse) {
+    assert_eq!(response.report.meta.id.as_str(), SCAN_REPORT_ID);
+    assert_eq!(response.report.scan_run_status.as_deref(), Some("Done"));
+    assert_eq!(response.report.resources.hosts, Some(6));
+    assert_eq!(response.report.resources.vulnerabilities, Some(7));
+    assert_eq!(response.report.resources.errors, Some(1));
+    let task = response.report.task.as_ref().expect("task should parse");
+    assert_eq!(
+        task.id.as_ref().map(EntityId::as_str),
+        Some(SCAN_REPORT_TASK_ID)
+    );
+    assert_eq!(
+        task.target
+            .as_ref()
+            .and_then(|target| target.id.as_ref())
+            .map(EntityId::as_str),
+        Some(SCAN_REPORT_TARGET_ID)
+    );
+    assert_eq!(
+        task.target
+            .as_ref()
+            .and_then(|target| target.target_type.as_deref()),
+        Some("target")
+    );
+    let result_count = response
+        .report
+        .result_count
+        .as_ref()
+        .expect("result counts should parse");
+    assert_eq!(result_count.full, Some(7));
+    assert_eq!(result_count.filtered, Some(2));
+    assert_eq!(
+        response
+            .report
+            .severity
+            .as_ref()
+            .and_then(|severity| severity.filtered.as_deref()),
+        Some("9.5")
+    );
+    assert_eq!(
+        response
+            .filter
+            .as_ref()
+            .and_then(|filter| filter.id.as_ref())
+            .map(EntityId::as_str),
+        Some(SCAN_REPORT_FILTER_ID)
+    );
+    assert!(response.filter.as_ref().is_some_and(|filter| filter
+        .keywords
+        .iter()
+        .any(|keyword| keyword.column == "levels")));
+    assert_eq!(
+        response.sort.as_ref().map(|sort| sort.field.as_str()),
+        Some("severity")
+    );
+    assert_eq!(response.page.start, Some(1));
+    assert_eq!(response.page.max, Some(1));
+}
+
 #[tokio::test]
 async fn next_client_get_scan_report_uses_stateful_mock_transport() {
     let server = match MockGmpServer::builder()
@@ -2922,26 +2981,22 @@ async fn next_client_get_scan_report_uses_stateful_mock_transport() {
         )
         .await
         .expect("get_scan_report should succeed");
-    let xml = response.as_str().expect("response should be UTF-8");
+    assert_typed_scan_report(&response);
 
-    assert!(xml.starts_with("<get_scan_report_response status=\"200\""));
-    assert!(xml.contains(&format!("<report id=\"{SCAN_REPORT_ID}\">")));
-    assert!(xml.contains("<scan_run_status>Done</scan_run_status>"));
-    assert!(xml.contains("<hosts><count>6</count></hosts>"));
-    assert!(xml.contains("<vulns><count>7</count></vulns>"));
-    assert!(xml.contains("<errors><count>1</count></errors>"));
-    assert!(xml.contains(&format!("<task id=\"{SCAN_REPORT_TASK_ID}\">")));
-    assert!(xml.contains(&format!("<target id=\"{SCAN_REPORT_TARGET_ID}\">")));
-    assert!(xml.contains("<target_type>target</target_type>"));
-    assert!(xml.contains("<full>7</full><filtered>2</filtered>"));
-    assert!(xml.contains("<severity><full>9.5</full><filtered>9.5</filtered></severity>"));
-    assert!(xml.contains(&format!("<filters id=\"{SCAN_REPORT_FILTER_ID}\">")));
-    assert!(xml.contains("<column>levels</column>"));
-    assert!(xml.contains("<sort><field>severity<order>descending</order></field></sort>"));
-    assert!(xml.contains("<scan_report start=\"1\" max=\"1\"/>"));
+    let raw_response = client
+        .get_scan_report_raw(
+            &EntityId::new(SCAN_REPORT_ID).expect("valid report ID"),
+            GetScanReportOpts::default(),
+        )
+        .await
+        .expect("raw compatibility path should succeed");
+    assert!(raw_response
+        .as_str()
+        .expect("raw response should be UTF-8")
+        .starts_with("<get_scan_report_response status=\"200\""));
 
     let history = server.command_history();
-    assert_eq!(history.len(), 1);
+    assert_eq!(history.len(), 2);
     assert_eq!(history[0].command_name(), "get_scan_report");
     assert_eq!(
         std::str::from_utf8(history[0].raw_xml()).expect("request should be UTF-8"),
@@ -2950,6 +3005,7 @@ async fn next_client_get_scan_report_uses_stateful_mock_transport() {
              scan_report_id=\"{SCAN_REPORT_ID}\"/>"
         )
     );
+    assert_eq!(history[1].command_name(), "get_scan_report");
 
     server.shutdown().await;
 }

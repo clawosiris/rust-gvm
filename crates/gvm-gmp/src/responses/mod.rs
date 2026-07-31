@@ -35,6 +35,7 @@ pub mod resource_names;
 pub mod result;
 pub mod role;
 pub mod scan_config;
+pub mod scan_report;
 pub mod scanner;
 pub mod schedule;
 pub mod secinfo;
@@ -153,6 +154,7 @@ pub use scan_config::{
     CreateScanConfigResponse, DeleteScanConfigResponse, GetScanConfigsResponse,
     ModifyScanConfigResponse, ScanConfig, SyncConfigResponse,
 };
+pub use scan_report::{GetScanReportResponse, ScanReport, ScanReportResultCount};
 pub use scanner::{
     CreateScannerResponse, DeleteScannerResponse, GetScannersResponse, ModifyScannerResponse,
     Scanner, VerifyScannerResponse,

@@ -348,7 +348,7 @@ impl AuditReportHost {
     }
 }
 
-fn nested_optional_u32(
+pub(crate) fn nested_optional_u32(
     node: &XmlNode,
     container: &str,
     field: &str,
@@ -359,7 +359,7 @@ fn nested_optional_u32(
         .map(Option::flatten)
 }
 
-fn parse_task(node: &XmlNode) -> Result<StructuredReportTask, ParseError> {
+pub(crate) fn parse_task(node: &XmlNode) -> Result<StructuredReportTask, ParseError> {
     Ok(StructuredReportTask {
         id: parse_optional_id_value(node.attr("id"), "task.id")?,
         name: node.optional_child_text("name").unwrap_or_default(),
@@ -429,7 +429,7 @@ fn parse_report_compliance(node: &XmlNode) -> AuditReportCompliance {
     }
 }
 
-fn parse_filter(root: &XmlNode) -> Result<Option<ReportFilter>, ParseError> {
+pub(crate) fn parse_filter(root: &XmlNode) -> Result<Option<ReportFilter>, ParseError> {
     root.child("filters")
         .map(|node| {
             let keywords = node
@@ -453,7 +453,7 @@ fn parse_filter(root: &XmlNode) -> Result<Option<ReportFilter>, ParseError> {
         .transpose()
 }
 
-fn parse_sort(root: &XmlNode) -> Option<ReportSort> {
+pub(crate) fn parse_sort(root: &XmlNode) -> Option<ReportSort> {
     let field = root.child("sort")?.child("field")?;
     Some(ReportSort {
         field: field.text.clone(),
@@ -461,7 +461,7 @@ fn parse_sort(root: &XmlNode) -> Option<ReportSort> {
     })
 }
 
-fn parse_page(root: &XmlNode, name: &str) -> Result<ReportPage, ParseError> {
+pub(crate) fn parse_page(root: &XmlNode, name: &str) -> Result<ReportPage, ParseError> {
     let Some(node) = root.child(name) else {
         return Ok(ReportPage::default());
     };
