@@ -48,6 +48,24 @@ fn unix_connection(server: &MockGmpServer) -> UnixSocketConnection {
     UnixSocketConnection::with_path(server.socket_path().expect("unix socket path"))
 }
 
+async fn typed_task_by_id(server: &MockGmpServer, task_id: &EntityId) -> gvm_gmp::responses::Task {
+    let mut client = GmpClient::connect(unix_connection(server))
+        .await
+        .expect("typed task client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("typed task authentication should succeed");
+    client
+        .get_tasks(Default::default())
+        .await
+        .expect("typed get_tasks should succeed")
+        .items
+        .into_iter()
+        .find(|task| task.meta.id == *task_id)
+        .expect("created task should be returned")
+}
+
 async fn delete_task(server: &MockGmpServer, task_id: &EntityId) {
     let mut client = GmpClient::connect(unix_connection(server))
         .await
@@ -101,7 +119,15 @@ where
             agent_group_id.as_str()
         )
     );
-    EntityId::new(task_response.id().expect("created task id")).expect("valid task id")
+    let task_id =
+        EntityId::new(task_response.id().expect("created task id")).expect("valid task id");
+    let task = typed_task_by_id(server, &task_id).await;
+    assert_eq!(
+        task.agent_group.as_ref().map(|target| &target.id),
+        Some(agent_group_id)
+    );
+    assert_eq!(task.target, None);
+    task_id
 }
 
 async fn assert_create_oci_image_target_task_round_trip<C>(
@@ -141,7 +167,15 @@ where
             oci_image_target_id.as_str()
         )
     );
-    EntityId::new(task_response.id().expect("created task id")).expect("valid task id")
+    let task_id =
+        EntityId::new(task_response.id().expect("created task id")).expect("valid task id");
+    let task = typed_task_by_id(server, &task_id).await;
+    assert_eq!(
+        task.oci_image_target.as_ref().map(|target| &target.id),
+        Some(oci_image_target_id)
+    );
+    assert_eq!(task.target, None);
+    task_id
 }
 
 async fn assert_create_web_application_task_round_trip(
@@ -174,7 +208,17 @@ async fn assert_create_web_application_task_round_trip(
             "<create_task><name>Client Web Task</name><usage_type>scan</usage_type><web_application_target id=\"{target_id}\"/><scanner id=\"08b69003-5fc2-4037-a479-93b440211c73\"/><comment>created from versioned client</comment></create_task>"
         )
     );
-    EntityId::new(task_response.id().expect("created task id")).expect("valid task id")
+    let task_id =
+        EntityId::new(task_response.id().expect("created task id")).expect("valid task id");
+    let task = typed_task_by_id(server, &task_id).await;
+    assert_eq!(
+        task.web_application_target
+            .as_ref()
+            .map(|target| &target.id),
+        Some(target_id)
+    );
+    assert_eq!(task.target, None);
+    task_id
 }
 
 #[tokio::test]

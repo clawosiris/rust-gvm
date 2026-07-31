@@ -331,6 +331,27 @@ impl Resource {
                 }
             }
         }
+        if self.resource_type == "task" {
+            if self.attr("target_id").is_none() {
+                xml.push_str("<target id=\"\"><name></name></target>");
+            }
+            for (attribute, element) in [
+                ("target_id", "target"),
+                ("agent_group_id", "agent_group"),
+                ("oci_image_target_id", "oci_image_target"),
+                ("web_application_target_id", "web_application_target"),
+                ("config_id", "config"),
+                ("scanner_id", "scanner"),
+                ("schedule_id", "schedule"),
+            ] {
+                if let Some(id) = self.attr(attribute) {
+                    xml.push_str(&format!(
+                        "<{element} id=\"{}\"><name></name></{element}>",
+                        xml_escape_attr(id),
+                    ));
+                }
+            }
+        }
         // Add type-specific attributes
         for (k, v) in &self.attrs {
             if self.resource_type == "permission"
@@ -345,6 +366,20 @@ impl Resource {
                 && matches!(
                     k.as_str(),
                     "oid" | "nvt_oid" | "config_id" | "preferences_config_id"
+                )
+            {
+                continue;
+            }
+            if self.resource_type == "task"
+                && matches!(
+                    k.as_str(),
+                    "target_id"
+                        | "agent_group_id"
+                        | "oci_image_target_id"
+                        | "web_application_target_id"
+                        | "config_id"
+                        | "scanner_id"
+                        | "schedule_id"
                 )
             {
                 continue;
@@ -611,6 +646,7 @@ impl ResourceStore {
             task.set_attr("scanner_id", &scanner.to_string());
         }
         if references.target.is_none() && references.specialized_target.is_none() {
+            task.attrs.remove("target_id");
             task.set_attr("import_task", "1");
             task.set_attr("status", TaskStatus::Done.as_str());
         } else {
