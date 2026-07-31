@@ -9,10 +9,13 @@ use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_b
 use crate::enums::ScannerType;
 use crate::types::EntityId;
 
-/// Optional fields for scanner create and modify requests.
+/// Optional fields shared by scanner create and modify requests.
+///
+/// [`create_scanner`] takes its name as a separate required argument and does
+/// not read [`Self::name`]. All other fields apply to both request types.
 #[derive(Debug, Clone, Default)]
 pub struct ScannerOpts {
-    /// Optional replacement name used by modify requests.
+    /// Optional replacement name emitted only by [`modify_scanner`].
     pub name: Option<String>,
     /// Optional comment text included in the request.
     pub comment: Option<String>,
