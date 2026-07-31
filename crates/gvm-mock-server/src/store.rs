@@ -354,6 +354,13 @@ impl Resource {
         }
         // Add type-specific attributes
         for (k, v) in &self.attrs {
+            if self.resource_type == "scanner" && k == "credential_id" {
+                xml.push_str(&format!(
+                    "<credential id=\"{}\"><name></name></credential>",
+                    xml_escape_attr(v),
+                ));
+                continue;
+            }
             if self.resource_type == "permission"
                 && matches!(
                     k.as_str(),

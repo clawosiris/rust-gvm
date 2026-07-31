@@ -27,10 +27,31 @@ fn test_create_scanner_with_optionals() {
                 host: Some("127.0.0.1".into()),
                 port: Some(9390),
                 scanner_type: Some(ScannerType::OpenVasScanner),
+                ca_pub: Some("CA certificate".into()),
                 credential_id: Some(id("cred1")),
+                ..Default::default()
             }
         )),
-        "<create_scanner><name>scanner</name><comment>c</comment><host>127.0.0.1</host><port>9390</port><type>2</type><credential id=\"cred1\"/></create_scanner>"
+        "<create_scanner><name>scanner</name><comment>c</comment><host>127.0.0.1</host><port>9390</port><type>2</type><ca_pub>CA certificate</ca_pub><credential id=\"cred1\"/></create_scanner>"
+    );
+}
+
+#[test]
+fn test_modify_scanner_with_optionals() {
+    assert_eq!(
+        xml(modify_scanner(
+            &id("s1"),
+            ScannerOpts {
+                name: Some("renamed".into()),
+                comment: Some("updated".into()),
+                host: Some("scanner.example".into()),
+                port: Some(9390),
+                scanner_type: Some(ScannerType::OpenVasScanner),
+                ca_pub: Some("Replacement CA".into()),
+                credential_id: Some(id("cred2")),
+            }
+        )),
+        "<modify_scanner scanner_id=\"s1\"><name>renamed</name><comment>updated</comment><host>scanner.example</host><port>9390</port><type>2</type><ca_pub>Replacement CA</ca_pub><credential id=\"cred2\"/></modify_scanner>"
     );
 }
 
