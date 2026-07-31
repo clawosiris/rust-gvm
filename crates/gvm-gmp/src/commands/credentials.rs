@@ -99,6 +99,30 @@ pub struct ModifyCredentialOpts {
     pub realm: Option<String>,
 }
 
+#[allow(deprecated)]
+impl From<CredentialOpts> for ModifyCredentialOpts {
+    fn from(opts: CredentialOpts) -> Self {
+        Self {
+            name: None,
+            comment: opts.comment,
+            login: opts.login,
+            password: opts.password,
+            private_key: opts.private_key,
+            key_phrase: opts.key_phrase,
+            public_key: opts.public_key,
+            certificate: opts.certificate,
+            community: opts.community,
+            auth_algorithm: opts.auth_algorithm,
+            privacy_password: opts.privacy_password,
+            privacy_algorithm: opts.privacy_algorithm,
+            allow_insecure: opts.allow_insecure,
+            kdc: opts.kdc,
+            kdcs: opts.kdcs,
+            realm: opts.realm,
+        }
+    }
+}
+
 fn redacted(value: &Option<String>) -> Option<&'static str> {
     value.as_ref().map(|_| "<redacted>")
 }
@@ -370,7 +394,11 @@ pub fn modify_credential_store(
 
 /// Build a `modify_credential` request.
 #[must_use]
-pub fn modify_credential(credential_id: &EntityId, opts: ModifyCredentialOpts) -> impl Request {
+pub fn modify_credential(
+    credential_id: &EntityId,
+    opts: impl Into<ModifyCredentialOpts>,
+) -> impl Request {
+    let opts = opts.into();
     let mut cmd =
         XmlCommand::new("modify_credential").attribute("credential_id", credential_id.as_str());
     add_text_element(&mut cmd, "name", opts.name.as_deref());
@@ -757,6 +785,27 @@ mod tests {
                 }
             )),
             "<modify_credential credential_id=\"c1\"><name>renamed</name><kdcs><kdc>kdc.example</kdc></kdcs><key><phrase>phrase</phrase><private>PRIVATE</private></key><privacy><algorithm>des</algorithm><password>privacy-secret</password></privacy><realm>EXAMPLE.COM</realm></modify_credential>"
+        );
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn modify_credential_accepts_legacy_create_options() {
+        let rendered = xml(modify_credential(
+            &id("c1"),
+            CredentialOpts {
+                comment: Some("legacy".into()),
+                login: Some("alice".into()),
+                password: Some("secret".into()),
+                credential_type: Some(CredentialType::UsernamePassword),
+                format: Some(CredentialFormat::Pem),
+                ..Default::default()
+            },
+        ));
+
+        assert_eq!(
+            rendered,
+            "<modify_credential credential_id=\"c1\"><comment>legacy</comment><login>alice</login><password>secret</password></modify_credential>"
         );
     }
 

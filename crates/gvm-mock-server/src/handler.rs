@@ -3707,12 +3707,17 @@ fn credential_kdcs(cmd: &ParsedCommand) -> Option<Vec<String>> {
     cmd.children
         .iter()
         .find(|child| child.name == "kdcs")
-        .map(|kdcs| {
-            kdcs.children
+        .and_then(|kdcs| {
+            let values = kdcs
+                .children
                 .iter()
                 .filter(|child| child.name == "kdc")
-                .map(|child| child.text.clone().unwrap_or_default())
-                .collect()
+                .filter_map(|child| child.text.as_deref())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>();
+            (!values.is_empty()).then_some(values)
         })
 }
 
@@ -3797,6 +3802,27 @@ mod tests {
         assert_eq!(
             role_id_update(&replace),
             Ok(Some(vec!["r1".into(), "r2".into()]))
+        );
+    }
+
+    #[test]
+    fn credential_kdcs_ignores_empty_lists_and_values() {
+        for xml in [
+            "<create_credential><kdcs/></create_credential>",
+            "<create_credential><kdcs><kdc/></kdcs></create_credential>",
+            "<create_credential><kdcs><kdc>  </kdc></kdcs></create_credential>",
+        ] {
+            let command = parse_command(xml.as_bytes()).expect("parse KDC list");
+            assert_eq!(credential_kdcs(&command), None);
+        }
+
+        let command = parse_command(
+            b"<create_credential><kdcs><kdc> kdc1.example </kdc><kdc/><kdc>kdc2.example</kdc></kdcs></create_credential>",
+        )
+        .expect("parse populated KDC list");
+        assert_eq!(
+            credential_kdcs(&command),
+            Some(vec!["kdc1.example".into(), "kdc2.example".into()])
         );
     }
 
