@@ -27,7 +27,8 @@ use gvm_gmp::commands::configs::{
 };
 use gvm_gmp::commands::credentials::{
     create_credential_store_credential, get_credential, modify_credential_store,
-    modify_credential_store_credential, CredentialStorePreference,
+    modify_credential_store_credential, CredentialOpts, CredentialStorePreference,
+    ModifyCredentialOpts,
     ModifyCredentialStoreCredentialOpts as GmpModifyCredentialStoreCredentialOpts,
     ModifyCredentialStoreOpts,
 };
@@ -64,8 +65,8 @@ use gvm_gmp::responses::{
 use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
 use gvm_gmp::{
-    AlertCondition, AlertEvent, AlertMethod, CollectionUpdate, FeedType, PermissionSubjectType,
-    SortOrder, TicketStatus,
+    AlertCondition, AlertEvent, AlertMethod, CollectionUpdate, CredentialType, FeedType,
+    PermissionSubjectType, SnmpAuthAlgorithm, SnmpPrivacyAlgorithm, SortOrder, TicketStatus,
 };
 use gvm_mock_server::{
     GmpVersion as MockVersion, MockGmpServer, Resource, ResourceStore, ServerMode,
@@ -1933,6 +1934,155 @@ async fn typed_port_list_and_user_renames_round_trip() {
         renamed_user.meta.comment.as_deref(),
         Some("renamed through typed client")
     );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_ssh_credential_lifecycle_uses_nested_key_shape() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+    server.clear_history();
+
+    let credential = client
+        .create_credential(
+            "SSH Credential",
+            CredentialOpts {
+                credential_type: Some(CredentialType::UsernameSshKey),
+                login: Some("root".into()),
+                private_key: Some("PRIVATE KEY".into()),
+                key_phrase: Some("key phrase".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("SSH credential should be created");
+    client
+        .modify_credential(
+            &credential.id,
+            ModifyCredentialOpts {
+                name: Some("Renamed SSH Credential".into()),
+                login: Some("scanner".into()),
+                private_key: Some("UPDATED PRIVATE KEY".into()),
+                key_phrase: Some("updated phrase".into()),
+                allow_insecure: Some(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("SSH credential should be modified");
+
+    let credentials = client
+        .get_credentials(Default::default())
+        .await
+        .expect("credentials should be retrieved");
+    let fetched = credentials
+        .items
+        .iter()
+        .find(|item| item.meta.id == credential.id)
+        .expect("SSH credential should be listed");
+    assert_eq!(fetched.meta.name, "Renamed SSH Credential");
+    assert_eq!(fetched.type_.as_deref(), Some("usk"));
+    assert_eq!(fetched.login.as_deref(), Some("scanner"));
+    assert!(fetched.allow_insecure);
+
+    let history = server.command_history();
+    let create_xml = std::str::from_utf8(history[0].raw_xml()).expect("create XML");
+    assert!(
+        create_xml.contains("<key><phrase>key phrase</phrase><private>PRIVATE KEY</private></key>")
+    );
+    assert!(!create_xml.contains("<private_key>"));
+    let modify_xml = std::str::from_utf8(history[1].raw_xml()).expect("modify XML");
+    assert!(modify_xml.contains("<name>Renamed SSH Credential</name>"));
+    assert!(modify_xml.contains(
+        "<key><phrase>updated phrase</phrase><private>UPDATED PRIVATE KEY</private></key>"
+    ));
+    assert!(modify_xml.contains("<allow_insecure>1</allow_insecure>"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_snmpv3_and_kerberos_credentials_use_current_wire_shapes() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+    server.clear_history();
+
+    let snmp = client
+        .create_credential(
+            "SNMPv3 Credential",
+            CredentialOpts {
+                credential_type: Some(CredentialType::SnmpV3),
+                login: Some("snmp-user".into()),
+                password: Some("auth secret".into()),
+                auth_algorithm: Some(SnmpAuthAlgorithm::Sha1),
+                privacy_password: Some("privacy secret".into()),
+                privacy_algorithm: Some(SnmpPrivacyAlgorithm::Aes),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("SNMPv3 credential should be created");
+    let kerberos = client
+        .create_credential(
+            "Kerberos Credential",
+            CredentialOpts {
+                credential_type: Some(CredentialType::Kerberos5),
+                login: Some("principal".into()),
+                password: Some("kerberos secret".into()),
+                kdcs: vec!["kdc1.example".into(), "kdc2.example".into()],
+                realm: Some("EXAMPLE.COM".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("Kerberos credential should be created");
+
+    let credentials = client
+        .get_credentials(Default::default())
+        .await
+        .expect("credentials should be retrieved");
+    let snmp = credentials
+        .items
+        .iter()
+        .find(|item| item.meta.id == snmp.id)
+        .expect("SNMPv3 credential should be listed");
+    let kerberos = credentials
+        .items
+        .iter()
+        .find(|item| item.meta.id == kerberos.id)
+        .expect("Kerberos credential should be listed");
+    assert_eq!(snmp.type_.as_deref(), Some("snmp"));
+    assert_eq!(kerberos.type_.as_deref(), Some("krb5"));
+
+    let history = server.command_history();
+    let snmp_xml = std::str::from_utf8(history[0].raw_xml()).expect("SNMP XML");
+    assert!(snmp_xml.contains("<type>snmp</type>"));
+    assert!(snmp_xml.contains(
+        "<privacy><algorithm>aes</algorithm><password>privacy secret</password></privacy>"
+    ));
+    assert!(!snmp_xml.contains("<privacy_algorithm>"));
+    let kerberos_xml = std::str::from_utf8(history[1].raw_xml()).expect("Kerberos XML");
+    assert!(kerberos_xml.contains("<kdcs><kdc>kdc1.example</kdc><kdc>kdc2.example</kdc></kdcs>"));
+    assert!(kerberos_xml.contains("<realm>EXAMPLE.COM</realm>"));
 
     server.shutdown().await;
 }

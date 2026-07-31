@@ -740,6 +740,27 @@ impl SessionHandler {
             if let Some(credential_type) = parse_element_text(raw_xml, "type") {
                 resource.set_attr("type", &credential_type);
             }
+            if let Some(login) = parse_element_text(raw_xml, "login") {
+                resource.set_attr("login", &login);
+            }
+            if let Some(allow_insecure) = parse_element_text(raw_xml, "allow_insecure") {
+                resource.set_attr("allow_insecure", &allow_insecure);
+            }
+            if let Some(kdc) = credential_kdcs(cmd)
+                .map(|kdcs| kdcs.join(","))
+                .or_else(|| parse_element_text(raw_xml, "kdc"))
+            {
+                resource.set_attr("kdc", &kdc);
+            }
+            if let Some(realm) = parse_element_text(raw_xml, "realm") {
+                resource.set_attr("realm", &realm);
+            }
+            if let Some(auth_algorithm) = parse_element_text(raw_xml, "auth_algorithm") {
+                resource.set_attr("auth_algorithm", &auth_algorithm);
+            }
+            if let Some(privacy_algorithm) = nested_child_text(cmd, &["privacy", "algorithm"]) {
+                resource.set_attr("privacy_algorithm", &privacy_algorithm);
+            }
             if let Some(credential_store_id) = parse_element_text(raw_xml, "credential_store_id") {
                 resource.set_attr("credential_store_id", &credential_store_id);
             }
@@ -1130,6 +1151,14 @@ impl SessionHandler {
         } else {
             None
         };
+        let new_login = parse_element_text(raw_xml, "login");
+        let new_allow_insecure = parse_element_text(raw_xml, "allow_insecure");
+        let new_kdc = credential_kdcs(cmd)
+            .map(|kdcs| kdcs.join(","))
+            .or_else(|| parse_element_text(raw_xml, "kdc"));
+        let new_realm = parse_element_text(raw_xml, "realm");
+        let new_auth_algorithm = parse_element_text(raw_xml, "auth_algorithm");
+        let new_privacy_algorithm = nested_child_text(cmd, &["privacy", "algorithm"]);
         let task_reference_updates = if resource_type == "task" {
             match task_reference_updates(cmd) {
                 Ok(references) => references,
@@ -1287,6 +1316,24 @@ impl SessionHandler {
                 set_alert_fields(r, cmd);
             }
             if resource_type == "credential" {
+                if let Some(ref login) = new_login {
+                    r.set_attr("login", login);
+                }
+                if let Some(ref allow_insecure) = new_allow_insecure {
+                    r.set_attr("allow_insecure", allow_insecure);
+                }
+                if let Some(ref kdc) = new_kdc {
+                    r.set_attr("kdc", kdc);
+                }
+                if let Some(ref realm) = new_realm {
+                    r.set_attr("realm", realm);
+                }
+                if let Some(ref auth_algorithm) = new_auth_algorithm {
+                    r.set_attr("auth_algorithm", auth_algorithm);
+                }
+                if let Some(ref privacy_algorithm) = new_privacy_algorithm {
+                    r.set_attr("privacy_algorithm", privacy_algorithm);
+                }
                 if let Some(ref credential_store_id) = new_credential_store_id {
                     r.set_attr("credential_store_id", credential_store_id);
                 }
@@ -3656,6 +3703,24 @@ fn nested_child_attr(cmd: &ParsedCommand, path: &[&str], attr: &str) -> Option<S
     element.attributes.get(attr).cloned()
 }
 
+fn credential_kdcs(cmd: &ParsedCommand) -> Option<Vec<String>> {
+    cmd.children
+        .iter()
+        .find(|child| child.name == "kdcs")
+        .and_then(|kdcs| {
+            let values = kdcs
+                .children
+                .iter()
+                .filter(|child| child.name == "kdc")
+                .filter_map(|child| child.text.as_deref())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>();
+            (!values.is_empty()).then_some(values)
+        })
+}
+
 fn set_permission_references(resource: &mut Resource, cmd: &ParsedCommand) {
     for (element, id_key, type_key) in [
         ("subject", "subject_id", "subject_type"),
@@ -3737,6 +3802,27 @@ mod tests {
         assert_eq!(
             role_id_update(&replace),
             Ok(Some(vec!["r1".into(), "r2".into()]))
+        );
+    }
+
+    #[test]
+    fn credential_kdcs_ignores_empty_lists_and_values() {
+        for xml in [
+            "<create_credential><kdcs/></create_credential>",
+            "<create_credential><kdcs><kdc/></kdcs></create_credential>",
+            "<create_credential><kdcs><kdc>  </kdc></kdcs></create_credential>",
+        ] {
+            let command = parse_command(xml.as_bytes()).expect("parse KDC list");
+            assert_eq!(credential_kdcs(&command), None);
+        }
+
+        let command = parse_command(
+            b"<create_credential><kdcs><kdc> kdc1.example </kdc><kdc/><kdc>kdc2.example</kdc></kdcs></create_credential>",
+        )
+        .expect("parse populated KDC list");
+        assert_eq!(
+            credential_kdcs(&command),
+            Some(vec!["kdc1.example".into(), "kdc2.example".into()])
         );
     }
 

@@ -98,6 +98,7 @@ const INTEGRATION_COVERED: &[&str] = &[
     "modify_alert",
     "get_credentials",
     "create_credential",
+    "modify_credential",
     "create_credential_store_credential",
     "modify_credential_store_credential",
     "get_filters",

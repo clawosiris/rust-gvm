@@ -366,14 +366,72 @@ gmp_enum!(CredentialFormat {
     Pgp => "pgp",
     Rpm => "rpm"
 });
-gmp_enum!(CredentialType {
-    ClientCertificate => "cc",
-    PasswordOnly => "pw",
-    SnmpV1Or2c => "snmp",
-    SnmpV3 => "snmpv3",
-    UsernamePassword => "up",
-    UsernameSshKey => "usk"
-});
+/// Credential types accepted by current gvmd.
+///
+/// gvmd uses the same `snmp` wire type for community-based and `SNMPv3`
+/// credentials; the presence of authentication/privacy fields distinguishes
+/// the latter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum CredentialType {
+    /// Client certificate (`cc`).
+    ClientCertificate,
+    /// Kerberos 5 (`krb5`).
+    Kerberos5,
+    /// Password-only credential (`pw`).
+    PasswordOnly,
+    /// PGP encryption key (`pgp`).
+    PgpEncryptionKey,
+    /// S/MIME certificate (`smime`).
+    SmimeCertificate,
+    /// Community-based SNMP credential (`snmp`).
+    SnmpV1Or2c,
+    /// `SNMPv3` credential (`snmp` with authentication/privacy fields).
+    SnmpV3,
+    /// Username and password (`up`).
+    UsernamePassword,
+    /// Username and SSH key (`usk`).
+    UsernameSshKey,
+}
+
+impl CredentialType {
+    /// Returns the GMP wire-format string for this credential type.
+    #[must_use]
+    pub const fn as_gmp_str(self) -> &'static str {
+        match self {
+            Self::ClientCertificate => "cc",
+            Self::Kerberos5 => "krb5",
+            Self::PasswordOnly => "pw",
+            Self::PgpEncryptionKey => "pgp",
+            Self::SmimeCertificate => "smime",
+            Self::SnmpV1Or2c | Self::SnmpV3 => "snmp",
+            Self::UsernamePassword => "up",
+            Self::UsernameSshKey => "usk",
+        }
+    }
+}
+
+impl FromStr for CredentialType {
+    type Err = EnumParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "cc" => Ok(Self::ClientCertificate),
+            "krb5" => Ok(Self::Kerberos5),
+            "pw" => Ok(Self::PasswordOnly),
+            "pgp" => Ok(Self::PgpEncryptionKey),
+            "smime" => Ok(Self::SmimeCertificate),
+            "snmp" => Ok(Self::SnmpV1Or2c),
+            "snmpv3" => Ok(Self::SnmpV3),
+            "up" => Ok(Self::UsernamePassword),
+            "usk" => Ok(Self::UsernameSshKey),
+            _ => Err(EnumParseError {
+                enum_name: "CredentialType",
+                value: s.to_string(),
+            }),
+        }
+    }
+}
 gmp_enum!(CredentialStoreCredentialType {
     ClientCertificate => "cs_cc",
     PasswordOnly => "cs_pw",
