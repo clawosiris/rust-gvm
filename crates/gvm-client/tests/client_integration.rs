@@ -35,6 +35,7 @@ use gvm_gmp::commands::nvts::{
 };
 use gvm_gmp::commands::operating_systems::{get_operating_systems, GetOperatingSystemsOpts};
 use gvm_gmp::commands::permissions::{modify_permission, GetPermissionsOpts, PermissionOpts};
+use gvm_gmp::commands::port_lists::{GetPortListsOpts, ModifyPortListOpts, PortListOpts};
 use gvm_gmp::commands::reports::{
     get_report_export, get_report_hosts, get_report_vulnerabilities, get_reports, GetReportsOpts,
 };
@@ -50,6 +51,7 @@ use gvm_gmp::commands::targets::{
     create_target, delete_target, get_targets, CreateTargetOpts, GetTargetsOpts,
 };
 use gvm_gmp::commands::tasks::{create_task, delete_task, get_task, start_task, stop_task};
+use gvm_gmp::commands::users::{GetUsersOpts, ModifyUserOpts, UserOpts};
 use gvm_gmp::responses::{
     Asset, ConfigUsageKind, CreateScanConfigResponse, GetConfigsResponse, GetPermissionsResponse,
     GetScanConfigsResponse, Permission,
@@ -1616,6 +1618,83 @@ async fn typed_rest_support_gap_helpers_parse_fixture_responses() {
     assert_eq!(
         commands[2],
         "<get_credential_stores details=\"0\" filt_id=\"filter-1\" filter=\"name=Local\"/>"
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_port_list_and_user_renames_round_trip() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authentication should succeed");
+
+    let port_list = client
+        .create_port_list("Old Port List", PortListOpts::default())
+        .await
+        .expect("port list creation should succeed");
+    client
+        .modify_port_list(
+            &port_list.id,
+            ModifyPortListOpts {
+                name: Some("Renamed Port List".into()),
+                comment: Some("renamed through typed client".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("port list rename should succeed");
+    let port_lists = client
+        .get_port_lists(GetPortListsOpts::default())
+        .await
+        .expect("port list read-back should succeed");
+    let renamed_port_list = port_lists
+        .items
+        .iter()
+        .find(|item| item.meta.id == port_list.id)
+        .expect("renamed port list should be present");
+    assert_eq!(renamed_port_list.meta.name, "Renamed Port List");
+    assert_eq!(
+        renamed_port_list.meta.comment.as_deref(),
+        Some("renamed through typed client")
+    );
+
+    let user = client
+        .create_user("old-user", UserOpts::default())
+        .await
+        .expect("user creation should succeed");
+    client
+        .modify_user(
+            &user.id,
+            ModifyUserOpts {
+                new_name: Some("renamed-user".into()),
+                comment: Some("renamed through typed client".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("user rename should succeed");
+    let users = client
+        .get_users(GetUsersOpts::default())
+        .await
+        .expect("user read-back should succeed");
+    let renamed_user = users
+        .items
+        .iter()
+        .find(|item| item.meta.id == user.id)
+        .expect("renamed user should be present");
+    assert_eq!(renamed_user.meta.name, "renamed-user");
+    assert_eq!(
+        renamed_user.meta.comment.as_deref(),
+        Some("renamed through typed client")
     );
 
     server.shutdown().await;

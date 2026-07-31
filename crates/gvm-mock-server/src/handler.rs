@@ -999,7 +999,11 @@ impl SessionHandler {
             return error_response(&cmd.name, 400, "Invalid UUID");
         };
 
-        let new_name = parse_element_text(raw_xml, "name");
+        let new_name = if resource_type == "user" {
+            parse_element_text(raw_xml, "new_name")
+        } else {
+            parse_element_text(raw_xml, "name")
+        };
         let new_text = parse_element_text(raw_xml, "text");
         let new_comment = parse_element_text(raw_xml, "comment");
         let new_host = parse_element_text(raw_xml, "host");

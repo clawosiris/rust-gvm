@@ -18,6 +18,27 @@ pub struct PortListOpts {
     pub port_range: Option<String>,
 }
 
+/// Optional fields for port-list modify requests.
+#[derive(Debug, Clone, Default)]
+pub struct ModifyPortListOpts {
+    /// Optional replacement name.
+    pub name: Option<String>,
+    /// Optional comment text included in the request.
+    pub comment: Option<String>,
+    /// Optional port range expression.
+    pub port_range: Option<String>,
+}
+
+impl From<PortListOpts> for ModifyPortListOpts {
+    fn from(opts: PortListOpts) -> Self {
+        Self {
+            name: None,
+            comment: opts.comment,
+            port_range: opts.port_range,
+        }
+    }
+}
+
 /// Options for `get_port_lists` requests.
 #[derive(Debug, Clone, Default)]
 pub struct GetPortListsOpts {
@@ -86,9 +107,14 @@ pub fn get_port_list(port_list_id: &EntityId) -> impl Request {
 
 /// Build a `modify_port_list` request.
 #[must_use]
-pub fn modify_port_list(port_list_id: &EntityId, opts: PortListOpts) -> impl Request {
+pub fn modify_port_list(
+    port_list_id: &EntityId,
+    opts: impl Into<ModifyPortListOpts>,
+) -> impl Request {
+    let opts = opts.into();
     let mut cmd =
         XmlCommand::new("modify_port_list").attribute("port_list_id", port_list_id.as_str());
+    add_text_element(&mut cmd, "name", opts.name.as_deref());
     add_text_element(&mut cmd, "comment", opts.comment.as_deref());
     add_text_element(&mut cmd, "port_range", opts.port_range.as_deref());
     cmd
@@ -150,14 +176,19 @@ mod tests {
         assert!(rendered.contains("details=\"1\""));
         let rendered = xml(modify_port_list(
             &id("pl1"),
-            PortListOpts {
+            ModifyPortListOpts {
+                name: Some("Renamed ports".into()),
                 comment: Some("updated".into()),
                 ..Default::default()
             },
         ));
         assert_eq!(
             rendered,
-            "<modify_port_list port_list_id=\"pl1\"><comment>updated</comment></modify_port_list>"
+            "<modify_port_list port_list_id=\"pl1\"><name>Renamed ports</name><comment>updated</comment></modify_port_list>"
+        );
+        assert_eq!(
+            xml(modify_port_list(&id("pl1"), ModifyPortListOpts::default())),
+            "<modify_port_list port_list_id=\"pl1\"/>"
         );
         assert_eq!(
             xml(delete_port_list(&id("pl1"), false)),
