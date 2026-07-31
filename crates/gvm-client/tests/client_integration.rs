@@ -1540,14 +1540,21 @@ async fn typed_rest_support_gap_helpers_parse_fixture_responses() {
         .await
         .expect("report vulns should parse");
     assert_eq!(vulns.items.len(), 1);
-    assert_eq!(vulns.items[0].severity.as_deref(), Some("8.2"));
+    assert_eq!(vulns.items[0].severity.as_deref(), Some("5.0"));
+    assert_eq!(
+        vulns.items[0].nvt_oid.as_deref(),
+        Some("1.3.6.1.4.1.25623.1.0.117761")
+    );
+    assert_eq!(vulns.items[0].cves, vec!["CVE-2011-1473", "CVE-2011-5094"]);
+    assert_eq!(vulns.items[0].hosts_count, Some(2));
+    assert_eq!(vulns.items[0].occurrences, Some(3));
 
     let vulnerabilities = client
         .get_report_vulnerabilities(&report_id, Default::default())
         .await
         .expect("report vulnerabilities alias should parse");
     assert_eq!(vulnerabilities.items.len(), 1);
-    assert_eq!(vulnerabilities.items[0].severity.as_deref(), Some("8.2"));
+    assert_eq!(vulnerabilities.items[0].threat.as_deref(), Some("Medium"));
 
     let tls = client
         .get_report_tls_certificates(&report_id, Default::default())
@@ -1566,6 +1573,15 @@ async fn typed_rest_support_gap_helpers_parse_fixture_responses() {
         .await
         .expect("closed cves should parse");
     assert_eq!(closed_cves.items[0].cve.as_deref(), Some("CVE-2025-9999"));
+    assert_eq!(
+        closed_cves.items[0].nvt_oid.as_deref(),
+        Some("1.3.6.1.4.1.25623.1.0.100000")
+    );
+    assert_eq!(
+        closed_cves.items[0].name.as_deref(),
+        Some("Closed vulnerability check")
+    );
+    assert_eq!(closed_cves.items[0].threat.as_deref(), Some("Medium"));
 
     let timezones = client
         .get_timezones()

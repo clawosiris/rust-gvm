@@ -81,6 +81,7 @@ pub struct CreateReportResponse {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ReportVulnerability {
     pub id: Option<String>,
+    pub nvt_oid: Option<String>,
     pub name: Option<String>,
     pub host: Option<String>,
     pub port: Option<String>,
@@ -88,6 +89,8 @@ pub struct ReportVulnerability {
     pub severity: Option<String>,
     pub family: Option<String>,
     pub cves: Vec<String>,
+    pub hosts_count: Option<u32>,
+    pub occurrences: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -123,10 +126,12 @@ pub struct ReportError {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ReportClosedCve {
     pub id: Option<String>,
+    pub nvt_oid: Option<String>,
     pub name: Option<String>,
     pub cve: Option<String>,
     pub host: Option<String>,
     pub severity: Option<String>,
+    pub threat: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -376,20 +381,27 @@ impl CreateReportResponse {
 }
 
 impl ReportVulnerability {
-    fn from_node(node: &crate::responses::common::XmlNode) -> Self {
-        Self {
+    fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
+        let nvt = node.child("nvt");
+        let cves = node.child("cves").unwrap_or(node);
+        Ok(Self {
             id: node.attr("id").map(ToString::to_string),
-            name: node.optional_child_text("name"),
+            nvt_oid: nvt.and_then(|nvt| nvt.attr("oid")).map(ToString::to_string),
+            name: nvt
+                .and_then(|nvt| nvt.optional_child_text("name"))
+                .or_else(|| node.optional_child_text("name")),
             host: node.optional_child_text("host"),
             port: node.optional_child_text("port"),
             threat: node.optional_child_text("threat"),
             severity: node.optional_child_text("severity"),
             family: node.optional_child_text("family"),
-            cves: node
+            cves: cves
                 .children_named("cve")
                 .map(|cve| cve.text.clone())
                 .collect(),
-        }
+            hosts_count: optional_u32(node, "hosts_count", "vuln.hosts_count")?,
+            occurrences: optional_u32(node, "occurrences", "vuln.occurrences")?,
+        })
     }
 }
 
@@ -437,14 +449,19 @@ impl ReportError {
 
 impl ReportClosedCve {
     fn from_node(node: &crate::responses::common::XmlNode) -> Self {
+        let nvt = node.child("nvt");
         Self {
             id: node.attr("id").map(ToString::to_string),
-            name: node.optional_child_text("name"),
+            nvt_oid: nvt.and_then(|nvt| nvt.attr("oid")).map(ToString::to_string),
+            name: nvt
+                .and_then(|nvt| nvt.optional_child_text("name"))
+                .or_else(|| node.optional_child_text("name")),
             cve: node
                 .optional_child_text("cve")
                 .or_else(|| node.optional_child_text("name")),
             host: node.optional_child_text("host"),
             severity: node.optional_child_text("severity"),
+            threat: node.optional_child_text("threat"),
         }
     }
 }
@@ -469,6 +486,56 @@ impl_report_summary!(ReportApplicationSummary);
 impl_report_summary!(ReportOperatingSystemSummary);
 impl_report_summary!(ReportCveSummary);
 
+fn report_detail_count_info(
+    root: &crate::responses::common::XmlNode,
+    current_name: &str,
+    legacy_name: &str,
+) -> Result<CountInfo, ParseError> {
+    if root.child(current_name).is_some() {
+        count_info(root, current_name)
+    } else {
+        count_info(root, legacy_name)
+    }
+}
+
+impl GetReportVulnsResponse {
+    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+        let (status, status_text) = status_from_response(response)?;
+        let root = parse_document(response.data())?;
+        let container = root.child("vulns").unwrap_or(&root);
+        let items = container
+            .children_named("vuln")
+            .chain(container.children_named("vulnerability"))
+            .map(ReportVulnerability::from_node)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            status,
+            status_text,
+            items,
+            counts: report_detail_count_info(&root, "report_vuln_count", "vuln_count")?,
+        })
+    }
+}
+
+impl GetReportClosedCvesResponse {
+    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+        let (status, status_text) = status_from_response(response)?;
+        let root = parse_document(response.data())?;
+        let container = root.child("closed_cves").unwrap_or(&root);
+        let items = container
+            .children_named("closed_cve")
+            .chain(container.children_named("cve"))
+            .map(ReportClosedCve::from_node)
+            .collect();
+        Ok(Self {
+            status,
+            status_text,
+            items,
+            counts: report_detail_count_info(&root, "report_closed_cve_count", "closed_cve_count")?,
+        })
+    }
+}
+
 macro_rules! impl_report_detail_response {
     ($response:ident, $item:ident, [$($item_name:literal),+], $count_name:literal) => {
         impl $response {
@@ -491,22 +558,10 @@ macro_rules! impl_report_detail_response {
 }
 
 impl_report_detail_response!(
-    GetReportVulnsResponse,
-    ReportVulnerability,
-    ["vuln", "vulnerability"],
-    "vuln_count"
-);
-impl_report_detail_response!(
     GetReportErrorsResponse,
     ReportError,
     ["error"],
     "error_count"
-);
-impl_report_detail_response!(
-    GetReportClosedCvesResponse,
-    ReportClosedCve,
-    ["closed_cve", "cve"],
-    "closed_cve_count"
 );
 impl_report_detail_response!(
     GetReportHostsResponse,
@@ -958,16 +1013,22 @@ mod tests {
     fn parses_report_vulns_response() {
         let response = Response::from(
             r#"<get_report_vulns_response status="200" status_text="OK">
-                <vuln id="vuln-1">
-                    <name>OpenSSL Vulnerability</name>
-                    <host>192.0.2.10</host>
-                    <port>443/tcp</port>
-                    <threat>High</threat>
-                    <severity>8.2</severity>
-                    <family>General</family>
-                    <cve>CVE-2026-0001</cve>
-                </vuln>
-                <vuln_count>1<filtered>1</filtered></vuln_count>
+                <vulns>
+                    <vuln>
+                        <nvt oid="1.3.6.1.4.1.25623.1.0.117761">
+                            <name>SSL/TLS Renegotiation Vulnerability</name>
+                        </nvt>
+                        <cves>
+                            <cve>CVE-2011-1473</cve>
+                            <cve>CVE-2011-5094</cve>
+                        </cves>
+                        <hosts_count>2</hosts_count>
+                        <occurrences>3</occurrences>
+                        <severity>5.0</severity>
+                        <threat>Medium</threat>
+                    </vuln>
+                </vulns>
+                <report_vuln_count>1<filtered>1</filtered><page>1</page></report_vuln_count>
             </get_report_vulns_response>"#,
         );
 
@@ -975,8 +1036,20 @@ mod tests {
 
         assert_eq!(parsed.items.len(), 1);
         assert_eq!(parsed.counts.total, Some(1));
-        assert_eq!(parsed.items[0].host.as_deref(), Some("192.0.2.10"));
-        assert_eq!(parsed.items[0].cves, vec!["CVE-2026-0001"]);
+        assert_eq!(parsed.counts.page, Some(1));
+        assert_eq!(
+            parsed.items[0].nvt_oid.as_deref(),
+            Some("1.3.6.1.4.1.25623.1.0.117761")
+        );
+        assert_eq!(
+            parsed.items[0].name.as_deref(),
+            Some("SSL/TLS Renegotiation Vulnerability")
+        );
+        assert_eq!(parsed.items[0].cves, vec!["CVE-2011-1473", "CVE-2011-5094"]);
+        assert_eq!(parsed.items[0].hosts_count, Some(2));
+        assert_eq!(parsed.items[0].occurrences, Some(3));
+        assert_eq!(parsed.items[0].severity.as_deref(), Some("5.0"));
+        assert_eq!(parsed.items[0].threat.as_deref(), Some("Medium"));
     }
 
     #[test]
@@ -1045,12 +1118,18 @@ mod tests {
     fn parses_report_closed_cves_response() {
         let response = Response::from(
             r#"<get_report_closed_cves_response status="200" status_text="OK">
-                <closed_cve id="closed-1">
-                    <name>CVE-2025-9999</name>
-                    <host>192.0.2.30</host>
-                    <severity>5.0</severity>
-                </closed_cve>
-                <closed_cve_count>1<filtered>1</filtered></closed_cve_count>
+                <closed_cves>
+                    <closed_cve>
+                        <host>192.0.2.30</host>
+                        <cve>CVE-2025-9999</cve>
+                        <nvt oid="1.3.6.1.4.1.25623.1.0.100000">
+                            <name>Closed vulnerability check</name>
+                        </nvt>
+                        <severity>5.0</severity>
+                        <threat>Medium</threat>
+                    </closed_cve>
+                </closed_cves>
+                <report_closed_cve_count>1<filtered>1</filtered></report_closed_cve_count>
             </get_report_closed_cves_response>"#,
         );
 
@@ -1059,7 +1138,67 @@ mod tests {
 
         assert_eq!(parsed.items.len(), 1);
         assert_eq!(parsed.items[0].cve.as_deref(), Some("CVE-2025-9999"));
+        assert_eq!(
+            parsed.items[0].nvt_oid.as_deref(),
+            Some("1.3.6.1.4.1.25623.1.0.100000")
+        );
+        assert_eq!(
+            parsed.items[0].name.as_deref(),
+            Some("Closed vulnerability check")
+        );
+        assert_eq!(parsed.items[0].host.as_deref(), Some("192.0.2.30"));
         assert_eq!(parsed.items[0].severity.as_deref(), Some("5.0"));
+        assert_eq!(parsed.items[0].threat.as_deref(), Some("Medium"));
+    }
+
+    #[test]
+    fn parses_report_vulnerability_and_closed_cve_summaries_and_empty_details() {
+        let vuln_summary = Response::from(
+            r#"<get_report_vulns_response status="200" status_text="OK">
+                <vulns><count>3</count></vulns>
+                <report_vuln_count>3<filtered>2</filtered></report_vuln_count>
+            </get_report_vulns_response>"#,
+        );
+        let parsed =
+            GetReportVulnsResponse::from_response(&vuln_summary).expect("vuln summary parses");
+        assert!(parsed.items.is_empty());
+        assert_eq!(parsed.counts.total, Some(3));
+        assert_eq!(parsed.counts.filtered, Some(2));
+
+        let closed_summary = Response::from(
+            r#"<get_report_closed_cves_response status="200" status_text="OK">
+                <closed_cves><count>4</count></closed_cves>
+                <report_closed_cve_count>4<filtered>4</filtered></report_closed_cve_count>
+            </get_report_closed_cves_response>"#,
+        );
+        let parsed = GetReportClosedCvesResponse::from_response(&closed_summary)
+            .expect("closed-CVE summary parses");
+        assert!(parsed.items.is_empty());
+        assert_eq!(parsed.counts.total, Some(4));
+
+        let empty_vulns = Response::from(
+            r#"<get_report_vulns_response status="200" status_text="OK">
+                <vulns/>
+                <report_vuln_count>0<filtered>0</filtered></report_vuln_count>
+            </get_report_vulns_response>"#,
+        );
+        assert!(GetReportVulnsResponse::from_response(&empty_vulns)
+            .expect("empty vulns parse")
+            .items
+            .is_empty());
+
+        let empty_closed_cves = Response::from(
+            r#"<get_report_closed_cves_response status="200" status_text="OK">
+                <closed_cves/>
+                <report_closed_cve_count>0<filtered>0</filtered></report_closed_cve_count>
+            </get_report_closed_cves_response>"#,
+        );
+        assert!(
+            GetReportClosedCvesResponse::from_response(&empty_closed_cves)
+                .expect("empty closed CVEs parse")
+                .items
+                .is_empty()
+        );
     }
 
     #[test]
