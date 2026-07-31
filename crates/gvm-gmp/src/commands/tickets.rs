@@ -9,13 +9,62 @@ use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_b
 use crate::enums::TicketStatus;
 use crate::types::EntityId;
 
+/// A validated, non-empty note required when opening a ticket.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TicketOpenNote(String);
+
+impl TicketOpenNote {
+    /// Validate a ticket opening note.
+    ///
+    /// # Errors
+    /// Returns [`TicketOpenNoteError::Empty`] when the note is empty or
+    /// contains only whitespace.
+    pub fn new(note: impl Into<String>) -> Result<Self, TicketOpenNoteError> {
+        let note = note.into();
+        if note.trim().is_empty() {
+            return Err(TicketOpenNoteError::Empty);
+        }
+        Ok(Self(note))
+    }
+
+    /// Borrow the validated note.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for TicketOpenNote {
+    type Error = TicketOpenNoteError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for TicketOpenNote {
+    type Error = TicketOpenNoteError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+/// Errors raised while validating a required ticket opening note.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum TicketOpenNoteError {
+    /// The note was empty or contained only whitespace.
+    #[error("ticket open note cannot be empty")]
+    Empty,
+}
+
 /// Fields for ticket create requests.
 #[derive(Debug, Clone)]
 pub struct CreateTicketOpts {
     /// User who will own the ticket.
     pub assigned_to: EntityId,
     /// Required note explaining why the ticket is being opened.
-    pub open_note: String,
+    pub open_note: TicketOpenNote,
     /// Optional comment text included in the request.
     pub comment: Option<String>,
 }
@@ -63,7 +112,7 @@ pub fn create_ticket(result_id: &EntityId, opts: CreateTicketOpts) -> impl Reque
     cmd.add_element("result")
         .set_attribute("id", result_id.as_str());
     add_assignee(&mut cmd, &opts.assigned_to);
-    cmd.add_element_with_text("open_note", &opts.open_note);
+    cmd.add_element_with_text("open_note", opts.open_note.as_str());
     add_text_element(&mut cmd, "comment", opts.comment.as_deref());
     cmd
 }
@@ -140,7 +189,7 @@ mod tests {
             &id("r1"),
             CreateTicketOpts {
                 assigned_to: id("u1"),
-                open_note: "Please fix <today>".into(),
+                open_note: TicketOpenNote::new("Please fix <today>").expect("non-empty note"),
                 comment: Some("c".into()),
             },
         ));
@@ -155,6 +204,22 @@ mod tests {
         assert_eq!(
             xml(get_ticket(&id("tick1"))),
             "<get_tickets details=\"1\" ticket_id=\"tick1\"/>"
+        );
+    }
+
+    #[test]
+    fn ticket_open_note_rejects_empty_text() {
+        assert_eq!(
+            TicketOpenNote::new("").expect_err("empty note must fail"),
+            TicketOpenNoteError::Empty
+        );
+        assert_eq!(
+            TicketOpenNote::new(" \n\t").expect_err("blank note must fail"),
+            TicketOpenNoteError::Empty
+        );
+        assert_eq!(
+            TicketOpenNote::new(" investigate ").expect("non-empty note"),
+            TicketOpenNote(" investigate ".into())
         );
     }
 

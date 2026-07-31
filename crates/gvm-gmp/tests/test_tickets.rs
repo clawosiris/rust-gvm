@@ -16,7 +16,7 @@ fn test_create_ticket_basic() {
             &id("r1"),
             CreateTicketOpts {
                 assigned_to: id("u1"),
-                open_note: "Investigate".into(),
+                open_note: TicketOpenNote::new("Investigate").expect("non-empty note"),
                 comment: None,
             }
         )),
@@ -31,7 +31,7 @@ fn test_create_ticket_with_optionals() {
             &id("r1"),
             CreateTicketOpts {
                 assigned_to: id("u1"),
-                open_note: "o".into(),
+                open_note: TicketOpenNote::new("o").expect("non-empty note"),
                 comment: Some("c".into()),
             }
         )),

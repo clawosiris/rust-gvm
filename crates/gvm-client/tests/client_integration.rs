@@ -53,7 +53,9 @@ use gvm_gmp::commands::targets::{
     create_target, delete_target, get_targets, CreateTargetOpts, GetTargetsOpts,
 };
 use gvm_gmp::commands::tasks::{create_task, delete_task, get_task, start_task, stop_task};
-use gvm_gmp::commands::tickets::{CreateTicketOpts, GetTicketsOpts, ModifyTicketOpts};
+use gvm_gmp::commands::tickets::{
+    CreateTicketOpts, GetTicketsOpts, ModifyTicketOpts, TicketOpenNote,
+};
 use gvm_gmp::commands::users::{GetUsersOpts, ModifyUserOpts, UserOpts};
 use gvm_gmp::responses::{
     Asset, ConfigUsageKind, CreateScanConfigResponse, GetConfigsResponse, GetPermissionsResponse,
@@ -853,7 +855,7 @@ async fn typed_ticket_create_read_and_reassign_round_trip() {
             &result_id,
             CreateTicketOpts {
                 assigned_to: first_assignee.clone(),
-                open_note: "Please investigate".into(),
+                open_note: TicketOpenNote::new("Please investigate").expect("non-empty note"),
                 comment: Some("Typed ticket".into()),
             },
         )

@@ -222,6 +222,29 @@ async fn create_and_modify_ticket_handles_comment_and_status() {
 }
 
 #[tokio::test]
+async fn create_ticket_rejects_empty_required_values() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    for request in [
+        br#"<create_ticket><result id=""/><assigned_to><user id="user-1"/></assigned_to><open_note>Investigate</open_note></create_ticket>"#
+            .as_slice(),
+        br#"<create_ticket><result id="result-1"/><assigned_to><user id=""/></assigned_to><open_note>Investigate</open_note></create_ticket>"#
+            .as_slice(),
+        br#"<create_ticket><result id="result-1"/><assigned_to><user id="user-1"/></assigned_to><open_note> </open_note></create_ticket>"#
+            .as_slice(),
+    ] {
+        let response = send_recv(&mut stream, request).await;
+        assert_eq!(response.status_code(), Some(400));
+    }
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn get_report_by_id_returns_nested_results() {
     let report_id = Uuid::new_v4();
     let result_id = Uuid::new_v4();

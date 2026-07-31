@@ -29,7 +29,7 @@ use gvm_gmp::commands::secinfo::GetSecInfoOpts;
 use gvm_gmp::commands::tags::{GetTagsOpts, TagOpts};
 use gvm_gmp::commands::targets::GetTargetsOpts;
 use gvm_gmp::commands::tasks::GetTasksOpts;
-use gvm_gmp::commands::tickets::{CreateTicketOpts, GetTicketsOpts};
+use gvm_gmp::commands::tickets::{CreateTicketOpts, GetTicketsOpts, TicketOpenNote};
 use gvm_gmp::commands::tls_certificates::{GetTlsCertificatesOpts, TlsCertificateOpts};
 use gvm_gmp::commands::users::{GetUsersOpts, UserOpts};
 use gvm_gmp::responses::ParseError;
@@ -350,7 +350,7 @@ async fn create_families_parse_typed_ids_from_table_driven_fixture_responses() {
         &related_id,
         CreateTicketOpts {
             assigned_to: related_id.clone(),
-            open_note: "Please investigate".into(),
+            open_note: TicketOpenNote::new("Please investigate").expect("non-empty note"),
             comment: None,
         }
     ));

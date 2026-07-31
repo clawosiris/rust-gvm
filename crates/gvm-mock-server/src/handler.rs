@@ -631,10 +631,15 @@ impl SessionHandler {
         }
         let (ticket_result_id, ticket_assignee_id, ticket_open_note) = if resource_type == "ticket"
         {
-            let Some(result_id) = cmd.child_attr("result", "id") else {
+            let Some(result_id) = cmd
+                .child_attr("result", "id")
+                .filter(|id| !id.trim().is_empty())
+            else {
                 return error_response(&cmd.name, 400, "Missing required element: result");
             };
-            let Some(assignee_id) = nested_child_attr(cmd, &["assigned_to", "user"], "id") else {
+            let Some(assignee_id) = nested_child_attr(cmd, &["assigned_to", "user"], "id")
+                .filter(|id| !id.trim().is_empty())
+            else {
                 return error_response(
                     &cmd.name,
                     400,
