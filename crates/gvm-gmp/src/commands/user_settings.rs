@@ -3,6 +3,7 @@
 
 //! User-setting command builders.
 
+use base64::Engine as _;
 use gvm_protocol::XmlCommand;
 
 use crate::common::add_filter_attrs;
@@ -20,7 +21,7 @@ pub struct GetUserSettingsOpts {
 /// Options for `modify_setting` requests.
 #[derive(Debug, Clone)]
 pub struct ModifyUserSettingOpts {
-    /// Setting value to apply.
+    /// UTF-8 setting value to apply; the builder Base64-encodes it for GMP.
     pub value: String,
 }
 
@@ -38,12 +39,13 @@ pub fn get_user_setting(id: &EntityId) -> XmlCommand {
     XmlCommand::new("get_settings").attribute("setting_id", id.as_str())
 }
 
-/// Build a `modify_setting` request.
+/// Build a `modify_setting` request, Base64-encoding the UTF-8 value for GMP.
 #[must_use]
 pub fn modify_user_setting(id: &EntityId, opts: ModifyUserSettingOpts) -> XmlCommand {
+    let encoded = base64::engine::general_purpose::STANDARD.encode(opts.value.as_bytes());
     XmlCommand::new("modify_setting")
         .attribute("setting_id", id.as_str())
-        .child_with_text("value", &opts.value)
+        .child_with_text("value", &encoded)
 }
 
 #[cfg(test)]
@@ -79,7 +81,7 @@ mod tests {
                     value: "UTC".into(),
                 }
             )),
-            "<modify_setting setting_id=\"s1\"><value>UTC</value></modify_setting>"
+            "<modify_setting setting_id=\"s1\"><value>VVRD</value></modify_setting>"
         );
     }
 }

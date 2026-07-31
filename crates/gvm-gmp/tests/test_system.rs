@@ -88,8 +88,8 @@ fn test_system_aggregates_info_resource_names_and_mutations() {
         "<modify_license><key>abc</key></modify_license>"
     );
     assert_eq!(
-        xml(modify_setting(&id("s1"), "v")),
-        "<modify_setting setting_id=\"s1\"><value>v</value></modify_setting>"
+        xml(modify_setting(&id("s1"), "Europe/Berlin")),
+        "<modify_setting setting_id=\"s1\"><value>RXVyb3BlL0Jlcmxpbg==</value></modify_setting>"
     );
     assert_eq!(xml(run_wizard("quick", &[("target".into(), "10.0.0.1".into()), ("ports".into(), "T:1-5".into())])), "<run_wizard name=\"quick\"><param name=\"target\">10.0.0.1</param><param name=\"ports\">T:1-5</param></run_wizard>");
 }

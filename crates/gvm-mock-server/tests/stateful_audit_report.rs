@@ -310,7 +310,7 @@ async fn audit_host_rows_follow_gvmd_sentinel_and_setting_semantics() {
         &mut stream,
         format!(
             "<modify_setting setting_id=\"{ROWS_PER_PAGE_SETTING_ID}\">\
-             <value>2</value></modify_setting>"
+             <value>Mg==</value></modify_setting>"
         )
         .as_bytes(),
     )
