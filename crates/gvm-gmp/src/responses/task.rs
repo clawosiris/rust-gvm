@@ -59,6 +59,11 @@ pub struct TaskTargetReference {
 pub struct LastReport {
     pub id: EntityId,
     pub timestamp: Option<String>,
+    pub scan_start: Option<String>,
+    pub scan_end: Option<String>,
+    pub result_count: Option<TaskReportResultCount>,
+    pub severity: Option<String>,
+    pub compliance_count: Option<TaskReportComplianceCount>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,11 +72,39 @@ pub struct LastReport {
 pub struct CurrentReport {
     pub id: EntityId,
     pub timestamp: Option<String>,
+    pub scan_start: Option<String>,
+    pub scan_end: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct TaskReportResultCount {
+    pub critical: Option<u32>,
+    pub high: Option<u32>,
+    pub medium: Option<u32>,
+    pub low: Option<u32>,
+    pub log: Option<u32>,
+    pub false_positive: Option<u32>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct TaskReportComplianceCount {
+    pub yes: Option<u32>,
+    pub no: Option<u32>,
+    pub incomplete: Option<u32>,
 }
 
 struct TaskReportReference {
     id: EntityId,
     timestamp: Option<String>,
+    scan_start: Option<String>,
+    scan_end: Option<String>,
+    result_count: Option<TaskReportResultCount>,
+    severity: Option<String>,
+    compliance_count: Option<TaskReportComplianceCount>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -312,6 +345,8 @@ fn parse_current_report(node: &XmlNode) -> Result<Option<CurrentReport>, ParseEr
         report.map(|report| CurrentReport {
             id: report.id,
             timestamp: report.timestamp,
+            scan_start: report.scan_start,
+            scan_end: report.scan_end,
         })
     })
 }
@@ -321,6 +356,11 @@ fn parse_last_report(node: &XmlNode) -> Result<Option<LastReport>, ParseError> {
         report.map(|report| LastReport {
             id: report.id,
             timestamp: report.timestamp,
+            scan_start: report.scan_start,
+            scan_end: report.scan_end,
+            result_count: report.result_count,
+            severity: report.severity,
+            compliance_count: report.compliance_count,
         })
     })
 }
@@ -329,6 +369,7 @@ fn parse_report_reference(
     node: &XmlNode,
     field: &str,
 ) -> Result<Option<TaskReportReference>, ParseError> {
+    let include_summary = field == "last_report";
     node.child(field)
         .and_then(|report_wrapper| report_wrapper.child("report"))
         .map(|report| -> Result<TaskReportReference, ParseError> {
@@ -340,9 +381,77 @@ fn parse_report_reference(
                     &format!("{field}.report.id"),
                 )?,
                 timestamp: report.optional_child_text("timestamp"),
+                scan_start: report.optional_child_text("scan_start"),
+                scan_end: report.optional_child_text("scan_end"),
+                result_count: if include_summary {
+                    report
+                        .child("result_count")
+                        .map(parse_task_report_result_count)
+                        .transpose()?
+                } else {
+                    None
+                },
+                severity: include_summary
+                    .then(|| report.optional_child_text("severity"))
+                    .flatten(),
+                compliance_count: if include_summary {
+                    report
+                        .child("compliance_count")
+                        .map(parse_task_report_compliance_count)
+                        .transpose()?
+                } else {
+                    None
+                },
             })
         })
         .transpose()
+}
+
+fn parse_task_report_result_count(node: &XmlNode) -> Result<TaskReportResultCount, ParseError> {
+    Ok(TaskReportResultCount {
+        critical: optional_u32(node, "critical", "last_report.result_count.critical")?,
+        high: optional_u32_with_alias(node, "high", "hole", "last_report.result_count.high")?,
+        medium: optional_u32_with_alias(
+            node,
+            "medium",
+            "warning",
+            "last_report.result_count.medium",
+        )?,
+        low: optional_u32_with_alias(node, "low", "info", "last_report.result_count.low")?,
+        log: optional_u32(node, "log", "last_report.result_count.log")?,
+        false_positive: optional_u32(
+            node,
+            "false_positive",
+            "last_report.result_count.false_positive",
+        )?,
+    })
+}
+
+fn optional_u32_with_alias(
+    node: &XmlNode,
+    canonical: &str,
+    alias: &str,
+    field: &str,
+) -> Result<Option<u32>, ParseError> {
+    if node.child(canonical).is_some() {
+        optional_u32(node, canonical, field)
+    } else {
+        optional_u32(node, alias, field)
+    }
+}
+
+fn parse_task_report_compliance_count(
+    node: &XmlNode,
+) -> Result<TaskReportComplianceCount, ParseError> {
+    Ok(TaskReportComplianceCount {
+        yes: optional_u32(node, "yes", "last_report.compliance_count.yes")?,
+        no: optional_u32(node, "no", "last_report.compliance_count.no")?,
+        incomplete: optional_u32(
+            node,
+            "incomplete",
+            "last_report.compliance_count.incomplete",
+        )?,
+    })
 }
 
 fn parse_observers(node: &XmlNode) -> Result<Option<TaskObservers>, ParseError> {
@@ -399,56 +508,85 @@ mod tests {
 
     use super::*;
 
+    const CURRENT_GVMD_TASKS_RESPONSE: &str = r#"<get_tasks_response status="200" status_text="OK">
+            <task id="task-1">
+                <owner><name>admin</name></owner>
+                <name>Discovery Scan</name>
+                <comment>Network scan</comment>
+                <creation_time>2026-01-01T00:00:00Z</creation_time>
+                <modification_time>2026-01-02T00:00:00Z</modification_time>
+                <writable>1</writable>
+                <in_use>1</in_use>
+                <status>Done</status>
+                <progress>100</progress>
+                <alterable>1</alterable>
+                <target id="t-1"><name>Local Net</name></target>
+                <config id="cfg-1"><name>Full and fast</name></config>
+                <scanner id="sc-1"><name>Default</name></scanner>
+                <schedule id="sched-1"><name>Weekly</name></schedule>
+                <alert id="alert-1"><name>Email</name></alert>
+                <alert id="alert-2"><name>Ticket</name></alert>
+                <observers>
+                    alice bob carol
+                    <group id="grp-1"><name>Auditors</name></group>
+                    <role id="role-1"><name>Observer</name></role>
+                </observers>
+                <current_report>
+                    <report id="rpt-current-1">
+                        <timestamp>2026-01-15T10:00:00Z</timestamp>
+                        <scan_start>2026-01-15T10:00:01Z</scan_start>
+                        <scan_end></scan_end>
+                    </report>
+                </current_report>
+                <last_report>
+                    <report id="rpt-1">
+                        <timestamp>2026-01-15T10:30:00Z</timestamp>
+                        <scan_start>2026-01-15T10:00:01Z</scan_start>
+                        <scan_end>2026-01-15T10:29:59Z</scan_end>
+                        <result_count>
+                            <critical>2</critical>
+                            <hole deprecated="1">3</hole>
+                            <high>3</high>
+                            <info deprecated="1">5</info>
+                            <low>5</low>
+                            <log>7</log>
+                            <warning deprecated="1">11</warning>
+                            <medium>11</medium>
+                            <false_positive>13</false_positive>
+                        </result_count>
+                        <severity>8.8</severity>
+                    </report>
+                </last_report>
+                <report_count>5</report_count>
+                <schedule_periods>3</schedule_periods>
+                <trend>up</trend>
+                <usage_type>scan</usage_type>
+                <hosts_ordering>sequential</hosts_ordering>
+            </task>
+            <task id="task-2">
+                <name>Audit Task</name>
+                <status>Done</status>
+                <progress>42</progress>
+                <usage_type>audit</usage_type>
+                <last_report>
+                    <report id="audit-report-1">
+                        <timestamp>2026-01-16T12:00:00Z</timestamp>
+                        <scan_start>2026-01-16T11:00:00Z</scan_start>
+                        <scan_end>2026-01-16T12:00:00Z</scan_end>
+                        <compliance_count>
+                            <yes>17</yes>
+                            <no>19</no>
+                            <incomplete>23</incomplete>
+                        </compliance_count>
+                    </report>
+                </last_report>
+            </task>
+            <task_count>2<filtered>2</filtered><page>1</page></task_count>
+        </get_tasks_response>"#;
+
     #[test]
     fn parses_multiple_tasks() {
-        let response = Response::from(
-            r#"<get_tasks_response status="200" status_text="OK">
-                <task id="task-1">
-                    <owner><name>admin</name></owner>
-                    <name>Discovery Scan</name>
-                    <comment>Network scan</comment>
-                    <creation_time>2026-01-01T00:00:00Z</creation_time>
-                    <modification_time>2026-01-02T00:00:00Z</modification_time>
-                    <writable>1</writable>
-                    <in_use>1</in_use>
-                    <status>Done</status>
-                    <progress>100</progress>
-                    <alterable>1</alterable>
-                    <target id="t-1"><name>Local Net</name></target>
-                    <config id="cfg-1"><name>Full and fast</name></config>
-                    <scanner id="sc-1"><name>Default</name></scanner>
-                    <schedule id="sched-1"><name>Weekly</name></schedule>
-                    <alert id="alert-1"><name>Email</name></alert>
-                    <alert id="alert-2"><name>Ticket</name></alert>
-                    <observers>
-                        alice bob carol
-                        <group id="grp-1"><name>Auditors</name></group>
-                        <role id="role-1"><name>Observer</name></role>
-                    </observers>
-                    <current_report>
-                        <report id="rpt-current-1">
-                            <timestamp>2026-01-15T10:00:00Z</timestamp>
-                        </report>
-                    </current_report>
-                    <last_report>
-                        <report id="rpt-1">
-                            <timestamp>2026-01-15T10:30:00Z</timestamp>
-                        </report>
-                    </last_report>
-                    <report_count>5</report_count>
-                    <schedule_periods>3</schedule_periods>
-                    <trend>up</trend>
-                    <usage_type>scan</usage_type>
-                    <hosts_ordering>sequential</hosts_ordering>
-                </task>
-                <task id="task-2">
-                    <name>Running Task</name>
-                    <status>Running</status>
-                    <progress>42</progress>
-                </task>
-                <task_count>2<filtered>2</filtered><page>1</page></task_count>
-            </get_tasks_response>"#,
-        );
+        let response = Response::from(CURRENT_GVMD_TASKS_RESPONSE);
 
         let parsed = GetTasksResponse::from_response(&response).expect("tasks parse");
 
@@ -478,22 +616,41 @@ mod tests {
         );
         assert_eq!(observers.groups[0].id.as_str(), "grp-1");
         assert_eq!(observers.roles[0].id.as_str(), "role-1");
+        let current = parsed.items[0]
+            .current_report
+            .as_ref()
+            .expect("current report");
+        assert_eq!(current.id.as_str(), "rpt-current-1");
+        assert_eq!(current.scan_start.as_deref(), Some("2026-01-15T10:00:01Z"));
+        assert_eq!(current.scan_end, None);
+        let last = parsed.items[0].last_report.as_ref().expect("last report");
+        assert_eq!(last.id.as_str(), "rpt-1");
+        assert_eq!(last.scan_end.as_deref(), Some("2026-01-15T10:29:59Z"));
+        assert_eq!(last.severity.as_deref(), Some("8.8"));
         assert_eq!(
-            parsed.items[0]
-                .current_report
-                .as_ref()
-                .map(|report| report.id.as_str()),
-            Some("rpt-current-1")
-        );
-        assert_eq!(
-            parsed.items[0]
-                .last_report
-                .as_ref()
-                .map(|report| report.id.as_str()),
-            Some("rpt-1")
+            last.result_count,
+            Some(TaskReportResultCount {
+                critical: Some(2),
+                high: Some(3),
+                medium: Some(11),
+                low: Some(5),
+                log: Some(7),
+                false_positive: Some(13),
+            })
         );
         assert_eq!(parsed.items[0].schedule_periods, Some(3));
         assert_eq!(parsed.items[1].progress, Some(42));
+        assert_eq!(
+            parsed.items[1]
+                .last_report
+                .as_ref()
+                .and_then(|report| report.compliance_count.clone()),
+            Some(TaskReportComplianceCount {
+                yes: Some(17),
+                no: Some(19),
+                incomplete: Some(23),
+            })
+        );
     }
 
     #[test]
@@ -715,5 +872,85 @@ mod tests {
             ParseError::InvalidValue { field, value }
                 if field == "schedule.id" && value == "not valid"
         ));
+    }
+
+    #[test]
+    fn parses_deprecated_task_result_aliases_without_double_counting() {
+        let response = Response::from(
+            r#"<get_tasks_response status="200" status_text="OK">
+                <task id="task-1">
+                    <name>Legacy buckets</name>
+                    <last_report>
+                        <report id="report-1">
+                            <result_count>
+                                <hole>3</hole>
+                                <info>5</info>
+                                <warning>11</warning>
+                            </result_count>
+                        </report>
+                    </last_report>
+                </task>
+            </get_tasks_response>"#,
+        );
+
+        let parsed = GetTasksResponse::from_response(&response).expect("aliases parse");
+        let count = parsed.items[0]
+            .last_report
+            .as_ref()
+            .and_then(|report| report.result_count.as_ref())
+            .expect("result count");
+
+        assert_eq!(count.high, Some(3));
+        assert_eq!(count.low, Some(5));
+        assert_eq!(count.medium, Some(11));
+    }
+
+    #[test]
+    fn rejects_invalid_task_report_counts() {
+        let response = Response::from(
+            r#"<get_tasks_response status="200" status_text="OK">
+                <task id="task-1">
+                    <name>Invalid count</name>
+                    <last_report>
+                        <report id="report-1">
+                            <result_count><high>many</high></result_count>
+                        </report>
+                    </last_report>
+                </task>
+            </get_tasks_response>"#,
+        );
+
+        let error = GetTasksResponse::from_response(&response).expect_err("count must fail");
+        assert!(matches!(error, ParseError::InvalidValue { field, value }
+                if field == "last_report.result_count.high" && value == "many"));
+    }
+
+    #[test]
+    fn ignores_last_report_only_summary_fields_on_current_report() {
+        let response = Response::from(
+            r#"<get_tasks_response status="200" status_text="OK">
+                <task id="task-1">
+                    <name>Task</name>
+                    <current_report>
+                        <report id="report-1">
+                            <result_count><high>not-a-number</high></result_count>
+                            <severity>8.0</severity>
+                            <compliance_count><yes>also-not-a-number</yes></compliance_count>
+                        </report>
+                    </current_report>
+                </task>
+                <task_count>1<filtered>1</filtered></task_count>
+            </get_tasks_response>"#,
+        );
+
+        let parsed = GetTasksResponse::from_response(&response)
+            .expect("current report summary fields must be ignored");
+        assert_eq!(
+            parsed.items[0]
+                .current_report
+                .as_ref()
+                .map(|report| report.id.as_str()),
+            Some("report-1")
+        );
     }
 }

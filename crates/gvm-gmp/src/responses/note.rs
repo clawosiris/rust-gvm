@@ -7,8 +7,8 @@ use gvm_protocol::Response;
 
 use crate::responses::common::{
     count_info, parse_bool, parse_csv_list, parse_document, parse_entity_id,
-    parse_entity_meta_optional_name, parse_entity_ref, status_from_response, ActionResponse,
-    CountInfo, EntityMeta, NamedEntity, ParseError,
+    parse_entity_meta_optional_name, parse_entity_ref, parse_nvt_reference, status_from_response,
+    ActionResponse, CountInfo, EntityMeta, NamedEntity, NvtReference, ParseError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,6 +17,7 @@ use crate::responses::common::{
 pub struct Note {
     pub meta: EntityMeta,
     pub text: Option<String>,
+    pub nvt: Option<NvtReference>,
     pub nvt_oid: Option<String>,
     pub hosts: Vec<String>,
     pub port: Option<String>,
@@ -48,13 +49,12 @@ pub struct CreateNoteResponse {
 
 impl Note {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
+        let nvt = parse_nvt_reference(node, "nvt")?;
         Ok(Self {
             meta: parse_entity_meta_optional_name(node)?,
             text: node.optional_child_text("text"),
-            nvt_oid: node
-                .child("nvt")
-                .and_then(|n| n.attr("oid"))
-                .map(String::from),
+            nvt_oid: nvt.as_ref().map(|nvt| nvt.oid.clone()),
+            nvt,
             hosts: node
                 .optional_child_text("hosts")
                 .map(|value| parse_csv_list(&value))
@@ -159,6 +159,9 @@ mod tests {
             parsed.items[0].nvt_oid.as_deref(),
             Some("1.3.6.1.4.1.25623.1.0.12345")
         );
+        let nvt = parsed.items[0].nvt.as_ref().expect("NVT reference");
+        assert_eq!(nvt.name.as_deref(), Some("Some NVT"));
+        assert_eq!(nvt.type_, None);
         assert_eq!(
             parsed.items[0].hosts,
             vec!["192.168.1.1".to_string(), "192.168.1.2".to_string()]
@@ -227,6 +230,7 @@ mod tests {
         assert_eq!(note.meta.comment, None);
         assert_eq!(note.text, None);
         assert_eq!(note.nvt_oid, None);
+        assert_eq!(note.nvt, None);
         assert!(note.hosts.is_empty());
         assert_eq!(note.task, None);
         assert!(!note.active);
@@ -283,6 +287,9 @@ mod tests {
         assert_eq!(note.end_time.as_deref(), Some("2026-06-11T12:41:51Z"));
         assert_eq!(note.text.as_deref(), Some("raw gmp parser repro"));
         assert_eq!(note.nvt_oid.as_deref(), Some("1.3.6.1.4.1.25623.1.0.12288"));
+        let nvt = note.nvt.as_ref().expect("NVT reference");
+        assert_eq!(nvt.name.as_deref(), Some("Global variable settings"));
+        assert_eq!(nvt.type_.as_deref(), Some("nvt"));
         assert!(note.hosts.is_empty());
         assert_eq!(note.port, None);
         assert_eq!(note.severity, None);

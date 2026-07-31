@@ -83,7 +83,9 @@ pub use audit_report::{
     StructuredReportResourceCounts, StructuredReportTarget, StructuredReportTask,
 };
 pub use auth::AuthenticateResponse;
-pub use common::{ActionResponse, CountInfo, EntityMeta, NamedEntity, Owner, ParseError};
+pub use common::{
+    ActionResponse, CountInfo, EntityMeta, NamedEntity, NvtReference, Owner, ParseError,
+};
 pub use config::{
     ConfigUsageKind, CreateConfigResponse, DeleteConfigResponse, GenericConfig, GetConfigsResponse,
     ModifyConfigResponse,
@@ -176,9 +178,9 @@ pub use system_reports::{GetSystemReportsResponse, SystemReport};
 pub use tag::{CreateTagResponse, DeleteTagResponse, GetTagsResponse, ModifyTagResponse, Tag};
 pub use target::{CreateTargetResponse, GetTargetsResponse, Target};
 pub use task::{
-    CreateTaskResponse, DeleteTaskResponse, GetTasksResponse, LastReport, ModifyTaskResponse,
-    MoveTaskResponse, ResumeTaskResponse, StartTaskResponse, StopTaskResponse, Task,
-    TaskTargetReference,
+    CreateTaskResponse, CurrentReport, DeleteTaskResponse, GetTasksResponse, LastReport,
+    ModifyTaskResponse, MoveTaskResponse, ResumeTaskResponse, StartTaskResponse, StopTaskResponse,
+    Task, TaskReportComplianceCount, TaskReportResultCount, TaskTargetReference,
 };
 pub use ticket::{
     CreateTicketResponse, DeleteTicketResponse, GetTicketsResponse, ModifyTicketResponse, Ticket,

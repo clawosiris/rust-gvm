@@ -17,6 +17,8 @@ pub struct ScanConfig {
     pub meta: EntityMeta,
     pub usage_type: Option<String>,
     pub type_: Option<u32>,
+    pub family_count: Option<u32>,
+    pub nvt_count: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,6 +46,8 @@ impl ScanConfig {
             meta: parse_entity_meta(node)?,
             usage_type: node.optional_child_text("usage_type"),
             type_: optional_u32(node, "type", "type")?,
+            family_count: optional_u32(node, "family_count", "family_count")?,
+            nvt_count: optional_u32(node, "nvt_count", "nvt_count")?,
         })
     }
 }
@@ -106,6 +110,8 @@ mod tests {
                     <in_use>0</in_use>
                     <usage_type>scan</usage_type>
                     <type>0</type>
+                    <family_count>12<growing>1</growing></family_count>
+                    <nvt_count>74231<growing>0</growing></nvt_count>
                 </config>
                 <config id="cfg-2">
                     <name>Policy</name>
@@ -124,6 +130,10 @@ mod tests {
         assert_eq!(parsed.items[1].usage_type.as_deref(), Some("policy"));
         assert_eq!(parsed.items[0].type_, Some(0));
         assert_eq!(parsed.items[1].type_, Some(7));
+        assert_eq!(parsed.items[0].family_count, Some(12));
+        assert_eq!(parsed.items[0].nvt_count, Some(74_231));
+        assert_eq!(parsed.items[1].family_count, None);
+        assert_eq!(parsed.items[1].nvt_count, None);
     }
 
     #[test]
@@ -181,7 +191,31 @@ mod tests {
         assert_eq!(config.meta.comment, None);
         assert_eq!(config.usage_type, None);
         assert_eq!(config.type_, None);
+        assert_eq!(config.family_count, None);
+        assert_eq!(config.nvt_count, None);
         assert!(!config.meta.in_use);
+    }
+
+    #[test]
+    fn rejects_invalid_scan_config_counts() {
+        for (element, field) in [
+            ("<family_count>many</family_count>", "family_count"),
+            ("<nvt_count>many</nvt_count>", "nvt_count"),
+        ] {
+            let xml = format!(
+                r#"<get_configs_response status="200" status_text="OK">
+                    <config id="cfg-1"><name>Invalid</name>{element}</config>
+                </get_configs_response>"#
+            );
+            let response = Response::from(xml.as_str());
+
+            let error =
+                GetScanConfigsResponse::from_response(&response).expect_err("count must fail");
+            assert!(
+                matches!(error, ParseError::InvalidValue { field: actual, value }
+                    if actual == field && value == "many")
+            );
+        }
     }
 
     #[test]
