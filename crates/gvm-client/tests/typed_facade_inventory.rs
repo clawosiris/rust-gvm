@@ -94,6 +94,7 @@ const INTEGRATION_COVERED: &[&str] = &[
     "get_vulnerability",
     "get_alerts",
     "create_alert",
+    "modify_alert",
     "get_credentials",
     "create_credential",
     "create_credential_store_credential",

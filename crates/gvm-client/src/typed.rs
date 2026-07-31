@@ -13,7 +13,7 @@
 
 use gvm_connection::GvmConnection;
 use gvm_gmp::commands::aggregates::{get_aggregates_request, GetAggregatesRequestOpts};
-use gvm_gmp::commands::alerts::{create_alert, get_alerts, AlertOpts, GetAlertsOpts};
+use gvm_gmp::commands::alerts::{create_alert, get_alerts, modify_alert, AlertOpts, GetAlertsOpts};
 use gvm_gmp::commands::assets::{
     create_asset, delete_asset, get_assets, modify_asset, AssetType, CreateAssetOpts,
     DeleteAssetOpts, GetAssetsOpts, ModifyAssetOpts,
@@ -150,7 +150,7 @@ use gvm_gmp::responses::{
     GetTagsResponse, GetTargetsResponse, GetTasksResponse, GetTicketsResponse,
     GetTimezonesResponse, GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse,
     GetVulnerabilitiesResponse, GetWebApplicationTargetsResponse, HelpResponse,
-    ModifyAssetResponse, ModifyConfigResponse, ModifyCredentialResponse,
+    ModifyAlertResponse, ModifyAssetResponse, ModifyConfigResponse, ModifyCredentialResponse,
     ModifyIntegrationConfigResponse, ModifyOciImageTargetResponse, ModifyPortListResponse,
     ModifyScanConfigResponse, ModifyScannerResponse, ModifyUserResponse,
     ModifyWebApplicationTargetResponse, ReportExport, RestoreResponse, ResumeTaskResponse,
@@ -1350,6 +1350,19 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ) -> Result<CreateAlertResponse, GvmError> {
         let response = self.send(create_alert(name, opts)).await?;
         CreateAlertResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `modify_alert` request and return a typed [`ModifyAlertResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_alert(
+        &mut self,
+        alert_id: &EntityId,
+        opts: AlertOpts,
+    ) -> Result<ModifyAlertResponse, GvmError> {
+        let response = self.send(modify_alert(alert_id, opts)).await?;
+        ModifyAlertResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     // ── Credentials ───────────────────────────────────────────────────────────

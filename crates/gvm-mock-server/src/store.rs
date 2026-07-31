@@ -353,12 +353,44 @@ impl Resource {
             }
         }
         // Add type-specific attributes
+        if self.resource_type == "alert" {
+            for field in ["event", "condition", "method"] {
+                if let Some(value) = self.attr(field) {
+                    xml.push_str(&format!("<{field}>{}", xml_escape(value)));
+                    let data_prefix = format!("{field}_data:");
+                    for (key, data_value) in self.attrs.iter().filter_map(|(key, value)| {
+                        key.strip_prefix(&data_prefix).map(|name| (name, value))
+                    }) {
+                        xml.push_str(&format!(
+                            "<data>{}<name>{}</name></data>",
+                            xml_escape(data_value),
+                            xml_escape(key),
+                        ));
+                    }
+                    xml.push_str(&format!("</{field}>"));
+                }
+            }
+            if let Some(filter_id) = self.attr("filter_id") {
+                xml.push_str(&format!(
+                    "<filter id=\"{}\"><name></name></filter>",
+                    xml_escape_attr(filter_id),
+                ));
+            }
+        }
         for (k, v) in &self.attrs {
             if self.resource_type == "scanner" && k == "credential_id" {
                 xml.push_str(&format!(
                     "<credential id=\"{}\"><name></name></credential>",
                     xml_escape_attr(v),
                 ));
+                continue;
+            }
+            if self.resource_type == "alert"
+                && (matches!(k.as_str(), "event" | "condition" | "method" | "filter_id")
+                    || k.starts_with("event_data:")
+                    || k.starts_with("condition_data:")
+                    || k.starts_with("method_data:"))
+            {
                 continue;
             }
             if self.resource_type == "permission"
