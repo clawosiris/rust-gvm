@@ -803,6 +803,30 @@ async fn typed_alert_data_maps_and_rename_round_trip() {
     let alert = only_alert(&partially_modified);
     assert_alert_data(alert, "Renamed Alert", None, "7.0", "soc@example.com");
 
+    client
+        .modify_alert(
+            &created.id,
+            AlertOpts {
+                method: Some(AlertMethod::Email),
+                method_data: vec![AlertData::new("to_address", "nested-name@example.com")],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("data-only modify_alert should succeed");
+    let data_only_modified = client
+        .get_alerts(GetAlertsOpts::default())
+        .await
+        .expect("get_alerts after data-only modify should succeed");
+    let alert = only_alert(&data_only_modified);
+    assert_alert_data(
+        alert,
+        "Renamed Alert",
+        None,
+        "7.0",
+        "nested-name@example.com",
+    );
+
     server.shutdown().await;
 }
 

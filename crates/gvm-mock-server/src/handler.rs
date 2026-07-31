@@ -1014,6 +1014,8 @@ impl SessionHandler {
 
         let new_name = if resource_type == "user" {
             parse_element_text(raw_xml, "new_name")
+        } else if resource_type == "alert" {
+            cmd.child_text("name").map(str::to_string)
         } else {
             parse_element_text(raw_xml, "name")
         };
