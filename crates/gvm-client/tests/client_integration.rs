@@ -50,7 +50,7 @@ use gvm_gmp::commands::scanners::ScannerOpts;
 use gvm_gmp::commands::secinfo::{get_info, get_info_list, GenericInfoType, GetInfoListOpts};
 use gvm_gmp::commands::system::get_timezones;
 use gvm_gmp::commands::targets::{
-    create_target, delete_target, get_targets, CreateTargetOpts, GetTargetsOpts,
+    create_target, delete_target, get_targets, CreateTargetOpts, GetTargetsOpts, ModifyTargetOpts,
 };
 use gvm_gmp::commands::tasks::{create_task, delete_task, get_task, start_task, stop_task};
 use gvm_gmp::commands::tickets::{
@@ -64,8 +64,8 @@ use gvm_gmp::responses::{
 use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
 use gvm_gmp::{
-    AlertCondition, AlertEvent, AlertMethod, FeedType, PermissionSubjectType, SortOrder,
-    TicketStatus,
+    AlertCondition, AlertEvent, AlertMethod, CollectionUpdate, FeedType, PermissionSubjectType,
+    SortOrder, TicketStatus,
 };
 use gvm_mock_server::{
     GmpVersion as MockVersion, MockGmpServer, Resource, ResourceStore, ServerMode,
@@ -2707,6 +2707,192 @@ async fn typed_permission_lifecycle_uses_nested_references() {
         )
     );
     assert_eq!(commands[3], "<get_permissions/>");
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_target_host_updates_preserve_replace_and_clear_state() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let target = client
+        .create_target(
+            "Collection Target",
+            CreateTargetOpts {
+                hosts: vec!["192.0.2.1".into(), "192.0.2.2".into()],
+                exclude_hosts: vec!["192.0.2.3".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("target should be created");
+    client
+        .modify_target(
+            &target.id,
+            ModifyTargetOpts {
+                comment: Some("hosts omitted".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("target should be modified without changing hosts");
+    let targets = client
+        .get_targets(GetTargetsOpts::default())
+        .await
+        .expect("targets should be retrieved");
+    let fetched_target = targets
+        .items
+        .iter()
+        .find(|item| item.meta.id == target.id)
+        .expect("target should be listed");
+    assert_eq!(
+        fetched_target.hosts,
+        vec!["192.0.2.1".to_string(), "192.0.2.2".to_string()]
+    );
+    assert_eq!(fetched_target.exclude_hosts, vec!["192.0.2.3".to_string()]);
+
+    client
+        .modify_target(
+            &target.id,
+            ModifyTargetOpts {
+                hosts: CollectionUpdate::Clear,
+                exclude_hosts: CollectionUpdate::replace(["192.0.2.4".into()]),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("target hosts should be cleared and exclusions replaced");
+    let targets = client
+        .get_targets(GetTargetsOpts::default())
+        .await
+        .expect("modified targets should be retrieved");
+    let fetched_target = targets
+        .items
+        .iter()
+        .find(|item| item.meta.id == target.id)
+        .expect("target should be listed");
+    assert!(fetched_target.hosts.is_empty());
+    assert_eq!(fetched_target.exclude_hosts, vec!["192.0.2.4".to_string()]);
+
+    let history = server.command_history();
+    assert!(history.iter().any(|record| {
+        record.command_name() == "modify_target"
+            && std::str::from_utf8(record.raw_xml())
+                .is_ok_and(|xml| xml.contains("<hosts></hosts>"))
+    }));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_user_role_updates_preserve_replace_and_clear_state() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let role_one = client
+        .create_role("Collection Role One", RoleOpts::default())
+        .await
+        .expect("first role should be created");
+    let role_two = client
+        .create_role("Collection Role Two", RoleOpts::default())
+        .await
+        .expect("second role should be created");
+    let user = client
+        .create_user(
+            "Collection User",
+            UserOpts {
+                role_ids: vec![role_one.id.clone()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("user should be created");
+    client
+        .modify_user(
+            &user.id,
+            ModifyUserOpts {
+                comment: Some("roles omitted".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("user should be modified without changing roles");
+    let users = client
+        .get_users(GetUsersOpts::default())
+        .await
+        .expect("users should be retrieved");
+    let fetched_user = users
+        .items
+        .iter()
+        .find(|item| item.meta.id == user.id)
+        .expect("user should be listed");
+    assert_eq!(
+        fetched_user
+            .roles
+            .iter()
+            .map(|role| role.id.clone())
+            .collect::<Vec<_>>(),
+        vec![role_one.id.clone()]
+    );
+
+    client
+        .modify_user(
+            &user.id,
+            ModifyUserOpts {
+                role_ids: CollectionUpdate::replace([role_two.id.clone()]),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("user roles should be replaced");
+    client
+        .modify_user(
+            &user.id,
+            ModifyUserOpts {
+                role_ids: CollectionUpdate::Clear,
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("user roles should be cleared");
+    let users = client
+        .get_users(GetUsersOpts::default())
+        .await
+        .expect("modified users should be retrieved");
+    let fetched_user = users
+        .items
+        .iter()
+        .find(|item| item.meta.id == user.id)
+        .expect("user should be listed");
+    assert!(fetched_user.roles.is_empty());
+
+    let history = server.command_history();
+    assert!(history.iter().any(|record| {
+        record.command_name() == "modify_user"
+            && std::str::from_utf8(record.raw_xml())
+                .is_ok_and(|xml| xml.contains("<role id=\"0\"/>"))
+    }));
 
     server.shutdown().await;
 }

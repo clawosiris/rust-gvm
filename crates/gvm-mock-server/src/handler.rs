@@ -830,6 +830,17 @@ impl SessionHandler {
             if let Some(hosts) = parse_element_text(raw_xml, "hosts") {
                 resource.set_attr("hosts", &hosts);
             }
+            if let Some(exclude_hosts) = parse_element_text(raw_xml, "exclude_hosts") {
+                resource.set_attr("exclude_hosts", &exclude_hosts);
+            }
+        }
+
+        if resource_type == "user" {
+            match role_id_update(cmd) {
+                Ok(Some(role_ids)) => resource.set_attr("role_ids", &role_ids.join(",")),
+                Ok(None) => {}
+                Err(message) => return error_response(&cmd.name, 400, message),
+            }
         }
 
         if resource_type == "asset" {
@@ -1064,6 +1075,7 @@ impl SessionHandler {
         let new_comment = parse_element_text(raw_xml, "comment");
         let new_host = parse_element_text(raw_xml, "host");
         let new_hosts = parse_element_text(raw_xml, "hosts");
+        let new_exclude_hosts = parse_element_text(raw_xml, "exclude_hosts");
         let new_image_references = parse_element_text(raw_xml, "image_references");
         let new_urls = parse_element_text(raw_xml, "urls");
         let new_exclude_urls = parse_element_text(raw_xml, "exclude_urls");
@@ -1110,6 +1122,14 @@ impl SessionHandler {
         let new_credential_store_id = parse_element_text(raw_xml, "credential_store_id");
         let new_vault_id = parse_element_text(raw_xml, "vault_id");
         let new_host_identifier = parse_element_text(raw_xml, "host_identifier");
+        let new_role_ids = if resource_type == "user" {
+            match role_id_update(cmd) {
+                Ok(role_ids) => role_ids,
+                Err(message) => return error_response(&cmd.name, 400, message),
+            }
+        } else {
+            None
+        };
         let task_reference_updates = if resource_type == "task" {
             match task_reference_updates(cmd) {
                 Ok(references) => references,
@@ -1195,6 +1215,12 @@ impl SessionHandler {
             }
             if let Some(ref hosts) = new_hosts {
                 r.set_attr("hosts", hosts);
+            }
+            if let Some(ref exclude_hosts) = new_exclude_hosts {
+                r.set_attr("exclude_hosts", exclude_hosts);
+            }
+            if let Some(ref role_ids) = new_role_ids {
+                r.set_attr("role_ids", &role_ids.join(","));
             }
             if resource_type == "oci_image_target" {
                 if let Some(ref image_references) = new_image_references {
@@ -2880,6 +2906,34 @@ fn has_agent_ids(cmd: &ParsedCommand) -> bool {
         })
 }
 
+fn role_id_update(cmd: &ParsedCommand) -> Result<Option<Vec<String>>, &'static str> {
+    let roles = cmd
+        .children
+        .iter()
+        .filter(|child| child.name == "role")
+        .collect::<Vec<_>>();
+    if roles.is_empty() {
+        return Ok(None);
+    }
+
+    let mut role_ids = Vec::with_capacity(roles.len());
+    for role in roles {
+        let Some(role_id) = role
+            .attributes
+            .get("id")
+            .filter(|role_id| !role_id.trim().is_empty())
+        else {
+            return Err("Missing required attribute: role id");
+        };
+        if role_id == "0" {
+            return Ok(Some(Vec::new()));
+        }
+        role_ids.push(role_id.clone());
+    }
+
+    Ok(Some(role_ids))
+}
+
 fn has_config_import_payload(cmd: &ParsedCommand) -> bool {
     cmd.children
         .iter()
@@ -3657,6 +3711,33 @@ mod tests {
         assert!(!xml.contains("<subject"));
         assert!(xml.contains(r#"<resource id="target-1"><name></name></resource>"#));
         assert!(!xml.contains("<type>"));
+    }
+
+    #[test]
+    fn role_updates_reject_missing_or_empty_ids() {
+        for xml in [
+            "<modify_user><role/></modify_user>",
+            r#"<modify_user><role id=""/></modify_user>"#,
+            r#"<modify_user><role id="  "/></modify_user>"#,
+        ] {
+            let command = parse_command(xml.as_bytes()).expect("parse role update");
+            assert_eq!(
+                role_id_update(&command),
+                Err("Missing required attribute: role id")
+            );
+        }
+
+        let clear = parse_command(br#"<modify_user><role id="0"/></modify_user>"#)
+            .expect("parse role clear");
+        assert_eq!(role_id_update(&clear), Ok(Some(Vec::new())));
+
+        let replace =
+            parse_command(br#"<modify_user><role id="r1"/><role id="r2"/></modify_user>"#)
+                .expect("parse role replacement");
+        assert_eq!(
+            role_id_update(&replace),
+            Ok(Some(vec!["r1".into(), "r2".into()]))
+        );
     }
 
     #[test]

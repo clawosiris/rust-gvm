@@ -9,7 +9,7 @@ use crate::common::{
     add_filter_attrs, add_optional_id_element, add_text_element, bool_str, set_optional_bool_attr,
 };
 use crate::enums::AliveTest;
-use crate::types::EntityId;
+use crate::types::{CollectionUpdate, EntityId};
 
 /// Optional fields for `create_target` requests.
 #[derive(Debug, Clone, Default)]
@@ -58,10 +58,10 @@ pub struct ModifyTargetOpts {
     pub name: Option<String>,
     /// Optional comment text included in the request.
     pub comment: Option<String>,
-    /// Host entries associated with the request.
-    pub hosts: Vec<String>,
-    /// Hosts to exclude from the request.
-    pub exclude_hosts: Vec<String>,
+    /// Host update: omit, replace, or explicitly clear.
+    pub hosts: CollectionUpdate<String>,
+    /// Excluded-host update: omit, replace, or explicitly clear.
+    pub exclude_hosts: CollectionUpdate<String>,
     /// Optional alive-test strategy.
     pub alive_test: Option<AliveTest>,
     /// Optional port-list identifier.
@@ -140,12 +140,8 @@ pub fn modify_target(target_id: &EntityId, opts: ModifyTargetOpts) -> impl Reque
     let mut cmd = XmlCommand::new("modify_target").attribute("target_id", target_id.as_str());
     add_text_element(&mut cmd, "name", opts.name.as_deref());
     add_text_element(&mut cmd, "comment", opts.comment.as_deref());
-    if !opts.hosts.is_empty() {
-        cmd.add_element_with_text("hosts", &opts.hosts.join(","));
-    }
-    if !opts.exclude_hosts.is_empty() {
-        cmd.add_element_with_text("exclude_hosts", &opts.exclude_hosts.join(","));
-    }
+    add_collection_update(&mut cmd, "hosts", &opts.hosts);
+    add_collection_update(&mut cmd, "exclude_hosts", &opts.exclude_hosts);
     if let Some(alive_test) = opts.alive_test {
         cmd.add_element_with_text("alive_test", alive_test.as_target_name());
     }
@@ -216,6 +212,18 @@ fn add_target_credentials(cmd: &mut XmlCommand, opts: &impl TargetCredentialOpts
     add_optional_id_element(cmd, "smb_credential", opts.smb_credential_id());
     add_optional_id_element(cmd, "esxi_credential", opts.esxi_credential_id());
     add_optional_id_element(cmd, "snmp_credential", opts.snmp_credential_id());
+}
+
+fn add_collection_update(cmd: &mut XmlCommand, element: &str, update: &CollectionUpdate<String>) {
+    match update {
+        CollectionUpdate::Omitted => {}
+        CollectionUpdate::Replace(values) => {
+            cmd.add_element_with_text(element, &values.join(","));
+        }
+        CollectionUpdate::Clear => {
+            cmd.add_element_with_text(element, "");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -298,6 +306,36 @@ mod tests {
         assert_eq!(
             xml(delete_target(&id("t1"), false)),
             "<delete_target target_id=\"t1\" ultimate=\"0\"/>"
+        );
+    }
+
+    #[test]
+    fn modify_target_distinguishes_omitted_replaced_and_cleared_hosts() {
+        assert_eq!(
+            xml(modify_target(&id("t1"), ModifyTargetOpts::default())),
+            "<modify_target target_id=\"t1\"/>"
+        );
+        assert_eq!(
+            xml(modify_target(
+                &id("t1"),
+                ModifyTargetOpts {
+                    hosts: CollectionUpdate::replace(["192.0.2.1".into(), "192.0.2.2".into()]),
+                    exclude_hosts: CollectionUpdate::replace(["192.0.2.3".into()]),
+                    ..Default::default()
+                }
+            )),
+            "<modify_target target_id=\"t1\"><hosts>192.0.2.1,192.0.2.2</hosts><exclude_hosts>192.0.2.3</exclude_hosts></modify_target>"
+        );
+        assert_eq!(
+            xml(modify_target(
+                &id("t1"),
+                ModifyTargetOpts {
+                    hosts: CollectionUpdate::Clear,
+                    exclude_hosts: CollectionUpdate::Clear,
+                    ..Default::default()
+                }
+            )),
+            "<modify_target target_id=\"t1\"><hosts></hosts><exclude_hosts></exclude_hosts></modify_target>"
         );
     }
 }

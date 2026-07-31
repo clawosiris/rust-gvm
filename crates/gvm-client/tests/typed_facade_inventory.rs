@@ -10,6 +10,7 @@ const INTEGRATION_COVERED: &[&str] = &[
     "authenticate",
     "get_targets",
     "create_target",
+    "modify_target",
     "create_oci_image_target_parsed",
     "clone_oci_image_target_parsed",
     "get_oci_image_target_parsed",

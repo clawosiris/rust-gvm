@@ -104,7 +104,9 @@ use gvm_gmp::commands::system::{
 };
 use gvm_gmp::commands::system_reports::{get_system_reports, GetSystemReportsOpts};
 use gvm_gmp::commands::tags::{create_tag, get_tags, GetTagsOpts, TagOpts};
-use gvm_gmp::commands::targets::{create_target, get_targets, CreateTargetOpts, GetTargetsOpts};
+use gvm_gmp::commands::targets::{
+    create_target, get_targets, modify_target, CreateTargetOpts, GetTargetsOpts, ModifyTargetOpts,
+};
 use gvm_gmp::commands::tasks::{
     create_import_task, create_task, get_tasks, resume_task, start_task, CreateTaskOpts,
     GetTasksOpts,
@@ -154,9 +156,10 @@ use gvm_gmp::responses::{
     GetVulnerabilitiesResponse, GetWebApplicationTargetsResponse, HelpResponse,
     ModifyAlertResponse, ModifyAssetResponse, ModifyConfigResponse, ModifyCredentialResponse,
     ModifyIntegrationConfigResponse, ModifyOciImageTargetResponse, ModifyPortListResponse,
-    ModifyScanConfigResponse, ModifyScannerResponse, ModifyTicketResponse, ModifyUserResponse,
-    ModifyWebApplicationTargetResponse, ReportExport, RestoreResponse, ResumeTaskResponse,
-    StartTaskResponse, SyncConfigResponse, VerifyCredentialStoreResponse, VerifyScannerResponse,
+    ModifyScanConfigResponse, ModifyScannerResponse, ModifyTargetResponse, ModifyTicketResponse,
+    ModifyUserResponse, ModifyWebApplicationTargetResponse, ReportExport, RestoreResponse,
+    ResumeTaskResponse, StartTaskResponse, SyncConfigResponse, VerifyCredentialStoreResponse,
+    VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::{CredentialStoreCredentialType, FeedType};
@@ -213,6 +216,19 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ) -> Result<CreateTargetResponse, GvmError> {
         let response = self.send(create_target(name, opts)).await?;
         CreateTargetResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `modify_target` request and return a typed [`ModifyTargetResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_target(
+        &mut self,
+        target_id: &EntityId,
+        opts: ModifyTargetOpts,
+    ) -> Result<ModifyTargetResponse, GvmError> {
+        let response = self.send(modify_target(target_id, opts)).await?;
+        ModifyTargetResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     /// Send a `create_oci_image_target` request and return a typed

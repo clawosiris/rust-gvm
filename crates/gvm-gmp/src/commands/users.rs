@@ -7,9 +7,9 @@ use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
 use crate::enums::UserAuthType;
-use crate::types::EntityId;
+use crate::types::{CollectionUpdate, EntityId};
 
-/// Optional fields for user create and modify requests.
+/// Optional fields for user create requests.
 #[derive(Debug, Clone, Default)]
 pub struct UserOpts {
     /// Optional comment text included in the request.
@@ -35,20 +35,25 @@ pub struct ModifyUserOpts {
     pub password: Option<String>,
     /// Optional host-access restrictions.
     pub host_access: Option<UserHostAccess>,
-    /// Role identifiers assigned to the user.
-    pub role_ids: Vec<EntityId>,
+    /// Role update: omit, replace, or explicitly clear.
+    pub role_ids: CollectionUpdate<EntityId>,
     /// Optional user authentication type.
     pub auth_type: Option<UserAuthType>,
 }
 
 impl From<UserOpts> for ModifyUserOpts {
     fn from(opts: UserOpts) -> Self {
+        let role_ids = if opts.role_ids.is_empty() {
+            CollectionUpdate::Omitted
+        } else {
+            CollectionUpdate::Replace(opts.role_ids)
+        };
         Self {
             new_name: None,
             comment: opts.comment,
             password: opts.password,
             host_access: opts.host_access,
-            role_ids: opts.role_ids,
+            role_ids,
             auth_type: opts.auth_type,
         }
     }
@@ -126,7 +131,14 @@ pub fn clone_user(user_id: &EntityId) -> impl Request {
 pub fn create_user(name: &str, opts: UserOpts) -> impl Request {
     let mut cmd = XmlCommand::new("create_user");
     cmd.add_element_with_text("name", name);
-    add_user_body(&mut cmd, &opts);
+    add_user_common(
+        &mut cmd,
+        opts.comment.as_deref(),
+        opts.password.as_deref(),
+        opts.host_access.as_ref(),
+        opts.auth_type,
+    );
+    add_roles(&mut cmd, &opts.role_ids);
     cmd
 }
 
@@ -170,18 +182,27 @@ pub fn delete_user(user_id: &EntityId, ultimate: bool) -> impl Request {
         .attribute("ultimate", bool_str(ultimate))
 }
 
-fn add_user_body(cmd: &mut XmlCommand, opts: &UserOpts) {
-    add_text_element(cmd, "comment", opts.comment.as_deref());
-    add_text_element(cmd, "password", opts.password.as_deref());
-    if let Some(host_access) = &opts.host_access {
+fn add_user_common(
+    cmd: &mut XmlCommand,
+    comment: Option<&str>,
+    password: Option<&str>,
+    host_access: Option<&UserHostAccess>,
+    auth_type: Option<UserAuthType>,
+) {
+    add_text_element(cmd, "comment", comment);
+    add_text_element(cmd, "password", password);
+    if let Some(host_access) = host_access {
         cmd.add_element("hosts")
             .set_attribute("allow", bool_str(host_access.allow))
             .set_text(&host_access.hosts);
     }
-    if let Some(auth_type) = opts.auth_type {
+    if let Some(auth_type) = auth_type {
         cmd.add_element_with_text("authentication", auth_type.as_gmp_str());
     }
-    for role_id in &opts.role_ids {
+}
+
+fn add_roles(cmd: &mut XmlCommand, role_ids: &[EntityId]) {
+    for role_id in role_ids {
         cmd.add_element("role")
             .set_attribute("id", role_id.as_str());
     }
@@ -198,9 +219,14 @@ fn add_modify_user_body(cmd: &mut XmlCommand, opts: &ModifyUserOpts) {
     if let Some(auth_type) = opts.auth_type {
         cmd.add_element_with_text("authentication", auth_type.as_gmp_str());
     }
-    for role_id in &opts.role_ids {
-        cmd.add_element("role")
-            .set_attribute("id", role_id.as_str());
+    match &opts.role_ids {
+        CollectionUpdate::Omitted => {}
+        CollectionUpdate::Replace(role_ids) if !role_ids.is_empty() => {
+            add_roles(cmd, role_ids);
+        }
+        CollectionUpdate::Replace(_) | CollectionUpdate::Clear => {
+            cmd.add_element("role").set_attribute("id", "0");
+        }
     }
 }
 
@@ -269,7 +295,7 @@ mod tests {
     fn modify_user_emits_host_access_allow_mode() {
         let rendered = xml(modify_user(
             &id("u1"),
-            UserOpts {
+            ModifyUserOpts {
                 host_access: Some(UserHostAccess::allow("192.0.2.0/24")),
                 ..Default::default()
             },
@@ -285,7 +311,7 @@ mod tests {
     fn modify_user_emits_host_access_deny_mode() {
         let rendered = xml(modify_user(
             &id("u1"),
-            UserOpts {
+            ModifyUserOpts {
                 host_access: Some(UserHostAccess::deny("192.0.2.0/24")),
                 ..Default::default()
             },
@@ -301,7 +327,7 @@ mod tests {
     fn modify_user_emits_explicit_empty_host_access() {
         let rendered = xml(modify_user(
             &id("u1"),
-            UserOpts {
+            ModifyUserOpts {
                 host_access: Some(UserHostAccess::deny("")),
                 ..Default::default()
             },
@@ -310,6 +336,34 @@ mod tests {
         assert_eq!(
             rendered,
             "<modify_user user_id=\"u1\"><hosts allow=\"0\"></hosts></modify_user>"
+        );
+    }
+
+    #[test]
+    fn modify_user_distinguishes_omitted_replaced_and_cleared_roles() {
+        assert_eq!(
+            xml(modify_user(&id("u1"), ModifyUserOpts::default())),
+            "<modify_user user_id=\"u1\"/>"
+        );
+        assert_eq!(
+            xml(modify_user(
+                &id("u1"),
+                ModifyUserOpts {
+                    role_ids: CollectionUpdate::replace([id("r1"), id("r2")]),
+                    ..Default::default()
+                }
+            )),
+            "<modify_user user_id=\"u1\"><role id=\"r1\"/><role id=\"r2\"/></modify_user>"
+        );
+        assert_eq!(
+            xml(modify_user(
+                &id("u1"),
+                ModifyUserOpts {
+                    role_ids: CollectionUpdate::Clear,
+                    ..Default::default()
+                }
+            )),
+            "<modify_user user_id=\"u1\"><role id=\"0\"/></modify_user>"
         );
     }
 }

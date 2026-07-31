@@ -151,7 +151,7 @@ pub type DeleteUserResponse = ActionResponse;
 mod tests {
     use gvm_protocol::{Request, Response};
 
-    use crate::commands::users::{modify_user, UserOpts};
+    use crate::commands::users::{modify_user, ModifyUserOpts};
 
     use super::*;
 
@@ -313,7 +313,7 @@ mod tests {
         let rendered = String::from_utf8(
             modify_user(
                 &user.meta.id,
-                UserOpts {
+                ModifyUserOpts {
                     comment: Some("updated".into()),
                     host_access: user.host_access(),
                     ..Default::default()

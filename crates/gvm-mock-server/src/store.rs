@@ -352,6 +352,17 @@ impl Resource {
                 }
             }
         }
+        if self.resource_type == "user" {
+            if let Some(role_ids) = self.attr("role_ids") {
+                for role_id in role_ids.split(',').filter(|role_id| !role_id.is_empty()) {
+                    let role_id_attr = xml_escape_attr(role_id);
+                    let role_id = xml_escape(role_id);
+                    xml.push_str(&format!(
+                        "<role id=\"{role_id_attr}\"><name>{role_id}</name></role>"
+                    ));
+                }
+            }
+        }
         // Add type-specific attributes
         if self.resource_type == "alert" {
             for field in ["event", "condition", "method"] {
@@ -418,6 +429,9 @@ impl Resource {
                     "subject_id" | "subject_type" | "resource_id" | "resource_type"
                 )
             {
+                continue;
+            }
+            if self.resource_type == "user" && k == "role_ids" {
                 continue;
             }
             if self.resource_type == "nvt"
