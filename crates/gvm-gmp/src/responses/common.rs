@@ -251,14 +251,14 @@ pub(crate) fn parse_entity_id(value: &str, field: &str) -> Result<EntityId, Pars
 
 pub(crate) fn parse_nvt_reference(
     node: &XmlNode,
-    field: &str,
+    field_prefix: &str,
 ) -> Result<Option<NvtReference>, ParseError> {
     node.child("nvt")
         .map(|nvt| {
             Ok(NvtReference {
                 oid: nvt
                     .attr("oid")
-                    .ok_or_else(|| ParseError::MissingElement(format!("{field}.oid")))?
+                    .ok_or_else(|| ParseError::MissingElement(format!("{field_prefix}.oid")))?
                     .to_string(),
                 name: nvt.optional_child_text("name"),
                 type_: nvt.optional_child_text("type"),

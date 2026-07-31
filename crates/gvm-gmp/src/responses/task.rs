@@ -369,6 +369,7 @@ fn parse_report_reference(
     node: &XmlNode,
     field: &str,
 ) -> Result<Option<TaskReportReference>, ParseError> {
+    let include_summary = field == "last_report";
     node.child(field)
         .and_then(|report_wrapper| report_wrapper.child("report"))
         .map(|report| -> Result<TaskReportReference, ParseError> {
@@ -382,15 +383,25 @@ fn parse_report_reference(
                 timestamp: report.optional_child_text("timestamp"),
                 scan_start: report.optional_child_text("scan_start"),
                 scan_end: report.optional_child_text("scan_end"),
-                result_count: report
-                    .child("result_count")
-                    .map(parse_task_report_result_count)
-                    .transpose()?,
-                severity: report.optional_child_text("severity"),
-                compliance_count: report
-                    .child("compliance_count")
-                    .map(parse_task_report_compliance_count)
-                    .transpose()?,
+                result_count: if include_summary {
+                    report
+                        .child("result_count")
+                        .map(parse_task_report_result_count)
+                        .transpose()?
+                } else {
+                    None
+                },
+                severity: include_summary
+                    .then(|| report.optional_child_text("severity"))
+                    .flatten(),
+                compliance_count: if include_summary {
+                    report
+                        .child("compliance_count")
+                        .map(parse_task_report_compliance_count)
+                        .transpose()?
+                } else {
+                    None
+                },
             })
         })
         .transpose()
@@ -912,5 +923,34 @@ mod tests {
         let error = GetTasksResponse::from_response(&response).expect_err("count must fail");
         assert!(matches!(error, ParseError::InvalidValue { field, value }
                 if field == "last_report.result_count.high" && value == "many"));
+    }
+
+    #[test]
+    fn ignores_last_report_only_summary_fields_on_current_report() {
+        let response = Response::from(
+            r#"<get_tasks_response status="200" status_text="OK">
+                <task id="task-1">
+                    <name>Task</name>
+                    <current_report>
+                        <report id="report-1">
+                            <result_count><high>not-a-number</high></result_count>
+                            <severity>8.0</severity>
+                            <compliance_count><yes>also-not-a-number</yes></compliance_count>
+                        </report>
+                    </current_report>
+                </task>
+                <task_count>1<filtered>1</filtered></task_count>
+            </get_tasks_response>"#,
+        );
+
+        let parsed = GetTasksResponse::from_response(&response)
+            .expect("current report summary fields must be ignored");
+        assert_eq!(
+            parsed.items[0]
+                .current_report
+                .as_ref()
+                .map(|report| report.id.as_str()),
+            Some("report-1")
+        );
     }
 }
