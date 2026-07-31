@@ -325,10 +325,10 @@ pub fn delete_scan_config(config_id: &EntityId, ultimate: bool) -> impl Request 
     )
 }
 
-/// Build a `sync_config` request.
+/// Build the global, parameterless `sync_config` request.
 #[must_use]
-pub fn sync_config(config_id: &EntityId) -> impl Request {
-    XmlCommand::new("sync_config").attribute("config_id", config_id.as_str())
+pub fn sync_config() -> impl Request {
+    XmlCommand::new("sync_config")
 }
 
 /// Build a clone request for an existing policy.
@@ -742,10 +742,7 @@ mod tests {
             xml(delete_scan_config(&id("c1"), false)),
             "<delete_config config_id=\"c1\" ultimate=\"0\"/>"
         );
-        assert_eq!(
-            xml(sync_config(&id("c1"))),
-            "<sync_config config_id=\"c1\"/>"
-        );
+        assert_eq!(xml(sync_config()), "<sync_config/>");
     }
 
     #[test]

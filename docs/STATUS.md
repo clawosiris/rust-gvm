@@ -373,7 +373,7 @@ Convenience methods on `GmpClient<C>` that combine `send()` + `XxxResponse::from
 | version | ✅ | — | `get_version()` |
 | auth | — | — | `authenticate()` |
 | target | ✅ | ✅ | |
-| scan_config | ✅ | ✅ | Also: `get_scan_config()`, `modify_scan_config()`, `delete_scan_config()`, `clone_scan_config()`, `sync_scan_config()` |
+| scan_config | ✅ | ✅ | Also: `get_scan_config()`, `modify_scan_config()`, `delete_scan_config()`, `clone_scan_config()`, global `sync_config()`; deprecated `sync_scan_config(id)` remains source-compatible |
 | scanner | ✅ | ✅ | Also: `get_scanner()`, `modify_scanner()`, `delete_scanner()`, `verify_scanner()`, `clone_scanner()` |
 | port_list | ✅ | ✅ | |
 | task | ✅ | ✅ | Also: `start_task()` |
