@@ -5,7 +5,9 @@
 
 use gvm_protocol::Response;
 
-use crate::responses::common::{parse_document, parse_entity_id, status_from_response, ParseError};
+use crate::responses::common::{
+    parse_document, parse_entity_id, status_from_response, ActionResponse, ParseError,
+};
 use crate::EntityId;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,6 +99,9 @@ pub struct AuthConfSetting {
     pub key: Option<String>,
     pub value: Option<String>,
 }
+
+/// Response returned after modifying authentication configuration.
+pub type ModifyAuthResponse = ActionResponse;
 
 impl Setting {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {

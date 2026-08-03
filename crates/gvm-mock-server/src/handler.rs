@@ -1610,13 +1610,43 @@ impl SessionHandler {
     }
 
     fn handle_modify_auth(&self, cmd: &ParsedCommand) -> Vec<u8> {
-        match cmd.attr("enabled") {
-            Some("0" | "1") => {
-                format!("<{}_response status=\"200\" status_text=\"OK\"/>", cmd.name).into_bytes()
-            }
-            Some(_) => error_response(&cmd.name, 400, "Invalid enabled value"),
-            None => error_response(&cmd.name, 400, "Missing required attribute: enabled"),
+        let mut groups = cmd.children.iter().filter(|child| child.name == "group");
+        let Some(group) = groups.next() else {
+            return error_response(&cmd.name, 400, "Missing required element: group");
+        };
+        if groups.next().is_some() {
+            return error_response(&cmd.name, 400, "Only one group is supported");
         }
+        if group
+            .attributes
+            .get("name")
+            .is_none_or(|name| name.is_empty())
+        {
+            return error_response(&cmd.name, 400, "Missing required attribute: group name");
+        }
+
+        let mut settings = group
+            .children
+            .iter()
+            .filter(|child| child.name == "auth_conf_setting")
+            .peekable();
+        if settings.peek().is_none() {
+            return error_response(
+                &cmd.name,
+                400,
+                "Missing required element: auth_conf_setting",
+            );
+        }
+        for setting in settings {
+            if element_child_text(setting, "key").is_none_or(str::is_empty) {
+                return error_response(&cmd.name, 400, "Missing required element: key");
+            }
+            if !setting.children.iter().any(|child| child.name == "value") {
+                return error_response(&cmd.name, 400, "Missing required element: value");
+            }
+        }
+
+        format!("<{}_response status=\"200\" status_text=\"OK\"/>", cmd.name).into_bytes()
     }
 
     fn handle_modify_license(&self, cmd: &ParsedCommand) -> Vec<u8> {

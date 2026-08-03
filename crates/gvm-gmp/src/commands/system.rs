@@ -240,10 +240,22 @@ pub fn describe_auth() -> impl Request {
     XmlCommand::new("describe_auth")
 }
 
-/// Build a `modify_auth` request.
+/// Build a `modify_auth` request for a named authentication group.
+///
+/// `auth_conf_settings` must contain at least one key/value pair. Current gvmd
+/// accepts a group containing authentication configuration settings; the old
+/// `enabled` root attribute is not part of the command contract.
 #[must_use]
-pub fn modify_auth(enabled: bool) -> impl Request {
-    XmlCommand::new("modify_auth").attribute("enabled", if enabled { "1" } else { "0" })
+pub fn modify_auth(group_name: &str, auth_conf_settings: &[(String, String)]) -> impl Request {
+    let mut cmd = XmlCommand::new("modify_auth");
+    let group = cmd.add_element("group");
+    group.set_attribute("name", group_name);
+    for (key, value) in auth_conf_settings {
+        let setting = group.add_child("auth_conf_setting");
+        setting.add_child_with_text("key", key);
+        setting.add_child_with_text("value", value);
+    }
+    cmd
 }
 
 /// Build a `modify_license` request.
@@ -342,7 +354,13 @@ mod tests {
             xml(get_vulnerability("vuln-1")),
             "<get_vulns vuln_id=\"vuln-1\"/>"
         );
-        assert_eq!(xml(modify_auth(true)), "<modify_auth enabled=\"1\"/>");
+        assert_eq!(
+            xml(modify_auth(
+                "method:ldap_connect",
+                &[("enable".into(), "true".into())]
+            )),
+            "<modify_auth><group name=\"method:ldap_connect\"><auth_conf_setting><key>enable</key><value>true</value></auth_conf_setting></group></modify_auth>"
+        );
         assert_eq!(
             xml(modify_license("abc")),
             "<modify_license><key>abc</key></modify_license>"

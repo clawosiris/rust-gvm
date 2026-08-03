@@ -82,7 +82,16 @@ fn test_system_aggregates_info_resource_names_and_mutations() {
     );
     assert_eq!(xml(get_license()), "<get_license/>");
     assert_eq!(xml(describe_auth()), "<describe_auth/>");
-    assert_eq!(xml(modify_auth(true)), "<modify_auth enabled=\"1\"/>");
+    assert_eq!(
+        xml(modify_auth(
+            "method:ldap_connect",
+            &[
+                ("enable".into(), "true".into()),
+                ("ldaphost".into(), "ldap.example".into()),
+            ]
+        )),
+        "<modify_auth><group name=\"method:ldap_connect\"><auth_conf_setting><key>enable</key><value>true</value></auth_conf_setting><auth_conf_setting><key>ldaphost</key><value>ldap.example</value></auth_conf_setting></group></modify_auth>"
+    );
     assert_eq!(
         xml(modify_license("abc")),
         "<modify_license><key>abc</key></modify_license>"

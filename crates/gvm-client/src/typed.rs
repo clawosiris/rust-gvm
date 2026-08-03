@@ -101,7 +101,7 @@ use gvm_gmp::commands::secinfo::{
 };
 use gvm_gmp::commands::system::{
     describe_auth, get_settings, get_timezones, get_vulnerability as get_vulnerability_cmd,
-    get_vulns, FilteredGetOpts,
+    get_vulns, modify_auth, FilteredGetOpts,
 };
 use gvm_gmp::commands::system_reports::{get_system_reports, GetSystemReportsOpts};
 use gvm_gmp::commands::tags::{create_tag, get_tags, GetTagsOpts, TagOpts};
@@ -157,13 +157,13 @@ use gvm_gmp::responses::{
     GetTagsResponse, GetTargetsResponse, GetTasksResponse, GetTicketsResponse,
     GetTimezonesResponse, GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse,
     GetVulnerabilitiesResponse, GetWebApplicationTargetsResponse, HelpResponse,
-    ModifyAlertResponse, ModifyAssetResponse, ModifyConfigResponse, ModifyCredentialResponse,
-    ModifyIntegrationConfigResponse, ModifyOciImageTargetResponse, ModifyPortListResponse,
-    ModifyScanConfigResponse, ModifyScannerResponse, ModifyScheduleResponse, ModifyTargetResponse,
-    ModifyTaskResponse, ModifyTicketResponse, ModifyUserResponse,
-    ModifyWebApplicationTargetResponse, ReportExport, RestoreResponse, ResumeTaskResponse,
-    StartTaskResponse, StopTaskResponse, SyncConfigResponse, VerifyCredentialStoreResponse,
-    VerifyScannerResponse,
+    ModifyAlertResponse, ModifyAssetResponse, ModifyAuthResponse, ModifyConfigResponse,
+    ModifyCredentialResponse, ModifyIntegrationConfigResponse, ModifyOciImageTargetResponse,
+    ModifyPortListResponse, ModifyScanConfigResponse, ModifyScannerResponse,
+    ModifyScheduleResponse, ModifyTargetResponse, ModifyTaskResponse, ModifyTicketResponse,
+    ModifyUserResponse, ModifyWebApplicationTargetResponse, ReportExport, RestoreResponse,
+    ResumeTaskResponse, StartTaskResponse, StopTaskResponse, SyncConfigResponse,
+    VerifyCredentialStoreResponse, VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::{CredentialStoreCredentialType, FeedType, ScheduleInput};
@@ -2340,6 +2340,24 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     pub async fn describe_auth(&mut self) -> Result<DescribeAuthResponse, GvmError> {
         let response = self.send(describe_auth()).await?;
         DescribeAuthResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Modify a named authentication group and return a typed
+    /// [`ModifyAuthResponse`].
+    ///
+    /// `auth_conf_settings` must contain at least one key/value pair.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_auth(
+        &mut self,
+        group_name: &str,
+        auth_conf_settings: &[(String, String)],
+    ) -> Result<ModifyAuthResponse, GvmError> {
+        let response = self
+            .send(modify_auth(group_name, auth_conf_settings))
+            .await?;
+        ModifyAuthResponse::from_response(&response).map_err(GvmError::Parse)
     }
 }
 
