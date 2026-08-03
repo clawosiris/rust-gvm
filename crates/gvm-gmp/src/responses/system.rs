@@ -103,6 +103,9 @@ pub struct AuthConfSetting {
 /// Response returned after modifying authentication configuration.
 pub type ModifyAuthResponse = ActionResponse;
 
+/// Response returned after modifying the gvmd license.
+pub type ModifyLicenseResponse = ActionResponse;
+
 impl Setting {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
         Ok(Self {

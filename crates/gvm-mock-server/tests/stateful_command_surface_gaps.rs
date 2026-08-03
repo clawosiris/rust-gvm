@@ -23,7 +23,9 @@ use gvm_gmp::commands::credentials::{
     CredentialStoreCredentialOpts, ModifyCredentialStoreCredentialOpts, ModifyCredentialStoreOpts,
 };
 use gvm_gmp::commands::hosts::{create_host, get_host, get_hosts, HostOpts};
-use gvm_gmp::commands::system::{modify_auth, modify_license};
+use gvm_gmp::commands::system::{
+    modify_auth, modify_license, modify_license_with_opts, ModifyLicenseOpts,
+};
 use gvm_gmp::types::EntityId;
 use gvm_gmp::CredentialStoreCredentialType;
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
@@ -436,8 +438,30 @@ async fn stateful_auth_and_license_modifiers_use_gmp_builder_shape() {
         assert_eq!(response.status_code(), Some(400));
     }
 
-    let license = send_request(&mut stream, modify_license("abc")).await;
+    let license = send_request(&mut stream, modify_license("YWJj")).await;
     assert_eq!(license.status_code(), Some(200));
+
+    let empty_license = send_request(
+        &mut stream,
+        modify_license_with_opts(
+            "",
+            ModifyLicenseOpts {
+                allow_empty: Some(true),
+            },
+        ),
+    )
+    .await;
+    assert_eq!(empty_license.status_code(), Some(200));
+
+    for invalid in [
+        br#"<modify_license><key>legacy</key></modify_license>"#.as_slice(),
+        br#"<modify_license><file></file></modify_license>"#.as_slice(),
+        br#"<modify_license allow_empty="0"><file></file></modify_license>"#.as_slice(),
+        br#"<modify_license allow_empty="invalid"><file>YWJj</file></modify_license>"#.as_slice(),
+    ] {
+        let response = send_recv(&mut stream, invalid).await;
+        assert_eq!(response.status_code(), Some(400));
+    }
 
     server.shutdown().await;
 }

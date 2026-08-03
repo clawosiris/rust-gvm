@@ -150,10 +150,10 @@ pub struct WireTraceEvent {
 /// Sink for opt-in GMP wire trace events.
 ///
 /// Events are structurally parsed and redacted before this callback is invoked.
-/// Known GMP secret fields, generic `value`, `default_value`, and `param`
-/// payloads, sensitive attributes, comments, and processing instructions are
-/// removed. Malformed or non-UTF-8 payloads are replaced entirely with a fixed
-/// marker.
+/// Known GMP secret fields, the `modify_license/file` payload, generic `value`,
+/// `default_value`, and `param` payloads, sensitive attributes, comments, and
+/// processing instructions are removed. Malformed or non-UTF-8 payloads are
+/// replaced entirely with a fixed marker.
 ///
 /// This policy is not a general secret detector for arbitrary custom XML field
 /// names. Applications sending raw custom requests should still restrict trace
@@ -2433,16 +2433,20 @@ mod tests {
     }
 
     #[test]
-    fn redacts_modify_license_key_element() {
+    fn redacts_modify_license_file_without_hiding_generic_files() {
         let request = gvm_gmp::commands::system::modify_license("license-secret").to_bytes();
 
         let redacted = String::from_utf8(redact_wire_bytes(&request)).expect("utf-8");
 
         assert_eq!(
             redacted,
-            "<modify_license><key><redacted/></key></modify_license>"
+            "<modify_license><file><redacted/></file></modify_license>"
         );
         assert!(!redacted.contains("license-secret"));
+        assert_eq!(
+            redact_wire_bytes(b"<root><file>visible</file></root>"),
+            b"<root><file>visible</file></root>"
+        );
     }
 
     #[test]

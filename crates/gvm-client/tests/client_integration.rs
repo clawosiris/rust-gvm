@@ -51,6 +51,7 @@ use gvm_gmp::commands::scanners::ScannerOpts;
 use gvm_gmp::commands::schedules::{GetSchedulesOpts, ScheduleOpts};
 use gvm_gmp::commands::secinfo::{get_info, get_info_list, GenericInfoType, GetInfoListOpts};
 use gvm_gmp::commands::system::get_timezones;
+use gvm_gmp::commands::system::ModifyLicenseOpts;
 use gvm_gmp::commands::targets::{
     create_target, delete_target, get_targets, CreateTargetError, CreateTargetOpts, GetTargetsOpts,
     ModifyTargetError, ModifyTargetOpts,
@@ -550,6 +551,42 @@ async fn typed_modify_auth_uses_current_gvmd_shape_over_unix_transport() {
     assert_eq!(
         history[0].raw_xml(),
         br#"<modify_auth><group name="method:ldap_connect"><auth_conf_setting><key>enable</key><value>true</value></auth_conf_setting><auth_conf_setting><key>ldaphost</key><value>ldap.example</value></auth_conf_setting></group></modify_auth>"#
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_modify_license_uses_current_gvmd_shape_over_unix_transport() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate");
+    server.clear_history();
+
+    let response = client
+        .modify_license(
+            "YWJj",
+            ModifyLicenseOpts {
+                allow_empty: Some(false),
+            },
+        )
+        .await
+        .expect("current gvmd modify_license response should parse");
+
+    assert_eq!(response.status, 200);
+    let history = server.command_history();
+    assert_eq!(history.len(), 1);
+    assert_eq!(
+        history[0].raw_xml(),
+        br#"<modify_license allow_empty="0"><file>YWJj</file></modify_license>"#
     );
 
     server.shutdown().await;
