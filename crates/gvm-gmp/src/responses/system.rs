@@ -4,6 +4,8 @@
 //! System (settings, help, auth) response models.
 
 use gvm_protocol::Response;
+use quick_xml::events::Event;
+use quick_xml::Reader;
 
 use crate::responses::common::{
     parse_document, parse_entity_id, status_from_response, ActionResponse, ParseError,
@@ -105,6 +107,17 @@ pub type ModifyAuthResponse = ActionResponse;
 
 /// Response returned after modifying the gvmd license.
 pub type ModifyLicenseResponse = ActionResponse;
+
+/// Response returned after running a gvmd wizard.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct RunWizardResponse {
+    pub status: u16,
+    pub status_text: String,
+    /// Serialized inner XML from the optional `<response>` element.
+    pub response_xml: Option<Vec<u8>>,
+}
 
 impl Setting {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
@@ -238,6 +251,57 @@ impl DescribeAuthResponse {
             status_text,
             groups,
         })
+    }
+}
+
+impl RunWizardResponse {
+    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+        let (status, status_text) = status_from_response(response)?;
+        let _ = parse_document(response.data())?;
+        Ok(Self {
+            status,
+            status_text,
+            response_xml: extract_wizard_response_xml(response.data())?,
+        })
+    }
+}
+
+fn extract_wizard_response_xml(data: &[u8]) -> Result<Option<Vec<u8>>, ParseError> {
+    let text = std::str::from_utf8(data)?;
+    let mut reader = Reader::from_str(text);
+    reader.config_mut().trim_text(false);
+    let mut capture_depth = None;
+    let mut capture_start = 0;
+
+    loop {
+        let event_start = reader.buffer_position() as usize;
+        let event = reader.read_event()?;
+        match event {
+            Event::Start(event)
+                if capture_depth.is_none() && event.name().as_ref() == b"response" =>
+            {
+                capture_depth = Some(0usize);
+                capture_start = reader.buffer_position() as usize;
+            }
+            Event::Empty(event)
+                if capture_depth.is_none() && event.name().as_ref() == b"response" =>
+            {
+                return Ok(Some(Vec::new()));
+            }
+            Event::Start(_) if capture_depth.is_some() => {
+                capture_depth = capture_depth.map(|depth| depth + 1);
+            }
+            Event::End(event)
+                if capture_depth == Some(0) && event.name().as_ref() == b"response" =>
+            {
+                return Ok(Some(data[capture_start..event_start].to_vec()));
+            }
+            Event::End(_) if capture_depth.is_some() => {
+                capture_depth = capture_depth.map(|depth| depth.saturating_sub(1));
+            }
+            Event::Eof => return Ok(None),
+            _ => {}
+        }
     }
 }
 
@@ -402,6 +466,39 @@ mod tests {
         );
         assert_eq!(parsed.groups[1].name, "method:radius_connect");
         assert_eq!(parsed.groups[1].settings.len(), 1);
+    }
+
+    #[test]
+    fn parses_run_wizard_nested_response() {
+        let response = Response::from(
+            r#"<run_wizard_response status="202" status_text="OK, request submitted"><response><start_task_response status="202" status_text="OK, request submitted"><report_id>report-1</report_id></start_task_response></response></run_wizard_response>"#,
+        );
+
+        let parsed = RunWizardResponse::from_response(&response).expect("wizard response parse");
+
+        assert_eq!(parsed.status, 202);
+        assert_eq!(
+            parsed.response_xml.as_deref(),
+            Some(br#"<start_task_response status="202" status_text="OK, request submitted"><report_id>report-1</report_id></start_task_response>"#.as_slice())
+        );
+
+        let empty = Response::from(
+            r#"<run_wizard_response status="202" status_text="OK"><response/></run_wizard_response>"#,
+        );
+        assert_eq!(
+            RunWizardResponse::from_response(&empty)
+                .expect("empty wizard response parse")
+                .response_xml,
+            Some(Vec::new())
+        );
+
+        let absent = Response::from(r#"<run_wizard_response status="202" status_text="OK"/>"#);
+        assert_eq!(
+            RunWizardResponse::from_response(&absent)
+                .expect("absent wizard response parse")
+                .response_xml,
+            None
+        );
     }
 
     #[test]

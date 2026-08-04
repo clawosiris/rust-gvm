@@ -24,7 +24,8 @@ use gvm_gmp::commands::credentials::{
 };
 use gvm_gmp::commands::hosts::{create_host, get_host, get_hosts, HostOpts};
 use gvm_gmp::commands::system::{
-    modify_auth, modify_license, modify_license_with_opts, ModifyLicenseOpts,
+    modify_auth, modify_license, modify_license_with_opts, run_wizard_with_opts,
+    ModifyLicenseOpts, RunWizardOpts,
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::CredentialStoreCredentialType;
@@ -458,6 +459,46 @@ async fn stateful_auth_and_license_modifiers_use_gmp_builder_shape() {
         br#"<modify_license><file></file></modify_license>"#.as_slice(),
         br#"<modify_license allow_empty="0"><file></file></modify_license>"#.as_slice(),
         br#"<modify_license allow_empty="invalid"><file>YWJj</file></modify_license>"#.as_slice(),
+    ] {
+        let response = send_recv(&mut stream, invalid).await;
+        assert_eq!(response.status_code(), Some(400));
+    }
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn stateful_run_wizard_validates_current_gvmd_shape() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let response = send_request(
+        &mut stream,
+        run_wizard_with_opts(
+            "quick_first_scan",
+            &[("hosts".into(), "localhost".into())],
+            RunWizardOpts {
+                mode: Some("step".into()),
+                read_only: Some(false),
+            },
+        ),
+    )
+    .await;
+    assert_eq!(response.status_code(), Some(202));
+    assert!(response
+        .as_str()
+        .expect("utf8")
+        .contains("<response><start_task_response"));
+
+    for invalid in [
+        br#"<run_wizard name="quick"><param name="hosts">localhost</param></run_wizard>"#.as_slice(),
+        br#"<run_wizard><name>quick</name></run_wizard>"#.as_slice(),
+        br#"<run_wizard><name>quick</name><params><param><name>hosts</name></param></params></run_wizard>"#.as_slice(),
+        br#"<run_wizard read_only="invalid"><name>quick</name><params/></run_wizard>"#.as_slice(),
+        br#"<run_wizard><name>not valid</name><params/></run_wizard>"#.as_slice(),
     ] {
         let response = send_recv(&mut stream, invalid).await;
         assert_eq!(response.status_code(), Some(400));

@@ -162,7 +162,6 @@ fn echo_only_commands_are_intentionally_listed() {
     for expected in [
         "describe_auth",
         "move_task",
-        "run_wizard",
         "sync_config",
         "test_alert",
         "verify_report_format",
@@ -179,6 +178,7 @@ fn echo_only_commands_are_intentionally_listed() {
         "get_assets",
         "modify_auth",
         "modify_license",
+        "run_wizard",
         "get_timezones",
         "get_credential_stores",
     ] {

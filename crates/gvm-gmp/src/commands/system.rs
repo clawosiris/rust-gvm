@@ -84,6 +84,15 @@ pub struct ModifyLicenseOpts {
     pub allow_empty: Option<bool>,
 }
 
+/// Options for `run_wizard` requests.
+#[derive(Debug, Clone, Default)]
+pub struct RunWizardOpts {
+    /// Optional wizard execution mode.
+    pub mode: Option<String>,
+    /// Whether gvmd may only run a wizard marked as read-only.
+    pub read_only: Option<bool>,
+}
+
 /// Build a `help` request.
 #[must_use]
 pub fn help(format: Option<HelpFormat>) -> impl Request {
@@ -296,11 +305,29 @@ pub fn modify_setting(setting_id: &EntityId, value: &str) -> impl Request {
 /// Build a `run_wizard` request.
 #[must_use]
 pub fn run_wizard(name: &str, params: &[(String, String)]) -> impl Request {
-    let mut cmd = XmlCommand::new("run_wizard").attribute("name", name);
+    run_wizard_with_opts(name, params, RunWizardOpts::default())
+}
+
+/// Build a `run_wizard` request with explicit execution options.
+#[must_use]
+pub fn run_wizard_with_opts(
+    name: &str,
+    params: &[(String, String)],
+    opts: RunWizardOpts,
+) -> impl Request {
+    let mut cmd = XmlCommand::new("run_wizard");
+    if let Some(read_only) = opts.read_only {
+        cmd.set_attribute("read_only", if read_only { "1" } else { "0" });
+    }
+    if let Some(mode) = opts.mode.as_deref() {
+        cmd.add_element_with_text("mode", mode);
+    }
+    cmd.add_element_with_text("name", name);
+    let params_element = cmd.add_element("params");
     for (key, value) in params {
-        let param = cmd.add_element("param");
-        param.set_attribute("name", key);
-        param.set_text(value);
+        let param = params_element.add_child("param");
+        param.add_child_with_text("name", key);
+        param.add_child_with_text("value", value);
     }
     cmd
 }
@@ -396,7 +423,23 @@ mod tests {
             xml(modify_setting(&id("s1"), "Europe/Berlin")),
             "<modify_setting setting_id=\"s1\"><value>RXVyb3BlL0Jlcmxpbg==</value></modify_setting>"
         );
-        let rendered = xml(run_wizard("quick", &[("target".into(), "10.0.0.1".into())]));
-        assert!(rendered.contains("<param name=\"target\">10.0.0.1</param>"));
+        assert_eq!(
+            xml(run_wizard(
+                "quick",
+                &[("target".into(), "10.0.0.1".into())]
+            )),
+            "<run_wizard><name>quick</name><params><param><name>target</name><value>10.0.0.1</value></param></params></run_wizard>"
+        );
+        assert_eq!(
+            xml(run_wizard_with_opts(
+                "quick",
+                &[],
+                RunWizardOpts {
+                    mode: Some("step".into()),
+                    read_only: Some(true),
+                }
+            )),
+            "<run_wizard read_only=\"1\"><mode>step</mode><name>quick</name><params/></run_wizard>"
+        );
     }
 }
