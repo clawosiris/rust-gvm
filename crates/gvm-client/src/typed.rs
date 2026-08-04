@@ -101,7 +101,8 @@ use gvm_gmp::commands::secinfo::{
 };
 use gvm_gmp::commands::system::{
     describe_auth, get_settings, get_timezones, get_vulnerability as get_vulnerability_cmd,
-    get_vulns, modify_auth, modify_license_with_opts, FilteredGetOpts, ModifyLicenseOpts,
+    get_vulns, modify_auth, modify_license_with_opts, run_wizard_with_opts,
+    FilteredGetOpts, ModifyLicenseOpts, RunWizardOpts,
 };
 use gvm_gmp::commands::system_reports::{get_system_reports, GetSystemReportsOpts};
 use gvm_gmp::commands::tags::{create_tag, get_tags, GetTagsOpts, TagOpts};
@@ -162,7 +163,8 @@ use gvm_gmp::responses::{
     ModifyOciImageTargetResponse, ModifyPortListResponse, ModifyScanConfigResponse,
     ModifyScannerResponse, ModifyScheduleResponse, ModifyTargetResponse, ModifyTaskResponse,
     ModifyTicketResponse, ModifyUserResponse, ModifyWebApplicationTargetResponse, ReportExport,
-    RestoreResponse, ResumeTaskResponse, StartTaskResponse, StopTaskResponse, SyncConfigResponse,
+    RestoreResponse, ResumeTaskResponse, RunWizardResponse, StartTaskResponse, StopTaskResponse,
+    SyncConfigResponse,
     VerifyCredentialStoreResponse, VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
@@ -2372,6 +2374,20 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ) -> Result<ModifyLicenseResponse, GvmError> {
         let response = self.send(modify_license_with_opts(file, opts)).await?;
         ModifyLicenseResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Run a gvmd wizard and return its typed response envelope.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn run_wizard(
+        &mut self,
+        name: &str,
+        params: &[(String, String)],
+        opts: RunWizardOpts,
+    ) -> Result<RunWizardResponse, GvmError> {
+        let response = self.send(run_wizard_with_opts(name, params, opts)).await?;
+        RunWizardResponse::from_response(&response).map_err(GvmError::Parse)
     }
 }
 
