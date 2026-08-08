@@ -26,7 +26,7 @@ use gvm_gmp::commands::configs::{
     GetConfigOpts, GetConfigsOpts, ModifyConfigOpts,
 };
 use gvm_gmp::commands::credentials::{
-    create_credential, create_credential_store_credential, get_credential_store,
+    create_credential, create_credential_store_credential, delete_credential, get_credential_store,
     get_credential_stores, get_credential_stores_with_opts, get_credentials, modify_credential,
     modify_credential_store_credential, verify_credential_store, CredentialOpts,
     CredentialStoreCredentialOpts, GetCredentialStoresOpts, GetCredentialsOpts,
@@ -92,7 +92,8 @@ use gvm_gmp::commands::scanners::{
     verify_scanner, GetScannersOpts, ScannerOpts,
 };
 use gvm_gmp::commands::schedules::{
-    create_schedule, get_schedules, GetSchedulesOpts, ScheduleOpts,
+    create_schedule, delete_schedule, get_schedules, modify_schedule, GetSchedulesOpts,
+    ScheduleOpts,
 };
 use gvm_gmp::commands::secinfo::{
     get_cert_bund_advisories, get_cert_bund_advisory, get_cpe, get_cpes, get_cve, get_cves,
@@ -105,11 +106,12 @@ use gvm_gmp::commands::system::{
 use gvm_gmp::commands::system_reports::{get_system_reports, GetSystemReportsOpts};
 use gvm_gmp::commands::tags::{create_tag, get_tags, GetTagsOpts, TagOpts};
 use gvm_gmp::commands::targets::{
-    create_target, get_targets, modify_target, CreateTargetOpts, GetTargetsOpts, ModifyTargetOpts,
+    create_target, delete_target, get_targets, modify_target, CreateTargetOpts, GetTargetsOpts,
+    ModifyTargetOpts,
 };
 use gvm_gmp::commands::tasks::{
-    create_import_task, create_task, get_tasks, resume_task, start_task, CreateTaskOpts,
-    GetTasksOpts,
+    create_import_task, create_task, delete_task, get_tasks, modify_task, resume_task, start_task,
+    stop_task, CreateTaskOpts, GetTasksOpts, ModifyTaskOpts,
 };
 use gvm_gmp::commands::tickets::{
     create_ticket, get_tickets, modify_ticket, CreateTicketOpts, GetTicketsOpts, ModifyTicketOpts,
@@ -136,7 +138,8 @@ use gvm_gmp::responses::{
     CreateScannerResponse, CreateScheduleResponse, CreateTagResponse, CreateTargetResponse,
     CreateTaskResponse, CreateTicketResponse, CreateTlsCertificateResponse, CreateUserResponse,
     CreateWebApplicationTargetResponse, DeleteAssetResponse, DeleteConfigResponse,
-    DeleteOciImageTargetResponse, DeleteScanConfigResponse, DeleteScannerResponse,
+    DeleteCredentialResponse, DeleteOciImageTargetResponse, DeleteScanConfigResponse,
+    DeleteScannerResponse, DeleteScheduleResponse, DeleteTargetResponse, DeleteTaskResponse,
     DeleteWebApplicationTargetResponse, DescribeAuthResponse, EmptyTrashcanResponse,
     GetAggregatesResponse, GetAlertsResponse, GetAssetsResponse, GetAuditReportHostsResponse,
     GetAuditReportResponse, GetCertBundAdvisoriesResponse, GetConfigsResponse, GetCpesResponse,
@@ -156,9 +159,10 @@ use gvm_gmp::responses::{
     GetVulnerabilitiesResponse, GetWebApplicationTargetsResponse, HelpResponse,
     ModifyAlertResponse, ModifyAssetResponse, ModifyConfigResponse, ModifyCredentialResponse,
     ModifyIntegrationConfigResponse, ModifyOciImageTargetResponse, ModifyPortListResponse,
-    ModifyScanConfigResponse, ModifyScannerResponse, ModifyTargetResponse, ModifyTicketResponse,
-    ModifyUserResponse, ModifyWebApplicationTargetResponse, ReportExport, RestoreResponse,
-    ResumeTaskResponse, StartTaskResponse, SyncConfigResponse, VerifyCredentialStoreResponse,
+    ModifyScanConfigResponse, ModifyScannerResponse, ModifyScheduleResponse, ModifyTargetResponse,
+    ModifyTaskResponse, ModifyTicketResponse, ModifyUserResponse,
+    ModifyWebApplicationTargetResponse, ReportExport, RestoreResponse, ResumeTaskResponse,
+    StartTaskResponse, StopTaskResponse, SyncConfigResponse, VerifyCredentialStoreResponse,
     VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
@@ -229,6 +233,19 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ) -> Result<ModifyTargetResponse, GvmError> {
         let response = self.send(modify_target(target_id, opts)).await?;
         ModifyTargetResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `delete_target` request and return a typed [`DeleteTargetResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn delete_target(
+        &mut self,
+        target_id: &EntityId,
+        ultimate: bool,
+    ) -> Result<DeleteTargetResponse, GvmError> {
+        let response = self.send(delete_target(target_id, ultimate)).await?;
+        DeleteTargetResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     /// Send a `create_oci_image_target` request and return a typed
@@ -840,6 +857,41 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         ResumeTaskResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
+    /// Send a `modify_task` request and return a typed [`ModifyTaskResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_task(
+        &mut self,
+        task_id: &EntityId,
+        opts: ModifyTaskOpts,
+    ) -> Result<ModifyTaskResponse, GvmError> {
+        let response = self.send(modify_task(task_id, opts)).await?;
+        ModifyTaskResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `stop_task` request and return a typed [`StopTaskResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn stop_task(&mut self, task_id: &EntityId) -> Result<StopTaskResponse, GvmError> {
+        let response = self.send(stop_task(task_id)).await?;
+        StopTaskResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `delete_task` request and return a typed [`DeleteTaskResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn delete_task(
+        &mut self,
+        task_id: &EntityId,
+        ultimate: bool,
+    ) -> Result<DeleteTaskResponse, GvmError> {
+        let response = self.send(delete_task(task_id, ultimate)).await?;
+        DeleteTaskResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
     /// Send an `empty_trashcan` request and return a typed [`EmptyTrashcanResponse`].
     ///
     /// # Errors
@@ -1424,6 +1476,22 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         ModifyCredentialResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
+    /// Send a `delete_credential` request and return a typed
+    /// [`DeleteCredentialResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn delete_credential(
+        &mut self,
+        credential_id: &EntityId,
+        ultimate: bool,
+    ) -> Result<DeleteCredentialResponse, GvmError> {
+        let response = self
+            .send(delete_credential(credential_id, ultimate))
+            .await?;
+        DeleteCredentialResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
     /// Send a credential-store-backed `create_credential` request and return a
     /// typed [`CreateCredentialResponse`].
     ///
@@ -1569,6 +1637,34 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ) -> Result<CreateScheduleResponse, GvmError> {
         let response = self.send(create_schedule(name, opts)).await?;
         CreateScheduleResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `modify_schedule` request and return a typed
+    /// [`ModifyScheduleResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_schedule(
+        &mut self,
+        schedule_id: &EntityId,
+        opts: ScheduleOpts,
+    ) -> Result<ModifyScheduleResponse, GvmError> {
+        let response = self.send(modify_schedule(schedule_id, opts)).await?;
+        ModifyScheduleResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `delete_schedule` request and return a typed
+    /// [`DeleteScheduleResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn delete_schedule(
+        &mut self,
+        schedule_id: &EntityId,
+        ultimate: bool,
+    ) -> Result<DeleteScheduleResponse, GvmError> {
+        let response = self.send(delete_schedule(schedule_id, ultimate)).await?;
+        DeleteScheduleResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     // ── Tags ──────────────────────────────────────────────────────────────────

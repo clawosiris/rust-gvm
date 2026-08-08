@@ -27,13 +27,13 @@ use gvm_gmp::commands::scanners::GetScannersOpts;
 use gvm_gmp::commands::schedules::{GetSchedulesOpts, ScheduleOpts};
 use gvm_gmp::commands::secinfo::GetSecInfoOpts;
 use gvm_gmp::commands::tags::{GetTagsOpts, TagOpts};
-use gvm_gmp::commands::targets::GetTargetsOpts;
-use gvm_gmp::commands::tasks::GetTasksOpts;
+use gvm_gmp::commands::targets::{GetTargetsOpts, ModifyTargetOpts};
+use gvm_gmp::commands::tasks::{GetTasksOpts, ModifyTaskOpts};
 use gvm_gmp::commands::tickets::{CreateTicketOpts, GetTicketsOpts, TicketOpenNote};
 use gvm_gmp::commands::tls_certificates::{GetTlsCertificatesOpts, TlsCertificateOpts};
 use gvm_gmp::commands::users::{GetUsersOpts, UserOpts};
 use gvm_gmp::responses::ParseError;
-use gvm_gmp::types::{EntityId, GmpVersion};
+use gvm_gmp::types::{EntityId, GmpVersion, ScalarUpdate};
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 
 const CREATED_ID: &str = "11111111-1111-1111-1111-111111111111";
@@ -83,6 +83,17 @@ macro_rules! assert_create_success {
     }};
 }
 
+macro_rules! assert_server_error {
+    ($future:expr, $status:literal, $message:literal) => {{
+        let error = $future.await.expect_err("typed helper should reject server error");
+        assert!(matches!(
+            error,
+            GvmError::Parse(ParseError::ServerError { status: $status, message })
+                if message == $message
+        ));
+    }};
+}
+
 macro_rules! create_response {
     ($root:literal) => {
         concat!(
@@ -92,6 +103,68 @@ macro_rules! create_response {
         )
     };
 }
+
+const MUTATION_SUCCESS_OVERRIDES: &[(&str, &str)] = &[
+    (
+        "delete_credential",
+        r#"<delete_credential_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "modify_schedule",
+        r#"<modify_schedule_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "delete_schedule",
+        r#"<delete_schedule_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "delete_target",
+        r#"<delete_target_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "modify_task",
+        r#"<modify_task_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "delete_task",
+        r#"<delete_task_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "stop_task",
+        r#"<stop_task_response status="200" status_text="OK"/>"#,
+    ),
+];
+
+const MUTATION_ERROR_OVERRIDES: &[(&str, &str)] = &[
+    (
+        "delete_credential",
+        r#"<delete_credential_response status="409" status_text="conflict"/>"#,
+    ),
+    (
+        "modify_schedule",
+        r#"<modify_schedule_response status="409" status_text="conflict"/>"#,
+    ),
+    (
+        "delete_schedule",
+        r#"<delete_schedule_response status="409" status_text="conflict"/>"#,
+    ),
+    (
+        "delete_target",
+        r#"<delete_target_response status="409" status_text="conflict"/>"#,
+    ),
+    (
+        "modify_task",
+        r#"<modify_task_response status="409" status_text="conflict"/>"#,
+    ),
+    (
+        "delete_task",
+        r#"<delete_task_response status="409" status_text="conflict"/>"#,
+    ),
+    (
+        "stop_task",
+        r#"<stop_task_response status="409" status_text="conflict"/>"#,
+    ),
+];
 
 const DISCOVERY_OVERRIDES: &[(&str, &str)] = &[
     (
@@ -379,6 +452,122 @@ async fn create_families_parse_typed_ids_from_table_driven_fixture_responses() {
         let xml = std::str::from_utf8(record.raw_xml()).expect("request XML");
         assert!(xml.contains(child), "{command} XML missing {child}: {xml}");
     }
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn remaining_mutation_families_use_typed_facade_and_scalar_relationship_updates() {
+    let Some(server) = fixture_server(MockVersion::V22_8, MUTATION_SUCCESS_OVERRIDES).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+
+    let resource_id = id("resource-1");
+    assert_typed_success!(client.delete_credential(&resource_id, false));
+    assert_typed_success!(client.modify_schedule(
+        &resource_id,
+        ScheduleOpts {
+            comment: Some("updated".into()),
+            ..Default::default()
+        }
+    ));
+    assert_typed_success!(client.delete_schedule(&resource_id, true));
+
+    assert_typed_success!(client.modify_target(&resource_id, ModifyTargetOpts::default()));
+    assert_typed_success!(client.modify_target(
+        &resource_id,
+        ModifyTargetOpts {
+            ssh_credential_id: ScalarUpdate::set(id("credential-1")),
+            ..Default::default()
+        }
+    ));
+    assert_typed_success!(client.modify_target(
+        &resource_id,
+        ModifyTargetOpts {
+            ssh_credential_id: ScalarUpdate::Clear,
+            ..Default::default()
+        }
+    ));
+    assert_typed_success!(client.delete_target(&resource_id, false));
+
+    assert_typed_success!(client.modify_task(&resource_id, ModifyTaskOpts::default()));
+    assert_typed_success!(client.modify_task(
+        &resource_id,
+        ModifyTaskOpts {
+            schedule_id: ScalarUpdate::set(id("schedule-1")),
+            ..Default::default()
+        }
+    ));
+    assert_typed_success!(client.modify_task(
+        &resource_id,
+        ModifyTaskOpts {
+            schedule_id: ScalarUpdate::Clear,
+            ..Default::default()
+        }
+    ));
+    assert_typed_success!(client.stop_task(&resource_id));
+    assert_typed_success!(client.delete_task(&resource_id, true));
+
+    let history = server.command_history();
+    let xml_for = |command: &str| {
+        history
+            .iter()
+            .filter(|record| record.command_name() == command)
+            .map(|record| {
+                std::str::from_utf8(record.raw_xml())
+                    .expect("request XML")
+                    .to_string()
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let target_updates = xml_for("modify_target");
+    assert_eq!(target_updates.len(), 3);
+    assert_eq!(
+        target_updates[0],
+        r#"<modify_target target_id="resource-1"/>"#
+    );
+    assert!(target_updates[1].contains(r#"<ssh_credential id="credential-1"/>"#));
+    assert!(target_updates[2].contains(r#"<ssh_credential id="0"/>"#));
+
+    let task_updates = xml_for("modify_task");
+    assert_eq!(task_updates.len(), 3);
+    assert_eq!(task_updates[0], r#"<modify_task task_id="resource-1"/>"#);
+    assert!(task_updates[1].contains(r#"<schedule id="schedule-1"/>"#));
+    assert!(task_updates[2].contains(r#"<schedule id="0"/>"#));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn remaining_mutation_families_surface_non_success_responses() {
+    let Some(server) = fixture_server(MockVersion::V22_8, MUTATION_ERROR_OVERRIDES).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    let resource_id = id("resource-1");
+
+    assert_server_error!(
+        client.delete_credential(&resource_id, false),
+        409,
+        "conflict"
+    );
+    assert_server_error!(
+        client.modify_schedule(&resource_id, ScheduleOpts::default()),
+        409,
+        "conflict"
+    );
+    assert_server_error!(client.delete_schedule(&resource_id, false), 409, "conflict");
+    assert_server_error!(client.delete_target(&resource_id, false), 409, "conflict");
+    assert_server_error!(
+        client.modify_task(&resource_id, ModifyTaskOpts::default()),
+        409,
+        "conflict"
+    );
+    assert_server_error!(client.stop_task(&resource_id), 409, "conflict");
+    assert_server_error!(client.delete_task(&resource_id, false), 409, "conflict");
 
     server.shutdown().await;
 }

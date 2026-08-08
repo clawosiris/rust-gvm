@@ -7,11 +7,11 @@ use gvm_protocol::{Request, XmlCommand};
 
 use crate::commands::usage_type::UsageType;
 use crate::common::{
-    add_filter_attrs, add_id_element, add_optional_id_element, add_preferences, add_string_list,
-    add_text_element, bool_str, set_optional_bool_attr,
+    add_filter_attrs, add_id_element, add_optional_id_element, add_preferences,
+    add_scalar_id_update, add_string_list, add_text_element, bool_str, set_optional_bool_attr,
 };
 use crate::enums::HostsOrdering;
-use crate::types::EntityId;
+use crate::types::{EntityId, ScalarUpdate};
 
 /// Optional fields for `create_task` requests.
 #[derive(Debug, Clone, Default)]
@@ -119,8 +119,8 @@ pub struct ModifyTaskOpts {
     pub alterable: Option<bool>,
     /// Optional task host ordering.
     pub hosts_ordering: Option<HostsOrdering>,
-    /// Optional schedule identifier.
-    pub schedule_id: Option<EntityId>,
+    /// Schedule relationship update: omit, set, or detach.
+    pub schedule_id: ScalarUpdate<EntityId>,
     /// Optional schedule period count.
     pub schedule_periods: Option<u32>,
     /// Optional target identifier.
@@ -384,7 +384,7 @@ fn modify_task_with_usage(
     if let Some(hosts_ordering) = opts.hosts_ordering {
         cmd.add_element_with_text("hosts_ordering", hosts_ordering.as_gmp_str());
     }
-    add_optional_id_element(&mut cmd, "schedule", opts.schedule_id.as_ref());
+    add_scalar_id_update(&mut cmd, "schedule", &opts.schedule_id);
     if let Some(schedule_periods) = opts.schedule_periods {
         cmd.add_element_with_text("schedule_periods", &schedule_periods.to_string());
     }
@@ -619,6 +619,34 @@ mod tests {
         assert_eq!(xml(start_task(&id("a1"))), "<start_task task_id=\"a1\"/>");
         assert_eq!(xml(resume_task(&id("a1"))), "<resume_task task_id=\"a1\"/>");
         assert_eq!(xml(stop_task(&id("a1"))), "<stop_task task_id=\"a1\"/>");
+    }
+
+    #[test]
+    fn modify_task_distinguishes_omitted_set_and_cleared_schedule() {
+        assert_eq!(
+            xml(modify_task(&id("t1"), ModifyTaskOpts::default())),
+            "<modify_task task_id=\"t1\"/>"
+        );
+        assert_eq!(
+            xml(modify_task(
+                &id("t1"),
+                ModifyTaskOpts {
+                    schedule_id: ScalarUpdate::set(id("schedule-1")),
+                    ..Default::default()
+                }
+            )),
+            "<modify_task task_id=\"t1\"><schedule id=\"schedule-1\"/></modify_task>"
+        );
+        assert_eq!(
+            xml(modify_task(
+                &id("t1"),
+                ModifyTaskOpts {
+                    schedule_id: ScalarUpdate::Clear,
+                    ..Default::default()
+                }
+            )),
+            "<modify_task task_id=\"t1\"><schedule id=\"0\"/></modify_task>"
+        );
     }
 
     #[test]
