@@ -369,6 +369,12 @@ impl Resource {
             }
         }
         if self.resource_type == "target" {
+            if let Some(alive_test) = self.attr("alive_test") {
+                xml.push_str(&format!(
+                    "<alive_tests>{}</alive_tests>",
+                    xml_escape(alive_test),
+                ));
+            }
             if let Some(port_list_id) = self.attr("port_list_id") {
                 xml.push_str(&format!(
                     "<port_list id=\"{}\"><name></name></port_list>",
@@ -464,6 +470,7 @@ impl Resource {
                 && matches!(
                     k.as_str(),
                     "port_list_id"
+                        | "alive_test"
                         | "ssh_credential_id"
                         | "ssh_credential_port"
                         | "smb_credential_id"

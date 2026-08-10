@@ -114,6 +114,9 @@ impl FixtureStore {
              <target id=\"{{uuid}}\">\
              <name>Local Network</name>\
              <hosts>192.168.1.0/24</hosts>\
+             <alive_tests>Scan Config Default</alive_tests>\
+             <ssh_credential id=\"11111111-1111-4111-8111-111111111111\"><name>Fixture SSH</name><port>22</port></ssh_credential>\
+             <smb_credential id=\"22222222-2222-4222-8222-222222222222\"><name>Fixture SMB</name></smb_credential>\
              <creation_time>{{now}}</creation_time>\
              <modification_time>{{now}}</modification_time>\
              </target>\
@@ -515,6 +518,16 @@ mod tests {
         let fixture = store.get("get_tasks").expect("should have fixture");
         assert!(fixture.contains("Discovery Scan"));
         assert!(fixture.contains("task_count"));
+    }
+
+    #[test]
+    fn test_fixture_get_targets_uses_observation_field_names() {
+        let store = FixtureStore::new(GmpVersion::V22_5);
+        let fixture = store.get("get_targets").expect("should have fixture");
+        assert!(fixture.contains("<alive_tests>Scan Config Default</alive_tests>"));
+        assert!(!fixture.contains("<alive_test>"));
+        assert!(fixture.contains("<ssh_credential id="));
+        assert!(fixture.contains("<smb_credential id="));
     }
 
     #[test]

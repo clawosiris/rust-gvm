@@ -328,9 +328,11 @@ the nested `<ssh_credential><port>` GMP field, and typed target observations
 parse the same nested field into `Target::ssh_credential_port`. Both list and
 single-target client reads therefore preserve explicit default and non-default
 ports without caller-side XML handling.
-The stateful mock server also preserves SSH/SMB target credential relationships
-and SSH ports across create, modify, and get operations for Unix composition
-tests.
+The stateful mock server also preserves alive-test values, SSH/SMB target
+credential relationships, and SSH ports across create, modify, and get
+operations for Unix composition tests. Stateful responses use gvmd's plural
+`alive_tests` observation field while requests retain the singular `alive_test`
+field.
 
 ### Command Modules (29)
 
