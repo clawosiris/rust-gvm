@@ -46,6 +46,38 @@ impl<T> From<Vec<T>> for CollectionUpdate<T> {
     }
 }
 
+/// A scalar-valued update in a GMP modify request.
+///
+/// GMP distinguishes an omitted relationship (leave it unchanged), setting it
+/// to an entity, and explicitly clearing it. Command builders translate
+/// [`Self::Clear`] to the command-specific wire representation so callers do
+/// not need to construct protocol sentinel identifiers.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum ScalarUpdate<T> {
+    /// Omit the field and leave the stored value unchanged.
+    #[default]
+    Omitted,
+    /// Set or replace the stored value.
+    Set(T),
+    /// Explicitly clear the stored value.
+    Clear,
+}
+
+impl<T> ScalarUpdate<T> {
+    /// Build an update that sets or replaces a scalar value.
+    #[must_use]
+    pub fn set(value: T) -> Self {
+        Self::Set(value)
+    }
+}
+
+impl<T> From<T> for ScalarUpdate<T> {
+    fn from(value: T) -> Self {
+        Self::Set(value)
+    }
+}
+
 /// A validated GMP entity identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -166,5 +198,19 @@ mod tests {
             CollectionUpdate::<String>::replace(Vec::new()),
             CollectionUpdate::Clear
         );
+    }
+
+    #[test]
+    fn scalar_update_preserves_omitted_set_and_clear_states() {
+        assert_eq!(ScalarUpdate::<String>::default(), ScalarUpdate::Omitted);
+        assert_eq!(
+            ScalarUpdate::set("entity-1".to_string()),
+            ScalarUpdate::Set("entity-1".to_string())
+        );
+        assert_eq!(
+            ScalarUpdate::from("entity-2".to_string()),
+            ScalarUpdate::Set("entity-2".to_string())
+        );
+        assert_eq!(ScalarUpdate::<String>::Clear, ScalarUpdate::Clear);
     }
 }

@@ -6,7 +6,7 @@ use quick_xml::events::Event;
 use quick_xml::Reader;
 
 use crate::responses::ParseError;
-use crate::types::EntityId;
+use crate::types::{EntityId, ScalarUpdate};
 
 pub(crate) fn bool_str(value: bool) -> &'static str {
     if value {
@@ -29,6 +29,20 @@ pub(crate) fn add_id_element(cmd: &mut XmlCommand, name: &str, id: &EntityId) {
 pub(crate) fn add_optional_id_element(cmd: &mut XmlCommand, name: &str, id: Option<&EntityId>) {
     if let Some(id) = id {
         add_id_element(cmd, name, id);
+    }
+}
+
+pub(crate) fn add_scalar_id_update(
+    cmd: &mut XmlCommand,
+    name: &str,
+    update: &ScalarUpdate<EntityId>,
+) {
+    match update {
+        ScalarUpdate::Omitted => {}
+        ScalarUpdate::Set(id) => add_id_element(cmd, name, id),
+        ScalarUpdate::Clear => {
+            cmd.add_element(name).set_attribute("id", "0");
+        }
     }
 }
 

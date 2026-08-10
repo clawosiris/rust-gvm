@@ -6,10 +6,11 @@
 use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::{
-    add_filter_attrs, add_optional_id_element, add_text_element, bool_str, set_optional_bool_attr,
+    add_filter_attrs, add_optional_id_element, add_scalar_id_update, add_text_element, bool_str,
+    set_optional_bool_attr,
 };
 use crate::enums::AliveTest;
-use crate::types::{CollectionUpdate, EntityId};
+use crate::types::{CollectionUpdate, EntityId, ScalarUpdate};
 
 /// Optional fields for `create_target` requests.
 #[derive(Debug, Clone, Default)]
@@ -66,14 +67,14 @@ pub struct ModifyTargetOpts {
     pub alive_test: Option<AliveTest>,
     /// Optional port-list identifier.
     pub port_list_id: Option<EntityId>,
-    /// Optional SSH credential identifier.
-    pub ssh_credential_id: Option<EntityId>,
-    /// Optional SMB credential identifier.
-    pub smb_credential_id: Option<EntityId>,
-    /// Optional `ESXi` credential identifier.
-    pub esxi_credential_id: Option<EntityId>,
-    /// Optional SNMP credential identifier.
-    pub snmp_credential_id: Option<EntityId>,
+    /// SSH credential relationship update: omit, set, or detach.
+    pub ssh_credential_id: ScalarUpdate<EntityId>,
+    /// SMB credential relationship update: omit, set, or detach.
+    pub smb_credential_id: ScalarUpdate<EntityId>,
+    /// `ESXi` credential relationship update: omit, set, or detach.
+    pub esxi_credential_id: ScalarUpdate<EntityId>,
+    /// SNMP credential relationship update: omit, set, or detach.
+    pub snmp_credential_id: ScalarUpdate<EntityId>,
     /// Whether reverse lookup only should be enabled.
     pub reverse_lookup_only: Option<bool>,
     /// Whether reverse-lookup unification should be enabled.
@@ -102,7 +103,7 @@ pub fn create_target(name: &str, opts: CreateTargetOpts) -> impl Request {
         cmd.add_element_with_text("alive_test", alive_test.as_target_name());
     }
     add_optional_id_element(&mut cmd, "port_list", opts.port_list_id.as_ref());
-    add_target_credentials(&mut cmd, &opts);
+    add_create_target_credentials(&mut cmd, &opts);
     if let Some(value) = opts.reverse_lookup_only {
         cmd.add_element_with_text("reverse_lookup_only", bool_str(value));
     }
@@ -146,7 +147,7 @@ pub fn modify_target(target_id: &EntityId, opts: ModifyTargetOpts) -> impl Reque
         cmd.add_element_with_text("alive_test", alive_test.as_target_name());
     }
     add_optional_id_element(&mut cmd, "port_list", opts.port_list_id.as_ref());
-    add_target_credentials(&mut cmd, &opts);
+    add_modify_target_credentials(&mut cmd, &opts);
     if let Some(value) = opts.reverse_lookup_only {
         cmd.add_element_with_text("reverse_lookup_only", bool_str(value));
     }
@@ -164,54 +165,18 @@ pub fn delete_target(target_id: &EntityId, ultimate: bool) -> impl Request {
         .attribute("ultimate", bool_str(ultimate))
 }
 
-trait TargetCredentialOpts {
-    fn ssh_credential_id(&self) -> Option<&EntityId>;
-    fn smb_credential_id(&self) -> Option<&EntityId>;
-    fn esxi_credential_id(&self) -> Option<&EntityId>;
-    fn snmp_credential_id(&self) -> Option<&EntityId>;
+fn add_create_target_credentials(cmd: &mut XmlCommand, opts: &CreateTargetOpts) {
+    add_optional_id_element(cmd, "ssh_credential", opts.ssh_credential_id.as_ref());
+    add_optional_id_element(cmd, "smb_credential", opts.smb_credential_id.as_ref());
+    add_optional_id_element(cmd, "esxi_credential", opts.esxi_credential_id.as_ref());
+    add_optional_id_element(cmd, "snmp_credential", opts.snmp_credential_id.as_ref());
 }
 
-impl TargetCredentialOpts for CreateTargetOpts {
-    fn ssh_credential_id(&self) -> Option<&EntityId> {
-        self.ssh_credential_id.as_ref()
-    }
-
-    fn smb_credential_id(&self) -> Option<&EntityId> {
-        self.smb_credential_id.as_ref()
-    }
-
-    fn esxi_credential_id(&self) -> Option<&EntityId> {
-        self.esxi_credential_id.as_ref()
-    }
-
-    fn snmp_credential_id(&self) -> Option<&EntityId> {
-        self.snmp_credential_id.as_ref()
-    }
-}
-
-impl TargetCredentialOpts for ModifyTargetOpts {
-    fn ssh_credential_id(&self) -> Option<&EntityId> {
-        self.ssh_credential_id.as_ref()
-    }
-
-    fn smb_credential_id(&self) -> Option<&EntityId> {
-        self.smb_credential_id.as_ref()
-    }
-
-    fn esxi_credential_id(&self) -> Option<&EntityId> {
-        self.esxi_credential_id.as_ref()
-    }
-
-    fn snmp_credential_id(&self) -> Option<&EntityId> {
-        self.snmp_credential_id.as_ref()
-    }
-}
-
-fn add_target_credentials(cmd: &mut XmlCommand, opts: &impl TargetCredentialOpts) {
-    add_optional_id_element(cmd, "ssh_credential", opts.ssh_credential_id());
-    add_optional_id_element(cmd, "smb_credential", opts.smb_credential_id());
-    add_optional_id_element(cmd, "esxi_credential", opts.esxi_credential_id());
-    add_optional_id_element(cmd, "snmp_credential", opts.snmp_credential_id());
+fn add_modify_target_credentials(cmd: &mut XmlCommand, opts: &ModifyTargetOpts) {
+    add_scalar_id_update(cmd, "ssh_credential", &opts.ssh_credential_id);
+    add_scalar_id_update(cmd, "smb_credential", &opts.smb_credential_id);
+    add_scalar_id_update(cmd, "esxi_credential", &opts.esxi_credential_id);
+    add_scalar_id_update(cmd, "snmp_credential", &opts.snmp_credential_id);
 }
 
 fn add_collection_update(cmd: &mut XmlCommand, element: &str, update: &CollectionUpdate<String>) {
@@ -286,10 +251,10 @@ mod tests {
             ModifyTargetOpts {
                 name: Some("n".into()),
                 alive_test: Some(AliveTest::IcmpAndArpPing),
-                ssh_credential_id: Some(id("ssh1")),
-                smb_credential_id: Some(id("smb1")),
-                esxi_credential_id: Some(id("esxi1")),
-                snmp_credential_id: Some(id("snmp1")),
+                ssh_credential_id: ScalarUpdate::set(id("ssh1")),
+                smb_credential_id: ScalarUpdate::set(id("smb1")),
+                esxi_credential_id: ScalarUpdate::set(id("esxi1")),
+                snmp_credential_id: ScalarUpdate::set(id("snmp1")),
                 reverse_lookup_only: Some(true),
                 reverse_lookup_unify: Some(false),
                 ..Default::default()
@@ -336,6 +301,38 @@ mod tests {
                 }
             )),
             "<modify_target target_id=\"t1\"><hosts></hosts><exclude_hosts></exclude_hosts></modify_target>"
+        );
+    }
+
+    #[test]
+    fn modify_target_distinguishes_omitted_set_and_cleared_credentials() {
+        assert_eq!(
+            xml(modify_target(&id("t1"), ModifyTargetOpts::default())),
+            "<modify_target target_id=\"t1\"/>"
+        );
+        assert_eq!(
+            xml(modify_target(
+                &id("t1"),
+                ModifyTargetOpts {
+                    ssh_credential_id: ScalarUpdate::set(id("ssh1")),
+                    smb_credential_id: ScalarUpdate::set(id("smb1")),
+                    ..Default::default()
+                }
+            )),
+            "<modify_target target_id=\"t1\"><ssh_credential id=\"ssh1\"/><smb_credential id=\"smb1\"/></modify_target>"
+        );
+        assert_eq!(
+            xml(modify_target(
+                &id("t1"),
+                ModifyTargetOpts {
+                    ssh_credential_id: ScalarUpdate::Clear,
+                    smb_credential_id: ScalarUpdate::Clear,
+                    esxi_credential_id: ScalarUpdate::Clear,
+                    snmp_credential_id: ScalarUpdate::Clear,
+                    ..Default::default()
+                }
+            )),
+            "<modify_target target_id=\"t1\"><ssh_credential id=\"0\"/><smb_credential id=\"0\"/><esxi_credential id=\"0\"/><snmp_credential id=\"0\"/></modify_target>"
         );
     }
 }
