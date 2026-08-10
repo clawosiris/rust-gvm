@@ -97,6 +97,41 @@ async fn main() -> Result<(), GvmError> {
 }
 ```
 
+#### Typed schedules
+
+Common schedule recurrence does not require callers to construct or parse
+iCalendar. Timestamps are accepted as RFC 3339 and normalized to UTC with
+second precision. Recurrence is anchored at the first run; the separate
+timezone value is validated authoritatively by gvmd.
+
+```rust
+use gvm_gmp::{
+    ScheduleDefinition, ScheduleInput, ScheduleRecurrence, ScheduleTimestamp,
+    ScheduleTimezone,
+};
+
+let schedule = ScheduleInput::new(
+    ScheduleDefinition {
+        first_run: ScheduleTimestamp::parse("2030-01-01T08:00:00+01:00")
+            .expect("valid RFC 3339 timestamp"),
+        recurrence: ScheduleRecurrence::Weekly,
+    },
+    ScheduleTimezone::new("Europe/Berlin").expect("non-empty timezone"),
+);
+let created = client.create_typed_schedule("Weekly scan", schedule).await?;
+
+let observed = client.get_schedules(Default::default()).await?;
+let schedule = observed.items.iter().find(|item| item.meta.id == created.id);
+```
+
+Raw [`ScheduleOpts`](crates/gvm-gmp/src/commands/schedules.rs) remains available
+for recurrence rules outside the typed once/hourly/daily/weekly/yearly subset.
+Raw create requests may omit the timezone and let gvmd use the user's timezone;
+raw modify requests must resend the iCalendar payload, while an omitted timezone
+keeps the existing value. Valid but unsupported timezone or recurrence semantics
+(including recurrence dates and exclusions) are reported explicitly through the
+typed observation instead of being treated as one-time schedules.
+
 #### Raw API (send/call)
 
 For full control you can use the underlying `send()` / `call()` methods directly with command builders from `gvm-gmp`:

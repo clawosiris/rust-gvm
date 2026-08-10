@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-15
+Last updated: 2026-08-10
 
 ## Support Direction
 
@@ -19,6 +19,14 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 | `gvm-client` | ✅ Implemented | ~3,590 | 62 | High-level async client with version negotiation and typed methods |
 
 **Total: ~32,640 lines of Rust, 1,278 tests**
+
+Schedule create/modify supports typed first-run input and once, hourly, daily,
+weekly, and yearly recurrence. Schedule observations expose normalized typed
+first-run/next-run timestamps, resolve floating starts through the schedule
+timezone, and distinguish unsupported timezone, recurrence-date, exclusion, and
+recurrence-rule semantics from one-time schedules; raw iCalendar remains
+available for compatibility. Raw create follows gvmd's default-timezone behavior,
+and raw modify requires an iCalendar payload.
 
 ---
 
