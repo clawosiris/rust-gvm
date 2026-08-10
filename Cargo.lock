@@ -981,6 +981,7 @@ name = "gvm-gmp"
 version = "0.3.3"
 dependencies = [
  "base64",
+ "chrono",
  "clap",
  "gvm-protocol",
  "pretty_assertions",
@@ -989,6 +990,7 @@ dependencies = [
  "rstest",
  "serde",
  "thiserror",
+ "uuid",
 ]
 
 [[package]]

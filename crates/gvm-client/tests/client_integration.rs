@@ -48,6 +48,7 @@ use gvm_gmp::commands::scan_configs::{
     ConfigOpts, GetPolicyOpts, GetScanConfigPreferencesOpts, GetScanConfigsOpts,
 };
 use gvm_gmp::commands::scanners::ScannerOpts;
+use gvm_gmp::commands::schedules::{GetSchedulesOpts, ScheduleOpts};
 use gvm_gmp::commands::secinfo::{get_info, get_info_list, GenericInfoType, GetInfoListOpts};
 use gvm_gmp::commands::system::get_timezones;
 use gvm_gmp::commands::targets::{
@@ -67,8 +68,9 @@ use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
 use gvm_gmp::{
     AlertCondition, AlertEvent, AlertMethod, CollectionUpdate, CredentialType, FeedType,
-    PermissionSubjectType, ScalarUpdate, SnmpAuthAlgorithm, SnmpPrivacyAlgorithm, SortOrder,
-    TicketStatus,
+    PermissionSubjectType, ScalarUpdate, ScheduleDefinition, ScheduleInput, ScheduleRecurrence,
+    ScheduleRecurrenceObservation, ScheduleTimestamp, ScheduleTimezone, SnmpAuthAlgorithm,
+    SnmpPrivacyAlgorithm, SortOrder, TicketStatus,
 };
 use gvm_mock_server::{
     GmpVersion as MockVersion, MockGmpServer, Resource, ResourceStore, ServerMode,
@@ -4413,6 +4415,107 @@ async fn typed_scan_config_and_scanner_helpers_cover_full_lifecycle() {
 
     typed_scan_config_lifecycle(&mut client).await;
     typed_scanner_lifecycle(&mut client).await;
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_schedule_create_observe_modify_and_reobserve() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut client = GmpClient::connect(unix_connection(&server))
+        .await
+        .expect("client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let first_run =
+        ScheduleTimestamp::parse("2030-01-01T00:00:00Z").expect("valid first run timestamp");
+    let created = client
+        .create_typed_schedule(
+            "Typed Schedule",
+            ScheduleInput::new(
+                ScheduleDefinition {
+                    first_run: first_run.clone(),
+                    recurrence: ScheduleRecurrence::Daily,
+                },
+                ScheduleTimezone::new("UTC").expect("valid timezone"),
+            ),
+        )
+        .await
+        .expect("typed schedule create should succeed");
+
+    let schedules = client
+        .get_schedules(GetSchedulesOpts::default())
+        .await
+        .expect("schedule observation should succeed");
+    let schedule = schedules
+        .items
+        .iter()
+        .find(|schedule| schedule.meta.id == created.id)
+        .expect("created schedule should be listed");
+    assert_eq!(schedule.first_run_at.as_ref(), Some(&first_run));
+    assert_eq!(schedule.next_run_at.as_ref(), Some(&first_run));
+    assert_eq!(
+        schedule.observation.as_ref().map(|value| &value.recurrence),
+        Some(&ScheduleRecurrenceObservation::Supported(
+            ScheduleRecurrence::Daily
+        ))
+    );
+    let raw_icalendar = schedule
+        .icalendar
+        .clone()
+        .expect("created schedule has iCalendar");
+
+    client
+        .modify_schedule(
+            &created.id,
+            ScheduleOpts {
+                comment: Some("raw compatibility update".to_string()),
+                icalendar: Some(raw_icalendar),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("raw schedule modify should remain available");
+
+    let modified_first_run =
+        ScheduleTimestamp::parse("2031-02-03T04:05:06Z").expect("valid modified timestamp");
+    let mut input = ScheduleInput::new(
+        ScheduleDefinition {
+            first_run: modified_first_run.clone(),
+            recurrence: ScheduleRecurrence::Weekly,
+        },
+        ScheduleTimezone::new("Europe/Berlin").expect("valid timezone"),
+    );
+    input.name = Some("Modified Typed Schedule".to_string());
+    client
+        .modify_typed_schedule(&created.id, input)
+        .await
+        .expect("typed schedule modify should succeed");
+
+    let schedules = client
+        .get_schedules(GetSchedulesOpts::default())
+        .await
+        .expect("modified schedule observation should succeed");
+    let schedule = schedules
+        .items
+        .iter()
+        .find(|schedule| schedule.meta.id == created.id)
+        .expect("modified schedule should be listed");
+    assert_eq!(schedule.meta.name, "Modified Typed Schedule");
+    assert_eq!(schedule.timezone.as_deref(), Some("Europe/Berlin"));
+    assert_eq!(schedule.first_run_at.as_ref(), Some(&modified_first_run));
+    assert_eq!(schedule.next_run_at.as_ref(), Some(&modified_first_run));
+    assert_eq!(
+        schedule.observation.as_ref().map(|value| &value.recurrence),
+        Some(&ScheduleRecurrenceObservation::Supported(
+            ScheduleRecurrence::Weekly
+        ))
+    );
 
     server.shutdown().await;
 }

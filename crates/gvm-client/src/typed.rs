@@ -92,8 +92,8 @@ use gvm_gmp::commands::scanners::{
     verify_scanner, GetScannersOpts, ScannerOpts,
 };
 use gvm_gmp::commands::schedules::{
-    create_schedule, delete_schedule, get_schedules, modify_schedule, GetSchedulesOpts,
-    ScheduleOpts,
+    create_schedule, create_typed_schedule, delete_schedule, get_schedules, modify_schedule,
+    modify_typed_schedule, GetSchedulesOpts, ScheduleOpts,
 };
 use gvm_gmp::commands::secinfo::{
     get_cert_bund_advisories, get_cert_bund_advisory, get_cpe, get_cpes, get_cve, get_cves,
@@ -166,7 +166,7 @@ use gvm_gmp::responses::{
     VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
-use gvm_gmp::{CredentialStoreCredentialType, FeedType};
+use gvm_gmp::{CredentialStoreCredentialType, FeedType, ScheduleInput};
 
 use crate::{GmpClient, GvmError};
 
@@ -1640,8 +1640,21 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         CreateScheduleResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
-    /// Send a `modify_schedule` request and return a typed
-    /// [`ModifyScheduleResponse`].
+    /// Send a `create_schedule` request from typed recurrence input.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn create_typed_schedule(
+        &mut self,
+        name: &str,
+        input: ScheduleInput,
+    ) -> Result<CreateScheduleResponse, GvmError> {
+        let response = self.send(create_typed_schedule(name, input)).await?;
+        CreateScheduleResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `modify_schedule` request using raw compatibility options and
+    /// return a typed [`ModifyScheduleResponse`].
     ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
@@ -1651,6 +1664,19 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         opts: ScheduleOpts,
     ) -> Result<ModifyScheduleResponse, GvmError> {
         let response = self.send(modify_schedule(schedule_id, opts)).await?;
+        ModifyScheduleResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a `modify_schedule` request from typed recurrence input.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_typed_schedule(
+        &mut self,
+        schedule_id: &EntityId,
+        input: ScheduleInput,
+    ) -> Result<ModifyScheduleResponse, GvmError> {
+        let response = self.send(modify_typed_schedule(schedule_id, input)).await?;
         ModifyScheduleResponse::from_response(&response).map_err(GvmError::Parse)
     }
 

@@ -16,6 +16,8 @@ pub mod enums;
 pub mod filtering;
 /// Typed GMP response models.
 pub mod responses;
+/// Typed schedule recurrence and iCalendar helpers.
+pub mod schedule;
 /// Shared GMP identifier and version types.
 pub mod types;
 
@@ -23,5 +25,11 @@ pub mod types;
 pub use enums::*;
 /// Re-exported gvmd filter helpers.
 pub use filtering::{FilterFragment, FilterFragmentError, PaginatedFilter, Pagination};
+/// Re-exported typed schedule values.
+pub use schedule::{
+    ScheduleDefinition, ScheduleIcalendarError, ScheduleInput, ScheduleObservation,
+    ScheduleRecurrence, ScheduleRecurrenceObservation, ScheduleStartObservation, ScheduleTimestamp,
+    ScheduleTimestampError, ScheduleTimezone, ScheduleTimezoneError,
+};
 /// Re-exported shared GMP types.
 pub use types::{CollectionUpdate, EntityId, EntityIdError, GmpVersion, ScalarUpdate};

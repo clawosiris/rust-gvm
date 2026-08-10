@@ -9,17 +9,27 @@ use crate::responses::common::{
     count_info, optional_u32, parse_document, parse_entity_id, parse_entity_meta,
     status_from_response, ActionResponse, CountInfo, EntityMeta, ParseError,
 };
+use crate::schedule::{parse_icalendar_with_timezone, ScheduleObservation, ScheduleTimestamp};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Schedule {
     pub meta: EntityMeta,
+    /// Raw iCalendar payload retained for protocol-level compatibility.
     pub icalendar: Option<String>,
     pub timezone: Option<String>,
+    /// Raw first-run value retained for compatibility.
     pub first_run: Option<String>,
+    /// Raw next-run value retained for compatibility.
     pub next_run: Option<String>,
     pub duration: Option<u32>,
+    /// Typed semantics parsed from `icalendar`.
+    pub observation: Option<ScheduleObservation>,
+    /// Validated first-run timestamp reported by gvmd.
+    pub first_run_at: Option<ScheduleTimestamp>,
+    /// Validated next-run timestamp reported by gvmd.
+    pub next_run_at: Option<ScheduleTimestamp>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,13 +53,44 @@ pub struct CreateScheduleResponse {
 
 impl Schedule {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
+        let icalendar = node.optional_child_text("icalendar");
+        let timezone = node.optional_child_text("timezone");
+        let observation = icalendar
+            .as_deref()
+            .map(|icalendar| parse_icalendar_with_timezone(icalendar, timezone.as_deref()))
+            .transpose()
+            .map_err(|error| ParseError::InvalidValue {
+                field: "schedule.icalendar".to_string(),
+                value: error.to_string(),
+            })?;
+        let first_run = node.optional_child_text("first_run");
+        let first_run_at = first_run
+            .as_deref()
+            .map(ScheduleTimestamp::parse)
+            .transpose()
+            .map_err(|_| ParseError::InvalidValue {
+                field: "schedule.first_run".to_string(),
+                value: first_run.clone().unwrap_or_default(),
+            })?;
+        let next_run = node.optional_child_text("next_run");
+        let next_run_at = next_run
+            .as_deref()
+            .map(ScheduleTimestamp::parse)
+            .transpose()
+            .map_err(|_| ParseError::InvalidValue {
+                field: "schedule.next_run".to_string(),
+                value: next_run.clone().unwrap_or_default(),
+            })?;
         Ok(Self {
             meta: parse_entity_meta(node)?,
-            icalendar: node.optional_child_text("icalendar"),
-            timezone: node.optional_child_text("timezone"),
-            first_run: node.optional_child_text("first_run"),
-            next_run: node.optional_child_text("next_run"),
+            icalendar,
+            timezone,
+            first_run,
+            next_run,
             duration: optional_u32(node, "duration", "duration")?,
+            observation,
+            first_run_at,
+            next_run_at,
         })
     }
 }
@@ -109,7 +150,7 @@ mod tests {
                     <modification_time>2026-01-02T00:00:00Z</modification_time>
                     <writable>1</writable>
                     <in_use>0</in_use>
-                    <icalendar>BEGIN:VCALENDAR&#10;END:VCALENDAR</icalendar>
+                    <icalendar>BEGIN:VCALENDAR&#10;VERSION:2.0&#10;BEGIN:VEVENT&#10;DTSTART:20260103T000000Z&#10;RRULE:FREQ=DAILY&#10;END:VEVENT&#10;END:VCALENDAR</icalendar>
                     <timezone>UTC</timezone>
                     <first_run>2026-01-03T00:00:00Z</first_run>
                     <next_run>2026-01-04T00:00:00Z</next_run>
@@ -140,6 +181,20 @@ mod tests {
             Some("2026-01-04T00:00:00Z")
         );
         assert_eq!(parsed.items[0].duration, Some(3600));
+        assert_eq!(
+            parsed.items[0]
+                .first_run_at
+                .as_ref()
+                .map(ScheduleTimestamp::as_str),
+            Some("2026-01-03T00:00:00Z")
+        );
+        assert_eq!(
+            parsed.items[0]
+                .next_run_at
+                .as_ref()
+                .map(ScheduleTimestamp::as_str),
+            Some("2026-01-04T00:00:00Z")
+        );
         assert!(parsed.items[1].meta.in_use);
     }
 
@@ -201,6 +256,9 @@ mod tests {
         assert_eq!(schedule.first_run, None);
         assert_eq!(schedule.next_run, None);
         assert_eq!(schedule.duration, None);
+        assert_eq!(schedule.observation, None);
+        assert_eq!(schedule.first_run_at, None);
+        assert_eq!(schedule.next_run_at, None);
     }
 
     #[test]
@@ -217,5 +275,94 @@ mod tests {
         let error = GetSchedulesResponse::from_response(&response).expect_err("duration must fail");
         assert!(matches!(error, ParseError::InvalidValue { field, value }
                 if field == "duration" && value == "forever"));
+    }
+
+    #[test]
+    fn rejects_invalid_schedule_timestamp() {
+        let response = Response::from(
+            r#"<get_schedules_response status="200" status_text="OK">
+                <schedule id="s-1"><name>Invalid Time</name><next_run>tomorrow</next_run></schedule>
+            </get_schedules_response>"#,
+        );
+
+        let error = GetSchedulesResponse::from_response(&response).expect_err("time must fail");
+        assert!(matches!(error, ParseError::InvalidValue { field, value }
+                if field == "schedule.next_run" && value == "tomorrow"));
+    }
+
+    #[test]
+    fn relies_on_gvmd_for_canonical_zoned_first_run() {
+        let response = Response::from(
+            r#"<get_schedules_response status="200" status_text="OK">
+                <schedule id="s-1"><name>Zoned</name>
+                    <icalendar>BEGIN:VCALENDAR&#13;&#10;BEGIN:VTIMEZONE&#13;&#10;TZID:Europe/Berlin&#13;&#10;BEGIN:STANDARD&#13;&#10;DTSTART:19701025T030000&#13;&#10;END:STANDARD&#13;&#10;END:VTIMEZONE&#13;&#10;BEGIN:VEVENT&#13;&#10;DTSTART;TZID=Europe/Berlin:20300101T080000&#13;&#10;RRULE:FREQ=WEEKLY&#13;&#10;END:VEVENT&#13;&#10;END:VCALENDAR&#13;&#10;</icalendar>
+                    <timezone>Europe/Berlin</timezone>
+                    <first_run>2030-01-01T07:00:00Z</first_run>
+                </schedule>
+            </get_schedules_response>"#,
+        );
+
+        let parsed = GetSchedulesResponse::from_response(&response).expect("schedule parses");
+        let schedule = &parsed.items[0];
+        assert_eq!(
+            schedule
+                .first_run_at
+                .as_ref()
+                .map(ScheduleTimestamp::as_str),
+            Some("2030-01-01T07:00:00Z")
+        );
+        assert!(matches!(
+            schedule.observation.as_ref().map(|value| &value.first_run),
+            Some(crate::schedule::ScheduleStartObservation::Unsupported {
+                timezone: Some(timezone),
+                ..
+            }) if timezone == "Europe/Berlin"
+        ));
+        assert!(matches!(
+            schedule.observation.as_ref().map(|value| &value.recurrence),
+            Some(crate::schedule::ScheduleRecurrenceObservation::Supported(
+                crate::schedule::ScheduleRecurrence::Weekly
+            ))
+        ));
+    }
+
+    #[test]
+    fn does_not_derive_first_run_from_utc_icalendar() {
+        let response = Response::from(
+            r#"<get_schedules_response status="200" status_text="OK">
+                <schedule id="s-1"><name>UTC calendar only</name>
+                    <icalendar>BEGIN:VEVENT&#10;DTSTART:20300101T080000Z&#10;END:VEVENT</icalendar>
+                    <timezone>UTC</timezone>
+                </schedule>
+            </get_schedules_response>"#,
+        );
+
+        let parsed = GetSchedulesResponse::from_response(&response).expect("schedule parses");
+        let schedule = &parsed.items[0];
+        assert_eq!(schedule.first_run_at, None);
+        assert!(matches!(
+            schedule.observation.as_ref().map(|value| &value.first_run),
+            Some(crate::schedule::ScheduleStartObservation::Supported(_))
+        ));
+    }
+
+    #[test]
+    fn retains_valid_schedule_with_an_unknown_timezone() {
+        let response = Response::from(
+            r#"<get_schedules_response status="200" status_text="OK">
+                <schedule id="s-1"><name>Custom zone</name>
+                    <icalendar>BEGIN:VEVENT&#10;DTSTART:20300101T080000&#10;RRULE:FREQ=DAILY&#10;END:VEVENT</icalendar>
+                    <timezone>Custom/Zone</timezone>
+                </schedule>
+            </get_schedules_response>"#,
+        );
+
+        let parsed = GetSchedulesResponse::from_response(&response).expect("schedule parses");
+        let schedule = &parsed.items[0];
+        assert_eq!(schedule.first_run_at, None);
+        assert!(matches!(
+            schedule.observation.as_ref().map(|value| &value.first_run),
+            Some(crate::schedule::ScheduleStartObservation::Unsupported { .. })
+        ));
     }
 }
