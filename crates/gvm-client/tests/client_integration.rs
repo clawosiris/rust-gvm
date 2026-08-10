@@ -51,7 +51,8 @@ use gvm_gmp::commands::scanners::ScannerOpts;
 use gvm_gmp::commands::secinfo::{get_info, get_info_list, GenericInfoType, GetInfoListOpts};
 use gvm_gmp::commands::system::get_timezones;
 use gvm_gmp::commands::targets::{
-    create_target, delete_target, get_targets, CreateTargetOpts, GetTargetsOpts, ModifyTargetOpts,
+    create_target, delete_target, get_targets, CreateTargetOpts, GetTargetsOpts, ModifyTargetError,
+    ModifyTargetOpts,
 };
 use gvm_gmp::commands::tasks::{create_task, delete_task, get_task, start_task, stop_task};
 use gvm_gmp::commands::tickets::{
@@ -66,7 +67,8 @@ use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
 use gvm_gmp::{
     AlertCondition, AlertEvent, AlertMethod, CollectionUpdate, CredentialType, FeedType,
-    PermissionSubjectType, SnmpAuthAlgorithm, SnmpPrivacyAlgorithm, SortOrder, TicketStatus,
+    PermissionSubjectType, ScalarUpdate, SnmpAuthAlgorithm, SnmpPrivacyAlgorithm, SortOrder,
+    TicketStatus,
 };
 use gvm_mock_server::{
     GmpVersion as MockVersion, MockGmpServer, Resource, ResourceStore, ServerMode,
@@ -2941,6 +2943,164 @@ async fn typed_target_host_updates_preserve_replace_and_clear_state() {
             && std::str::from_utf8(record.raw_xml())
                 .is_ok_and(|xml| xml.contains("<hosts></hosts>"))
     }));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_target_port_list_updates_preserve_omit_and_set_semantics() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let first_port_list = client
+        .create_port_list("First Port List", PortListOpts::default())
+        .await
+        .expect("first port list should be created");
+    let second_port_list = client
+        .create_port_list("Second Port List", PortListOpts::default())
+        .await
+        .expect("second port list should be created");
+    let target = client
+        .create_target(
+            "Port List Target",
+            CreateTargetOpts {
+                hosts: vec!["192.0.2.1".into()],
+                port_list_id: Some(first_port_list.id.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("target should be created with a port list");
+
+    client
+        .modify_target(
+            &target.id,
+            ModifyTargetOpts {
+                comment: Some("port list omitted".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("omitting the port list should preserve it");
+    let targets = client
+        .get_targets(GetTargetsOpts::default())
+        .await
+        .expect("targets should be retrieved");
+    let fetched_target = targets
+        .items
+        .iter()
+        .find(|item| item.meta.id == target.id)
+        .expect("target should be listed");
+    assert_eq!(
+        fetched_target
+            .port_list
+            .as_ref()
+            .map(|port_list| &port_list.id),
+        Some(&first_port_list.id)
+    );
+
+    client
+        .modify_target(
+            &target.id,
+            ModifyTargetOpts {
+                port_list_id: ScalarUpdate::set(second_port_list.id.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("replacing the port list should succeed");
+    let targets = client
+        .get_targets(GetTargetsOpts::default())
+        .await
+        .expect("modified targets should be retrieved");
+    let fetched_target = targets
+        .items
+        .iter()
+        .find(|item| item.meta.id == target.id)
+        .expect("target should be listed");
+    assert_eq!(
+        fetched_target
+            .port_list
+            .as_ref()
+            .map(|port_list| &port_list.id),
+        Some(&second_port_list.id)
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_target_port_list_clear_is_rejected_before_send() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+    let target = client
+        .create_target(
+            "Port List Clear Target",
+            CreateTargetOpts {
+                hosts: vec!["192.0.2.1".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("target should be created");
+
+    let modify_count_before_clear = server
+        .command_history()
+        .iter()
+        .filter(|record| record.command_name() == "modify_target")
+        .count();
+    let error = client
+        .modify_target(
+            &target.id,
+            ModifyTargetOpts {
+                port_list_id: ScalarUpdate::Clear,
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("clearing a target port list should be rejected locally");
+    assert!(matches!(
+        error,
+        GvmError::ModifyTarget(ModifyTargetError::UnsupportedPortListClear)
+    ));
+    let modify_count_after_clear = server
+        .command_history()
+        .iter()
+        .filter(|record| record.command_name() == "modify_target")
+        .count();
+    assert_eq!(modify_count_after_clear, modify_count_before_clear);
+
+    let error = client
+        .call(
+            format!(
+                "<modify_target target_id=\"{}\"><port_list id=\"0\"/></modify_target>",
+                target.id
+            )
+            .into_bytes(),
+        )
+        .await
+        .expect_err("the stateful mock should reject a manufactured clear sentinel");
+    assert!(matches!(error, GvmError::Server { status: 400, .. }));
 
     server.shutdown().await;
 }

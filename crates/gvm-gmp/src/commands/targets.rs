@@ -65,8 +65,12 @@ pub struct ModifyTargetOpts {
     pub exclude_hosts: CollectionUpdate<String>,
     /// Optional alive-test strategy.
     pub alive_test: Option<AliveTest>,
-    /// Optional port-list identifier.
-    pub port_list_id: Option<EntityId>,
+    /// Port-list relationship update: omit or set/replace.
+    ///
+    /// Current gvmd versions do not support detaching an existing port list.
+    /// Passing [`ScalarUpdate::Clear`] is therefore rejected by
+    /// [`modify_target`] instead of being translated to a protocol sentinel.
+    pub port_list_id: ScalarUpdate<EntityId>,
     /// SSH credential relationship update: omit, set, or detach.
     pub ssh_credential_id: ScalarUpdate<EntityId>,
     /// SMB credential relationship update: omit, set, or detach.
@@ -79,6 +83,14 @@ pub struct ModifyTargetOpts {
     pub reverse_lookup_only: Option<bool>,
     /// Whether reverse-lookup unification should be enabled.
     pub reverse_lookup_unify: Option<bool>,
+}
+
+/// Errors raised while building a `modify_target` request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum ModifyTargetError {
+    /// gvmd has no wire representation for detaching a target port list.
+    #[error("gvmd does not support clearing a target port-list relationship")]
+    UnsupportedPortListClear,
 }
 
 /// Build a clone request for an existing target.
@@ -136,8 +148,19 @@ pub fn get_target(target_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_target` request.
-#[must_use]
-pub fn modify_target(target_id: &EntityId, opts: ModifyTargetOpts) -> impl Request {
+///
+/// # Errors
+/// Returns [`ModifyTargetError::UnsupportedPortListClear`] when the port-list
+/// update requests clearing. gvmd accepts omission and replacement, but does
+/// not define a sentinel for detaching an existing port list.
+pub fn modify_target(
+    target_id: &EntityId,
+    opts: ModifyTargetOpts,
+) -> Result<impl Request, ModifyTargetError> {
+    if matches!(opts.port_list_id, ScalarUpdate::Clear) {
+        return Err(ModifyTargetError::UnsupportedPortListClear);
+    }
+
     let mut cmd = XmlCommand::new("modify_target").attribute("target_id", target_id.as_str());
     add_text_element(&mut cmd, "name", opts.name.as_deref());
     add_text_element(&mut cmd, "comment", opts.comment.as_deref());
@@ -146,7 +169,9 @@ pub fn modify_target(target_id: &EntityId, opts: ModifyTargetOpts) -> impl Reque
     if let Some(alive_test) = opts.alive_test {
         cmd.add_element_with_text("alive_test", alive_test.as_target_name());
     }
-    add_optional_id_element(&mut cmd, "port_list", opts.port_list_id.as_ref());
+    if let ScalarUpdate::Set(port_list_id) = &opts.port_list_id {
+        add_optional_id_element(&mut cmd, "port_list", Some(port_list_id));
+    }
     add_modify_target_credentials(&mut cmd, &opts);
     if let Some(value) = opts.reverse_lookup_only {
         cmd.add_element_with_text("reverse_lookup_only", bool_str(value));
@@ -154,7 +179,7 @@ pub fn modify_target(target_id: &EntityId, opts: ModifyTargetOpts) -> impl Reque
     if let Some(value) = opts.reverse_lookup_unify {
         cmd.add_element_with_text("reverse_lookup_unify", bool_str(value));
     }
-    cmd
+    Ok(cmd)
 }
 
 /// Build a `delete_target` request.
@@ -259,7 +284,8 @@ mod tests {
                 reverse_lookup_unify: Some(false),
                 ..Default::default()
             },
-        ));
+        )
+        .expect("valid target update"));
         assert!(rendered.contains("<name>n</name>"));
         assert!(rendered.contains("<alive_test>ICMP &amp; ARP Ping</alive_test>"));
         assert!(rendered.contains("<ssh_credential id=\"ssh1\"/>"));
@@ -277,7 +303,7 @@ mod tests {
     #[test]
     fn modify_target_distinguishes_omitted_replaced_and_cleared_hosts() {
         assert_eq!(
-            xml(modify_target(&id("t1"), ModifyTargetOpts::default())),
+            xml(modify_target(&id("t1"), ModifyTargetOpts::default()).expect("valid update")),
             "<modify_target target_id=\"t1\"/>"
         );
         assert_eq!(
@@ -288,7 +314,7 @@ mod tests {
                     exclude_hosts: CollectionUpdate::replace(["192.0.2.3".into()]),
                     ..Default::default()
                 }
-            )),
+            ).expect("valid update")),
             "<modify_target target_id=\"t1\"><hosts>192.0.2.1,192.0.2.2</hosts><exclude_hosts>192.0.2.3</exclude_hosts></modify_target>"
         );
         assert_eq!(
@@ -299,7 +325,7 @@ mod tests {
                     exclude_hosts: CollectionUpdate::Clear,
                     ..Default::default()
                 }
-            )),
+            ).expect("valid update")),
             "<modify_target target_id=\"t1\"><hosts></hosts><exclude_hosts></exclude_hosts></modify_target>"
         );
     }
@@ -307,7 +333,7 @@ mod tests {
     #[test]
     fn modify_target_distinguishes_omitted_set_and_cleared_credentials() {
         assert_eq!(
-            xml(modify_target(&id("t1"), ModifyTargetOpts::default())),
+            xml(modify_target(&id("t1"), ModifyTargetOpts::default()).expect("valid update")),
             "<modify_target target_id=\"t1\"/>"
         );
         assert_eq!(
@@ -318,7 +344,7 @@ mod tests {
                     smb_credential_id: ScalarUpdate::set(id("smb1")),
                     ..Default::default()
                 }
-            )),
+            ).expect("valid update")),
             "<modify_target target_id=\"t1\"><ssh_credential id=\"ssh1\"/><smb_credential id=\"smb1\"/></modify_target>"
         );
         assert_eq!(
@@ -331,8 +357,38 @@ mod tests {
                     snmp_credential_id: ScalarUpdate::Clear,
                     ..Default::default()
                 }
-            )),
+            ).expect("valid update")),
             "<modify_target target_id=\"t1\"><ssh_credential id=\"0\"/><smb_credential id=\"0\"/><esxi_credential id=\"0\"/><snmp_credential id=\"0\"/></modify_target>"
+        );
+    }
+
+    #[test]
+    fn modify_target_distinguishes_omitted_set_and_unsupported_port_list_clear() {
+        assert_eq!(
+            xml(modify_target(&id("t1"), ModifyTargetOpts::default()).expect("valid update")),
+            "<modify_target target_id=\"t1\"/>"
+        );
+        assert_eq!(
+            xml(modify_target(
+                &id("t1"),
+                ModifyTargetOpts {
+                    port_list_id: ScalarUpdate::set(id("pl1")),
+                    ..Default::default()
+                }
+            )
+            .expect("setting a port list is supported")),
+            "<modify_target target_id=\"t1\"><port_list id=\"pl1\"/></modify_target>"
+        );
+        assert_eq!(
+            modify_target(
+                &id("t1"),
+                ModifyTargetOpts {
+                    port_list_id: ScalarUpdate::Clear,
+                    ..Default::default()
+                }
+            )
+            .err(),
+            Some(ModifyTargetError::UnsupportedPortListClear)
         );
     }
 }

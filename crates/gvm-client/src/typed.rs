@@ -231,7 +231,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         target_id: &EntityId,
         opts: ModifyTargetOpts,
     ) -> Result<ModifyTargetResponse, GvmError> {
-        let response = self.send(modify_target(target_id, opts)).await?;
+        let request = modify_target(target_id, opts)?;
+        let response = self.send(request).await?;
         ModifyTargetResponse::from_response(&response).map_err(GvmError::Parse)
     }
 

@@ -363,6 +363,14 @@ impl Resource {
                 }
             }
         }
+        if self.resource_type == "target" {
+            if let Some(port_list_id) = self.attr("port_list_id") {
+                xml.push_str(&format!(
+                    "<port_list id=\"{}\"><name></name></port_list>",
+                    xml_escape_attr(port_list_id),
+                ));
+            }
+        }
         // Add type-specific attributes
         if self.resource_type == "alert" {
             for field in ["event", "condition", "method"] {
@@ -432,6 +440,9 @@ impl Resource {
                 continue;
             }
             if self.resource_type == "user" && k == "role_ids" {
+                continue;
+            }
+            if self.resource_type == "target" && k == "port_list_id" {
                 continue;
             }
             if self.resource_type == "nvt"
