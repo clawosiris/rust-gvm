@@ -97,6 +97,7 @@ pub(crate) struct XmlNode {
     pub(crate) name: String,
     pub(crate) attributes: HashMap<String, String>,
     pub(crate) text: String,
+    raw_text: Option<Box<str>>,
     pub(crate) children: Vec<XmlNode>,
 }
 
@@ -118,6 +119,11 @@ impl XmlNode {
 
     pub(crate) fn child_text(&self, name: &str) -> Option<String> {
         self.child(name).map(|child| child.text.clone())
+    }
+
+    pub(crate) fn child_raw_text(&self, name: &str) -> Option<&str> {
+        self.child(name)
+            .map(|child| child.raw_text.as_deref().unwrap_or(&child.text))
     }
 
     pub(crate) fn required_child_text(&self, name: &str) -> Result<String, ParseError> {
@@ -162,6 +168,7 @@ pub(crate) fn parse_document(data: &[u8]) -> Result<XmlNode, ParseError> {
                     name: str::from_utf8(event.name().as_ref())?.to_string(),
                     attributes: collect_attributes(&event)?,
                     text: String::new(),
+                    raw_text: None,
                     children: Vec::new(),
                 });
             }
@@ -170,6 +177,7 @@ pub(crate) fn parse_document(data: &[u8]) -> Result<XmlNode, ParseError> {
                     name: str::from_utf8(event.name().as_ref())?.to_string(),
                     attributes: collect_attributes(&event)?,
                     text: String::new(),
+                    raw_text: None,
                     children: Vec::new(),
                 };
                 if let Some(parent) = stack.last_mut() {
@@ -213,7 +221,14 @@ pub(crate) fn parse_document(data: &[u8]) -> Result<XmlNode, ParseError> {
                 let Some(mut node) = stack.pop() else {
                     return Err(ParseError::MissingElement("root".to_string()));
                 };
-                node.text = node.text.trim().to_string();
+                let raw_text = std::mem::take(&mut node.text);
+                let trimmed_text = raw_text.trim();
+                if node.children.is_empty() && trimmed_text.len() != raw_text.len() {
+                    node.text = trimmed_text.to_string();
+                    node.raw_text = Some(raw_text.into_boxed_str());
+                } else {
+                    node.text = trimmed_text.to_string();
+                }
                 if let Some(parent) = stack.last_mut() {
                     parent.children.push(node);
                 } else {
@@ -457,10 +472,12 @@ mod tests {
             name: "schedule".to_string(),
             attributes,
             text: String::new(),
+            raw_text: None,
             children: vec![XmlNode {
                 name: "name".to_string(),
                 attributes: HashMap::new(),
                 text: name.to_string(),
+                raw_text: None,
                 children: Vec::new(),
             }],
         }
@@ -472,6 +489,7 @@ mod tests {
             name: "task".to_string(),
             attributes: HashMap::new(),
             text: String::new(),
+            raw_text: None,
             children: vec![entity_node(Some(""), "")],
         };
 
@@ -486,6 +504,7 @@ mod tests {
             name: "task".to_string(),
             attributes: HashMap::new(),
             text: String::new(),
+            raw_text: None,
             children: vec![entity_node(Some("not valid"), "Weekly")],
         };
 
@@ -515,6 +534,23 @@ mod tests {
 
         assert_eq!(root.attr("attr"), Some("A & B"));
         assert_eq!(root.child_text("value").as_deref(), Some("A & B < !!"));
+    }
+
+    #[test]
+    fn parse_document_retains_original_padded_leaf_text() {
+        let root = parse_document(
+            br#"<root><plain> up </plain><reference>&#x20;up&#x20;</reference><cdata><![CDATA[ up ]]></cdata><clean>up</clean><empty/></root>"#,
+        )
+        .expect("padded leaf text should parse");
+
+        assert_eq!(root.child_text("plain").as_deref(), Some("up"));
+        assert_eq!(root.child_raw_text("plain"), Some(" up "));
+        assert_eq!(root.child_text("reference").as_deref(), Some("up"));
+        assert_eq!(root.child_raw_text("reference"), Some(" up "));
+        assert_eq!(root.child_text("cdata").as_deref(), Some("up"));
+        assert_eq!(root.child_raw_text("cdata"), Some(" up "));
+        assert_eq!(root.child_raw_text("clean"), Some("up"));
+        assert_eq!(root.child_raw_text("empty"), Some(""));
     }
 
     #[test]

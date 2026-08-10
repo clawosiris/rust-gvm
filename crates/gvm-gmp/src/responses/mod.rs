@@ -91,9 +91,9 @@ pub use config::{
     ModifyConfigResponse,
 };
 pub use credential::{
-    CreateCredentialResponse, Credential, CredentialStore, DeleteCredentialResponse,
-    GetCredentialStoresResponse, GetCredentialsResponse, ModifyCredentialResponse,
-    VerifyCredentialStoreResponse,
+    CreateCredentialResponse, Credential, CredentialKind, CredentialStore,
+    DeleteCredentialResponse, GetCredentialStoresResponse, GetCredentialsResponse,
+    ModifyCredentialResponse, VerifyCredentialStoreResponse,
 };
 pub use features::{Feature, GetFeaturesResponse};
 pub use feed::{Feed, GetFeedsResponse};

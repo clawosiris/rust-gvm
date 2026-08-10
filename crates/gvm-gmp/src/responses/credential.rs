@@ -9,12 +9,141 @@ use crate::responses::common::{
     count_info, parse_bool, parse_document, parse_entity_id, parse_entity_meta,
     status_from_response, ActionResponse, CountInfo, EntityMeta, ParseError,
 };
+use crate::{CredentialStoreCredentialType, CredentialType};
+
+/// Credential kind observed in a `get_credentials` response.
+///
+/// The variants map every distinct wire value emitted by the typed credential
+/// create APIs. GVMD uses `snmp` for both community-based SNMP and `SNMPv3`, so
+/// an observation cannot distinguish those create-time variants from the type
+/// code alone. Missing, malformed, and unknown values remain explicit so
+/// consumers can fail closed.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum CredentialKind {
+    /// Client certificate (`cc`).
+    ClientCertificate,
+    /// Kerberos 5 (`krb5`).
+    Kerberos5,
+    /// Password-only credential (`pw`).
+    PasswordOnly,
+    /// PGP encryption key (`pgp`).
+    PgpEncryptionKey,
+    /// S/MIME certificate (`smime`).
+    SmimeCertificate,
+    /// SNMP credential (`snmp`), whose protocol code does not identify its version.
+    Snmp,
+    /// Username and password (`up`).
+    UsernamePassword,
+    /// Username and SSH key (`usk`).
+    UsernameSshKey,
+    /// Credential-store-backed client certificate (`cs_cc`).
+    CredentialStoreClientCertificate,
+    /// Credential-store-backed password-only credential (`cs_pw`).
+    CredentialStorePasswordOnly,
+    /// Credential-store-backed PGP encryption key (`cs_pgp`).
+    CredentialStorePgpEncryptionKey,
+    /// Credential-store-backed S/MIME certificate (`cs_smime`).
+    CredentialStoreSmimeCertificate,
+    /// Credential-store-backed SNMP credential (`cs_snmp`).
+    CredentialStoreSnmp,
+    /// Credential-store-backed username and password (`cs_up`).
+    CredentialStoreUsernamePassword,
+    /// Credential-store-backed username and SSH key (`cs_usk`).
+    CredentialStoreUsernameSshKey,
+    /// The response omitted the `type` element.
+    #[default]
+    Missing,
+    /// The response contained an empty, whitespace-padded, or whitespace-only value.
+    Malformed(String),
+    /// The response contained a well-formed but unsupported future value.
+    Unknown(String),
+}
+
+impl CredentialKind {
+    /// Parse an optional GMP credential type without defaulting missing or
+    /// unrecognized values to a supported kind.
+    #[must_use]
+    pub fn from_optional_gmp_str(value: Option<&str>) -> Self {
+        let Some(value) = value else {
+            return Self::Missing;
+        };
+        if value.is_empty()
+            || value.trim() != value
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+        {
+            return Self::Malformed(value.to_string());
+        }
+        match value {
+            "cc" => Self::ClientCertificate,
+            "krb5" => Self::Kerberos5,
+            "pw" => Self::PasswordOnly,
+            "pgp" => Self::PgpEncryptionKey,
+            "smime" => Self::SmimeCertificate,
+            "snmp" => Self::Snmp,
+            "up" => Self::UsernamePassword,
+            "usk" => Self::UsernameSshKey,
+            "cs_cc" => Self::CredentialStoreClientCertificate,
+            "cs_pw" => Self::CredentialStorePasswordOnly,
+            "cs_pgp" => Self::CredentialStorePgpEncryptionKey,
+            "cs_smime" => Self::CredentialStoreSmimeCertificate,
+            "cs_snmp" => Self::CredentialStoreSnmp,
+            "cs_up" => Self::CredentialStoreUsernamePassword,
+            "cs_usk" => Self::CredentialStoreUsernameSshKey,
+            other => Self::Unknown(other.to_string()),
+        }
+    }
+}
+
+impl From<CredentialType> for CredentialKind {
+    fn from(value: CredentialType) -> Self {
+        match value {
+            CredentialType::ClientCertificate => Self::ClientCertificate,
+            CredentialType::Kerberos5 => Self::Kerberos5,
+            CredentialType::PasswordOnly => Self::PasswordOnly,
+            CredentialType::PgpEncryptionKey => Self::PgpEncryptionKey,
+            CredentialType::SmimeCertificate => Self::SmimeCertificate,
+            CredentialType::SnmpV1Or2c | CredentialType::SnmpV3 => Self::Snmp,
+            CredentialType::UsernamePassword => Self::UsernamePassword,
+            CredentialType::UsernameSshKey => Self::UsernameSshKey,
+        }
+    }
+}
+
+impl From<CredentialStoreCredentialType> for CredentialKind {
+    fn from(value: CredentialStoreCredentialType) -> Self {
+        match value {
+            CredentialStoreCredentialType::ClientCertificate => {
+                Self::CredentialStoreClientCertificate
+            }
+            CredentialStoreCredentialType::PasswordOnly => Self::CredentialStorePasswordOnly,
+            CredentialStoreCredentialType::PgpEncryptionKey => {
+                Self::CredentialStorePgpEncryptionKey
+            }
+            CredentialStoreCredentialType::SmimeCertificate => {
+                Self::CredentialStoreSmimeCertificate
+            }
+            CredentialStoreCredentialType::Snmp => Self::CredentialStoreSnmp,
+            CredentialStoreCredentialType::UsernamePassword => {
+                Self::CredentialStoreUsernamePassword
+            }
+            CredentialStoreCredentialType::UsernameSshKey => Self::CredentialStoreUsernameSshKey,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Credential {
     pub meta: EntityMeta,
+    /// Typed credential kind. Missing and unsupported values are explicit.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub kind: CredentialKind,
+    /// Raw GMP type code retained for backward compatibility.
     pub type_: Option<String>,
     pub login: Option<String>,
     pub full_type: Option<String>,
@@ -61,8 +190,10 @@ pub struct CreateCredentialResponse {
 
 impl Credential {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
+        let raw_type = node.child_raw_text("type");
         Ok(Self {
             meta: parse_entity_meta(node)?,
+            kind: CredentialKind::from_optional_gmp_str(raw_type),
             type_: node.optional_child_text("type"),
             login: node.optional_child_text("login"),
             full_type: node.optional_child_text("full_type"),
@@ -148,6 +279,114 @@ mod tests {
     use super::*;
 
     #[test]
+    fn maps_every_create_side_credential_type_code() {
+        let cases = [
+            ("cc", CredentialKind::ClientCertificate),
+            ("krb5", CredentialKind::Kerberos5),
+            ("pw", CredentialKind::PasswordOnly),
+            ("pgp", CredentialKind::PgpEncryptionKey),
+            ("smime", CredentialKind::SmimeCertificate),
+            ("snmp", CredentialKind::Snmp),
+            ("up", CredentialKind::UsernamePassword),
+            ("usk", CredentialKind::UsernameSshKey),
+            ("cs_cc", CredentialKind::CredentialStoreClientCertificate),
+            ("cs_pw", CredentialKind::CredentialStorePasswordOnly),
+            ("cs_pgp", CredentialKind::CredentialStorePgpEncryptionKey),
+            ("cs_smime", CredentialKind::CredentialStoreSmimeCertificate),
+            ("cs_snmp", CredentialKind::CredentialStoreSnmp),
+            ("cs_up", CredentialKind::CredentialStoreUsernamePassword),
+            ("cs_usk", CredentialKind::CredentialStoreUsernameSshKey),
+        ];
+
+        for (wire_value, expected) in cases {
+            assert_eq!(
+                CredentialKind::from_optional_gmp_str(Some(wire_value)),
+                expected,
+                "wire value {wire_value}"
+            );
+        }
+    }
+
+    #[test]
+    fn maps_create_types_to_observed_kinds() {
+        assert_eq!(
+            CredentialKind::from(CredentialType::UsernamePassword),
+            CredentialKind::UsernamePassword
+        );
+        assert_eq!(
+            CredentialKind::from(CredentialType::SnmpV3),
+            CredentialKind::Snmp
+        );
+        assert_eq!(
+            CredentialKind::from(CredentialStoreCredentialType::UsernameSshKey),
+            CredentialKind::CredentialStoreUsernameSshKey
+        );
+    }
+
+    #[test]
+    fn preserves_missing_malformed_and_unknown_types() {
+        assert_eq!(
+            CredentialKind::from_optional_gmp_str(None),
+            CredentialKind::Missing
+        );
+        assert_eq!(
+            CredentialKind::from_optional_gmp_str(Some("")),
+            CredentialKind::Malformed(String::new())
+        );
+        assert_eq!(
+            CredentialKind::from_optional_gmp_str(Some(" up ")),
+            CredentialKind::Malformed(" up ".to_string())
+        );
+        assert_eq!(
+            CredentialKind::from_optional_gmp_str(Some("future_kind")),
+            CredentialKind::Unknown("future_kind".to_string())
+        );
+    }
+
+    #[test]
+    fn response_parsing_keeps_unsupported_type_states_distinct() {
+        let response = Response::from(
+            r#"<get_credentials_response status="200" status_text="OK">
+                <credential id="missing"><name>Missing</name></credential>
+                <credential id="empty"><name>Empty</name><type></type></credential>
+                <credential id="padded"><name>Padded</name><type> up </type></credential>
+                <credential id="reference"><name>Reference</name><type>&#x20;up&#x20;</type></credential>
+                <credential id="cdata"><name>CDATA</name><type><![CDATA[ up ]]></type></credential>
+                <credential id="invalid"><name>Invalid</name><type>UP!</type></credential>
+                <credential id="unknown"><name>Unknown</name><type>future_kind</type></credential>
+            </get_credentials_response>"#,
+        );
+
+        let parsed = GetCredentialsResponse::from_response(&response).expect("credentials parse");
+
+        assert_eq!(parsed.items[0].kind, CredentialKind::Missing);
+        assert_eq!(
+            parsed.items[1].kind,
+            CredentialKind::Malformed(String::new())
+        );
+        assert_eq!(
+            parsed.items[2].kind,
+            CredentialKind::Malformed(" up ".to_string())
+        );
+        assert_eq!(
+            parsed.items[3].kind,
+            CredentialKind::Malformed(" up ".to_string())
+        );
+        assert_eq!(
+            parsed.items[4].kind,
+            CredentialKind::Malformed(" up ".to_string())
+        );
+        assert_eq!(
+            parsed.items[5].kind,
+            CredentialKind::Malformed("UP!".to_string())
+        );
+        assert_eq!(
+            parsed.items[6].kind,
+            CredentialKind::Unknown("future_kind".to_string())
+        );
+    }
+
+    #[test]
     fn parses_multiple_credentials() {
         let response = Response::from(
             r#"<get_credentials_response status="200" status_text="OK">
@@ -181,6 +420,7 @@ mod tests {
         assert_eq!(parsed.counts.filtered, Some(2));
         assert_eq!(parsed.counts.page, Some(1));
         assert_eq!(parsed.items[0].type_.as_deref(), Some("up"));
+        assert_eq!(parsed.items[0].kind, CredentialKind::UsernamePassword);
         assert_eq!(parsed.items[0].login.as_deref(), Some("admin"));
         assert_eq!(
             parsed.items[0].full_type.as_deref(),
@@ -263,6 +503,7 @@ mod tests {
 
         assert_eq!(cred.meta.comment, None);
         assert_eq!(cred.type_, None);
+        assert_eq!(cred.kind, CredentialKind::Missing);
         assert_eq!(cred.login, None);
         assert_eq!(cred.full_type, None);
         assert!(!cred.allow_insecure);

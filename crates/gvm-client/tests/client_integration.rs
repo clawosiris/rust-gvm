@@ -60,8 +60,8 @@ use gvm_gmp::commands::tickets::{
 };
 use gvm_gmp::commands::users::{GetUsersOpts, ModifyUserOpts, UserOpts};
 use gvm_gmp::responses::{
-    Asset, ConfigUsageKind, CreateScanConfigResponse, GetConfigsResponse, GetPermissionsResponse,
-    GetScanConfigsResponse, GetScanReportResponse, Permission,
+    Asset, ConfigUsageKind, CreateScanConfigResponse, CredentialKind, GetConfigsResponse,
+    GetPermissionsResponse, GetScanConfigsResponse, GetScanReportResponse, Permission,
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
@@ -1982,6 +1982,18 @@ async fn typed_ssh_credential_lifecycle_uses_nested_key_shape() {
         )
         .await
         .expect("SSH credential should be modified");
+    let username_password = client
+        .create_credential(
+            "Username Password Credential",
+            CredentialOpts {
+                credential_type: Some(CredentialType::UsernamePassword),
+                login: Some("operator".into()),
+                password: Some("secret".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("username/password credential should be created");
 
     let credentials = client
         .get_credentials(Default::default())
@@ -1994,8 +2006,15 @@ async fn typed_ssh_credential_lifecycle_uses_nested_key_shape() {
         .expect("SSH credential should be listed");
     assert_eq!(fetched.meta.name, "Renamed SSH Credential");
     assert_eq!(fetched.type_.as_deref(), Some("usk"));
+    assert_eq!(fetched.kind, CredentialKind::UsernameSshKey);
     assert_eq!(fetched.login.as_deref(), Some("scanner"));
     assert!(fetched.allow_insecure);
+    let username_password = credentials
+        .items
+        .iter()
+        .find(|item| item.meta.id == username_password.id)
+        .expect("username/password credential should be listed");
+    assert_eq!(username_password.kind, CredentialKind::UsernamePassword);
 
     let history = server.command_history();
     let create_xml = std::str::from_utf8(history[0].raw_xml()).expect("create XML");
@@ -2074,6 +2093,8 @@ async fn typed_snmpv3_and_kerberos_credentials_use_current_wire_shapes() {
         .expect("Kerberos credential should be listed");
     assert_eq!(snmp.type_.as_deref(), Some("snmp"));
     assert_eq!(kerberos.type_.as_deref(), Some("krb5"));
+    assert_eq!(snmp.kind, CredentialKind::Snmp);
+    assert_eq!(kerberos.kind, CredentialKind::Kerberos5);
 
     let history = server.command_history();
     let snmp_xml = std::str::from_utf8(history[0].raw_xml()).expect("SNMP XML");
