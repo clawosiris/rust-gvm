@@ -7,8 +7,8 @@ use gvm_protocol::Response;
 
 use crate::responses::common::{
     count_info, optional_u32, parse_csv_list, parse_document, parse_entity_id, parse_entity_meta,
-    parse_named_entity, status_from_response, ActionResponse, CountInfo, EntityMeta, NamedEntity,
-    ParseError,
+    parse_named_entity, parse_u16, status_from_response, ActionResponse, CountInfo, EntityMeta,
+    NamedEntity, ParseError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,6 +23,7 @@ pub struct Target {
     pub reverse_lookup_unify: bool,
     pub port_list: Option<NamedEntity>,
     pub ssh_credential: Option<NamedEntity>,
+    pub ssh_credential_port: Option<u16>,
     pub smb_credential: Option<NamedEntity>,
     pub esxi_credential: Option<NamedEntity>,
     pub snmp_credential: Option<NamedEntity>,
@@ -73,6 +74,11 @@ impl Target {
                 .unwrap_or(false),
             port_list: parse_named_entity(node, "port_list")?,
             ssh_credential: parse_named_entity(node, "ssh_credential")?,
+            ssh_credential_port: node
+                .child("ssh_credential")
+                .and_then(|credential| credential.optional_child_text("port"))
+                .map(|port| parse_u16(&port, "ssh_credential.port"))
+                .transpose()?,
             smb_credential: parse_named_entity(node, "smb_credential")?,
             esxi_credential: parse_named_entity(node, "esxi_credential")?,
             snmp_credential: parse_named_entity(node, "snmp_credential")?,
@@ -142,7 +148,7 @@ mod tests {
                     <reverse_lookup_only>0</reverse_lookup_only>
                     <reverse_lookup_unify>1</reverse_lookup_unify>
                     <port_list id="pl-1"><name>All TCP</name></port_list>
-                    <ssh_credential id="cred-ssh"><name>SSH Cred</name></ssh_credential>
+                    <ssh_credential id="cred-ssh"><name>SSH Cred</name><port>2222</port></ssh_credential>
                     <smb_credential id="cred-smb"><name>SMB Cred</name></smb_credential>
                     <esxi_credential id="cred-esxi"><name>ESXi Cred</name></esxi_credential>
                     <snmp_credential id="cred-snmp"><name>SNMP Cred</name></snmp_credential>
@@ -185,6 +191,7 @@ mod tests {
                 .map(|credential| credential.name.as_str()),
             Some("SSH Cred")
         );
+        assert_eq!(parsed.items[0].ssh_credential_port, Some(2222));
         assert_eq!(
             parsed.items[0]
                 .smb_credential
@@ -275,10 +282,31 @@ mod tests {
         assert!(target.exclude_hosts.is_empty());
         assert_eq!(target.port_list, None);
         assert_eq!(target.ssh_credential, None);
+        assert_eq!(target.ssh_credential_port, None);
         assert_eq!(target.smb_credential, None);
         assert_eq!(target.esxi_credential, None);
         assert_eq!(target.snmp_credential, None);
         assert!(!target.meta.in_use);
         assert!(!target.meta.writable);
+    }
+
+    #[test]
+    fn rejects_invalid_ssh_credential_port() {
+        let response = Response::from(
+            r#"<get_targets_response status="200" status_text="OK">
+                <target id="t-1">
+                    <name>Target</name>
+                    <ssh_credential id="cred-ssh"><name>SSH</name><port>invalid</port></ssh_credential>
+                </target>
+            </get_targets_response>"#,
+        );
+
+        let error = GetTargetsResponse::from_response(&response).expect_err("invalid port");
+
+        assert!(matches!(
+            error,
+            ParseError::InvalidValue { field, value }
+                if field == "ssh_credential.port" && value == "invalid"
+        ));
     }
 }

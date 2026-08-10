@@ -106,8 +106,8 @@ use gvm_gmp::commands::system::{
 use gvm_gmp::commands::system_reports::{get_system_reports, GetSystemReportsOpts};
 use gvm_gmp::commands::tags::{create_tag, get_tags, GetTagsOpts, TagOpts};
 use gvm_gmp::commands::targets::{
-    create_target, delete_target, get_targets, modify_target, CreateTargetOpts, GetTargetsOpts,
-    ModifyTargetOpts,
+    create_target, delete_target, get_target as get_target_cmd, get_targets, modify_target,
+    CreateTargetOpts, GetTargetsOpts, ModifyTargetOpts,
 };
 use gvm_gmp::commands::tasks::{
     create_import_task, create_task, delete_task, get_tasks, modify_task, resume_task, start_task,
@@ -206,6 +206,19 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         opts: GetTargetsOpts,
     ) -> Result<GetTargetsResponse, GvmError> {
         let response = self.send(get_targets(opts)).await?;
+        GetTargetsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a detailed `get_targets` request for one target and return a typed
+    /// [`GetTargetsResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_target(
+        &mut self,
+        target_id: &EntityId,
+    ) -> Result<GetTargetsResponse, GvmError> {
+        let response = self.send(get_target_cmd(target_id)).await?;
         GetTargetsResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
