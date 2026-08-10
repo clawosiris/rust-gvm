@@ -300,6 +300,18 @@ late responses from being associated with a later GMP command.
 
 Typed GMP command builders covering all entity types, system commands, and enums. Full rustdoc coverage.
 
+### Target Port-List Updates
+
+`ModifyTargetOpts::port_list_id` models omission and replacement with
+`ScalarUpdate<EntityId>`. Current gvmd accepts a real port-list UUID when
+replacing the relationship, but it does not define a sentinel or other wire
+representation for detaching an existing port list. Consequently,
+`ScalarUpdate::Clear` is rejected locally with
+`ModifyTargetError::UnsupportedPortListClear`; no GMP request is sent.
+
+`CreateTargetOpts::port_list_id` remains `Option<EntityId>` because target
+creation only needs to distinguish including a port list from leaving it out.
+
 ### Command Modules (29)
 
 alerts, authentication, credentials, filters, groups, hosts, notes, nvts, overrides, permissions, port_lists, report_formats, reports, resource_names, results, roles, scan_configs, scanners, schedules, system, tags, targets, tasks, tickets, tls_certificates, trashcan, users, version

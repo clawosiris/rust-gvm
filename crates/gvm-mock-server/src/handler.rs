@@ -662,6 +662,21 @@ impl SessionHandler {
 
         let mut resource = Resource::new(resource_type, &name);
 
+        let target_port_list_id = if resource_type == "target" {
+            let port_list_id = match optional_child_uuid(cmd, "port_list") {
+                Ok(port_list_id) => port_list_id,
+                Err(message) => return error_response(&cmd.name, 400, message),
+            };
+            if let Some(port_list_id) = port_list_id {
+                if store.get_typed(&port_list_id, "port_list").is_none() {
+                    return error_response(&cmd.name, 404, "Port list not found");
+                }
+            }
+            port_list_id
+        } else {
+            None
+        };
+
         // Extract comment
         let comment = if has_config_import_payload {
             imported_config
@@ -853,6 +868,9 @@ impl SessionHandler {
             }
             if let Some(exclude_hosts) = parse_element_text(raw_xml, "exclude_hosts") {
                 resource.set_attr("exclude_hosts", &exclude_hosts);
+            }
+            if let Some(port_list_id) = target_port_list_id {
+                resource.set_attr("port_list_id", &port_list_id.to_string());
             }
         }
 
@@ -1085,6 +1103,21 @@ impl SessionHandler {
             return error_response(&cmd.name, 400, "Invalid UUID");
         };
 
+        let new_target_port_list_id = if resource_type == "target" {
+            let port_list_id = match optional_child_uuid(cmd, "port_list") {
+                Ok(port_list_id) => port_list_id,
+                Err(message) => return error_response(&cmd.name, 400, message),
+            };
+            if let Some(port_list_id) = port_list_id {
+                if store.get_typed(&port_list_id, "port_list").is_none() {
+                    return error_response(&cmd.name, 404, "Port list not found");
+                }
+            }
+            port_list_id
+        } else {
+            None
+        };
+
         let new_name = if resource_type == "user" {
             parse_element_text(raw_xml, "new_name")
         } else if resource_type == "alert" {
@@ -1247,6 +1280,9 @@ impl SessionHandler {
             }
             if let Some(ref exclude_hosts) = new_exclude_hosts {
                 r.set_attr("exclude_hosts", exclude_hosts);
+            }
+            if let Some(port_list_id) = new_target_port_list_id {
+                r.set_attr("port_list_id", &port_list_id.to_string());
             }
             if let Some(ref role_ids) = new_role_ids {
                 r.set_attr("role_ids", &role_ids.join(","));
@@ -3027,6 +3063,7 @@ fn optional_child_uuid(
             "config" => "Missing config id",
             "scanner" => "Missing scanner id",
             "task" => "Missing task id",
+            "port_list" => "Missing port list id",
             _ => "Missing resource id",
         });
     };
@@ -3035,6 +3072,7 @@ fn optional_child_uuid(
         "config" => "Invalid config UUID",
         "scanner" => "Invalid scanner UUID",
         "task" => "Invalid task UUID",
+        "port_list" => "Invalid port list UUID",
         _ => "Invalid resource UUID",
     })
 }
@@ -3833,6 +3871,11 @@ mod tests {
             ("config", "Missing config id", "Invalid config UUID"),
             ("scanner", "Missing scanner id", "Invalid scanner UUID"),
             ("task", "Missing task id", "Invalid task UUID"),
+            (
+                "port_list",
+                "Missing port list id",
+                "Invalid port list UUID",
+            ),
             ("resource", "Missing resource id", "Invalid resource UUID"),
         ] {
             let missing = parse_command(format!("<command><{child_name}/></command>").as_bytes())
