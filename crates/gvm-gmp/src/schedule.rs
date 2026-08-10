@@ -6,8 +6,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use chrono::{DateTime, LocalResult, NaiveDateTime, SecondsFormat, TimeZone, Utc};
-use chrono_tz::Tz;
+use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 use uuid::Uuid;
 
 use crate::commands::schedules::ScheduleOpts;
@@ -51,14 +50,6 @@ impl ScheduleTimestamp {
 
     fn from_utc_datetime(value: NaiveDateTime) -> Self {
         Self(value.and_utc().to_rfc3339_opts(SecondsFormat::Secs, true))
-    }
-
-    fn from_zoned_datetime<T: TimeZone>(value: DateTime<T>) -> Self {
-        Self(
-            value
-                .with_timezone(&Utc)
-                .to_rfc3339_opts(SecondsFormat::Secs, true),
-        )
     }
 }
 
@@ -322,7 +313,8 @@ pub fn parse_icalendar(value: &str) -> Result<ScheduleObservation, ScheduleIcale
     parse_icalendar_with_timezone(value, None)
 }
 
-/// Parse schedule semantics using the schedule's timezone when `DTSTART` is floating.
+/// Parse schedule semantics while preserving the schedule's timezone when
+/// `DTSTART` is floating.
 ///
 /// # Errors
 /// Returns [`ScheduleIcalendarError::Malformed`] for invalid calendar syntax.
@@ -476,11 +468,22 @@ fn parse_start(
             .find(|(parameter, _)| parameter.eq_ignore_ascii_case(name))
             .map(|(_, value)| value.as_str())
     };
-    let timezone = parameter("TZID").or(fallback_timezone);
+    let explicit_timezone = parameter("TZID");
+    let timezone = explicit_timezone.or(fallback_timezone);
     if parameter("VALUE").is_some_and(|value| value.eq_ignore_ascii_case("DATE")) {
         return Ok(ScheduleStartObservation::Unsupported {
             value: property.value.clone(),
             timezone: timezone.map(str::to_string),
+        });
+    }
+    if let Some(timezone_name) = explicit_timezone {
+        let value = property.value.strip_suffix('Z').unwrap_or(&property.value);
+        NaiveDateTime::parse_from_str(value, "%Y%m%dT%H%M%S").map_err(|_| {
+            ScheduleIcalendarError::Malformed(format!("invalid DTSTART: {}", property.value))
+        })?;
+        return Ok(ScheduleStartObservation::Unsupported {
+            value: property.value.clone(),
+            timezone: Some(timezone_name.to_string()),
         });
     }
     if let Some(value) = property.value.strip_suffix('Z') {
@@ -491,32 +494,13 @@ fn parse_start(
             ScheduleTimestamp::from_utc_datetime(parsed),
         ));
     }
-    let parsed = NaiveDateTime::parse_from_str(&property.value, "%Y%m%dT%H%M%S").map_err(|_| {
+    NaiveDateTime::parse_from_str(&property.value, "%Y%m%dT%H%M%S").map_err(|_| {
         ScheduleIcalendarError::Malformed(format!("invalid DTSTART: {}", property.value))
     })?;
-    let Some(timezone_name) = timezone else {
-        return Ok(ScheduleStartObservation::Unsupported {
-            value: property.value.clone(),
-            timezone: None,
-        });
-    };
-    let Ok(timezone) = timezone_name.parse::<Tz>() else {
-        return Ok(ScheduleStartObservation::Unsupported {
-            value: property.value.clone(),
-            timezone: Some(timezone_name.to_string()),
-        });
-    };
-    match timezone.from_local_datetime(&parsed) {
-        LocalResult::Single(value) => Ok(ScheduleStartObservation::Supported(
-            ScheduleTimestamp::from_zoned_datetime(value),
-        )),
-        LocalResult::Ambiguous(_, _) | LocalResult::None => {
-            Ok(ScheduleStartObservation::Unsupported {
-                value: property.value.clone(),
-                timezone: Some(timezone_name.to_string()),
-            })
-        }
-    }
+    Ok(ScheduleStartObservation::Unsupported {
+        value: property.value.clone(),
+        timezone: timezone.map(str::to_string),
+    })
 }
 
 fn parse_event_recurrence(
@@ -663,7 +647,7 @@ mod tests {
     }
 
     #[test]
-    fn ignores_timezone_component_starts_and_resolves_event_timezone() {
+    fn ignores_timezone_component_starts_and_preserves_event_timezone() {
         let calendar = "BEGIN:VCALENDAR\r\n\
             BEGIN:VTIMEZONE\r\nTZID:Europe/Berlin\r\n\
             BEGIN:STANDARD\r\nDTSTART:19701025T030000\r\nEND:STANDARD\r\n\
@@ -676,8 +660,11 @@ mod tests {
             .expect("canonical gvmd calendar parses");
 
         assert_eq!(
-            parsed.first_run.timestamp().map(ScheduleTimestamp::as_str),
-            Some("2030-01-01T07:00:00Z")
+            parsed.first_run,
+            ScheduleStartObservation::Unsupported {
+                value: "20300101T080000".to_string(),
+                timezone: Some("Europe/Berlin".to_string()),
+            }
         );
         assert_eq!(
             parsed.recurrence,
@@ -686,13 +673,16 @@ mod tests {
     }
 
     #[test]
-    fn resolves_floating_start_with_schedule_timezone() {
+    fn preserves_floating_start_with_schedule_timezone() {
         let calendar = "BEGIN:VEVENT\r\nDTSTART:20300101T080000\r\nEND:VEVENT\r\n";
         let parsed = parse_icalendar_with_timezone(calendar, Some("Europe/Berlin"))
             .expect("floating start parses");
         assert_eq!(
-            parsed.first_run.timestamp().map(ScheduleTimestamp::as_str),
-            Some("2030-01-01T07:00:00Z")
+            parsed.first_run,
+            ScheduleStartObservation::Unsupported {
+                value: "20300101T080000".to_string(),
+                timezone: Some("Europe/Berlin".to_string()),
+            }
         );
     }
 
@@ -713,16 +703,18 @@ mod tests {
     }
 
     #[test]
-    fn ambiguous_and_nonexistent_local_starts_are_unsupported() {
-        for value in ["20261025T023000", "20260329T023000"] {
-            let calendar = format!("BEGIN:VEVENT\r\nDTSTART:{value}\r\nEND:VEVENT\r\n");
-            let parsed = parse_icalendar_with_timezone(&calendar, Some("Europe/Berlin"))
-                .expect("valid local time syntax parses");
-            assert!(matches!(
-                parsed.first_run,
-                ScheduleStartObservation::Unsupported { .. }
-            ));
-        }
+    fn tzid_qualified_utc_start_remains_unsupported() {
+        let calendar = "BEGIN:VEVENT\r\n\
+            DTSTART;TZID=Europe/Berlin:20300101T080000Z\r\n\
+            END:VEVENT\r\n";
+        let parsed = parse_icalendar(calendar).expect("valid timestamp syntax parses");
+        assert_eq!(
+            parsed.first_run,
+            ScheduleStartObservation::Unsupported {
+                value: "20300101T080000Z".to_string(),
+                timezone: Some("Europe/Berlin".to_string()),
+            }
+        );
     }
 
     #[test]

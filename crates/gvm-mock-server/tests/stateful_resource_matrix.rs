@@ -478,6 +478,7 @@ async fn schedules_default_timezone_and_require_calendar_on_modify() {
     let get_text = get_resp.as_str().expect("valid utf8");
     assert!(get_text.contains("<timezone>UTC</timezone>"));
     assert!(get_text.contains("<first_run>2030-01-01T00:00:00Z</first_run>"));
+    assert!(get_text.contains("<next_run>2030-01-01T00:00:00Z</next_run>"));
 
     let modify_resp = send_recv(
         &mut stream,
@@ -506,6 +507,7 @@ async fn schedules_default_timezone_and_require_calendar_on_modify() {
     let get_text = get_resp.as_str().expect("valid utf8");
     assert!(get_text.contains("<timezone>UTC</timezone>"));
     assert!(get_text.contains("<first_run>2031-01-01T01:00:00Z</first_run>"));
+    assert!(get_text.contains("<next_run>2031-01-01T01:00:00Z</next_run>"));
 
     server.shutdown().await;
 }

@@ -102,7 +102,8 @@ async fn main() -> Result<(), GvmError> {
 Common schedule recurrence does not require callers to construct or parse
 iCalendar. Timestamps are accepted as RFC 3339 and normalized to UTC with
 second precision. Recurrence is anchored at the first run; the separate
-timezone value is validated authoritatively by gvmd.
+timezone value and timezone-dependent run timestamps are resolved
+authoritatively by gvmd.
 
 ```rust
 use gvm_gmp::{
@@ -130,7 +131,9 @@ Raw create requests may omit the timezone and let gvmd use the user's timezone;
 raw modify requests must resend the iCalendar payload, while an omitted timezone
 keeps the existing value. Valid but unsupported timezone or recurrence semantics
 (including recurrence dates and exclusions) are reported explicitly through the
-typed observation instead of being treated as one-time schedules.
+typed observation instead of being treated as one-time schedules. Floating or
+`TZID`-qualified iCalendar starts remain observable but are not converted locally;
+typed `first_run_at` and `next_run_at` values use gvmd's normalized response fields.
 
 #### Raw API (send/call)
 

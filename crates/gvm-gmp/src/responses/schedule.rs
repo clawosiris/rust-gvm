@@ -26,8 +26,7 @@ pub struct Schedule {
     pub duration: Option<u32>,
     /// Typed semantics parsed from `icalendar`.
     pub observation: Option<ScheduleObservation>,
-    /// Validated first-run timestamp, preferring gvmd's `first_run` field and
-    /// falling back to the iCalendar `DTSTART` value.
+    /// Validated first-run timestamp reported by gvmd.
     pub first_run_at: Option<ScheduleTimestamp>,
     /// Validated next-run timestamp reported by gvmd.
     pub next_run_at: Option<ScheduleTimestamp>,
@@ -72,12 +71,7 @@ impl Schedule {
             .map_err(|_| ParseError::InvalidValue {
                 field: "schedule.first_run".to_string(),
                 value: first_run.clone().unwrap_or_default(),
-            })?
-            .or_else(|| {
-                observation
-                    .as_ref()
-                    .and_then(|value| value.first_run.timestamp().cloned())
-            });
+            })?;
         let next_run = node.optional_child_text("next_run");
         let next_run_at = next_run
             .as_deref()
@@ -297,12 +291,13 @@ mod tests {
     }
 
     #[test]
-    fn derives_first_run_from_canonical_zoned_icalendar() {
+    fn relies_on_gvmd_for_canonical_zoned_first_run() {
         let response = Response::from(
             r#"<get_schedules_response status="200" status_text="OK">
                 <schedule id="s-1"><name>Zoned</name>
                     <icalendar>BEGIN:VCALENDAR&#13;&#10;BEGIN:VTIMEZONE&#13;&#10;TZID:Europe/Berlin&#13;&#10;BEGIN:STANDARD&#13;&#10;DTSTART:19701025T030000&#13;&#10;END:STANDARD&#13;&#10;END:VTIMEZONE&#13;&#10;BEGIN:VEVENT&#13;&#10;DTSTART;TZID=Europe/Berlin:20300101T080000&#13;&#10;RRULE:FREQ=WEEKLY&#13;&#10;END:VEVENT&#13;&#10;END:VCALENDAR&#13;&#10;</icalendar>
                     <timezone>Europe/Berlin</timezone>
+                    <first_run>2030-01-01T07:00:00Z</first_run>
                 </schedule>
             </get_schedules_response>"#,
         );
@@ -317,10 +312,37 @@ mod tests {
             Some("2030-01-01T07:00:00Z")
         );
         assert!(matches!(
+            schedule.observation.as_ref().map(|value| &value.first_run),
+            Some(crate::schedule::ScheduleStartObservation::Unsupported {
+                timezone: Some(timezone),
+                ..
+            }) if timezone == "Europe/Berlin"
+        ));
+        assert!(matches!(
             schedule.observation.as_ref().map(|value| &value.recurrence),
             Some(crate::schedule::ScheduleRecurrenceObservation::Supported(
                 crate::schedule::ScheduleRecurrence::Weekly
             ))
+        ));
+    }
+
+    #[test]
+    fn does_not_derive_first_run_from_utc_icalendar() {
+        let response = Response::from(
+            r#"<get_schedules_response status="200" status_text="OK">
+                <schedule id="s-1"><name>UTC calendar only</name>
+                    <icalendar>BEGIN:VEVENT&#10;DTSTART:20300101T080000Z&#10;END:VEVENT</icalendar>
+                    <timezone>UTC</timezone>
+                </schedule>
+            </get_schedules_response>"#,
+        );
+
+        let parsed = GetSchedulesResponse::from_response(&response).expect("schedule parses");
+        let schedule = &parsed.items[0];
+        assert_eq!(schedule.first_run_at, None);
+        assert!(matches!(
+            schedule.observation.as_ref().map(|value| &value.first_run),
+            Some(crate::schedule::ScheduleStartObservation::Supported(_))
         ));
     }
 

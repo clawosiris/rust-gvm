@@ -10,7 +10,9 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use base64::Engine as _;
-use gvm_gmp::schedule::parse_icalendar_with_timezone;
+use gvm_gmp::schedule::{
+    parse_icalendar_with_timezone, ScheduleStartObservation, ScheduleTimestamp,
+};
 use uuid::Uuid;
 
 use crate::command_parser::{parse_command, parse_element_text, ParsedCommand, ParsedElement};
@@ -64,6 +66,34 @@ fn asset_sort_value<'a>(resource: &'a Resource, field: &str) -> &'a str {
         "comment" => &resource.comment,
         "type" => resource.asset_type().unwrap_or_default(),
         _ => resource.attr(field).unwrap_or_default(),
+    }
+}
+
+fn authoritative_utc_schedule_start(
+    observation: &ScheduleStartObservation,
+) -> Option<ScheduleTimestamp> {
+    match observation {
+        ScheduleStartObservation::Supported(timestamp) => Some(timestamp.clone()),
+        ScheduleStartObservation::Unsupported {
+            value,
+            timezone: Some(timezone),
+        } if timezone.eq_ignore_ascii_case("UTC") => {
+            let value = value.strip_suffix('Z').unwrap_or(value);
+            if value.len() != 15 || value.as_bytes().get(8) != Some(&b'T') {
+                return None;
+            }
+            ScheduleTimestamp::parse(&format!(
+                "{}-{}-{}T{}:{}:{}Z",
+                &value[0..4],
+                &value[4..6],
+                &value[6..8],
+                &value[9..11],
+                &value[11..13],
+                &value[13..15]
+            ))
+            .ok()
+        }
+        _ => None,
     }
 }
 
@@ -703,7 +733,7 @@ impl SessionHandler {
             };
             resource.set_attr("icalendar", &icalendar);
             resource.set_attr("timezone", &timezone);
-            if let Some(first_run) = observation.first_run.timestamp() {
+            if let Some(first_run) = authoritative_utc_schedule_start(&observation.first_run) {
                 resource.set_attr("first_run", first_run.as_str());
                 resource.set_attr("next_run", first_run.as_str());
             }
@@ -1191,7 +1221,7 @@ impl SessionHandler {
                 icalendar,
                 effective_schedule_timezone.as_deref(),
             ) {
-                Ok(observation) => Some(observation.first_run),
+                Ok(observation) => authoritative_utc_schedule_start(&observation.first_run),
                 Err(error) => return error_response(&cmd.name, 400, &error.to_string()),
             },
             None => None,
@@ -1466,10 +1496,7 @@ impl SessionHandler {
                 if let Some(ref timezone) = new_timezone {
                     r.set_attr("timezone", timezone);
                 }
-                if let Some(first_run) = new_schedule_start
-                    .as_ref()
-                    .and_then(|start| start.timestamp())
-                {
+                if let Some(first_run) = new_schedule_start.as_ref() {
                     r.set_attr("first_run", first_run.as_str());
                     r.set_attr("next_run", first_run.as_str());
                 } else {
