@@ -6,6 +6,7 @@
 use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
+use crate::schedule::ScheduleInput;
 use crate::types::EntityId;
 
 /// Optional fields for schedule create and modify requests.
@@ -62,6 +63,12 @@ pub fn create_schedule(name: &str, opts: ScheduleOpts) -> impl Request {
     cmd
 }
 
+/// Build a `create_schedule` request from typed first-run and recurrence input.
+#[must_use]
+pub fn create_typed_schedule(name: &str, input: ScheduleInput) -> impl Request {
+    create_schedule(name, input.into_raw())
+}
+
 /// Build a `get_schedules` request.
 #[must_use]
 pub fn get_schedules(opts: GetSchedulesOpts) -> impl Request {
@@ -92,6 +99,12 @@ pub fn modify_schedule(schedule_id: &EntityId, opts: ScheduleOpts) -> impl Reque
     add_text_element(&mut cmd, "name", opts.name.as_deref());
     add_schedule_body(&mut cmd, &opts);
     cmd
+}
+
+/// Build a `modify_schedule` request from typed first-run and recurrence input.
+#[must_use]
+pub fn modify_typed_schedule(schedule_id: &EntityId, input: ScheduleInput) -> impl Request {
+    modify_schedule(schedule_id, input.into_raw())
 }
 
 /// Build a `delete_schedule` request.
