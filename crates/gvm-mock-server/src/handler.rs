@@ -707,6 +707,22 @@ impl SessionHandler {
         } else {
             None
         };
+        let target_ssh_credential = if resource_type == "target" {
+            match target_credential_update(cmd, store, "ssh_credential") {
+                Ok(update) => update,
+                Err((status, message)) => return error_response(&cmd.name, status, message),
+            }
+        } else {
+            TargetCredentialUpdate::Omitted
+        };
+        let target_smb_credential = if resource_type == "target" {
+            match target_credential_update(cmd, store, "smb_credential") {
+                Ok(update) => update,
+                Err((status, message)) => return error_response(&cmd.name, status, message),
+            }
+        } else {
+            TargetCredentialUpdate::Omitted
+        };
 
         // Extract comment
         let comment = if has_config_import_payload {
@@ -923,6 +939,8 @@ impl SessionHandler {
             if let Some(port_list_id) = target_port_list_id {
                 resource.set_attr("port_list_id", &port_list_id.to_string());
             }
+            apply_target_credential_update(&mut resource, "ssh_credential", &target_ssh_credential);
+            apply_target_credential_update(&mut resource, "smb_credential", &target_smb_credential);
         }
 
         if resource_type == "user" {
@@ -1168,6 +1186,22 @@ impl SessionHandler {
         } else {
             None
         };
+        let new_target_ssh_credential = if resource_type == "target" {
+            match target_credential_update(cmd, store, "ssh_credential") {
+                Ok(update) => update,
+                Err((status, message)) => return error_response(&cmd.name, status, message),
+            }
+        } else {
+            TargetCredentialUpdate::Omitted
+        };
+        let new_target_smb_credential = if resource_type == "target" {
+            match target_credential_update(cmd, store, "smb_credential") {
+                Ok(update) => update,
+                Err((status, message)) => return error_response(&cmd.name, status, message),
+            }
+        } else {
+            TargetCredentialUpdate::Omitted
+        };
 
         let new_name = if resource_type == "user" {
             parse_element_text(raw_xml, "new_name")
@@ -1372,6 +1406,8 @@ impl SessionHandler {
             if let Some(port_list_id) = new_target_port_list_id {
                 r.set_attr("port_list_id", &port_list_id.to_string());
             }
+            apply_target_credential_update(r, "ssh_credential", &new_target_ssh_credential);
+            apply_target_credential_update(r, "smb_credential", &new_target_smb_credential);
             if let Some(ref role_ids) = new_role_ids {
                 r.set_attr("role_ids", &role_ids.join(","));
             }
@@ -3842,6 +3878,62 @@ fn nested_child_attr(cmd: &ParsedCommand, path: &[&str], attr: &str) -> Option<S
         element = element.children.iter().find(|child| child.name == **name)?;
     }
     element.attributes.get(attr).cloned()
+}
+
+enum TargetCredentialUpdate {
+    Omitted,
+    Clear,
+    Set { id: Uuid, port: Option<u16> },
+}
+
+fn target_credential_update(
+    cmd: &ParsedCommand,
+    store: &ResourceStore,
+    element: &str,
+) -> Result<TargetCredentialUpdate, (u16, &'static str)> {
+    let Some(id) = cmd.child_attr(element, "id") else {
+        return Ok(TargetCredentialUpdate::Omitted);
+    };
+    if id == "0" {
+        return Ok(TargetCredentialUpdate::Clear);
+    }
+    let id = Uuid::parse_str(id).map_err(|_| (400, "Invalid credential UUID"))?;
+    if store.get_typed(&id, "credential").is_none() {
+        return Err((404, "Credential not found"));
+    }
+    let port = nested_child_text(cmd, &[element, "port"])
+        .map(|value| value.parse::<u16>())
+        .transpose()
+        .map_err(|_| (400, "Invalid credential port"))?;
+    if port == Some(0) {
+        return Err((400, "Invalid credential port"));
+    }
+
+    Ok(TargetCredentialUpdate::Set { id, port })
+}
+
+fn apply_target_credential_update(
+    resource: &mut Resource,
+    prefix: &str,
+    update: &TargetCredentialUpdate,
+) {
+    let id_attr = format!("{prefix}_id");
+    let port_attr = format!("{prefix}_port");
+    match update {
+        TargetCredentialUpdate::Omitted => {}
+        TargetCredentialUpdate::Clear => {
+            resource.remove_attr(&id_attr);
+            resource.remove_attr(&port_attr);
+        }
+        TargetCredentialUpdate::Set { id, port } => {
+            resource.set_attr(&id_attr, &id.to_string());
+            if let Some(port) = port {
+                resource.set_attr(&port_attr, &port.to_string());
+            } else {
+                resource.remove_attr(&port_attr);
+            }
+        }
+    }
 }
 
 fn credential_kdcs(cmd: &ParsedCommand) -> Option<Vec<String>> {

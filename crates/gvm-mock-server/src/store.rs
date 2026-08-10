@@ -375,6 +375,19 @@ impl Resource {
                     xml_escape_attr(port_list_id),
                 ));
             }
+            for credential in ["ssh_credential", "smb_credential"] {
+                let Some(id) = self.attr(&format!("{credential}_id")) else {
+                    continue;
+                };
+                xml.push_str(&format!(
+                    "<{credential} id=\"{}\"><name></name>",
+                    xml_escape_attr(id),
+                ));
+                if let Some(port) = self.attr(&format!("{credential}_port")) {
+                    xml.push_str(&format!("<port>{}</port>", xml_escape(port)));
+                }
+                xml.push_str(&format!("</{credential}>"));
+            }
         }
         // Add type-specific attributes
         if self.resource_type == "alert" {
@@ -447,7 +460,16 @@ impl Resource {
             if self.resource_type == "user" && k == "role_ids" {
                 continue;
             }
-            if self.resource_type == "target" && k == "port_list_id" {
+            if self.resource_type == "target"
+                && matches!(
+                    k.as_str(),
+                    "port_list_id"
+                        | "ssh_credential_id"
+                        | "ssh_credential_port"
+                        | "smb_credential_id"
+                        | "smb_credential_port"
+                )
+            {
                 continue;
             }
             if self.resource_type == "nvt"
