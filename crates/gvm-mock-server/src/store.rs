@@ -185,6 +185,11 @@ impl Resource {
         self.attrs.insert(key.to_string(), value.to_string());
     }
 
+    /// Remove an attribute.
+    pub fn remove_attr(&mut self, key: &str) {
+        self.attrs.remove(key);
+    }
+
     /// Get an attribute.
     pub fn attr(&self, key: &str) -> Option<&str> {
         self.attrs.get(key).map(String::as_str)
@@ -766,6 +771,16 @@ impl ResourceStore {
     pub(crate) fn get_typed(&self, id: &Uuid, resource_type: &str) -> Option<Resource> {
         self.get(id)
             .filter(|resource| resource.resource_type == resource_type)
+    }
+
+    /// Return the configured user timezone, falling back as gvmd does.
+    pub(crate) fn user_timezone(&self) -> String {
+        self.list("setting")
+            .into_iter()
+            .find(|resource| resource.name == "timezone")
+            .and_then(|resource| resource.attr("value").map(str::to_string))
+            .filter(|timezone| !timezone.trim().is_empty())
+            .unwrap_or_else(|| "UTC".to_string())
     }
 
     /// Get all resources of a given type (non-trashed).

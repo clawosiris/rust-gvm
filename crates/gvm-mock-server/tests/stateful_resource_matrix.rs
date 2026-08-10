@@ -417,7 +417,7 @@ async fn matrix_schedules_create_delete_to_trash_and_restore() {
 
     let schedule_id = create_and_get_id(
         &mut stream,
-        b"<create_schedule><name>Matrix Schedule</name></create_schedule>",
+        b"<create_schedule><name>Matrix Schedule</name><icalendar>BEGIN:VCALENDAR&#10;VERSION:2.0&#10;BEGIN:VEVENT&#10;DTSTART:20300101T000000Z&#10;RRULE:FREQ=DAILY&#10;END:VEVENT&#10;END:VCALENDAR</icalendar><timezone>UTC</timezone></create_schedule>",
         "create_schedule",
     )
     .await;
@@ -450,6 +450,62 @@ async fn matrix_schedules_create_delete_to_trash_and_restore() {
     let get_text = get_resp.as_str().expect("valid utf8");
     assert!(get_text.contains(&schedule_id));
     assert!(get_text.contains("Matrix Schedule"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn schedules_default_timezone_and_require_calendar_on_modify() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let schedule_id = create_and_get_id(
+        &mut stream,
+        b"<create_schedule><name>Default Zone</name><icalendar>BEGIN:VEVENT&#10;DTSTART:20300101T000000&#10;END:VEVENT</icalendar></create_schedule>",
+        "create_schedule",
+    )
+    .await;
+
+    let get_resp = send_recv(
+        &mut stream,
+        format!("<get_schedules schedule_id=\"{schedule_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(get_resp.status_code(), Some(200));
+    let get_text = get_resp.as_str().expect("valid utf8");
+    assert!(get_text.contains("<timezone>UTC</timezone>"));
+    assert!(get_text.contains("<first_run>2030-01-01T00:00:00Z</first_run>"));
+
+    let modify_resp = send_recv(
+        &mut stream,
+        format!(
+            "<modify_schedule schedule_id=\"{schedule_id}\"><comment>missing calendar</comment></modify_schedule>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(modify_resp.status_code(), Some(400));
+
+    let modify_resp = send_recv(
+        &mut stream,
+        format!(
+            "<modify_schedule schedule_id=\"{schedule_id}\"><icalendar>BEGIN:VEVENT&#10;DTSTART:20310101T010000&#10;END:VEVENT</icalendar></modify_schedule>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(modify_resp.status_code(), Some(200));
+    let get_resp = send_recv(
+        &mut stream,
+        format!("<get_schedules schedule_id=\"{schedule_id}\"/>").as_bytes(),
+    )
+    .await;
+    let get_text = get_resp.as_str().expect("valid utf8");
+    assert!(get_text.contains("<timezone>UTC</timezone>"));
+    assert!(get_text.contains("<first_run>2031-01-01T01:00:00Z</first_run>"));
 
     server.shutdown().await;
 }

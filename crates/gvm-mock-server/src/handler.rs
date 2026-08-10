@@ -10,6 +10,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use base64::Engine as _;
+use gvm_gmp::schedule::parse_icalendar_with_timezone;
 use uuid::Uuid;
 
 use crate::command_parser::{parse_command, parse_element_text, ParsedCommand, ParsedElement};
@@ -687,6 +688,26 @@ impl SessionHandler {
         if let Some(comment) = comment {
             resource.comment = comment;
         }
+        if resource_type == "schedule" {
+            let Some(icalendar) =
+                parse_element_text(raw_xml, "icalendar").filter(|value| !value.trim().is_empty())
+            else {
+                return error_response(&cmd.name, 400, "Missing required element: icalendar");
+            };
+            let timezone = parse_element_text(raw_xml, "timezone")
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| store.user_timezone());
+            let observation = match parse_icalendar_with_timezone(&icalendar, Some(&timezone)) {
+                Ok(observation) => observation,
+                Err(error) => return error_response(&cmd.name, 400, &error.to_string()),
+            };
+            resource.set_attr("icalendar", &icalendar);
+            resource.set_attr("timezone", &timezone);
+            if let Some(first_run) = observation.first_run.timestamp() {
+                resource.set_attr("first_run", first_run.as_str());
+                resource.set_attr("next_run", first_run.as_str());
+            }
+        }
         if let Some(scheduler_cron_time) = parse_element_text(raw_xml, "scheduler_cron_time") {
             resource.set_attr("scheduler_cron_time", &scheduler_cron_time);
         }
@@ -1138,6 +1159,43 @@ impl SessionHandler {
         let new_fixed_note = parse_element_text(raw_xml, "fixed_note");
         let new_closed_note = parse_element_text(raw_xml, "closed_note");
         let new_scheduler_cron_time = parse_element_text(raw_xml, "scheduler_cron_time");
+        let new_icalendar = if resource_type == "schedule" {
+            let Some(icalendar) =
+                parse_element_text(raw_xml, "icalendar").filter(|value| !value.trim().is_empty())
+            else {
+                return error_response(&cmd.name, 400, "Missing required element: icalendar");
+            };
+            Some(icalendar)
+        } else {
+            None
+        };
+        let new_timezone = if resource_type == "schedule" {
+            parse_element_text(raw_xml, "timezone").filter(|value| !value.trim().is_empty())
+        } else {
+            None
+        };
+        let effective_schedule_timezone = if resource_type == "schedule" {
+            new_timezone
+                .clone()
+                .or_else(|| {
+                    store
+                        .get_typed(&uuid, "schedule")
+                        .and_then(|resource| resource.attr("timezone").map(str::to_string))
+                })
+                .or_else(|| Some(store.user_timezone()))
+        } else {
+            None
+        };
+        let new_schedule_start = match new_icalendar.as_deref() {
+            Some(icalendar) => match parse_icalendar_with_timezone(
+                icalendar,
+                effective_schedule_timezone.as_deref(),
+            ) {
+                Ok(observation) => Some(observation.first_run),
+                Err(error) => return error_response(&cmd.name, 400, &error.to_string()),
+            },
+            None => None,
+        };
         let new_nvt_oid = parse_element_text(raw_xml, "nvt_oid")
             .or_else(|| cmd.child_attr("nvt", "oid").map(str::to_string));
         let new_result_id = parse_element_text(raw_xml, "result_id")
@@ -1400,6 +1458,24 @@ impl SessionHandler {
             }
             if let Some(ref scheduler_cron_time) = new_scheduler_cron_time {
                 r.set_attr("scheduler_cron_time", scheduler_cron_time);
+            }
+            if resource_type == "schedule" {
+                if let Some(ref icalendar) = new_icalendar {
+                    r.set_attr("icalendar", icalendar);
+                }
+                if let Some(ref timezone) = new_timezone {
+                    r.set_attr("timezone", timezone);
+                }
+                if let Some(first_run) = new_schedule_start
+                    .as_ref()
+                    .and_then(|start| start.timestamp())
+                {
+                    r.set_attr("first_run", first_run.as_str());
+                    r.set_attr("next_run", first_run.as_str());
+                } else {
+                    r.remove_attr("first_run");
+                    r.remove_attr("next_run");
+                }
             }
             if resource_type == "ticket" {
                 if let Some(ref status) = new_status {
