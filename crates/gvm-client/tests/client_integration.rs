@@ -734,13 +734,16 @@ async fn create_target_and_get_targets_succeed() {
         .expect("authenticate should succeed");
 
     let create_response = client
-        .call(create_target(
-            "Integration Target",
-            CreateTargetOpts {
-                hosts: vec!["127.0.0.1".to_string()],
-                ..CreateTargetOpts::default()
-            },
-        ))
+        .call(
+            create_target(
+                "Integration Target",
+                CreateTargetOpts {
+                    hosts: vec!["127.0.0.1".to_string()],
+                    ..CreateTargetOpts::default()
+                },
+            )
+            .expect("valid target"),
+        )
         .await
         .expect("create_target should succeed");
     assert_eq!(create_response.status_code(), Some(201));
@@ -780,7 +783,7 @@ async fn typed_fixture_targets_use_stateful_observation_vocabulary() {
         target.alive_tests.as_deref(),
         Some(AliveTest::ScanConfigDefault.as_target_name())
     );
-    assert_eq!(target.ssh_credential_port, Some(22));
+    assert_eq!(target.ssh_credential_port.map(ServicePort::get), Some(22));
     assert_eq!(
         target
             .ssh_credential
@@ -4174,13 +4177,16 @@ async fn full_crud_lifecycle_succeeds() {
         .expect("authenticate should succeed");
 
     let target_response = client
-        .call(create_target(
-            "Lifecycle Target",
-            CreateTargetOpts {
-                hosts: vec!["127.0.0.1".to_string()],
-                ..CreateTargetOpts::default()
-            },
-        ))
+        .call(
+            create_target(
+                "Lifecycle Target",
+                CreateTargetOpts {
+                    hosts: vec!["127.0.0.1".to_string()],
+                    ..CreateTargetOpts::default()
+                },
+            )
+            .expect("valid target"),
+        )
         .await
         .expect("create_target should succeed");
     let target_id = target_response.id().expect("target id");
