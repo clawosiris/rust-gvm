@@ -519,6 +519,43 @@ async fn typed_word_count_aggregates_parse_current_gvmd_shape_over_unix_transpor
 }
 
 #[tokio::test]
+async fn typed_modify_auth_uses_current_gvmd_shape_over_unix_transport() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate");
+    server.clear_history();
+
+    let response = client
+        .modify_auth(
+            "method:ldap_connect",
+            &[
+                ("enable".into(), "true".into()),
+                ("ldaphost".into(), "ldap.example".into()),
+            ],
+        )
+        .await
+        .expect("current gvmd modify_auth response should parse");
+
+    assert_eq!(response.status, 200);
+    let history = server.command_history();
+    assert_eq!(history.len(), 1);
+    assert_eq!(
+        history[0].raw_xml(),
+        br#"<modify_auth><group name="method:ldap_connect"><auth_conf_setting><key>enable</key><value>true</value></auth_conf_setting><auth_conf_setting><key>ldaphost</key><value>ldap.example</value></auth_conf_setting></group></modify_auth>"#
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn unsupported_version_returns_error() {
     let Some(server) = fixture_server_with_version_response("21.4").await else {
         return;

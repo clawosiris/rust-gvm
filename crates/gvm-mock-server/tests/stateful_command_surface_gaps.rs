@@ -417,8 +417,24 @@ async fn stateful_auth_and_license_modifiers_use_gmp_builder_shape() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
-    let auth = send_request(&mut stream, modify_auth(true)).await;
+    let auth = send_request(
+        &mut stream,
+        modify_auth("method:ldap_connect", &[("enable".into(), "true".into())]),
+    )
+    .await;
     assert_eq!(auth.status_code(), Some(200));
+
+    for invalid in [
+        br#"<modify_auth enabled="1"/>"#.as_slice(),
+        br#"<modify_auth><group name="method:ldap_connect"/><group name="method:radius_connect"><auth_conf_setting><key>enable</key><value>true</value></auth_conf_setting></group></modify_auth>"#.as_slice(),
+        br#"<modify_auth><group><auth_conf_setting><key>enable</key><value>true</value></auth_conf_setting></group></modify_auth>"#.as_slice(),
+        br#"<modify_auth><group name="method:ldap_connect"/></modify_auth>"#.as_slice(),
+        br#"<modify_auth><group name="method:ldap_connect"><auth_conf_setting><value>true</value></auth_conf_setting></group></modify_auth>"#.as_slice(),
+        br#"<modify_auth><group name="method:ldap_connect"><auth_conf_setting><key>enable</key></auth_conf_setting></group></modify_auth>"#.as_slice(),
+    ] {
+        let response = send_recv(&mut stream, invalid).await;
+        assert_eq!(response.status_code(), Some(400));
+    }
 
     let license = send_request(&mut stream, modify_license("abc")).await;
     assert_eq!(license.status_code(), Some(200));

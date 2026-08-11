@@ -172,7 +172,7 @@ pub use secinfo::{
 };
 pub use system::{
     AuthConfSetting, AuthGroup, DescribeAuthResponse, GetSettingsResponse, GetTimezonesResponse,
-    HelpCommand, HelpResponse, HelpSchema, Setting, Timezone,
+    HelpCommand, HelpResponse, HelpSchema, ModifyAuthResponse, Setting, Timezone,
 };
 pub use system_reports::{GetSystemReportsResponse, SystemReport};
 pub use tag::{CreateTagResponse, DeleteTagResponse, GetTagsResponse, ModifyTagResponse, Tag};
