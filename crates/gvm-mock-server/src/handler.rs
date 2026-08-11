@@ -3920,7 +3920,14 @@ enum TargetCredentialUpdate {
 }
 
 fn target_alive_test_update(cmd: &ParsedCommand) -> Result<Option<AliveTest>, &'static str> {
-    let Some(element) = cmd.children.iter().find(|child| child.name == "alive_test") else {
+    if cmd.name == "modify_target" && cmd.children.iter().any(|child| child.name == "alive_test") {
+        return Err("Invalid element: alive_test");
+    }
+    let Some(element) = cmd
+        .children
+        .iter()
+        .find(|child| child.name == "alive_tests")
+    else {
         return Ok(None);
     };
     let value = element
@@ -4138,7 +4145,7 @@ mod tests {
         assert_eq!(target_alive_test_update(&omitted), Ok(None));
 
         let valid = parse_command(
-            b"<create_target><alive_test>ICMP &amp; ARP Ping</alive_test></create_target>",
+            b"<create_target><alive_tests>ICMP &amp; ARP Ping</alive_tests></create_target>",
         )
         .expect("parse valid alive test");
         assert_eq!(
@@ -4146,11 +4153,24 @@ mod tests {
             Ok(Some(AliveTest::IcmpAndArpPing))
         );
 
+        let singular_create =
+            parse_command(b"<create_target><alive_test>ICMP Ping</alive_test></create_target>")
+                .expect("parse singular create alive test");
+        assert_eq!(target_alive_test_update(&singular_create), Ok(None));
+
+        let singular_modify =
+            parse_command(b"<modify_target><alive_test>ICMP Ping</alive_test></modify_target>")
+                .expect("parse singular modify alive test");
+        assert_eq!(
+            target_alive_test_update(&singular_modify),
+            Err("Invalid element: alive_test")
+        );
+
         for xml in [
-            "<create_target><alive_test/></create_target>",
-            "<create_target><alive_test></alive_test></create_target>",
-            "<create_target><alive_test>   </alive_test></create_target>",
-            "<create_target><alive_test>Unknown</alive_test></create_target>",
+            "<create_target><alive_tests/></create_target>",
+            "<create_target><alive_tests></alive_tests></create_target>",
+            "<create_target><alive_tests>   </alive_tests></create_target>",
+            "<create_target><alive_tests>Unknown</alive_tests></create_target>",
         ] {
             let command = parse_command(xml.as_bytes()).expect("parse invalid alive test");
             assert_eq!(

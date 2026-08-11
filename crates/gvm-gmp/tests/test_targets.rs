@@ -36,7 +36,24 @@ fn test_create_target_with_optionals() {
             )
             .expect("valid target"),
         ),
-        "<create_target><name>target</name><comment>c</comment><hosts>1.1.1.1,2.2.2.2</hosts><exclude_hosts>3.3.3.3</exclude_hosts><alive_test>ICMP &amp; ARP Ping</alive_test><port_list id=\"pl1\"/><reverse_lookup_only>1</reverse_lookup_only><reverse_lookup_unify>0</reverse_lookup_unify></create_target>"
+        "<create_target><name>target</name><comment>c</comment><hosts>1.1.1.1,2.2.2.2</hosts><exclude_hosts>3.3.3.3</exclude_hosts><alive_tests>ICMP &amp; ARP Ping</alive_tests><port_list id=\"pl1\"/><reverse_lookup_only>1</reverse_lookup_only><reverse_lookup_unify>0</reverse_lookup_unify></create_target>"
+    );
+}
+
+#[test]
+fn test_modify_target_uses_plural_alive_tests_element() {
+    let request = modify_target(
+        &id("target1"),
+        ModifyTargetOpts {
+            alive_test: Some(AliveTest::IcmpPing),
+            ..Default::default()
+        },
+    )
+    .expect("valid target update");
+
+    assert_eq!(
+        xml(request),
+        "<modify_target target_id=\"target1\"><alive_tests>ICMP Ping</alive_tests></modify_target>"
     );
 }
 

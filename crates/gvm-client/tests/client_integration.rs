@@ -3285,7 +3285,7 @@ async fn typed_target_alive_tests_preserve_replace_and_validate_state() {
         return;
     };
     let mut client = authenticated_client(&server).await;
-    for alive_test in ["<alive_test/>", "<alive_test>   </alive_test>"] {
+    for alive_test in ["<alive_tests/>", "<alive_tests>   </alive_tests>"] {
         assert_raw_server_error(
             &mut client,
             format!(
@@ -3296,6 +3296,7 @@ async fn typed_target_alive_tests_preserve_replace_and_validate_state() {
         )
         .await;
     }
+
     let target = client
         .create_target(
             "Alive Test Target",
@@ -3356,9 +3357,9 @@ async fn typed_target_alive_tests_preserve_replace_and_validate_state() {
     }
 
     for alive_test in [
-        "<alive_test/>",
-        "<alive_test>   </alive_test>",
-        "<alive_test>Not An Alive Test</alive_test>",
+        "<alive_tests/>",
+        "<alive_tests>   </alive_tests>",
+        "<alive_tests>Not An Alive Test</alive_tests>",
     ] {
         assert_raw_server_error(
             &mut client,
@@ -3371,6 +3372,63 @@ async fn typed_target_alive_tests_preserve_replace_and_validate_state() {
         )
         .await;
     }
+    assert_eq!(
+        target_by_id(&mut client, &target.id)
+            .await
+            .alive_tests
+            .as_deref(),
+        Some(AliveTest::ConsiderAlive.as_target_name())
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn raw_singular_target_alive_test_matches_gvmd_behavior() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut client = authenticated_client(&server).await;
+    let singular_create = client
+        .call(
+            b"<create_target><name>Singular Alive Test</name><hosts>192.0.2.3</hosts><alive_test>ICMP Ping</alive_test></create_target>"
+                .to_vec(),
+        )
+        .await
+        .expect("singular alive test should be ignored on create");
+    let singular_target_id = singular_create
+        .id()
+        .expect("created target ID")
+        .parse()
+        .expect("valid target ID");
+    assert_eq!(
+        target_by_id(&mut client, &singular_target_id)
+            .await
+            .alive_tests,
+        None
+    );
+
+    let target = client
+        .create_target(
+            "Plural Alive Test",
+            CreateTargetOpts {
+                hosts: vec!["192.0.2.4".into()],
+                alive_test: Some(AliveTest::ConsiderAlive),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("plural alive test should be applied on create");
+    assert_raw_server_error(
+        &mut client,
+        format!(
+            "<modify_target target_id=\"{}\"><alive_test>ICMP Ping</alive_test></modify_target>",
+            target.id,
+        )
+        .into_bytes(),
+        400,
+    )
+    .await;
     assert_eq!(
         target_by_id(&mut client, &target.id)
             .await

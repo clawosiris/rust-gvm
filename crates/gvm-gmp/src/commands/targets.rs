@@ -146,7 +146,7 @@ pub fn create_target(
         cmd.add_element_with_text("exclude_hosts", &opts.exclude_hosts.join(","));
     }
     if let Some(alive_test) = opts.alive_test {
-        cmd.add_element_with_text("alive_test", alive_test.as_target_name());
+        cmd.add_element_with_text("alive_tests", alive_test.as_target_name());
     }
     add_optional_id_element(&mut cmd, "port_list", opts.port_list_id.as_ref());
     add_create_target_credentials(&mut cmd, &opts);
@@ -210,7 +210,7 @@ pub fn modify_target(
     add_collection_update(&mut cmd, "hosts", &opts.hosts);
     add_collection_update(&mut cmd, "exclude_hosts", &opts.exclude_hosts);
     if let Some(alive_test) = opts.alive_test {
-        cmd.add_element_with_text("alive_test", alive_test.as_target_name());
+        cmd.add_element_with_text("alive_tests", alive_test.as_target_name());
     }
     if let ScalarUpdate::Set(port_list_id) = &opts.port_list_id {
         add_optional_id_element(&mut cmd, "port_list", Some(port_list_id));
@@ -332,7 +332,7 @@ mod tests {
         .expect("valid target"));
         assert!(rendered.contains("<name>target</name>"));
         assert!(rendered.contains("<hosts>1.1.1.1</hosts>"));
-        assert!(rendered.contains("<alive_test>ICMP Ping</alive_test>"));
+        assert!(rendered.contains("<alive_tests>ICMP Ping</alive_tests>"));
         assert!(rendered.contains("<port_list id=\"pl1\"/>"));
         assert!(rendered.contains("<ssh_credential id=\"ssh1\"><port>2222</port></ssh_credential>"));
         assert!(rendered.contains("<smb_credential id=\"smb1\"/>"));
@@ -375,7 +375,7 @@ mod tests {
         )
         .expect("valid target update"));
         assert!(rendered.contains("<name>n</name>"));
-        assert!(rendered.contains("<alive_test>ICMP &amp; ARP Ping</alive_test>"));
+        assert!(rendered.contains("<alive_tests>ICMP &amp; ARP Ping</alive_tests>"));
         assert!(rendered.contains("<ssh_credential id=\"ssh1\"><port>2222</port></ssh_credential>"));
         assert!(rendered.contains("<smb_credential id=\"smb1\"/>"));
         assert!(rendered.contains("<esxi_credential id=\"esxi1\"/>"));
