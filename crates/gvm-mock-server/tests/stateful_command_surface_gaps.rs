@@ -24,8 +24,8 @@ use gvm_gmp::commands::credentials::{
 };
 use gvm_gmp::commands::hosts::{create_host, get_host, get_hosts, HostOpts};
 use gvm_gmp::commands::system::{
-    modify_auth, modify_license, modify_license_with_opts, run_wizard_with_opts,
-    ModifyLicenseOpts, RunWizardOpts,
+    modify_auth, modify_license, modify_license_with_opts, run_wizard_with_opts, ModifyLicenseOpts,
+    RunWizardOpts,
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::CredentialStoreCredentialType;

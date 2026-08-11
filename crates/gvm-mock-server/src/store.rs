@@ -148,6 +148,17 @@ impl TaskStatus {
             Self::Interrupted => "Interrupted",
         }
     }
+
+    /// Return the gvmd task response wrapper used for the task's stored report.
+    fn report_reference_element(status: &str) -> Option<&'static str> {
+        match status {
+            "Requested" | "Running" | "Stop Requested" | "Stopped" | "Interrupted" => {
+                Some("current_report")
+            }
+            "Done" => Some("last_report"),
+            _ => None,
+        }
+    }
 }
 
 /// A stored GMP resource (generic for all resource types).
@@ -374,6 +385,16 @@ impl Resource {
                 "<schedule_periods>{}</schedule_periods>",
                 xml_escape(self.attr("schedule_periods").unwrap_or("0")),
             ));
+            if let (Some(report_id), Some(report_element)) = (
+                self.attr("report_id"),
+                self.attr("status")
+                    .and_then(TaskStatus::report_reference_element),
+            ) {
+                xml.push_str(&format!(
+                    "<{report_element}><report id=\"{}\"></report></{report_element}>",
+                    xml_escape_attr(report_id),
+                ));
+            }
         }
         if self.resource_type == "user" {
             if let Some(role_ids) = self.attr("role_ids") {
@@ -523,6 +544,7 @@ impl Resource {
                         | "scanner_id"
                         | "schedule_id"
                         | "schedule_periods"
+                        | "report_id"
                 )
             {
                 continue;
@@ -1793,6 +1815,28 @@ mod tests {
         assert!(!Resource::new("task", "Task")
             .to_xml()
             .contains("<alive_tests>"));
+    }
+
+    #[test]
+    fn task_xml_uses_typed_report_reference_vocabulary() {
+        let report_id = Uuid::new_v4();
+        let mut running = Resource::new("task", "Running Task");
+        running.set_attr("status", TaskStatus::Running.as_str());
+        running.set_attr("report_id", &report_id.to_string());
+        let running_xml = running.to_xml();
+        assert!(running_xml.contains(&format!(
+            "<current_report><report id=\"{report_id}\"></report></current_report>"
+        )));
+        assert!(!running_xml.contains("<report_id>"));
+
+        let mut done = Resource::new("task", "Done Task");
+        done.set_attr("status", TaskStatus::Done.as_str());
+        done.set_attr("report_id", &report_id.to_string());
+        let done_xml = done.to_xml();
+        assert!(done_xml.contains(&format!(
+            "<last_report><report id=\"{report_id}\"></report></last_report>"
+        )));
+        assert!(!done_xml.contains("<report_id>"));
     }
 
     #[test]
