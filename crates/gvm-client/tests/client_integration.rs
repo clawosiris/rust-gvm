@@ -4939,6 +4939,8 @@ async fn typed_schedule_create_observe_modify_and_reobserve() {
         .expect("created schedule should be listed");
     assert_eq!(schedule.first_run_at.as_ref(), Some(&first_run));
     assert_eq!(schedule.next_run_at.as_ref(), Some(&first_run));
+    assert_eq!(schedule.last_run, None);
+    assert_eq!(schedule.last_run_at, None);
     assert_eq!(
         schedule.observation.as_ref().map(|value| &value.recurrence),
         Some(&ScheduleRecurrenceObservation::Supported(
@@ -4996,6 +4998,59 @@ async fn typed_schedule_create_observe_modify_and_reobserve() {
             ScheduleRecurrence::Weekly
         ))
     );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_schedule_observes_native_last_run_from_stateful_server() {
+    let mut seeded = Resource::new("schedule", "Previously Run Schedule");
+    seeded.set_attr(
+        "icalendar",
+        "BEGIN:VEVENT\nDTSTART:20300101T000000Z\nRRULE:FREQ=DAILY\nEND:VEVENT",
+    );
+    seeded.set_attr("timezone", "UTC");
+    seeded.set_attr("first_run", "2030-01-01T00:00:00Z");
+    seeded.set_attr("next_run", "2030-01-03T00:00:00Z");
+    seeded.set_attr("last_run", "2030-01-02T01:00:00+01:00");
+    let schedule_id = seeded.id.to_string();
+
+    let server = match MockGmpServer::builder()
+        .mode(ServerMode::Stateful)
+        .version(MockVersion::V22_5)
+        .unix_socket_auto()
+        .seed(move |store| store.seed(seeded))
+        .build()
+        .await
+    {
+        Ok(server) => server,
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return,
+        Err(error) => panic!("server should start: {error}"),
+    };
+    let mut client = GmpClient::connect(unix_connection(&server))
+        .await
+        .expect("client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let schedules = client
+        .get_schedules(GetSchedulesOpts::default())
+        .await
+        .expect("schedule observation should succeed");
+    let schedule = schedules
+        .items
+        .iter()
+        .find(|schedule| schedule.meta.id.as_str() == schedule_id)
+        .expect("seeded schedule is listed");
+    let expected =
+        ScheduleTimestamp::parse("2030-01-02T00:00:00Z").expect("valid expected timestamp");
+    assert_eq!(
+        schedule.last_run.as_deref(),
+        Some("2030-01-02T01:00:00+01:00")
+    );
+    assert_eq!(schedule.last_run_at.as_ref(), Some(&expected));
 
     server.shutdown().await;
 }

@@ -23,6 +23,8 @@ pub struct Schedule {
     pub first_run: Option<String>,
     /// Raw next-run value retained for compatibility.
     pub next_run: Option<String>,
+    /// Raw last-run value reported by gvmd and retained for compatibility.
+    pub last_run: Option<String>,
     pub duration: Option<u32>,
     /// Typed semantics parsed from `icalendar`.
     pub observation: Option<ScheduleObservation>,
@@ -30,6 +32,8 @@ pub struct Schedule {
     pub first_run_at: Option<ScheduleTimestamp>,
     /// Validated next-run timestamp reported by gvmd.
     pub next_run_at: Option<ScheduleTimestamp>,
+    /// Validated nullable last-run timestamp reported by gvmd.
+    pub last_run_at: Option<ScheduleTimestamp>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,16 +85,27 @@ impl Schedule {
                 field: "schedule.next_run".to_string(),
                 value: next_run.clone().unwrap_or_default(),
             })?;
+        let last_run = node.optional_child_text("last_run");
+        let last_run_at = last_run
+            .as_deref()
+            .map(ScheduleTimestamp::parse)
+            .transpose()
+            .map_err(|_| ParseError::InvalidValue {
+                field: "schedule.last_run".to_string(),
+                value: last_run.clone().unwrap_or_default(),
+            })?;
         Ok(Self {
             meta: parse_entity_meta(node)?,
             icalendar,
             timezone,
             first_run,
             next_run,
+            last_run,
             duration: optional_u32(node, "duration", "duration")?,
             observation,
             first_run_at,
             next_run_at,
+            last_run_at,
         })
     }
 }
@@ -154,6 +169,7 @@ mod tests {
                     <timezone>UTC</timezone>
                     <first_run>2026-01-03T00:00:00Z</first_run>
                     <next_run>2026-01-04T00:00:00Z</next_run>
+                    <last_run>2026-01-02T23:00:00-01:00</last_run>
                     <duration>3600</duration>
                 </schedule>
                 <schedule id="s-2">
@@ -180,6 +196,10 @@ mod tests {
             parsed.items[0].next_run.as_deref(),
             Some("2026-01-04T00:00:00Z")
         );
+        assert_eq!(
+            parsed.items[0].last_run.as_deref(),
+            Some("2026-01-02T23:00:00-01:00")
+        );
         assert_eq!(parsed.items[0].duration, Some(3600));
         assert_eq!(
             parsed.items[0]
@@ -194,6 +214,13 @@ mod tests {
                 .as_ref()
                 .map(ScheduleTimestamp::as_str),
             Some("2026-01-04T00:00:00Z")
+        );
+        assert_eq!(
+            parsed.items[0]
+                .last_run_at
+                .as_ref()
+                .map(ScheduleTimestamp::as_str),
+            Some("2026-01-03T00:00:00Z")
         );
         assert!(parsed.items[1].meta.in_use);
     }
@@ -255,10 +282,12 @@ mod tests {
         assert_eq!(schedule.timezone, None);
         assert_eq!(schedule.first_run, None);
         assert_eq!(schedule.next_run, None);
+        assert_eq!(schedule.last_run, None);
         assert_eq!(schedule.duration, None);
         assert_eq!(schedule.observation, None);
         assert_eq!(schedule.first_run_at, None);
         assert_eq!(schedule.next_run_at, None);
+        assert_eq!(schedule.last_run_at, None);
     }
 
     #[test]
@@ -288,6 +317,19 @@ mod tests {
         let error = GetSchedulesResponse::from_response(&response).expect_err("time must fail");
         assert!(matches!(error, ParseError::InvalidValue { field, value }
                 if field == "schedule.next_run" && value == "tomorrow"));
+    }
+
+    #[test]
+    fn rejects_invalid_last_run_timestamp() {
+        let response = Response::from(
+            r#"<get_schedules_response status="200" status_text="OK">
+                <schedule id="s-1"><name>Invalid Last Run</name><last_run>yesterday</last_run></schedule>
+            </get_schedules_response>"#,
+        );
+
+        let error = GetSchedulesResponse::from_response(&response).expect_err("time must fail");
+        assert!(matches!(error, ParseError::InvalidValue { field, value }
+                if field == "schedule.last_run" && value == "yesterday"));
     }
 
     #[test]

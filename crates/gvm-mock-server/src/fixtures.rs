@@ -346,10 +346,11 @@ impl FixtureStore {
             "<get_schedules_response status=\"200\" status_text=\"OK\">\
              <schedule id=\"{{uuid}}\">\
              <name>Weekly Scan</name>\
-             <icalendar>BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nDTSTART:20300101T000000Z\nRRULE:FREQ=WEEKLY\nEND:VEVENT\nEND:VCALENDAR</icalendar>\
+             <icalendar>BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nDTSTART:20291218T000000Z\nRRULE:FREQ=WEEKLY\nEND:VEVENT\nEND:VCALENDAR</icalendar>\
              <timezone>UTC</timezone>\
-             <first_run>2030-01-01T00:00:00Z</first_run>\
+             <first_run>2029-12-18T00:00:00Z</first_run>\
              <next_run>2030-01-01T00:00:00Z</next_run>\
+             <last_run>2029-12-25T00:00:00Z</last_run>\
              <creation_time>{{now}}</creation_time>\
              <modification_time>{{now}}</modification_time>\
              </schedule>\

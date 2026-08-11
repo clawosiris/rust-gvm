@@ -203,6 +203,10 @@ async fn fixture_get_schedules() {
     };
     let r = send_recv(&mut s, b"<get_schedules/>").await;
     assert!(r.is_success());
+    assert!(r
+        .as_str()
+        .expect("utf8")
+        .contains("<last_run>2029-12-25T00:00:00Z</last_run>"));
     server.shutdown().await;
 }
 

@@ -22,7 +22,8 @@ See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility polic
 
 Schedule create/modify supports typed first-run input and once, hourly, daily,
 weekly, and yearly recurrence. Schedule observations expose normalized typed
-first-run/next-run timestamps reported by gvmd and distinguish floating or
+first-run/next-run timestamps and the nullable native last-run timestamp reported
+by gvmd, and distinguish floating or
 `TZID`-qualified starts, recurrence dates, exclusions, and unsupported recurrence
 rules from one-time schedules; raw iCalendar remains available for compatibility.
 Raw create follows gvmd's default-timezone behavior, and raw modify requires an

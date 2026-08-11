@@ -134,6 +134,9 @@ keeps the existing value. Valid but unsupported timezone or recurrence semantics
 typed observation instead of being treated as one-time schedules. Floating or
 `TZID`-qualified iCalendar starts remain observable but are not converted locally;
 typed `first_run_at` and `next_run_at` values use gvmd's normalized response fields.
+The native nullable `last_run` response is likewise available both as raw
+`last_run` text and as a validated, UTC-normalized `last_run_at` timestamp; it
+is never inferred from task reports or recurrence data.
 
 #### Raw API (send/call)
 
