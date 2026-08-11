@@ -9,6 +9,7 @@ const INTEGRATION_COVERED: &[&str] = &[
     "get_version",
     "authenticate",
     "get_targets",
+    "get_target",
     "create_target",
     "modify_target",
     "delete_target",

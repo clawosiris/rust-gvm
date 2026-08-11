@@ -369,11 +369,30 @@ impl Resource {
             }
         }
         if self.resource_type == "target" {
+            if let Some(alive_test) = self.attr("alive_test") {
+                xml.push_str(&format!(
+                    "<alive_tests>{}</alive_tests>",
+                    xml_escape(alive_test),
+                ));
+            }
             if let Some(port_list_id) = self.attr("port_list_id") {
                 xml.push_str(&format!(
                     "<port_list id=\"{}\"><name></name></port_list>",
                     xml_escape_attr(port_list_id),
                 ));
+            }
+            for credential in ["ssh_credential", "smb_credential"] {
+                let Some(id) = self.attr(&format!("{credential}_id")) else {
+                    continue;
+                };
+                xml.push_str(&format!(
+                    "<{credential} id=\"{}\"><name></name>",
+                    xml_escape_attr(id),
+                ));
+                if let Some(port) = self.attr(&format!("{credential}_port")) {
+                    xml.push_str(&format!("<port>{}</port>", xml_escape(port)));
+                }
+                xml.push_str(&format!("</{credential}>"));
             }
         }
         // Add type-specific attributes
@@ -447,7 +466,17 @@ impl Resource {
             if self.resource_type == "user" && k == "role_ids" {
                 continue;
             }
-            if self.resource_type == "target" && k == "port_list_id" {
+            if self.resource_type == "target"
+                && matches!(
+                    k.as_str(),
+                    "port_list_id"
+                        | "alive_test"
+                        | "ssh_credential_id"
+                        | "ssh_credential_port"
+                        | "smb_credential_id"
+                        | "smb_credential_port"
+                )
+            {
                 continue;
             }
             if self.resource_type == "nvt"

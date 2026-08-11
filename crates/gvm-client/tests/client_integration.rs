@@ -62,12 +62,13 @@ use gvm_gmp::commands::tickets::{
 use gvm_gmp::commands::users::{GetUsersOpts, ModifyUserOpts, UserOpts};
 use gvm_gmp::responses::{
     Asset, ConfigUsageKind, CreateScanConfigResponse, CredentialKind, GetConfigsResponse,
-    GetPermissionsResponse, GetScanConfigsResponse, GetScanReportResponse, Permission,
+    GetPermissionsResponse, GetScanConfigsResponse, GetScanReportResponse, ParseError, Permission,
+    Target,
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::types::GmpVersion;
 use gvm_gmp::{
-    AlertCondition, AlertEvent, AlertMethod, CollectionUpdate, CredentialType, FeedType,
+    AlertCondition, AlertEvent, AlertMethod, AliveTest, CollectionUpdate, CredentialType, FeedType,
     PermissionSubjectType, ScalarUpdate, ScheduleDefinition, ScheduleInput, ScheduleRecurrence,
     ScheduleRecurrenceObservation, ScheduleTimestamp, ScheduleTimezone, SnmpAuthAlgorithm,
     SnmpPrivacyAlgorithm, SortOrder, TicketStatus,
@@ -144,6 +145,80 @@ async fn echo_server(version: MockVersion) -> Option<MockGmpServer> {
 
 fn unix_connection(server: &MockGmpServer) -> UnixSocketConnection {
     UnixSocketConnection::with_path(server.socket_path().expect("unix socket path"))
+}
+
+async fn authenticated_client(server: &MockGmpServer) -> GmpClient<UnixSocketConnection> {
+    let mut client = GmpClient::connect(unix_connection(server))
+        .await
+        .expect("client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+    client
+}
+
+async fn target_by_id(
+    client: &mut GmpClient<UnixSocketConnection>,
+    target_id: &EntityId,
+) -> Target {
+    client
+        .get_target(target_id)
+        .await
+        .expect("target should be retrieved")
+        .items
+        .into_iter()
+        .next()
+        .expect("target should be present")
+}
+
+async fn create_test_credential(
+    client: &mut GmpClient<UnixSocketConnection>,
+    name: &str,
+) -> EntityId {
+    client
+        .create_credential(name, CredentialOpts::default())
+        .await
+        .expect("credential should be created")
+        .id
+}
+
+async fn assert_raw_server_error(
+    client: &mut GmpClient<UnixSocketConnection>,
+    xml: Vec<u8>,
+    expected_status: u16,
+) {
+    let error = client
+        .call(xml)
+        .await
+        .expect_err("raw request should be rejected");
+    assert!(matches!(
+        error,
+        GvmError::Server { status, .. } if status == expected_status
+    ));
+}
+
+fn assert_target_credentials(
+    target: &Target,
+    ssh_credential_id: &EntityId,
+    ssh_port: u16,
+    smb_credential_id: &EntityId,
+) {
+    assert_eq!(
+        target
+            .ssh_credential
+            .as_ref()
+            .map(|credential| &credential.id),
+        Some(ssh_credential_id)
+    );
+    assert_eq!(target.ssh_credential_port, Some(ssh_port));
+    assert_eq!(
+        target
+            .smb_credential
+            .as_ref()
+            .map(|credential| &credential.id),
+        Some(smb_credential_id)
+    );
 }
 
 fn event_text(event: &WireTraceEvent) -> String {
@@ -661,6 +736,43 @@ async fn create_target_and_get_targets_succeed() {
         .as_str()
         .expect("valid UTF-8 XML")
         .contains("Integration Target"));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_fixture_targets_use_stateful_observation_vocabulary() {
+    let Some(server) = fixture_server(MockVersion::V22_5).await else {
+        return;
+    };
+    let mut client = GmpClient::connect(unix_connection(&server))
+        .await
+        .expect("client should connect");
+
+    let targets = client
+        .get_targets(GetTargetsOpts::default())
+        .await
+        .expect("fixture targets should parse");
+    let target = targets.items.first().expect("fixture target should exist");
+    assert_eq!(
+        target.alive_tests.as_deref(),
+        Some(AliveTest::ScanConfigDefault.as_target_name())
+    );
+    assert_eq!(target.ssh_credential_port, Some(22));
+    assert_eq!(
+        target
+            .ssh_credential
+            .as_ref()
+            .map(|credential| credential.id.as_str()),
+        Some("11111111-1111-4111-8111-111111111111")
+    );
+    assert_eq!(
+        target
+            .smb_credential
+            .as_ref()
+            .map(|credential| credential.id.as_str()),
+        Some("22222222-2222-4222-8222-222222222222")
+    );
 
     server.shutdown().await;
 }
@@ -2966,6 +3078,206 @@ async fn typed_target_host_updates_preserve_replace_and_clear_state() {
             && std::str::from_utf8(record.raw_xml())
                 .is_ok_and(|xml| xml.contains("<hosts></hosts>"))
     }));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_target_credentials_round_trip_in_stateful_mode() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut client = authenticated_client(&server).await;
+    let first_ssh = create_test_credential(&mut client, "First SSH").await;
+    let first_smb = create_test_credential(&mut client, "First SMB").await;
+    let second_ssh = create_test_credential(&mut client, "Second SSH").await;
+    let second_smb = create_test_credential(&mut client, "Second SMB").await;
+
+    let target = client
+        .create_target(
+            "Credential Target",
+            CreateTargetOpts {
+                hosts: vec!["192.0.2.1".into()],
+                ssh_credential_id: Some(first_ssh.clone()),
+                ssh_credential_port: Some(2222),
+                smb_credential_id: Some(first_smb.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("target should be created");
+    let created = target_by_id(&mut client, &target.id).await;
+    assert_eq!(created.alive_tests, None);
+    assert_target_credentials(&created, &first_ssh, 2222, &first_smb);
+
+    client
+        .modify_target(
+            &target.id,
+            ModifyTargetOpts {
+                comment: Some("relationships omitted".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("omitted target fields should be preserved");
+    let preserved = target_by_id(&mut client, &target.id).await;
+    assert_eq!(preserved.alive_tests, None);
+    assert_target_credentials(&preserved, &first_ssh, 2222, &first_smb);
+
+    client
+        .modify_target(
+            &target.id,
+            ModifyTargetOpts {
+                ssh_credential_id: ScalarUpdate::set(second_ssh.clone()),
+                ssh_credential_port: Some(22),
+                smb_credential_id: ScalarUpdate::set(second_smb.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("target relationships should be replaced");
+    assert_target_credentials(
+        &target_by_id(&mut client, &target.id).await,
+        &second_ssh,
+        22,
+        &second_smb,
+    );
+
+    client
+        .modify_target(
+            &target.id,
+            ModifyTargetOpts {
+                ssh_credential_id: ScalarUpdate::Clear,
+                smb_credential_id: ScalarUpdate::Clear,
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("target credentials should be cleared");
+    let cleared = target_by_id(&mut client, &target.id).await;
+    assert_eq!(cleared.ssh_credential, None);
+    assert_eq!(cleared.ssh_credential_port, None);
+    assert_eq!(cleared.smb_credential, None);
+
+    let missing_credential =
+        EntityId::new("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").expect("valid missing credential ID");
+    let error = client
+        .modify_target(
+            &target.id,
+            ModifyTargetOpts {
+                ssh_credential_id: ScalarUpdate::set(missing_credential),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("missing credential reference should be rejected");
+    assert!(matches!(
+        error,
+        GvmError::Parse(ParseError::ServerError { status: 404, .. })
+    ));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_target_alive_tests_preserve_replace_and_validate_state() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut client = authenticated_client(&server).await;
+    for alive_test in ["<alive_test/>", "<alive_test>   </alive_test>"] {
+        assert_raw_server_error(
+            &mut client,
+            format!(
+                "<create_target><name>Invalid Alive Test</name><hosts>192.0.2.2</hosts>{alive_test}</create_target>"
+            )
+            .into_bytes(),
+            400,
+        )
+        .await;
+    }
+    let target = client
+        .create_target(
+            "Alive Test Target",
+            CreateTargetOpts {
+                hosts: vec!["192.0.2.1".into()],
+                alive_test: Some(AliveTest::ScanConfigDefault),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("target should be created");
+
+    client
+        .modify_target(
+            &target.id,
+            ModifyTargetOpts {
+                comment: Some("alive test omitted".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("omitted alive test should be preserved");
+    let preserved = target_by_id(&mut client, &target.id).await;
+    assert_eq!(
+        preserved.alive_tests.as_deref(),
+        Some(AliveTest::ScanConfigDefault.as_target_name())
+    );
+
+    for alive_test in [
+        AliveTest::ScanConfigDefault,
+        AliveTest::IcmpPing,
+        AliveTest::TcpAckServicePing,
+        AliveTest::TcpSynServicePing,
+        AliveTest::ArpPing,
+        AliveTest::IcmpAndTcpAckServicePing,
+        AliveTest::IcmpAndArpPing,
+        AliveTest::TcpAckServiceAndArpPing,
+        AliveTest::IcmpTcpAckServiceAndArpPing,
+        AliveTest::ConsiderAlive,
+    ] {
+        client
+            .modify_target(
+                &target.id,
+                ModifyTargetOpts {
+                    alive_test: Some(alive_test),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("supported alive test should be accepted");
+        assert_eq!(
+            target_by_id(&mut client, &target.id)
+                .await
+                .alive_tests
+                .as_deref(),
+            Some(alive_test.as_target_name())
+        );
+    }
+
+    for alive_test in [
+        "<alive_test/>",
+        "<alive_test>   </alive_test>",
+        "<alive_test>Not An Alive Test</alive_test>",
+    ] {
+        assert_raw_server_error(
+            &mut client,
+            format!(
+                "<modify_target target_id=\"{}\">{alive_test}</modify_target>",
+                target.id,
+            )
+            .into_bytes(),
+            400,
+        )
+        .await;
+    }
+    assert_eq!(
+        target_by_id(&mut client, &target.id)
+            .await
+            .alive_tests
+            .as_deref(),
+        Some(AliveTest::ConsiderAlive.as_target_name())
+    );
 
     server.shutdown().await;
 }

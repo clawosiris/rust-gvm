@@ -85,9 +85,19 @@ async fn matrix_targets_create_get_delete() {
     let mut stream = connect(&server).await;
     auth_admin(&mut stream).await;
 
+    let credential_id = create_and_get_id(
+        &mut stream,
+        b"<create_credential><name>Matrix SSH</name></create_credential>",
+        "create_credential",
+    )
+    .await;
+
     let target_id = create_and_get_id(
         &mut stream,
-        b"<create_target><name>Matrix Target</name><hosts>127.0.0.1</hosts></create_target>",
+        format!(
+            "<create_target><name>Matrix Target</name><hosts>127.0.0.1</hosts><ssh_credential id=\"{credential_id}\"><port>2222</port></ssh_credential></create_target>"
+        )
+        .as_bytes(),
         "create_target",
     )
     .await;
@@ -101,6 +111,28 @@ async fn matrix_targets_create_get_delete() {
     let get_text = get_resp.as_str().expect("valid utf8");
     assert!(get_text.contains(&target_id));
     assert!(get_text.contains("Matrix Target"));
+    assert!(get_text.contains(&format!(
+        "<ssh_credential id=\"{credential_id}\"><name></name><port>2222</port></ssh_credential>"
+    )));
+
+    let modify_resp = send_recv(
+        &mut stream,
+        format!(
+            "<modify_target target_id=\"{target_id}\"><ssh_credential id=\"{credential_id}\"><port>22</port></ssh_credential></modify_target>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(modify_resp.status_code(), Some(200));
+    let modified = send_recv(
+        &mut stream,
+        format!("<get_targets target_id=\"{target_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert!(modified
+        .as_str()
+        .expect("valid utf8")
+        .contains("<port>22</port>"));
 
     let delete_resp = send_recv(
         &mut stream,

@@ -13,6 +13,7 @@ use base64::Engine as _;
 use gvm_gmp::schedule::{
     parse_icalendar_with_timezone, ScheduleStartObservation, ScheduleTimestamp,
 };
+use gvm_gmp::AliveTest;
 use uuid::Uuid;
 
 use crate::command_parser::{parse_command, parse_element_text, ParsedCommand, ParsedElement};
@@ -707,6 +708,30 @@ impl SessionHandler {
         } else {
             None
         };
+        let target_ssh_credential = if resource_type == "target" {
+            match target_credential_update(cmd, store, "ssh_credential") {
+                Ok(update) => update,
+                Err((status, message)) => return error_response(&cmd.name, status, message),
+            }
+        } else {
+            TargetCredentialUpdate::Omitted
+        };
+        let target_smb_credential = if resource_type == "target" {
+            match target_credential_update(cmd, store, "smb_credential") {
+                Ok(update) => update,
+                Err((status, message)) => return error_response(&cmd.name, status, message),
+            }
+        } else {
+            TargetCredentialUpdate::Omitted
+        };
+        let target_alive_test = if resource_type == "target" {
+            match target_alive_test_update(cmd) {
+                Ok(update) => update,
+                Err(message) => return error_response(&cmd.name, 400, message),
+            }
+        } else {
+            None
+        };
 
         // Extract comment
         let comment = if has_config_import_payload {
@@ -922,6 +947,11 @@ impl SessionHandler {
             }
             if let Some(port_list_id) = target_port_list_id {
                 resource.set_attr("port_list_id", &port_list_id.to_string());
+            }
+            apply_target_credential_update(&mut resource, "ssh_credential", &target_ssh_credential);
+            apply_target_credential_update(&mut resource, "smb_credential", &target_smb_credential);
+            if let Some(alive_test) = target_alive_test {
+                resource.set_attr("alive_test", alive_test.as_target_name());
             }
         }
 
@@ -1168,6 +1198,30 @@ impl SessionHandler {
         } else {
             None
         };
+        let new_target_ssh_credential = if resource_type == "target" {
+            match target_credential_update(cmd, store, "ssh_credential") {
+                Ok(update) => update,
+                Err((status, message)) => return error_response(&cmd.name, status, message),
+            }
+        } else {
+            TargetCredentialUpdate::Omitted
+        };
+        let new_target_smb_credential = if resource_type == "target" {
+            match target_credential_update(cmd, store, "smb_credential") {
+                Ok(update) => update,
+                Err((status, message)) => return error_response(&cmd.name, status, message),
+            }
+        } else {
+            TargetCredentialUpdate::Omitted
+        };
+        let new_target_alive_test = if resource_type == "target" {
+            match target_alive_test_update(cmd) {
+                Ok(update) => update,
+                Err(message) => return error_response(&cmd.name, 400, message),
+            }
+        } else {
+            None
+        };
 
         let new_name = if resource_type == "user" {
             parse_element_text(raw_xml, "new_name")
@@ -1371,6 +1425,11 @@ impl SessionHandler {
             }
             if let Some(port_list_id) = new_target_port_list_id {
                 r.set_attr("port_list_id", &port_list_id.to_string());
+            }
+            apply_target_credential_update(r, "ssh_credential", &new_target_ssh_credential);
+            apply_target_credential_update(r, "smb_credential", &new_target_smb_credential);
+            if let Some(alive_test) = new_target_alive_test {
+                r.set_attr("alive_test", alive_test.as_target_name());
             }
             if let Some(ref role_ids) = new_role_ids {
                 r.set_attr("role_ids", &role_ids.join(","));
@@ -3844,6 +3903,75 @@ fn nested_child_attr(cmd: &ParsedCommand, path: &[&str], attr: &str) -> Option<S
     element.attributes.get(attr).cloned()
 }
 
+enum TargetCredentialUpdate {
+    Omitted,
+    Clear,
+    Set { id: Uuid, port: Option<u16> },
+}
+
+fn target_alive_test_update(cmd: &ParsedCommand) -> Result<Option<AliveTest>, &'static str> {
+    let Some(element) = cmd.children.iter().find(|child| child.name == "alive_test") else {
+        return Ok(None);
+    };
+    let value = element
+        .text
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or("Invalid alive test")?;
+    value.parse().map(Some).map_err(|_| "Invalid alive test")
+}
+
+fn target_credential_update(
+    cmd: &ParsedCommand,
+    store: &ResourceStore,
+    element: &str,
+) -> Result<TargetCredentialUpdate, (u16, &'static str)> {
+    let Some(id) = cmd.child_attr(element, "id") else {
+        return Ok(TargetCredentialUpdate::Omitted);
+    };
+    if id == "0" {
+        return Ok(TargetCredentialUpdate::Clear);
+    }
+    let id = Uuid::parse_str(id).map_err(|_| (400, "Invalid credential UUID"))?;
+    if store.get_typed(&id, "credential").is_none() {
+        return Err((404, "Credential not found"));
+    }
+    let port = nested_child_text(cmd, &[element, "port"])
+        .map(|value| value.parse::<u16>())
+        .transpose()
+        .map_err(|_| (400, "Invalid credential port"))?;
+    if port == Some(0) {
+        return Err((400, "Invalid credential port"));
+    }
+
+    Ok(TargetCredentialUpdate::Set { id, port })
+}
+
+fn apply_target_credential_update(
+    resource: &mut Resource,
+    prefix: &str,
+    update: &TargetCredentialUpdate,
+) {
+    let id_attr = format!("{prefix}_id");
+    let port_attr = format!("{prefix}_port");
+    match update {
+        TargetCredentialUpdate::Omitted => {}
+        TargetCredentialUpdate::Clear => {
+            resource.remove_attr(&id_attr);
+            resource.remove_attr(&port_attr);
+        }
+        TargetCredentialUpdate::Set { id, port } => {
+            resource.set_attr(&id_attr, &id.to_string());
+            if let Some(port) = port {
+                resource.set_attr(&port_attr, &port.to_string());
+            } else {
+                resource.remove_attr(&port_attr);
+            }
+        }
+    }
+}
+
 fn credential_kdcs(cmd: &ParsedCommand) -> Option<Vec<String>> {
     cmd.children
         .iter()
@@ -3965,6 +4093,34 @@ mod tests {
             credential_kdcs(&command),
             Some(vec!["kdc1.example".into(), "kdc2.example".into()])
         );
+    }
+
+    #[test]
+    fn target_alive_test_update_distinguishes_omitted_empty_and_valid_values() {
+        let omitted = parse_command(b"<create_target/>").expect("parse omitted alive test");
+        assert_eq!(target_alive_test_update(&omitted), Ok(None));
+
+        let valid = parse_command(
+            b"<create_target><alive_test>ICMP &amp; ARP Ping</alive_test></create_target>",
+        )
+        .expect("parse valid alive test");
+        assert_eq!(
+            target_alive_test_update(&valid),
+            Ok(Some(AliveTest::IcmpAndArpPing))
+        );
+
+        for xml in [
+            "<create_target><alive_test/></create_target>",
+            "<create_target><alive_test></alive_test></create_target>",
+            "<create_target><alive_test>   </alive_test></create_target>",
+            "<create_target><alive_test>Unknown</alive_test></create_target>",
+        ] {
+            let command = parse_command(xml.as_bytes()).expect("parse invalid alive test");
+            assert_eq!(
+                target_alive_test_update(&command),
+                Err("Invalid alive test")
+            );
+        }
     }
 
     #[test]

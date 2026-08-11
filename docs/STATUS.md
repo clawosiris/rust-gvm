@@ -320,6 +320,20 @@ representation for detaching an existing port list. Consequently,
 `CreateTargetOpts::port_list_id` remains `Option<EntityId>` because target
 creation only needs to distinguish including a port list from leaving it out.
 
+### Target SSH Credential Ports
+
+`CreateTargetOpts` and `ModifyTargetOpts` carry an optional typed SSH service
+port next to the credential relationship. The command builders serialize it as
+the nested `<ssh_credential><port>` GMP field, and typed target observations
+parse the same nested field into `Target::ssh_credential_port`. Both list and
+single-target client reads therefore preserve explicit default and non-default
+ports without caller-side XML handling.
+The stateful mock server also preserves alive-test values, SSH/SMB target
+credential relationships, and SSH ports across create, modify, and get
+operations for Unix composition tests. Stateful responses use gvmd's plural
+`alive_tests` observation field while requests retain the singular `alive_test`
+field.
+
 ### Command Modules (29)
 
 alerts, authentication, credentials, filters, groups, hosts, notes, nvts, overrides, permissions, port_lists, report_formats, reports, resource_names, results, roles, scan_configs, scanners, schedules, system, tags, targets, tasks, tickets, tls_certificates, trashcan, users, version

@@ -301,6 +301,7 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_eq!(version.version, "22.8");
 
     assert_typed_success!(client.get_targets(GetTargetsOpts::default()));
+    assert_typed_success!(client.get_target(&id("11111111-1111-1111-1111-111111111111")));
     assert_typed_success!(client.get_oci_image_targets_parsed(GetOciImageTargetsOpts::default()));
     assert_typed_success!(
         client.get_web_application_targets_parsed(GetWebApplicationTargetsOpts::default())

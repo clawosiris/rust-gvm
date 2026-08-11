@@ -27,6 +27,8 @@ pub struct CreateTargetOpts {
     pub port_list_id: Option<EntityId>,
     /// Optional SSH credential identifier.
     pub ssh_credential_id: Option<EntityId>,
+    /// Optional SSH service port nested below the SSH credential.
+    pub ssh_credential_port: Option<u16>,
     /// Optional SMB credential identifier.
     pub smb_credential_id: Option<EntityId>,
     /// Optional `ESXi` credential identifier.
@@ -73,6 +75,8 @@ pub struct ModifyTargetOpts {
     pub port_list_id: ScalarUpdate<EntityId>,
     /// SSH credential relationship update: omit, set, or detach.
     pub ssh_credential_id: ScalarUpdate<EntityId>,
+    /// Optional SSH service port nested below a set SSH credential.
+    pub ssh_credential_port: Option<u16>,
     /// SMB credential relationship update: omit, set, or detach.
     pub smb_credential_id: ScalarUpdate<EntityId>,
     /// `ESXi` credential relationship update: omit, set, or detach.
@@ -191,17 +195,38 @@ pub fn delete_target(target_id: &EntityId, ultimate: bool) -> impl Request {
 }
 
 fn add_create_target_credentials(cmd: &mut XmlCommand, opts: &CreateTargetOpts) {
-    add_optional_id_element(cmd, "ssh_credential", opts.ssh_credential_id.as_ref());
+    add_ssh_credential(
+        cmd,
+        opts.ssh_credential_id.as_ref(),
+        opts.ssh_credential_port,
+    );
     add_optional_id_element(cmd, "smb_credential", opts.smb_credential_id.as_ref());
     add_optional_id_element(cmd, "esxi_credential", opts.esxi_credential_id.as_ref());
     add_optional_id_element(cmd, "snmp_credential", opts.snmp_credential_id.as_ref());
 }
 
 fn add_modify_target_credentials(cmd: &mut XmlCommand, opts: &ModifyTargetOpts) {
-    add_scalar_id_update(cmd, "ssh_credential", &opts.ssh_credential_id);
+    match &opts.ssh_credential_id {
+        ScalarUpdate::Omitted => {}
+        ScalarUpdate::Set(id) => add_ssh_credential(cmd, Some(id), opts.ssh_credential_port),
+        ScalarUpdate::Clear => {
+            add_scalar_id_update(cmd, "ssh_credential", &ScalarUpdate::<EntityId>::Clear);
+        }
+    }
     add_scalar_id_update(cmd, "smb_credential", &opts.smb_credential_id);
     add_scalar_id_update(cmd, "esxi_credential", &opts.esxi_credential_id);
     add_scalar_id_update(cmd, "snmp_credential", &opts.snmp_credential_id);
+}
+
+fn add_ssh_credential(cmd: &mut XmlCommand, id: Option<&EntityId>, port: Option<u16>) {
+    let Some(id) = id else {
+        return;
+    };
+    let credential = cmd.add_element("ssh_credential");
+    credential.set_attribute("id", id.as_str());
+    if let Some(port) = port {
+        credential.add_child_with_text("port", &port.to_string());
+    }
 }
 
 fn add_collection_update(cmd: &mut XmlCommand, element: &str, update: &CollectionUpdate<String>) {
@@ -236,6 +261,7 @@ mod tests {
                 alive_test: Some(AliveTest::IcmpPing),
                 port_list_id: Some(id("pl1")),
                 ssh_credential_id: Some(id("ssh1")),
+                ssh_credential_port: Some(2222),
                 smb_credential_id: Some(id("smb1")),
                 esxi_credential_id: Some(id("esxi1")),
                 snmp_credential_id: Some(id("snmp1")),
@@ -247,7 +273,7 @@ mod tests {
         assert!(rendered.contains("<hosts>1.1.1.1</hosts>"));
         assert!(rendered.contains("<alive_test>ICMP Ping</alive_test>"));
         assert!(rendered.contains("<port_list id=\"pl1\"/>"));
-        assert!(rendered.contains("<ssh_credential id=\"ssh1\"/>"));
+        assert!(rendered.contains("<ssh_credential id=\"ssh1\"><port>2222</port></ssh_credential>"));
         assert!(rendered.contains("<smb_credential id=\"smb1\"/>"));
         assert!(rendered.contains("<esxi_credential id=\"esxi1\"/>"));
         assert!(rendered.contains("<snmp_credential id=\"snmp1\"/>"));
@@ -277,6 +303,7 @@ mod tests {
                 name: Some("n".into()),
                 alive_test: Some(AliveTest::IcmpAndArpPing),
                 ssh_credential_id: ScalarUpdate::set(id("ssh1")),
+                ssh_credential_port: Some(2222),
                 smb_credential_id: ScalarUpdate::set(id("smb1")),
                 esxi_credential_id: ScalarUpdate::set(id("esxi1")),
                 snmp_credential_id: ScalarUpdate::set(id("snmp1")),
@@ -288,7 +315,7 @@ mod tests {
         .expect("valid target update"));
         assert!(rendered.contains("<name>n</name>"));
         assert!(rendered.contains("<alive_test>ICMP &amp; ARP Ping</alive_test>"));
-        assert!(rendered.contains("<ssh_credential id=\"ssh1\"/>"));
+        assert!(rendered.contains("<ssh_credential id=\"ssh1\"><port>2222</port></ssh_credential>"));
         assert!(rendered.contains("<smb_credential id=\"smb1\"/>"));
         assert!(rendered.contains("<esxi_credential id=\"esxi1\"/>"));
         assert!(rendered.contains("<snmp_credential id=\"snmp1\"/>"));
@@ -341,11 +368,12 @@ mod tests {
                 &id("t1"),
                 ModifyTargetOpts {
                     ssh_credential_id: ScalarUpdate::set(id("ssh1")),
+                    ssh_credential_port: Some(2222),
                     smb_credential_id: ScalarUpdate::set(id("smb1")),
                     ..Default::default()
                 }
             ).expect("valid update")),
-            "<modify_target target_id=\"t1\"><ssh_credential id=\"ssh1\"/><smb_credential id=\"smb1\"/></modify_target>"
+            "<modify_target target_id=\"t1\"><ssh_credential id=\"ssh1\"><port>2222</port></ssh_credential><smb_credential id=\"smb1\"/></modify_target>"
         );
         assert_eq!(
             xml(modify_target(

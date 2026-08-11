@@ -38,6 +38,34 @@ fn test_create_target_with_optionals() {
 }
 
 #[test]
+fn test_target_ssh_credential_port_is_nested_in_credential() {
+    assert_eq!(
+        xml(create_target(
+            "target",
+            CreateTargetOpts {
+                ssh_credential_id: Some(id("ssh1")),
+                ssh_credential_port: Some(2222),
+                ..Default::default()
+            }
+        )),
+        "<create_target><name>target</name><ssh_credential id=\"ssh1\"><port>2222</port></ssh_credential></create_target>"
+    );
+
+    assert_eq!(
+        xml(modify_target(
+            &id("target1"),
+            ModifyTargetOpts {
+                ssh_credential_id: gvm_gmp::ScalarUpdate::set(id("ssh1")),
+                ssh_credential_port: Some(2222),
+                ..Default::default()
+            }
+        )
+        .expect("valid target update")),
+        "<modify_target target_id=\"target1\"><ssh_credential id=\"ssh1\"><port>2222</port></ssh_credential></modify_target>"
+    );
+}
+
+#[test]
 fn test_target_get_modify_delete() {
     assert_eq!(
         xml(clone_target(&id("t1"))),
