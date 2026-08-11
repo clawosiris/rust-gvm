@@ -101,7 +101,7 @@ use gvm_gmp::commands::secinfo::{
 };
 use gvm_gmp::commands::system::{
     describe_auth, get_settings, get_timezones, get_vulnerability as get_vulnerability_cmd,
-    get_vulns, modify_auth, FilteredGetOpts,
+    get_vulns, modify_auth, modify_license_with_opts, FilteredGetOpts, ModifyLicenseOpts,
 };
 use gvm_gmp::commands::system_reports::{get_system_reports, GetSystemReportsOpts};
 use gvm_gmp::commands::tags::{create_tag, get_tags, GetTagsOpts, TagOpts};
@@ -158,11 +158,11 @@ use gvm_gmp::responses::{
     GetTimezonesResponse, GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse,
     GetVulnerabilitiesResponse, GetWebApplicationTargetsResponse, HelpResponse,
     ModifyAlertResponse, ModifyAssetResponse, ModifyAuthResponse, ModifyConfigResponse,
-    ModifyCredentialResponse, ModifyIntegrationConfigResponse, ModifyOciImageTargetResponse,
-    ModifyPortListResponse, ModifyScanConfigResponse, ModifyScannerResponse,
-    ModifyScheduleResponse, ModifyTargetResponse, ModifyTaskResponse, ModifyTicketResponse,
-    ModifyUserResponse, ModifyWebApplicationTargetResponse, ReportExport, RestoreResponse,
-    ResumeTaskResponse, StartTaskResponse, StopTaskResponse, SyncConfigResponse,
+    ModifyCredentialResponse, ModifyIntegrationConfigResponse, ModifyLicenseResponse,
+    ModifyOciImageTargetResponse, ModifyPortListResponse, ModifyScanConfigResponse,
+    ModifyScannerResponse, ModifyScheduleResponse, ModifyTargetResponse, ModifyTaskResponse,
+    ModifyTicketResponse, ModifyUserResponse, ModifyWebApplicationTargetResponse, ReportExport,
+    RestoreResponse, ResumeTaskResponse, StartTaskResponse, StopTaskResponse, SyncConfigResponse,
     VerifyCredentialStoreResponse, VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
@@ -2358,6 +2358,20 @@ impl<C: GvmConnection + Send> GmpClient<C> {
             .send(modify_auth(group_name, auth_conf_settings))
             .await?;
         ModifyAuthResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Upload a base64-encoded license file and return a typed
+    /// [`ModifyLicenseResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_license(
+        &mut self,
+        file: &str,
+        opts: ModifyLicenseOpts,
+    ) -> Result<ModifyLicenseResponse, GvmError> {
+        let response = self.send(modify_license_with_opts(file, opts)).await?;
+        ModifyLicenseResponse::from_response(&response).map_err(GvmError::Parse)
     }
 }
 

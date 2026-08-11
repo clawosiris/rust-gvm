@@ -94,7 +94,16 @@ fn test_system_aggregates_info_resource_names_and_mutations() {
     );
     assert_eq!(
         xml(modify_license("abc")),
-        "<modify_license><key>abc</key></modify_license>"
+        "<modify_license><file>abc</file></modify_license>"
+    );
+    assert_eq!(
+        xml(modify_license_with_opts(
+            "",
+            ModifyLicenseOpts {
+                allow_empty: Some(true)
+            }
+        )),
+        "<modify_license allow_empty=\"1\"><file></file></modify_license>"
     );
     assert_eq!(
         xml(modify_setting(&id("s1"), "Europe/Berlin")),

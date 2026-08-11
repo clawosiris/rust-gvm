@@ -168,6 +168,7 @@ const INTEGRATION_COVERED: &[&str] = &[
     "get_help_with_mode",
     "describe_auth",
     "modify_auth",
+    "modify_license",
 ];
 
 // Kept explicit so each public helper has exactly one of the three issue #398

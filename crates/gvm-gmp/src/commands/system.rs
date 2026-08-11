@@ -77,6 +77,13 @@ pub struct FilteredGetOpts {
     pub filter_id: Option<EntityId>,
 }
 
+/// Options for `modify_license` requests.
+#[derive(Debug, Clone, Default)]
+pub struct ModifyLicenseOpts {
+    /// Whether gvmd may accept an empty license file.
+    pub allow_empty: Option<bool>,
+}
+
 /// Build a `help` request.
 #[must_use]
 pub fn help(format: Option<HelpFormat>) -> impl Request {
@@ -258,10 +265,21 @@ pub fn modify_auth(group_name: &str, auth_conf_settings: &[(String, String)]) ->
     cmd
 }
 
-/// Build a `modify_license` request.
+/// Build a `modify_license` request with a base64-encoded license file.
 #[must_use]
-pub fn modify_license(key: &str) -> impl Request {
-    XmlCommand::new("modify_license").child_with_text("key", key)
+pub fn modify_license(file: &str) -> impl Request {
+    modify_license_with_opts(file, ModifyLicenseOpts::default())
+}
+
+/// Build a `modify_license` request with explicit options.
+#[must_use]
+pub fn modify_license_with_opts(file: &str, opts: ModifyLicenseOpts) -> impl Request {
+    let mut cmd = XmlCommand::new("modify_license");
+    if let Some(allow_empty) = opts.allow_empty {
+        cmd.set_attribute("allow_empty", if allow_empty { "1" } else { "0" });
+    }
+    cmd.add_element_with_text("file", file);
+    cmd
 }
 
 /// Build a `modify_setting` request, Base64-encoding the UTF-8 value for GMP.
@@ -363,7 +381,16 @@ mod tests {
         );
         assert_eq!(
             xml(modify_license("abc")),
-            "<modify_license><key>abc</key></modify_license>"
+            "<modify_license><file>abc</file></modify_license>"
+        );
+        assert_eq!(
+            xml(modify_license_with_opts(
+                "",
+                ModifyLicenseOpts {
+                    allow_empty: Some(true)
+                }
+            )),
+            "<modify_license allow_empty=\"1\"><file></file></modify_license>"
         );
         assert_eq!(
             xml(modify_setting(&id("s1"), "Europe/Berlin")),

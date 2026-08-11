@@ -38,7 +38,8 @@ fn redact_xml(xml: &str) -> Option<Vec<u8>> {
                 }
                 let local_name = local_name(start.name().local_name().as_ref())?;
                 let redacted_start = redact_attributes(&start, &stack, &local_name)?;
-                let redact_contents = sensitive_depth == 0 && is_sensitive_element(&local_name);
+                let redact_contents =
+                    sensitive_depth == 0 && is_sensitive_element(&stack, &local_name);
                 stack.push(local_name);
 
                 if sensitive_depth > 0 {
@@ -177,8 +178,10 @@ fn redact_attributes(
     Some(redacted)
 }
 
-fn is_sensitive_element(element_name: &str) -> bool {
-    is_sensitive_name(element_name) || matches!(element_name, "value" | "param" | "default_value")
+fn is_sensitive_element(stack: &[String], element_name: &str) -> bool {
+    is_sensitive_name(element_name)
+        || matches!(element_name, "value" | "param" | "default_value")
+        || (element_name == "file" && stack.first().is_some_and(|root| root == "modify_license"))
 }
 
 fn is_credential_store_preference(stack: &[String], element_name: &str) -> bool {

@@ -1650,6 +1650,18 @@ impl SessionHandler {
     }
 
     fn handle_modify_license(&self, cmd: &ParsedCommand) -> Vec<u8> {
+        let allow_empty = match cmd.attr("allow_empty") {
+            None | Some("0") => false,
+            Some("1") => true,
+            Some(_) => return error_response(&cmd.name, 400, "Invalid allow_empty value"),
+        };
+        let Some(file) = cmd.children.iter().find(|child| child.name == "file") else {
+            return error_response(&cmd.name, 400, "Missing required element: file");
+        };
+        if file.text.as_deref().unwrap_or_default().is_empty() && !allow_empty {
+            return error_response(&cmd.name, 400, "A non-empty FILE is required");
+        }
+
         format!("<{}_response status=\"200\" status_text=\"OK\"/>", cmd.name).into_bytes()
     }
 
