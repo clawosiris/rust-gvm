@@ -830,6 +830,16 @@ impl SessionHandler {
         if resource_type == "credential" {
             if let Some(credential_type) = parse_element_text(raw_xml, "type") {
                 resource.set_attr("type", &credential_type);
+            } else {
+                // Match gvmd's legacy inference: a password produces a
+                // username/password credential; otherwise gvmd accepts or
+                // generates username/SSH-key material.
+                let inferred_type = if parse_element_text(raw_xml, "password").is_some() {
+                    "up"
+                } else {
+                    "usk"
+                };
+                resource.set_attr("type", inferred_type);
             }
             if let Some(login) = parse_element_text(raw_xml, "login") {
                 resource.set_attr("login", &login);
@@ -3931,19 +3941,46 @@ fn target_credential_update(
         return Ok(TargetCredentialUpdate::Omitted);
     };
     if id == "0" {
-        return Ok(TargetCredentialUpdate::Clear);
+        return if cmd.name == "modify_target" {
+            Ok(TargetCredentialUpdate::Clear)
+        } else {
+            Err((400, "Credential detach sentinel is only valid on modify"))
+        };
     }
     let id = Uuid::parse_str(id).map_err(|_| (400, "Invalid credential UUID"))?;
-    if store.get_typed(&id, "credential").is_none() {
-        return Err((404, "Credential not found"));
+    let credential = store
+        .get_typed(&id, "credential")
+        .ok_or((404, "Credential not found"))?;
+    let credential_type = credential.attr("type").unwrap_or("usk");
+    let type_supported = match element {
+        "ssh_credential" => matches!(credential_type, "up" | "usk" | "cs_up" | "cs_usk"),
+        "smb_credential" => matches!(credential_type, "up" | "cs_up"),
+        _ => true,
+    };
+    if !type_supported {
+        return Err((400, "Credential type is not valid for target binding"));
     }
-    let port = nested_child_text(cmd, &[element, "port"])
-        .map(|value| value.parse::<u16>())
-        .transpose()
-        .map_err(|_| (400, "Invalid credential port"))?;
-    if port == Some(0) {
-        return Err((400, "Invalid credential port"));
+    let raw_port = nested_child_text(cmd, &[element, "port"]);
+    if element != "ssh_credential" && raw_port.is_some() {
+        return Err((400, "Credential type does not support a service port"));
     }
+    let port = if element == "ssh_credential" {
+        match raw_port.as_deref().map(str::trim) {
+            None => Some(22),
+            Some("") | Some("0") if cmd.name == "modify_target" => Some(22),
+            Some(value) => {
+                let port = value
+                    .parse::<u16>()
+                    .map_err(|_| (400, "Invalid credential port"))?;
+                if port == 0 {
+                    return Err((400, "Invalid credential port"));
+                }
+                Some(port)
+            }
+        }
+    } else {
+        None
+    };
 
     Ok(TargetCredentialUpdate::Set { id, port })
 }

@@ -381,18 +381,25 @@ impl Resource {
                     xml_escape_attr(port_list_id),
                 ));
             }
-            for credential in ["ssh_credential", "smb_credential"] {
-                let Some(id) = self.attr(&format!("{credential}_id")) else {
-                    continue;
-                };
+            if let Some(id) = self.attr("ssh_credential_id") {
                 xml.push_str(&format!(
-                    "<{credential} id=\"{}\"><name></name>",
+                    "<ssh_credential id=\"{}\"><name></name>",
                     xml_escape_attr(id),
                 ));
-                if let Some(port) = self.attr(&format!("{credential}_port")) {
+                if let Some(port) = self.attr("ssh_credential_port") {
                     xml.push_str(&format!("<port>{}</port>", xml_escape(port)));
                 }
-                xml.push_str(&format!("</{credential}>"));
+                xml.push_str("</ssh_credential>");
+            } else {
+                xml.push_str("<ssh_credential id=\"\"><name></name><port></port></ssh_credential>");
+            }
+            if let Some(id) = self.attr("smb_credential_id") {
+                xml.push_str(&format!(
+                    "<smb_credential id=\"{}\"><name></name></smb_credential>",
+                    xml_escape_attr(id),
+                ));
+            } else {
+                xml.push_str("<smb_credential id=\"\"><name></name></smb_credential>");
             }
         }
         // Add type-specific attributes
@@ -474,7 +481,6 @@ impl Resource {
                         | "ssh_credential_id"
                         | "ssh_credential_port"
                         | "smb_credential_id"
-                        | "smb_credential_port"
                 )
             {
                 continue;
