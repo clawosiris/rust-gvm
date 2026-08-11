@@ -52,6 +52,7 @@ use gvm_gmp::commands::schedules::{GetSchedulesOpts, ScheduleOpts};
 use gvm_gmp::commands::secinfo::{get_info, get_info_list, GenericInfoType, GetInfoListOpts};
 use gvm_gmp::commands::system::get_timezones;
 use gvm_gmp::commands::system::ModifyLicenseOpts;
+use gvm_gmp::commands::system::RunWizardOpts;
 use gvm_gmp::commands::targets::{
     create_target, delete_target, get_targets, CreateTargetError, CreateTargetOpts, GetTargetsOpts,
     ModifyTargetError, ModifyTargetOpts,
@@ -587,6 +588,48 @@ async fn typed_modify_license_uses_current_gvmd_shape_over_unix_transport() {
     assert_eq!(
         history[0].raw_xml(),
         br#"<modify_license allow_empty="0"><file>YWJj</file></modify_license>"#
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_run_wizard_uses_current_gvmd_shape_over_unix_transport() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate");
+    server.clear_history();
+
+    let response = client
+        .run_wizard(
+            "quick_first_scan",
+            &[("hosts".into(), "localhost".into())],
+            RunWizardOpts {
+                mode: Some("step".into()),
+                read_only: Some(false),
+            },
+        )
+        .await
+        .expect("current gvmd run_wizard response should parse");
+
+    assert_eq!(response.status, 202);
+    assert_eq!(
+        response.response_xml.as_deref(),
+        Some(br#"<start_task_response status="202" status_text="OK, request submitted"><report_id>00000000-0000-0000-0000-000000000001</report_id></start_task_response>"#.as_slice())
+    );
+    let history = server.command_history();
+    assert_eq!(history.len(), 1);
+    assert_eq!(
+        history[0].raw_xml(),
+        br#"<run_wizard read_only="0"><mode>step</mode><name>quick_first_scan</name><params><param><name>hosts</name><value>localhost</value></param></params></run_wizard>"#
     );
 
     server.shutdown().await;

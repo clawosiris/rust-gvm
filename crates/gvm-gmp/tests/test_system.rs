@@ -109,5 +109,16 @@ fn test_system_aggregates_info_resource_names_and_mutations() {
         xml(modify_setting(&id("s1"), "Europe/Berlin")),
         "<modify_setting setting_id=\"s1\"><value>RXVyb3BlL0Jlcmxpbg==</value></modify_setting>"
     );
-    assert_eq!(xml(run_wizard("quick", &[("target".into(), "10.0.0.1".into()), ("ports".into(), "T:1-5".into())])), "<run_wizard name=\"quick\"><param name=\"target\">10.0.0.1</param><param name=\"ports\">T:1-5</param></run_wizard>");
+    assert_eq!(xml(run_wizard("quick", &[("target".into(), "10.0.0.1".into()), ("ports".into(), "T:1-5".into())])), "<run_wizard><name>quick</name><params><param><name>target</name><value>10.0.0.1</value></param><param><name>ports</name><value>T:1-5</value></param></params></run_wizard>");
+    assert_eq!(
+        xml(run_wizard_with_opts(
+            "quick",
+            &[],
+            RunWizardOpts {
+                mode: Some("step".into()),
+                read_only: Some(false),
+            },
+        )),
+        "<run_wizard read_only=\"0\"><mode>step</mode><name>quick</name><params/></run_wizard>"
+    );
 }

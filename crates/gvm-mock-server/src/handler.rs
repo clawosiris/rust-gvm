@@ -286,6 +286,7 @@ impl SessionHandler {
             "start_task" => self.handle_start_task(cmd, store),
             "stop_task" => self.handle_stop_task(cmd, store),
             "resume_task" => self.handle_resume_task(cmd, store),
+            "run_wizard" => self.handle_run_wizard(cmd),
             // Trashcan
             "empty_trashcan" => {
                 store.empty_trashcan();
@@ -1663,6 +1664,36 @@ impl SessionHandler {
         }
 
         format!("<{}_response status=\"200\" status_text=\"OK\"/>", cmd.name).into_bytes()
+    }
+
+    fn handle_run_wizard(&self, cmd: &ParsedCommand) -> Vec<u8> {
+        match cmd.attr("read_only") {
+            None | Some("0" | "1") => {}
+            Some(_) => return error_response(&cmd.name, 400, "Invalid read_only value"),
+        }
+
+        let Some(name) = cmd.child_text("name") else {
+            return error_response(&cmd.name, 400, "Missing required element: name");
+        };
+        if !name
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '_')
+        {
+            return error_response(&cmd.name, 400, "Invalid wizard name");
+        }
+
+        let Some(params) = cmd.children.iter().find(|child| child.name == "params") else {
+            return error_response(&cmd.name, 400, "Missing required element: params");
+        };
+        for param in params.children.iter().filter(|child| child.name == "param") {
+            if !param.children.iter().any(|child| child.name == "name")
+                || !param.children.iter().any(|child| child.name == "value")
+            {
+                return error_response(&cmd.name, 400, "Invalid wizard parameter");
+            }
+        }
+
+        b"<run_wizard_response status=\"202\" status_text=\"OK, request submitted\"><response><start_task_response status=\"202\" status_text=\"OK, request submitted\"><report_id>00000000-0000-0000-0000-000000000001</report_id></start_task_response></response></run_wizard_response>".to_vec()
     }
 
     fn handle_delete(&self, cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {

@@ -215,7 +215,7 @@ command_capabilities! {
     ("move_task", EchoOnly, None, PinnedSchema),
     ("restore", Stateful, None, PinnedSchema),
     ("resume_task", Stateful, None, PinnedSchema),
-    ("run_wizard", EchoOnly, None, PinnedSchema),
+    ("run_wizard", Stateful, None, PinnedSchema),
     ("start_task", Stateful, None, PinnedSchema),
     ("stop_task", Stateful, None, PinnedSchema),
     ("sync_agents", Stateful, Some(GmpVersion(22, 8)), PinnedSchema),

@@ -46,15 +46,18 @@ The registry contains 157 wire command names:
 
 | Qualification | Count | Meaning |
 |---|---:|---|
-| Stateful mock behavior | 140 | Bespoke behavior or deterministic generic CRUD |
+| Stateful mock behavior | 141 | Bespoke behavior or deterministic generic CRUD |
 | Fixture mock behavior | 10 | Deterministic built-in fixture response |
-| Echo-only mock behavior | 7 | Intentionally limited to a generic success response |
+| Echo-only mock behavior | 6 | Intentionally limited to a generic success response |
 | Current pinned `GMP.xml.in` | 154 | Present in the public schema snapshot |
 | Public gvmd source only | 2 | Implemented publicly but omitted from that schema |
 | Legacy compatibility | 1 | Retained for public legacy-client compatibility |
 
 Mock support is test support, not proof of real-gvmd conformance. In particular,
 generic CRUD does not imply that every field and side effect matches gvmd.
+The `run_wizard` handler validates the current request shape and returns a
+deterministic nested response for client tests; it does not execute a real
+wizard or populate the mock resource store from wizard steps.
 
 The three commands outside the pinned schema are explicitly qualified:
 
