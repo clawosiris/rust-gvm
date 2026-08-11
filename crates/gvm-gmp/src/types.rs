@@ -4,6 +4,7 @@
 //! Shared GMP types.
 
 use std::fmt;
+use std::num::NonZeroU16;
 use std::str::FromStr;
 
 /// A collection-valued update in a GMP modify request.
@@ -134,6 +135,58 @@ pub enum EntityIdError {
     Invalid(String),
 }
 
+/// A validated TCP or UDP service port in the range `1..=65535`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+pub struct ServicePort(NonZeroU16);
+
+impl ServicePort {
+    /// Create a service port.
+    ///
+    /// # Errors
+    /// Returns an error when `port` is zero.
+    pub fn new(port: u16) -> Result<Self, ServicePortError> {
+        NonZeroU16::new(port)
+            .map(Self)
+            .ok_or(ServicePortError::Zero)
+    }
+
+    /// Return the numeric port value.
+    #[must_use]
+    pub const fn get(self) -> u16 {
+        self.0.get()
+    }
+}
+
+impl fmt::Display for ServicePort {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.get().fmt(f)
+    }
+}
+
+impl TryFrom<u16> for ServicePort {
+    type Error = ServicePortError;
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<ServicePort> for u16 {
+    fn from(value: ServicePort) -> Self {
+        value.get()
+    }
+}
+
+/// Errors raised while validating a [`ServicePort`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum ServicePortError {
+    /// Port zero is reserved as a gvmd protocol sentinel and is not a service port.
+    #[error("service port must be in the range 1..=65535")]
+    Zero,
+}
+
 /// GMP protocol version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -160,6 +213,16 @@ mod tests {
     fn entity_id_accepts_valid_values() {
         let id = EntityId::new("550e8400-e29b-41d4-a716-446655440000").expect("valid id");
         assert_eq!(id.as_str(), "550e8400-e29b-41d4-a716-446655440000");
+    }
+
+    #[test]
+    fn service_port_rejects_zero() {
+        assert_eq!(ServicePort::new(22).expect("valid port").get(), 22);
+        assert_eq!(
+            ServicePort::new(u16::MAX).expect("valid port").get(),
+            65_535
+        );
+        assert_eq!(ServicePort::new(0), Err(ServicePortError::Zero));
     }
 
     #[test]

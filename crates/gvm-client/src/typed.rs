@@ -231,7 +231,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         name: &str,
         opts: CreateTargetOpts,
     ) -> Result<CreateTargetResponse, GvmError> {
-        let response = self.send(create_target(name, opts)).await?;
+        let request = create_target(name, opts)?;
+        let response = self.send(request).await?;
         CreateTargetResponse::from_response(&response).map_err(GvmError::Parse)
     }
 

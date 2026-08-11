@@ -32,4 +32,7 @@ pub use schedule::{
     ScheduleTimestampError, ScheduleTimezone, ScheduleTimezoneError,
 };
 /// Re-exported shared GMP types.
-pub use types::{CollectionUpdate, EntityId, EntityIdError, GmpVersion, ScalarUpdate};
+pub use types::{
+    CollectionUpdate, EntityId, EntityIdError, GmpVersion, ScalarUpdate, ServicePort,
+    ServicePortError,
+};

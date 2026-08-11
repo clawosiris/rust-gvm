@@ -10,7 +10,7 @@ use crate::common::{
     set_optional_bool_attr,
 };
 use crate::enums::AliveTest;
-use crate::types::{CollectionUpdate, EntityId, ScalarUpdate};
+use crate::types::{CollectionUpdate, EntityId, ScalarUpdate, ServicePort};
 
 /// Optional fields for `create_target` requests.
 #[derive(Debug, Clone, Default)]
@@ -28,7 +28,7 @@ pub struct CreateTargetOpts {
     /// Optional SSH credential identifier.
     pub ssh_credential_id: Option<EntityId>,
     /// Optional SSH service port nested below the SSH credential.
-    pub ssh_credential_port: Option<u16>,
+    pub ssh_credential_port: Option<ServicePort>,
     /// Optional SMB credential identifier.
     pub smb_credential_id: Option<EntityId>,
     /// Optional `ESXi` credential identifier.
@@ -75,8 +75,14 @@ pub struct ModifyTargetOpts {
     pub port_list_id: ScalarUpdate<EntityId>,
     /// SSH credential relationship update: omit, set, or detach.
     pub ssh_credential_id: ScalarUpdate<EntityId>,
-    /// Optional SSH service port nested below a set SSH credential.
-    pub ssh_credential_port: Option<u16>,
+    /// SSH service-port update: omit, set/replace, or reset to gvmd's default.
+    ///
+    /// Setting or clearing the port requires [`Self::ssh_credential_id`] to
+    /// contain [`ScalarUpdate::Set`] because GMP nests the port below a
+    /// credential element carrying the credential identifier. When the
+    /// credential is set and this update is omitted, gvmd selects its default
+    /// SSH port (22); omitting both updates preserves the existing binding.
+    pub ssh_credential_port: ScalarUpdate<ServicePort>,
     /// SMB credential relationship update: omit, set, or detach.
     pub smb_credential_id: ScalarUpdate<EntityId>,
     /// `ESXi` credential relationship update: omit, set, or detach.
@@ -89,12 +95,26 @@ pub struct ModifyTargetOpts {
     pub reverse_lookup_unify: Option<bool>,
 }
 
+/// Errors raised while building a `create_target` request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum CreateTargetError {
+    /// A service port cannot be encoded without an SSH credential identifier.
+    #[error("setting an SSH credential port requires an SSH credential identifier")]
+    SshPortWithoutCredential,
+}
+
 /// Errors raised while building a `modify_target` request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ModifyTargetError {
     /// gvmd has no wire representation for detaching a target port list.
     #[error("gvmd does not support clearing a target port-list relationship")]
     UnsupportedPortListClear,
+    /// A service-port update cannot be encoded without a credential identifier.
+    #[error("updating an SSH credential port requires setting the SSH credential identifier")]
+    SshPortWithoutCredential,
+    /// A service-port update is incompatible with detaching the credential.
+    #[error("an SSH credential port cannot be updated while detaching the SSH credential")]
+    SshPortWithCredentialClear,
 }
 
 /// Build a clone request for an existing target.
@@ -104,8 +124,18 @@ pub fn clone_target(target_id: &EntityId) -> impl Request {
 }
 
 /// Build a `create_target` request.
-#[must_use]
-pub fn create_target(name: &str, opts: CreateTargetOpts) -> impl Request {
+///
+/// # Errors
+/// Returns [`CreateTargetError::SshPortWithoutCredential`] when a service port
+/// is supplied without the SSH credential identifier required by GMP.
+pub fn create_target(
+    name: &str,
+    opts: CreateTargetOpts,
+) -> Result<impl Request, CreateTargetError> {
+    if opts.ssh_credential_port.is_some() && opts.ssh_credential_id.is_none() {
+        return Err(CreateTargetError::SshPortWithoutCredential);
+    }
+
     let mut cmd = XmlCommand::new("create_target");
     cmd.add_element_with_text("name", name);
     add_text_element(&mut cmd, "comment", opts.comment.as_deref());
@@ -126,7 +156,7 @@ pub fn create_target(name: &str, opts: CreateTargetOpts) -> impl Request {
     if let Some(value) = opts.reverse_lookup_unify {
         cmd.add_element_with_text("reverse_lookup_unify", bool_str(value));
     }
-    cmd
+    Ok(cmd)
 }
 
 /// Build a `get_targets` request.
@@ -163,6 +193,15 @@ pub fn modify_target(
 ) -> Result<impl Request, ModifyTargetError> {
     if matches!(opts.port_list_id, ScalarUpdate::Clear) {
         return Err(ModifyTargetError::UnsupportedPortListClear);
+    }
+    match (&opts.ssh_credential_id, &opts.ssh_credential_port) {
+        (ScalarUpdate::Omitted, ScalarUpdate::Set(_) | ScalarUpdate::Clear) => {
+            return Err(ModifyTargetError::SshPortWithoutCredential);
+        }
+        (ScalarUpdate::Clear, ScalarUpdate::Set(_) | ScalarUpdate::Clear) => {
+            return Err(ModifyTargetError::SshPortWithCredentialClear);
+        }
+        _ => {}
     }
 
     let mut cmd = XmlCommand::new("modify_target").attribute("target_id", target_id.as_str());
@@ -208,7 +247,19 @@ fn add_create_target_credentials(cmd: &mut XmlCommand, opts: &CreateTargetOpts) 
 fn add_modify_target_credentials(cmd: &mut XmlCommand, opts: &ModifyTargetOpts) {
     match &opts.ssh_credential_id {
         ScalarUpdate::Omitted => {}
-        ScalarUpdate::Set(id) => add_ssh_credential(cmd, Some(id), opts.ssh_credential_port),
+        ScalarUpdate::Set(id) => {
+            let credential = add_credential(cmd, "ssh_credential", id);
+            match opts.ssh_credential_port {
+                ScalarUpdate::Omitted => {}
+                ScalarUpdate::Set(port) => {
+                    credential.add_child_with_text("port", &port.to_string());
+                }
+                ScalarUpdate::Clear => {
+                    // gvmd treats zero on modify as a request to restore port 22.
+                    credential.add_child_with_text("port", "0");
+                }
+            }
+        }
         ScalarUpdate::Clear => {
             add_scalar_id_update(cmd, "ssh_credential", &ScalarUpdate::<EntityId>::Clear);
         }
@@ -218,15 +269,24 @@ fn add_modify_target_credentials(cmd: &mut XmlCommand, opts: &ModifyTargetOpts) 
     add_scalar_id_update(cmd, "snmp_credential", &opts.snmp_credential_id);
 }
 
-fn add_ssh_credential(cmd: &mut XmlCommand, id: Option<&EntityId>, port: Option<u16>) {
+fn add_ssh_credential(cmd: &mut XmlCommand, id: Option<&EntityId>, port: Option<ServicePort>) {
     let Some(id) = id else {
         return;
     };
-    let credential = cmd.add_element("ssh_credential");
-    credential.set_attribute("id", id.as_str());
+    let credential = add_credential(cmd, "ssh_credential", id);
     if let Some(port) = port {
         credential.add_child_with_text("port", &port.to_string());
     }
+}
+
+fn add_credential<'a>(
+    cmd: &'a mut XmlCommand,
+    element: &str,
+    id: &EntityId,
+) -> &'a mut gvm_protocol::xml_command::XmlElement {
+    let credential = cmd.add_element(element);
+    credential.set_attribute("id", id.as_str());
+    credential
 }
 
 fn add_collection_update(cmd: &mut XmlCommand, element: &str, update: &CollectionUpdate<String>) {
@@ -261,14 +321,15 @@ mod tests {
                 alive_test: Some(AliveTest::IcmpPing),
                 port_list_id: Some(id("pl1")),
                 ssh_credential_id: Some(id("ssh1")),
-                ssh_credential_port: Some(2222),
+                ssh_credential_port: Some(ServicePort::new(2222).expect("valid port")),
                 smb_credential_id: Some(id("smb1")),
                 esxi_credential_id: Some(id("esxi1")),
                 snmp_credential_id: Some(id("snmp1")),
                 reverse_lookup_only: Some(true),
                 reverse_lookup_unify: Some(false),
             },
-        ));
+        )
+        .expect("valid target"));
         assert!(rendered.contains("<name>target</name>"));
         assert!(rendered.contains("<hosts>1.1.1.1</hosts>"));
         assert!(rendered.contains("<alive_test>ICMP Ping</alive_test>"));
@@ -303,7 +364,7 @@ mod tests {
                 name: Some("n".into()),
                 alive_test: Some(AliveTest::IcmpAndArpPing),
                 ssh_credential_id: ScalarUpdate::set(id("ssh1")),
-                ssh_credential_port: Some(2222),
+                ssh_credential_port: ScalarUpdate::set(ServicePort::new(2222).expect("valid port")),
                 smb_credential_id: ScalarUpdate::set(id("smb1")),
                 esxi_credential_id: ScalarUpdate::set(id("esxi1")),
                 snmp_credential_id: ScalarUpdate::set(id("snmp1")),
@@ -368,7 +429,9 @@ mod tests {
                 &id("t1"),
                 ModifyTargetOpts {
                     ssh_credential_id: ScalarUpdate::set(id("ssh1")),
-                    ssh_credential_port: Some(2222),
+                    ssh_credential_port: ScalarUpdate::set(
+                        ServicePort::new(2222).expect("valid port"),
+                    ),
                     smb_credential_id: ScalarUpdate::set(id("smb1")),
                     ..Default::default()
                 }
@@ -417,6 +480,65 @@ mod tests {
             )
             .err(),
             Some(ModifyTargetError::UnsupportedPortListClear)
+        );
+    }
+
+    #[test]
+    fn modify_target_resets_ssh_port_without_exposing_the_wire_sentinel() {
+        assert_eq!(
+            xml(modify_target(
+                &id("t1"),
+                ModifyTargetOpts {
+                    ssh_credential_id: ScalarUpdate::set(id("ssh1")),
+                    ssh_credential_port: ScalarUpdate::Clear,
+                    ..Default::default()
+                }
+            )
+            .expect("valid reset")),
+            "<modify_target target_id=\"t1\"><ssh_credential id=\"ssh1\"><port>0</port></ssh_credential></modify_target>"
+        );
+    }
+
+    #[test]
+    fn modify_target_rejects_orphaned_ssh_port_updates() {
+        let port = ServicePort::new(2222).expect("valid port");
+        assert_eq!(
+            modify_target(
+                &id("t1"),
+                ModifyTargetOpts {
+                    ssh_credential_port: ScalarUpdate::set(port),
+                    ..Default::default()
+                }
+            )
+            .err(),
+            Some(ModifyTargetError::SshPortWithoutCredential)
+        );
+        assert_eq!(
+            modify_target(
+                &id("t1"),
+                ModifyTargetOpts {
+                    ssh_credential_id: ScalarUpdate::Clear,
+                    ssh_credential_port: ScalarUpdate::Clear,
+                    ..Default::default()
+                }
+            )
+            .err(),
+            Some(ModifyTargetError::SshPortWithCredentialClear)
+        );
+    }
+
+    #[test]
+    fn create_target_rejects_an_ssh_port_without_a_credential() {
+        assert_eq!(
+            create_target(
+                "target",
+                CreateTargetOpts {
+                    ssh_credential_port: Some(ServicePort::new(2222).expect("valid port")),
+                    ..Default::default()
+                }
+            )
+            .err(),
+            Some(CreateTargetError::SshPortWithoutCredential)
         );
     }
 }

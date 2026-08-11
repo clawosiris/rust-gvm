@@ -52,8 +52,8 @@ use gvm_gmp::commands::schedules::{GetSchedulesOpts, ScheduleOpts};
 use gvm_gmp::commands::secinfo::{get_info, get_info_list, GenericInfoType, GetInfoListOpts};
 use gvm_gmp::commands::system::get_timezones;
 use gvm_gmp::commands::targets::{
-    create_target, delete_target, get_targets, CreateTargetOpts, GetTargetsOpts, ModifyTargetError,
-    ModifyTargetOpts,
+    create_target, delete_target, get_targets, CreateTargetError, CreateTargetOpts, GetTargetsOpts,
+    ModifyTargetError, ModifyTargetOpts,
 };
 use gvm_gmp::commands::tasks::{create_task, delete_task, get_task, start_task, stop_task};
 use gvm_gmp::commands::tickets::{
@@ -70,8 +70,8 @@ use gvm_gmp::types::GmpVersion;
 use gvm_gmp::{
     AlertCondition, AlertEvent, AlertMethod, AliveTest, CollectionUpdate, CredentialType, FeedType,
     PermissionSubjectType, ScalarUpdate, ScheduleDefinition, ScheduleInput, ScheduleRecurrence,
-    ScheduleRecurrenceObservation, ScheduleTimestamp, ScheduleTimezone, SnmpAuthAlgorithm,
-    SnmpPrivacyAlgorithm, SortOrder, TicketStatus,
+    ScheduleRecurrenceObservation, ScheduleTimestamp, ScheduleTimezone, ServicePort,
+    SnmpAuthAlgorithm, SnmpPrivacyAlgorithm, SortOrder, TicketStatus,
 };
 use gvm_mock_server::{
     GmpVersion as MockVersion, MockGmpServer, Resource, ResourceStore, ServerMode,
@@ -183,6 +183,25 @@ async fn create_test_credential(
         .id
 }
 
+async fn create_test_smb_credential(
+    client: &mut GmpClient<UnixSocketConnection>,
+    name: &str,
+) -> EntityId {
+    client
+        .create_credential(
+            name,
+            CredentialOpts {
+                credential_type: Some(CredentialType::UsernamePassword),
+                login: Some("scanner".into()),
+                password: Some("secret".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("SMB credential should be created")
+        .id
+}
+
 async fn assert_raw_server_error(
     client: &mut GmpClient<UnixSocketConnection>,
     xml: Vec<u8>,
@@ -211,7 +230,10 @@ fn assert_target_credentials(
             .map(|credential| &credential.id),
         Some(ssh_credential_id)
     );
-    assert_eq!(target.ssh_credential_port, Some(ssh_port));
+    assert_eq!(
+        target.ssh_credential_port.map(ServicePort::get),
+        Some(ssh_port)
+    );
     assert_eq!(
         target
             .smb_credential
@@ -3089,9 +3111,28 @@ async fn typed_target_credentials_round_trip_in_stateful_mode() {
     };
     let mut client = authenticated_client(&server).await;
     let first_ssh = create_test_credential(&mut client, "First SSH").await;
-    let first_smb = create_test_credential(&mut client, "First SMB").await;
+    let first_smb = create_test_smb_credential(&mut client, "First SMB").await;
     let second_ssh = create_test_credential(&mut client, "Second SSH").await;
-    let second_smb = create_test_credential(&mut client, "Second SMB").await;
+    let second_smb = create_test_smb_credential(&mut client, "Second SMB").await;
+
+    let default_target = client
+        .create_target(
+            "Default Credential Port Target",
+            CreateTargetOpts {
+                hosts: vec!["192.0.2.9".into()],
+                ssh_credential_id: Some(first_ssh.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("target with default SSH port should be created");
+    assert_eq!(
+        target_by_id(&mut client, &default_target.id)
+            .await
+            .ssh_credential_port
+            .map(ServicePort::get),
+        Some(22)
+    );
 
     let target = client
         .create_target(
@@ -3099,7 +3140,7 @@ async fn typed_target_credentials_round_trip_in_stateful_mode() {
             CreateTargetOpts {
                 hosts: vec!["192.0.2.1".into()],
                 ssh_credential_id: Some(first_ssh.clone()),
-                ssh_credential_port: Some(2222),
+                ssh_credential_port: Some(ServicePort::new(2222).expect("valid port")),
                 smb_credential_id: Some(first_smb.clone()),
                 ..Default::default()
             },
@@ -3129,13 +3170,31 @@ async fn typed_target_credentials_round_trip_in_stateful_mode() {
             &target.id,
             ModifyTargetOpts {
                 ssh_credential_id: ScalarUpdate::set(second_ssh.clone()),
-                ssh_credential_port: Some(22),
+                ssh_credential_port: ScalarUpdate::set(ServicePort::new(2200).expect("valid port")),
                 smb_credential_id: ScalarUpdate::set(second_smb.clone()),
                 ..Default::default()
             },
         )
         .await
         .expect("target relationships should be replaced");
+    assert_target_credentials(
+        &target_by_id(&mut client, &target.id).await,
+        &second_ssh,
+        2200,
+        &second_smb,
+    );
+
+    client
+        .modify_target(
+            &target.id,
+            ModifyTargetOpts {
+                ssh_credential_id: ScalarUpdate::set(second_ssh.clone()),
+                ssh_credential_port: ScalarUpdate::Clear,
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("target SSH port should reset to gvmd's default");
     assert_target_credentials(
         &target_by_id(&mut client, &target.id).await,
         &second_ssh,
@@ -3175,6 +3234,43 @@ async fn typed_target_credentials_round_trip_in_stateful_mode() {
         error,
         GvmError::Parse(ParseError::ServerError { status: 404, .. })
     ));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_target_create_rejects_an_orphaned_ssh_port_before_send() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut client = authenticated_client(&server).await;
+    let create_count_before = server
+        .command_history()
+        .iter()
+        .filter(|record| record.command_name() == "create_target")
+        .count();
+
+    let error = client
+        .create_target(
+            "Invalid Credential Port Target",
+            CreateTargetOpts {
+                hosts: vec!["192.0.2.11".into()],
+                ssh_credential_port: Some(ServicePort::new(2222).expect("valid port")),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("orphaned SSH port should fail locally");
+    assert!(matches!(
+        error,
+        GvmError::CreateTarget(CreateTargetError::SshPortWithoutCredential)
+    ));
+    let create_count_after = server
+        .command_history()
+        .iter()
+        .filter(|record| record.command_name() == "create_target")
+        .count();
+    assert_eq!(create_count_after, create_count_before);
 
     server.shutdown().await;
 }

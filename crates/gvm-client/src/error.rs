@@ -6,7 +6,7 @@
 use std::time::Duration;
 
 use gvm_connection::ConnectionError;
-use gvm_gmp::commands::targets::ModifyTargetError;
+use gvm_gmp::commands::targets::{CreateTargetError, ModifyTargetError};
 use gvm_gmp::responses::ParseError;
 use gvm_gmp::types::GmpVersion;
 use thiserror::Error;
@@ -21,6 +21,10 @@ pub enum GvmError {
     /// Response model parsing failure.
     #[error("parse error: {0}")]
     Parse(#[from] ParseError),
+
+    /// A typed `create_target` input cannot be represented by GMP.
+    #[error("create_target request error: {0}")]
+    CreateTarget(#[from] CreateTargetError),
 
     /// A typed `modify_target` update cannot be represented by gvmd.
     #[error("modify_target request error: {0}")]

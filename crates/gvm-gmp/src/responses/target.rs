@@ -10,6 +10,7 @@ use crate::responses::common::{
     parse_named_entity, parse_u16, status_from_response, ActionResponse, CountInfo, EntityMeta,
     NamedEntity, ParseError,
 };
+use crate::ServicePort;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -23,7 +24,7 @@ pub struct Target {
     pub reverse_lookup_unify: bool,
     pub port_list: Option<NamedEntity>,
     pub ssh_credential: Option<NamedEntity>,
-    pub ssh_credential_port: Option<u16>,
+    pub ssh_credential_port: Option<ServicePort>,
     pub smb_credential: Option<NamedEntity>,
     pub esxi_credential: Option<NamedEntity>,
     pub snmp_credential: Option<NamedEntity>,
@@ -51,6 +52,31 @@ pub struct CreateTargetResponse {
 
 impl Target {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
+        let ssh_credential = parse_named_entity(node, "ssh_credential")?;
+        let raw_ssh_credential_port = node
+            .child("ssh_credential")
+            .and_then(|credential| credential.child_text("port"));
+        let ssh_credential_port = match (ssh_credential.as_ref(), raw_ssh_credential_port) {
+            (None, None) => None,
+            (None, Some(ref port)) if port.is_empty() => None,
+            (None, Some(port)) => {
+                return Err(ParseError::InvalidValue {
+                    field: "ssh_credential.port".to_string(),
+                    value: port,
+                });
+            }
+            (Some(_), None) => None,
+            (Some(_), Some(port)) => {
+                let parsed = parse_u16(&port, "ssh_credential.port")?;
+                Some(
+                    ServicePort::new(parsed).map_err(|_| ParseError::InvalidValue {
+                        field: "ssh_credential.port".to_string(),
+                        value: port,
+                    })?,
+                )
+            }
+        };
+
         Ok(Self {
             meta: parse_entity_meta(node)?,
             hosts: node
@@ -73,12 +99,8 @@ impl Target {
                 .transpose()?
                 .unwrap_or(false),
             port_list: parse_named_entity(node, "port_list")?,
-            ssh_credential: parse_named_entity(node, "ssh_credential")?,
-            ssh_credential_port: node
-                .child("ssh_credential")
-                .and_then(|credential| credential.optional_child_text("port"))
-                .map(|port| parse_u16(&port, "ssh_credential.port"))
-                .transpose()?,
+            ssh_credential,
+            ssh_credential_port,
             smb_credential: parse_named_entity(node, "smb_credential")?,
             esxi_credential: parse_named_entity(node, "esxi_credential")?,
             snmp_credential: parse_named_entity(node, "snmp_credential")?,
@@ -191,7 +213,10 @@ mod tests {
                 .map(|credential| credential.name.as_str()),
             Some("SSH Cred")
         );
-        assert_eq!(parsed.items[0].ssh_credential_port, Some(2222));
+        assert_eq!(
+            parsed.items[0].ssh_credential_port.map(ServicePort::get),
+            Some(2222)
+        );
         assert_eq!(
             parsed.items[0]
                 .smb_credential
@@ -291,6 +316,22 @@ mod tests {
     }
 
     #[test]
+    fn parses_gvmd_unbound_ssh_credential_shape() {
+        let response = Response::from(
+            r#"<get_targets_response status="200" status_text="OK">
+                <target id="t-1">
+                    <name>Target</name>
+                    <ssh_credential id=""><name></name><port></port></ssh_credential>
+                </target>
+            </get_targets_response>"#,
+        );
+
+        let parsed = GetTargetsResponse::from_response(&response).expect("target parses");
+        assert_eq!(parsed.items[0].ssh_credential, None);
+        assert_eq!(parsed.items[0].ssh_credential_port, None);
+    }
+
+    #[test]
     fn rejects_invalid_ssh_credential_port() {
         let response = Response::from(
             r#"<get_targets_response status="200" status_text="OK">
@@ -307,6 +348,47 @@ mod tests {
             error,
             ParseError::InvalidValue { field, value }
                 if field == "ssh_credential.port" && value == "invalid"
+        ));
+    }
+
+    #[test]
+    fn rejects_zero_and_out_of_range_ssh_credential_ports() {
+        for port in ["", "0", "65536"] {
+            let xml = format!(
+                r#"<get_targets_response status="200" status_text="OK">
+                    <target id="t-1">
+                        <name>Target</name>
+                        <ssh_credential id="cred-ssh"><name>SSH</name><port>{port}</port></ssh_credential>
+                    </target>
+                </get_targets_response>"#
+            );
+            let response = Response::from(xml.as_str());
+
+            let error = GetTargetsResponse::from_response(&response).expect_err("invalid port");
+            assert!(matches!(
+                error,
+                ParseError::InvalidValue { field, value }
+                    if field == "ssh_credential.port" && value == port
+            ));
+        }
+    }
+
+    #[test]
+    fn rejects_ssh_port_without_a_bound_credential() {
+        let response = Response::from(
+            r#"<get_targets_response status="200" status_text="OK">
+                <target id="t-1">
+                    <name>Target</name>
+                    <ssh_credential id=""><name></name><port>22</port></ssh_credential>
+                </target>
+            </get_targets_response>"#,
+        );
+
+        let error = GetTargetsResponse::from_response(&response).expect_err("inconsistent port");
+        assert!(matches!(
+            error,
+            ParseError::InvalidValue { field, value }
+                if field == "ssh_credential.port" && value == "22"
         ));
     }
 }
