@@ -55,7 +55,10 @@ use gvm_gmp::commands::targets::{
     create_target, delete_target, get_targets, CreateTargetError, CreateTargetOpts, GetTargetsOpts,
     ModifyTargetError, ModifyTargetOpts,
 };
-use gvm_gmp::commands::tasks::{create_task, delete_task, get_task, start_task, stop_task};
+use gvm_gmp::commands::tasks::{
+    create_task, delete_task, get_task, start_task, stop_task, CreateTaskOpts, GetTasksOpts,
+    ModifyTaskOpts,
+};
 use gvm_gmp::commands::tickets::{
     CreateTicketOpts, GetTicketsOpts, ModifyTicketOpts, TicketOpenNote,
 };
@@ -4996,6 +4999,332 @@ async fn typed_schedule_create_observe_modify_and_reobserve() {
             ScheduleRecurrence::Weekly
         ))
     );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut client = GmpClient::connect(unix_connection(&server))
+        .await
+        .expect("client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let target = client
+        .create_target(
+            "Scheduled Task Target",
+            CreateTargetOpts {
+                hosts: vec!["127.0.0.1".to_string()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("target create should succeed");
+    let config_id = "daba56c8-73ec-11df-a475-002264764cea"
+        .parse()
+        .expect("config id");
+    let scanner_id = "08b69003-5fc2-4037-a479-93b440211c73"
+        .parse()
+        .expect("scanner id");
+    let schedule_input = |timestamp: &str| {
+        ScheduleInput::new(
+            ScheduleDefinition {
+                first_run: ScheduleTimestamp::parse(timestamp).expect("valid timestamp"),
+                recurrence: ScheduleRecurrence::Daily,
+            },
+            ScheduleTimezone::new("UTC").expect("valid timezone"),
+        )
+    };
+    let first_schedule = client
+        .create_typed_schedule(
+            "First Task Schedule",
+            schedule_input("2030-01-01T00:00:00Z"),
+        )
+        .await
+        .expect("first schedule create should succeed");
+    let second_schedule = client
+        .create_typed_schedule(
+            "Second Task Schedule",
+            schedule_input("2031-01-01T00:00:00Z"),
+        )
+        .await
+        .expect("second schedule create should succeed");
+
+    let unscheduled = client
+        .create_task(
+            "Unscheduled Task",
+            &config_id,
+            &target.id,
+            &scanner_id,
+            CreateTaskOpts::default(),
+        )
+        .await
+        .expect("unscheduled task create should succeed");
+    let tasks = client
+        .get_tasks(GetTasksOpts::default())
+        .await
+        .expect("task observation should succeed");
+    let unscheduled_task = tasks
+        .items
+        .iter()
+        .find(|task| task.meta.id == unscheduled.id)
+        .expect("unscheduled task should be listed");
+    assert!(unscheduled_task.schedule.is_none());
+    assert_eq!(unscheduled_task.schedule_periods, Some(0));
+    client
+        .delete_task(&unscheduled.id, true)
+        .await
+        .expect("unscheduled task delete should succeed");
+
+    let scheduled = client
+        .create_task(
+            "Scheduled Task",
+            &config_id,
+            &target.id,
+            &scanner_id,
+            CreateTaskOpts {
+                schedule_id: Some(first_schedule.id.clone()),
+                schedule_periods: Some(3),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("scheduled task create should succeed");
+    let observed = client
+        .get_tasks(GetTasksOpts::default())
+        .await
+        .expect("task observation should succeed")
+        .items
+        .into_iter()
+        .find(|task| task.meta.id == scheduled.id)
+        .expect("created task should be listed");
+    assert_eq!(
+        observed
+            .schedule
+            .as_ref()
+            .expect("created task should expose its schedule")
+            .id,
+        first_schedule.id
+    );
+    assert_eq!(observed.schedule_periods, Some(3));
+
+    client
+        .modify_task(
+            &scheduled.id,
+            ModifyTaskOpts {
+                comment: Some("schedule omitted".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("omitting schedule should preserve it");
+    let preserved = client
+        .get_tasks(GetTasksOpts::default())
+        .await
+        .expect("task observation should succeed")
+        .items
+        .into_iter()
+        .find(|task| task.meta.id == scheduled.id)
+        .expect("scheduled task should be listed");
+    assert_eq!(
+        preserved
+            .schedule
+            .as_ref()
+            .expect("omitted schedule should remain attached")
+            .id,
+        first_schedule.id
+    );
+    assert_eq!(preserved.schedule_periods, Some(3));
+
+    client
+        .modify_task(
+            &scheduled.id,
+            ModifyTaskOpts {
+                schedule_id: ScalarUpdate::set(second_schedule.id.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("schedule replacement should succeed");
+    let replaced = client
+        .get_tasks(GetTasksOpts::default())
+        .await
+        .expect("task observation should succeed")
+        .items
+        .into_iter()
+        .find(|task| task.meta.id == scheduled.id)
+        .expect("scheduled task should be listed");
+    assert_eq!(
+        replaced
+            .schedule
+            .as_ref()
+            .expect("replaced schedule should be exposed")
+            .id,
+        second_schedule.id
+    );
+    assert_eq!(replaced.schedule_periods, Some(0));
+
+    client
+        .modify_task(
+            &scheduled.id,
+            ModifyTaskOpts {
+                schedule_periods: Some(7),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("period-only update should succeed");
+    let period_updated = client
+        .get_tasks(GetTasksOpts::default())
+        .await
+        .expect("task observation should succeed")
+        .items
+        .into_iter()
+        .find(|task| task.meta.id == scheduled.id)
+        .expect("scheduled task should be listed");
+    assert_eq!(
+        period_updated
+            .schedule
+            .as_ref()
+            .expect("period-only update should preserve the schedule")
+            .id,
+        second_schedule.id
+    );
+    assert_eq!(period_updated.schedule_periods, Some(7));
+
+    let missing_schedule: EntityId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        .parse()
+        .expect("missing schedule id");
+    let create_error = client
+        .create_task(
+            "Missing Schedule Task",
+            &config_id,
+            &target.id,
+            &scanner_id,
+            CreateTaskOpts {
+                schedule_id: Some(missing_schedule.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("missing schedule create should fail");
+    assert!(
+        matches!(
+            &create_error,
+            GvmError::Parse(ParseError::ServerError { status: 404, .. })
+        ),
+        "unexpected create error: {create_error:?}"
+    );
+    let modify_error = client
+        .modify_task(
+            &scheduled.id,
+            ModifyTaskOpts {
+                schedule_id: ScalarUpdate::set(missing_schedule),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("missing schedule replacement should fail");
+    assert!(
+        matches!(
+            &modify_error,
+            GvmError::Parse(ParseError::ServerError { status: 404, .. })
+        ),
+        "unexpected modify error: {modify_error:?}"
+    );
+    let after_failed_update = client
+        .get_tasks(GetTasksOpts::default())
+        .await
+        .expect("task observation should succeed")
+        .items
+        .into_iter()
+        .find(|task| task.meta.id == scheduled.id)
+        .expect("scheduled task should be listed");
+    assert_eq!(
+        after_failed_update
+            .schedule
+            .as_ref()
+            .expect("failed update must preserve the schedule")
+            .id,
+        second_schedule.id
+    );
+    assert_eq!(after_failed_update.schedule_periods, Some(7));
+
+    let dependency_error = client
+        .delete_schedule(&second_schedule.id, true)
+        .await
+        .expect_err("attached schedule deletion should fail");
+    assert!(matches!(
+        dependency_error,
+        GvmError::Parse(ParseError::ServerError { status: 409, .. })
+    ));
+    client
+        .modify_task(
+            &scheduled.id,
+            ModifyTaskOpts {
+                schedule_id: ScalarUpdate::Clear,
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("schedule clearing should succeed");
+    let cleared = client
+        .get_tasks(GetTasksOpts::default())
+        .await
+        .expect("task observation should succeed")
+        .items
+        .into_iter()
+        .find(|task| task.meta.id == scheduled.id)
+        .expect("scheduled task should be listed");
+    assert!(cleared.schedule.is_none());
+    assert_eq!(cleared.schedule_periods, Some(0));
+
+    client
+        .delete_schedule(&second_schedule.id, true)
+        .await
+        .expect("detached schedule delete should succeed");
+    client
+        .modify_task(
+            &scheduled.id,
+            ModifyTaskOpts {
+                schedule_id: ScalarUpdate::set(first_schedule.id.clone()),
+                schedule_periods: Some(4),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("schedule reattachment should succeed");
+    client
+        .delete_task(&scheduled.id, false)
+        .await
+        .expect("task trash should succeed");
+    let trashed_dependency_error = client
+        .delete_schedule(&first_schedule.id, true)
+        .await
+        .expect_err("trashed dependent task should block permanent schedule deletion");
+    assert!(matches!(
+        trashed_dependency_error,
+        GvmError::Parse(ParseError::ServerError { status: 409, .. })
+    ));
+    client
+        .delete_task(&scheduled.id, true)
+        .await
+        .expect("permanent task delete should succeed");
+    client
+        .delete_schedule(&first_schedule.id, true)
+        .await
+        .expect("schedule delete after dependent task should succeed");
+    client
+        .delete_target(&target.id, true)
+        .await
+        .expect("target delete should succeed");
 
     server.shutdown().await;
 }

@@ -39,6 +39,24 @@ async fn server() -> Option<MockGmpServer> {
     }
 }
 
+async fn server_with_schedule() -> Option<(MockGmpServer, String)> {
+    let schedule = Resource::new("schedule", "Import-Ignored Schedule");
+    let schedule_id = schedule.id.to_string();
+    match MockGmpServer::builder()
+        .mode(ServerMode::Stateful)
+        .version(GmpVersion::V22_5)
+        .credentials("admin", "admin")
+        .seed(move |store| store.seed(schedule))
+        .unix_socket_auto()
+        .build()
+        .await
+    {
+        Ok(server) => Some((server, schedule_id)),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("server start failed: {error}"),
+    }
+}
+
 async fn connect_and_auth(server: &MockGmpServer) -> UnixStream {
     let mut stream = UnixStream::connect(server.socket_path().expect("socket path"))
         .await
@@ -83,6 +101,95 @@ async fn create_task(stream: &mut UnixStream, name: &str, target_id: &str) -> St
     .await;
     assert_eq!(response.status_code(), Some(201));
     id(&response)
+}
+
+async fn assert_import_schedule_state(stream: &mut UnixStream, task_id: &str, periods: u32) {
+    let response = send_recv(
+        stream,
+        format!("<get_tasks task_id=\"{task_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(response.status_code(), Some(200));
+    let text = response.as_str().expect("UTF-8 response");
+    assert!(!text.contains("<schedule id="), "{text}");
+    assert!(
+        text.contains(&format!("<schedule_periods>{periods}</schedule_periods>")),
+        "{text}"
+    );
+}
+
+#[tokio::test]
+async fn import_task_creation_ignores_schedule_fields_without_validating_them() {
+    let Some((server, schedule_id)) = server_with_schedule().await else {
+        return;
+    };
+    let mut stream = connect_and_auth(&server).await;
+
+    let commands = [
+        format!(
+            "<create_task><name>Valid Ignored Schedule</name><target id=\"0\"/><schedule id=\"{schedule_id}\"/><schedule_periods>3</schedule_periods></create_task>"
+        ),
+        "<create_task><name>Missing Ignored Schedule</name><target id=\"0\"/><schedule/><schedule_periods/></create_task>".to_string(),
+        "<create_task><name>Malformed Ignored Schedule</name><target id=\"0\"/><schedule id=\"not-a-uuid\"/><schedule_periods>not-a-number</schedule_periods></create_task>".to_string(),
+    ];
+
+    for command in commands {
+        let response = send_recv(&mut stream, command.as_bytes()).await;
+        assert_eq!(response.status_code(), Some(201), "{command}");
+        assert_import_schedule_state(&mut stream, &id(&response), 0).await;
+    }
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn import_task_modify_rejects_schedule_ids_but_allows_periods_only() {
+    let Some((server, schedule_id)) = server_with_schedule().await else {
+        return;
+    };
+    let mut stream = connect_and_auth(&server).await;
+    let create = send_recv(
+        &mut stream,
+        b"<create_task><name>Mutable Import</name><target id=\"0\"/></create_task>",
+    )
+    .await;
+    assert_eq!(create.status_code(), Some(201));
+    let task_id = id(&create);
+
+    let set = send_recv(
+        &mut stream,
+        format!(
+            "<modify_task task_id=\"{task_id}\"><schedule id=\"{schedule_id}\"/><schedule_periods>4</schedule_periods></modify_task>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(set.status_code(), Some(400));
+    assert_import_schedule_state(&mut stream, &task_id, 0).await;
+
+    let periods_only = send_recv(
+        &mut stream,
+        format!(
+            "<modify_task task_id=\"{task_id}\"><schedule_periods>7</schedule_periods></modify_task>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(periods_only.status_code(), Some(200));
+    assert_import_schedule_state(&mut stream, &task_id, 7).await;
+
+    let clear = send_recv(
+        &mut stream,
+        format!(
+            "<modify_task task_id=\"{task_id}\"><schedule id=\"0\"/><schedule_periods>3</schedule_periods></modify_task>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(clear.status_code(), Some(400));
+    assert_import_schedule_state(&mut stream, &task_id, 7).await;
+
+    server.shutdown().await;
 }
 
 #[tokio::test]
