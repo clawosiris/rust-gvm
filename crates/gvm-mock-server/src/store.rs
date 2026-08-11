@@ -43,6 +43,7 @@ pub(crate) const DEFAULT_SCANNER_ID: Uuid =
 pub(crate) enum StoreError {
     NotFound(String),
     InUse(&'static str),
+    InvalidArgument(&'static str),
     InvalidState(&'static str),
     Inconsistent(&'static str),
 }
@@ -84,6 +85,16 @@ pub(crate) struct TaskReferences {
     pub specialized_target: Option<SpecializedTaskTarget>,
     pub config: Option<Uuid>,
     pub scanner: Option<Uuid>,
+    pub schedule: Option<Uuid>,
+    pub schedule_periods: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum TaskScheduleUpdate {
+    #[default]
+    Omitted,
+    Set(Uuid),
+    Clear,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -92,14 +103,16 @@ pub(crate) struct TaskReferenceUpdates {
     pub specialized_target: Option<SpecializedTaskTarget>,
     pub config: Option<Uuid>,
     pub scanner: Option<Uuid>,
+    pub schedule: TaskScheduleUpdate,
+    pub schedule_periods: Option<u32>,
 }
 
 impl TaskReferenceUpdates {
-    fn is_empty(self) -> bool {
-        self.target.is_none()
-            && self.specialized_target.is_none()
-            && self.config.is_none()
-            && self.scanner.is_none()
+    fn changes_scan_definition(self) -> bool {
+        self.target.is_some()
+            || self.specialized_target.is_some()
+            || self.config.is_some()
+            || self.scanner.is_some()
     }
 }
 
@@ -357,6 +370,10 @@ impl Resource {
                     ));
                 }
             }
+            xml.push_str(&format!(
+                "<schedule_periods>{}</schedule_periods>",
+                xml_escape(self.attr("schedule_periods").unwrap_or("0")),
+            ));
         }
         if self.resource_type == "user" {
             if let Some(role_ids) = self.attr("role_ids") {
@@ -505,6 +522,7 @@ impl Resource {
                         | "config_id"
                         | "scanner_id"
                         | "schedule_id"
+                        | "schedule_periods"
                 )
             {
                 continue;
@@ -643,6 +661,11 @@ fn stored_task_reference(
 }
 
 fn validate_stored_task_references(inner: &StoreInner, task: &Resource) -> Result<(), StoreError> {
+    if let Some(schedule_id) = task.attr("schedule_id") {
+        let schedule_id =
+            Uuid::parse_str(schedule_id).map_err(|_| StoreError::Inconsistent("schedule"))?;
+        validate_task_reference(inner, &schedule_id, "schedule")?;
+    }
     if task.attr("import_task") == Some("1") {
         return Ok(());
     }
@@ -770,6 +793,14 @@ impl ResourceStore {
             validate_task_reference(&inner, &scanner, "scanner")?;
             task.set_attr("scanner_id", &scanner.to_string());
         }
+        if let Some(schedule) = references.schedule {
+            validate_task_reference(&inner, &schedule, "schedule")?;
+            task.set_attr("schedule_id", &schedule.to_string());
+        }
+        task.set_attr(
+            "schedule_periods",
+            &references.schedule_periods.unwrap_or(0).to_string(),
+        );
         if references.target.is_none() && references.specialized_target.is_none() {
             task.attrs.remove("target_id");
             task.set_attr("import_task", "1");
@@ -904,12 +935,20 @@ impl ResourceStore {
         F: FnOnce(&mut Resource),
     {
         let mut inner = self.inner.write().expect("store lock poisoned");
-        let status = active_typed_resource(&inner, id, "task")?
+        let task = active_typed_resource(&inner, id, "task")?;
+        let status = task
             .attr("status")
             .ok_or(StoreError::Inconsistent("task status"))?
             .to_string();
+        let import_task = task.attr("import_task") == Some("1");
 
-        if !references.is_empty() && status != TaskStatus::New.as_str() {
+        if import_task && references.schedule != TaskScheduleUpdate::Omitted {
+            return Err(StoreError::InvalidArgument(
+                "Import tasks cannot have a schedule",
+            ));
+        }
+
+        if references.changes_scan_definition() && status != TaskStatus::New.as_str() {
             return Err(StoreError::InvalidState(
                 "Task references can only be changed while the task is New",
             ));
@@ -925,6 +964,9 @@ impl ResourceStore {
         }
         if let Some(scanner) = references.scanner {
             validate_task_reference(&inner, &scanner, "scanner")?;
+        }
+        if let TaskScheduleUpdate::Set(schedule) = references.schedule {
+            validate_task_reference(&inner, &schedule, "schedule")?;
         }
 
         let task = inner
@@ -957,6 +999,27 @@ impl ResourceStore {
         }
         if let Some(scanner) = references.scanner {
             task.set_attr("scanner_id", &scanner.to_string());
+        }
+        match references.schedule {
+            TaskScheduleUpdate::Omitted => {
+                if let Some(schedule_periods) = references.schedule_periods {
+                    task.set_attr("schedule_periods", &schedule_periods.to_string());
+                }
+            }
+            TaskScheduleUpdate::Set(schedule) => {
+                task.set_attr("schedule_id", &schedule.to_string());
+                task.set_attr(
+                    "schedule_periods",
+                    &references.schedule_periods.unwrap_or(0).to_string(),
+                );
+            }
+            TaskScheduleUpdate::Clear => {
+                task.attrs.remove("schedule_id");
+                task.set_attr(
+                    "schedule_periods",
+                    &references.schedule_periods.unwrap_or(0).to_string(),
+                );
+            }
         }
         f(task);
         task.modification_time = now_iso();
@@ -1024,6 +1087,7 @@ impl ResourceStore {
             }
             "config" => Some(("config_id", "config")),
             "scanner" => Some(("scanner_id", "scanner")),
+            "schedule" => Some(("schedule_id", "schedule")),
             _ => None,
         };
         if let Some((reference_key, referenced_type)) = task_reference {
@@ -1031,7 +1095,7 @@ impl ResourceStore {
             let referenced = inner.resources.values().any(|candidate| {
                 candidate.resource_type == "task"
                     && candidate.attr(reference_key) == Some(id.as_str())
-                    && !candidate.trashed
+                    && (!candidate.trashed || (resource_type == "schedule" && ultimate))
             });
             if referenced {
                 return Err(StoreError::InUse(referenced_type));
@@ -1453,6 +1517,8 @@ mod tests {
                     specialized_target: None,
                     config: Some(DEFAULT_CONFIG_ID),
                     scanner: Some(DEFAULT_SCANNER_ID),
+                    schedule: None,
+                    schedule_periods: None,
                 },
             )
             .expect("valid task graph")
@@ -1783,6 +1849,8 @@ mod tests {
                     specialized_target: None,
                     config: Some(config_id),
                     scanner: Some(scanner_id),
+                    schedule: TaskScheduleUpdate::Omitted,
+                    schedule_periods: None,
                 },
                 |_| {},
             )
@@ -1796,6 +1864,145 @@ mod tests {
             Some(scanner_id.to_string().as_str())
         );
         assert!(!store.modify_typed(&target_id, "task", |_| {}));
+    }
+
+    #[test]
+    fn task_schedule_periods_follow_gvmd_update_semantics_in_any_task_state() {
+        let store = ResourceStore::new();
+        let target_id = store.create(Resource::new("target", "Scheduled Target"));
+        let first_schedule = store.create(Resource::new("schedule", "First Schedule"));
+        let second_schedule = store.create(Resource::new("schedule", "Second Schedule"));
+        let task_id = store
+            .create_task(
+                Resource::new("task", "Scheduled Task"),
+                TaskReferences {
+                    target: Some(target_id),
+                    specialized_target: None,
+                    config: Some(DEFAULT_CONFIG_ID),
+                    scanner: Some(DEFAULT_SCANNER_ID),
+                    schedule: Some(first_schedule),
+                    schedule_periods: Some(5),
+                },
+            )
+            .expect("create scheduled task");
+        assert!(store.modify(&task_id, |task| {
+            task.set_attr("status", TaskStatus::Running.as_str());
+        }));
+
+        store
+            .modify_task(
+                &task_id,
+                TaskReferenceUpdates {
+                    schedule_periods: Some(4),
+                    ..Default::default()
+                },
+                |_| {},
+            )
+            .expect("period-only update should preserve the schedule");
+        let task = store.get(&task_id).expect("task");
+        assert_eq!(
+            task.attr("schedule_id"),
+            Some(first_schedule.to_string().as_str())
+        );
+        assert_eq!(task.attr("schedule_periods"), Some("4"));
+
+        store
+            .modify_task(
+                &task_id,
+                TaskReferenceUpdates {
+                    schedule: TaskScheduleUpdate::Set(second_schedule),
+                    ..Default::default()
+                },
+                |_| {},
+            )
+            .expect("schedule replacement should reset omitted periods");
+        let task = store.get(&task_id).expect("task");
+        assert_eq!(
+            task.attr("schedule_id"),
+            Some(second_schedule.to_string().as_str())
+        );
+        assert_eq!(task.attr("schedule_periods"), Some("0"));
+
+        store
+            .modify_task(
+                &task_id,
+                TaskReferenceUpdates {
+                    schedule: TaskScheduleUpdate::Clear,
+                    schedule_periods: Some(2),
+                    ..Default::default()
+                },
+                |_| {},
+            )
+            .expect("schedule clearing should apply supplied periods");
+        let task = store.get(&task_id).expect("task");
+        assert_eq!(task.attr("schedule_id"), None);
+        assert_eq!(task.attr("schedule_periods"), Some("2"));
+    }
+
+    #[test]
+    fn import_task_schedule_updates_are_rejected_atomically() {
+        let store = ResourceStore::new();
+        let schedule_id = store.create(Resource::new("schedule", "Ignored Schedule"));
+        let task_id = store
+            .create_task(
+                Resource::new("task", "Imported"),
+                TaskReferences {
+                    target: None,
+                    specialized_target: None,
+                    config: None,
+                    scanner: None,
+                    schedule: None,
+                    schedule_periods: None,
+                },
+            )
+            .expect("create import task");
+
+        assert_eq!(
+            store.modify_task(
+                &task_id,
+                TaskReferenceUpdates {
+                    schedule: TaskScheduleUpdate::Set(schedule_id),
+                    schedule_periods: Some(4),
+                    ..Default::default()
+                },
+                |_| {},
+            ),
+            Err(StoreError::InvalidArgument(
+                "Import tasks cannot have a schedule"
+            ))
+        );
+        let task = store.get(&task_id).expect("import task");
+        assert_eq!(task.attr("schedule_id"), None);
+        assert_eq!(task.attr("schedule_periods"), Some("0"));
+
+        store
+            .modify_task(
+                &task_id,
+                TaskReferenceUpdates {
+                    schedule_periods: Some(7),
+                    ..Default::default()
+                },
+                |_| {},
+            )
+            .expect("period-only import task update");
+
+        assert_eq!(
+            store.modify_task(
+                &task_id,
+                TaskReferenceUpdates {
+                    schedule: TaskScheduleUpdate::Clear,
+                    schedule_periods: Some(3),
+                    ..Default::default()
+                },
+                |_| {},
+            ),
+            Err(StoreError::InvalidArgument(
+                "Import tasks cannot have a schedule"
+            ))
+        );
+        let task = store.get(&task_id).expect("import task");
+        assert_eq!(task.attr("schedule_id"), None);
+        assert_eq!(task.attr("schedule_periods"), Some("7"));
     }
 
     #[test]
@@ -1848,6 +2055,8 @@ mod tests {
                     specialized_target: None,
                     config: Some(config_id),
                     scanner: Some(scanner_id),
+                    schedule: None,
+                    schedule_periods: None,
                 },
             )
             .expect("create task");
@@ -1866,6 +2075,49 @@ mod tests {
                 .expect("trashed task must not block permanent deletion");
             assert!(store.get(&id).is_none());
         }
+    }
+
+    #[test]
+    fn trashed_tasks_block_permanent_schedule_deletion() {
+        let store = ResourceStore::new();
+        let target_id = store.create(Resource::new("target", "Scheduled Target"));
+        let schedule_id = store.create(Resource::new("schedule", "Retained Schedule"));
+        let task_id = store
+            .create_task(
+                Resource::new("task", "Trashed Scheduled Task"),
+                TaskReferences {
+                    target: Some(target_id),
+                    specialized_target: None,
+                    config: Some(DEFAULT_CONFIG_ID),
+                    scanner: Some(DEFAULT_SCANNER_ID),
+                    schedule: Some(schedule_id),
+                    schedule_periods: Some(2),
+                },
+            )
+            .expect("create scheduled task");
+
+        store
+            .delete_typed(&task_id, "task", false)
+            .expect("trash task");
+        assert_eq!(
+            store.delete_typed(&schedule_id, "schedule", true),
+            Err(StoreError::InUse("schedule"))
+        );
+
+        store
+            .delete_typed(&schedule_id, "schedule", false)
+            .expect("trash schedule referenced only by a trashed task");
+        assert_eq!(
+            store.delete_typed(&schedule_id, "schedule", true),
+            Err(StoreError::InUse("schedule"))
+        );
+
+        store
+            .delete_typed(&task_id, "task", true)
+            .expect("permanently delete dependent task");
+        store
+            .delete_typed(&schedule_id, "schedule", true)
+            .expect("permanently delete unreferenced schedule");
     }
 
     #[test]
@@ -1953,6 +2205,8 @@ mod tests {
                     specialized_target: None,
                     config: None,
                     scanner: None,
+                    schedule: None,
+                    schedule_periods: None,
                 },
             )
             .expect("import task");

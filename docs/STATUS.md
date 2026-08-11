@@ -149,6 +149,7 @@ iCalendar payload.
 | create_ticket (result_id + comment) | ✅ | Non-standard element parsing |
 | modify_ticket (status attribute) | ✅ | Ticket-specific handling |
 | Trash/restore/empty_trashcan | ✅ | Full trashcan lifecycle |
+| Task schedule relationships | ✅ | Stateful create/get persistence, schedule-period round trips, omit/set/clear modify semantics, reference validation, and dependency-safe deletion |
 
 ### Fault Injection
 

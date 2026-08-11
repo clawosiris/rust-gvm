@@ -27,8 +27,8 @@ use crate::response_gen::{
 use crate::scenario::{ScenarioEngine, ScenarioMode, ScenarioOutcome, ScenarioStep};
 use crate::store::{
     AssetInputProfile, DeleteAssetResult, Resource, ResourceStore, SpecializedTaskTarget,
-    StoreError, TaskReferenceUpdates, TaskReferences, TaskStatus, DEFAULT_CONFIG_ID,
-    DEFAULT_SCANNER_ID,
+    StoreError, TaskReferenceUpdates, TaskReferences, TaskScheduleUpdate, TaskStatus,
+    DEFAULT_CONFIG_ID, DEFAULT_SCANNER_ID,
 };
 use crate::util::{xml_escape, xml_escape_attr};
 use crate::version::{command_available, GmpVersion};
@@ -3234,6 +3234,7 @@ fn optional_child_uuid(
             "target" => "Missing target id",
             "config" => "Missing config id",
             "scanner" => "Missing scanner id",
+            "schedule" => "Missing schedule id",
             "task" => "Missing task id",
             "port_list" => "Missing port list id",
             _ => "Missing resource id",
@@ -3243,6 +3244,7 @@ fn optional_child_uuid(
         "target" => "Invalid target UUID",
         "config" => "Invalid config UUID",
         "scanner" => "Invalid scanner UUID",
+        "schedule" => "Invalid schedule UUID",
         "task" => "Invalid task UUID",
         "port_list" => "Invalid port list UUID",
         _ => "Invalid resource UUID",
@@ -3262,6 +3264,8 @@ fn task_references(cmd: &ParsedCommand) -> Result<TaskReferences, &'static str> 
             specialized_target: None,
             config: None,
             scanner: None,
+            schedule: None,
+            schedule_periods: None,
         });
     }
     if let Some(specialized_target) = specialized_target {
@@ -3273,6 +3277,8 @@ fn task_references(cmd: &ParsedCommand) -> Result<TaskReferences, &'static str> 
             specialized_target: Some(specialized_target),
             config: optional_child_uuid(cmd, "config")?,
             scanner: Some(optional_child_uuid(cmd, "scanner")?.ok_or("A scanner is required")?),
+            schedule: optional_child_uuid(cmd, "schedule")?,
+            schedule_periods: task_schedule_periods(cmd)?,
         });
     }
     let target = optional_child_uuid(cmd, "target")?.ok_or("A target is required")?;
@@ -3283,6 +3289,8 @@ fn task_references(cmd: &ParsedCommand) -> Result<TaskReferences, &'static str> 
         specialized_target: None,
         config: Some(config),
         scanner: Some(scanner),
+        schedule: optional_child_uuid(cmd, "schedule")?,
+        schedule_periods: task_schedule_periods(cmd)?,
     })
 }
 
@@ -3297,7 +3305,41 @@ fn task_reference_updates(cmd: &ParsedCommand) -> Result<TaskReferenceUpdates, &
         specialized_target,
         config: optional_child_uuid(cmd, "config")?,
         scanner: optional_child_uuid(cmd, "scanner")?,
+        schedule: task_schedule_update(cmd)?,
+        schedule_periods: task_schedule_periods(cmd)?,
     })
+}
+
+fn task_schedule_periods(cmd: &ParsedCommand) -> Result<Option<u32>, &'static str> {
+    let Some(periods) = cmd
+        .children
+        .iter()
+        .find(|child| child.name == "schedule_periods")
+    else {
+        return Ok(None);
+    };
+    let Some(periods) = periods.text.as_deref() else {
+        return Err("Invalid schedule periods");
+    };
+    periods
+        .parse::<u32>()
+        .map(Some)
+        .map_err(|_| "Invalid schedule periods")
+}
+
+fn task_schedule_update(cmd: &ParsedCommand) -> Result<TaskScheduleUpdate, &'static str> {
+    let Some(schedule) = cmd.children.iter().find(|child| child.name == "schedule") else {
+        return Ok(TaskScheduleUpdate::Omitted);
+    };
+    let Some(id) = schedule.attributes.get("id") else {
+        return Err("Missing schedule id");
+    };
+    if id == "0" {
+        return Ok(TaskScheduleUpdate::Clear);
+    }
+    Uuid::parse_str(id)
+        .map(TaskScheduleUpdate::Set)
+        .map_err(|_| "Invalid schedule UUID")
 }
 
 fn specialized_task_target(
@@ -3335,6 +3377,7 @@ fn store_error_response(command_name: &str, error: StoreError) -> Vec<u8> {
         StoreError::InUse(resource_type) => {
             error_response(command_name, 409, &format!("{resource_type} is in use"))
         }
+        StoreError::InvalidArgument(message) => error_response(command_name, 400, message),
         StoreError::InvalidState(message) => error_response(command_name, 409, message),
         StoreError::Inconsistent(resource_type) => error_response(
             command_name,
@@ -4186,6 +4229,7 @@ mod tests {
             ("target", "Missing target id", "Invalid target UUID"),
             ("config", "Missing config id", "Invalid config UUID"),
             ("scanner", "Missing scanner id", "Invalid scanner UUID"),
+            ("schedule", "Missing schedule id", "Invalid schedule UUID"),
             ("task", "Missing task id", "Invalid task UUID"),
             (
                 "port_list",
@@ -4208,6 +4252,29 @@ mod tests {
             assert_eq!(
                 optional_child_uuid(&invalid, child_name),
                 Err(invalid_message)
+            );
+        }
+    }
+
+    #[test]
+    fn task_schedule_periods_accepts_u32_and_rejects_invalid_values() {
+        let omitted = parse_command(b"<modify_task/>").expect("parse omitted periods");
+        assert_eq!(task_schedule_periods(&omitted), Ok(None));
+
+        let valid =
+            parse_command(b"<modify_task><schedule_periods>7</schedule_periods></modify_task>")
+                .expect("parse valid periods");
+        assert_eq!(task_schedule_periods(&valid), Ok(Some(7)));
+
+        for value in ["", "-1", "not-a-number", "4294967296"] {
+            let command = parse_command(
+                format!("<modify_task><schedule_periods>{value}</schedule_periods></modify_task>")
+                    .as_bytes(),
+            )
+            .expect("parse invalid periods");
+            assert_eq!(
+                task_schedule_periods(&command),
+                Err("Invalid schedule periods")
             );
         }
     }
