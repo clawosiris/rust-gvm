@@ -320,19 +320,32 @@ representation for detaching an existing port list. Consequently,
 `CreateTargetOpts::port_list_id` remains `Option<EntityId>` because target
 creation only needs to distinguish including a port list from leaving it out.
 
-### Target SSH Credential Ports
+### Target Credential Service Ports
 
-`CreateTargetOpts` and `ModifyTargetOpts` carry an optional typed SSH service
-port next to the credential relationship. The command builders serialize it as
-the nested `<ssh_credential><port>` GMP field, and typed target observations
-parse the same nested field into `Target::ssh_credential_port`. Both list and
-single-target client reads therefore preserve explicit default and non-default
-ports without caller-side XML handling.
-The stateful mock server also preserves alive-test values, SSH/SMB target
-credential relationships, and SSH ports across create, modify, and get
-operations for Unix composition tests. Stateful responses use gvmd's plural
-`alive_tests` observation field while requests retain the singular `alive_test`
-field.
+`CreateTargetOpts` and `ModifyTargetOpts` expose the SSH service port next to
+the credential relationship. `ServicePort` validates the gvmd-supported
+range `1..=65535`; typed target observations reject zero, nonnumeric, and
+out-of-range backend values instead of losing malformed data. Both list and
+single-target client reads preserve effective default and custom ports.
+
+This is an intentional pre-1.0 API break: create ports use
+`Option<ServicePort>`, modify ports use `ScalarUpdate<ServicePort>`, and the
+low-level `create_target` builder now returns `Result` so a port without an SSH
+credential ID fails explicitly. The high-level client exposes the same failure
+as `GvmError::CreateTarget` before any request is sent.
+
+Modify requests distinguish leaving the binding untouched, setting or replacing
+the port, resetting it to gvmd's default port 22, and detaching the credential.
+The reset operation keeps gvmd's numeric sentinel internal to the command
+builder. The stateful mock mirrors these defaults and round trips SSH and SMB
+credential identifiers, but rejects SMB service ports because current GMP/gvmd
+only defines a nested port for the SSH credential. It also rejects create-time
+detach sentinels and credential types that gvmd does not allow for SSH or SMB
+target bindings.
+
+The stateful mock also preserves target alive-test values. Stateful responses
+use gvmd's plural `alive_tests` observation field while requests retain the
+singular `alive_test` field.
 
 ### Command Modules (29)
 

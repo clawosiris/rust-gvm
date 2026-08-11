@@ -78,6 +78,7 @@ async fn connect(server: &MockGmpServer) -> UnixStream {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn matrix_targets_create_get_delete() {
     let Some(server) = stateful_server().await else {
         return;
@@ -87,7 +88,19 @@ async fn matrix_targets_create_get_delete() {
 
     let credential_id = create_and_get_id(
         &mut stream,
-        b"<create_credential><name>Matrix SSH</name></create_credential>",
+        b"<create_credential><name>Matrix SSH</name><type>usk</type></create_credential>",
+        "create_credential",
+    )
+    .await;
+    let smb_credential_id = create_and_get_id(
+        &mut stream,
+        b"<create_credential><name>Matrix SMB</name><type>up</type></create_credential>",
+        "create_credential",
+    )
+    .await;
+    let invalid_credential_id = create_and_get_id(
+        &mut stream,
+        b"<create_credential><name>Matrix Password</name><type>pw</type></create_credential>",
         "create_credential",
     )
     .await;
@@ -118,21 +131,117 @@ async fn matrix_targets_create_get_delete() {
     let modify_resp = send_recv(
         &mut stream,
         format!(
-            "<modify_target target_id=\"{target_id}\"><ssh_credential id=\"{credential_id}\"><port>22</port></ssh_credential></modify_target>"
+            "<modify_target target_id=\"{target_id}\"><comment>port omitted</comment></modify_target>"
         )
         .as_bytes(),
     )
     .await;
     assert_eq!(modify_resp.status_code(), Some(200));
-    let modified = send_recv(
+    let preserved = send_recv(
         &mut stream,
         format!("<get_targets target_id=\"{target_id}\"/>").as_bytes(),
     )
     .await;
-    assert!(modified
+    assert!(preserved
+        .as_str()
+        .expect("valid utf8")
+        .contains("<port>2222</port>"));
+
+    let reset_resp = send_recv(
+        &mut stream,
+        format!(
+            "<modify_target target_id=\"{target_id}\"><ssh_credential id=\"{credential_id}\"><port>0</port></ssh_credential></modify_target>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(reset_resp.status_code(), Some(200));
+    let reset = send_recv(
+        &mut stream,
+        format!("<get_targets target_id=\"{target_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert!(reset
         .as_str()
         .expect("valid utf8")
         .contains("<port>22</port>"));
+
+    let detach_resp = send_recv(
+        &mut stream,
+        format!(
+            "<modify_target target_id=\"{target_id}\"><ssh_credential id=\"0\"/></modify_target>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(detach_resp.status_code(), Some(200));
+    let detached = send_recv(
+        &mut stream,
+        format!("<get_targets target_id=\"{target_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert!(detached
+        .as_str()
+        .expect("valid utf8")
+        .contains("<ssh_credential id=\"\"><name></name><port></port></ssh_credential>"));
+
+    let default_target_id = create_and_get_id(
+        &mut stream,
+        format!(
+            "<create_target><name>Default SSH Port</name><hosts>127.0.0.2</hosts><ssh_credential id=\"{credential_id}\"/></create_target>"
+        )
+        .as_bytes(),
+        "create_target",
+    )
+    .await;
+    let default_target = send_recv(
+        &mut stream,
+        format!("<get_targets target_id=\"{default_target_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert!(default_target
+        .as_str()
+        .expect("valid utf8")
+        .contains("<port>22</port>"));
+
+    let smb_port_resp = send_recv(
+        &mut stream,
+        format!(
+            "<create_target><name>Invalid SMB Port</name><hosts>127.0.0.3</hosts><smb_credential id=\"{smb_credential_id}\"><port>445</port></smb_credential></create_target>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(smb_port_resp.status_code(), Some(400));
+
+    let create_detach_resp = send_recv(
+        &mut stream,
+        b"<create_target><name>Invalid Detach</name><hosts>127.0.0.4</hosts><ssh_credential id=\"0\"/></create_target>",
+    )
+    .await;
+    assert_eq!(create_detach_resp.status_code(), Some(400));
+
+    for credential_element in ["ssh_credential", "smb_credential"] {
+        let invalid_type_resp = send_recv(
+            &mut stream,
+            format!(
+                "<create_target><name>Invalid Type {credential_element}</name><hosts>127.0.0.5</hosts><{credential_element} id=\"{invalid_credential_id}\"/></create_target>"
+            )
+            .as_bytes(),
+        )
+        .await;
+        assert_eq!(invalid_type_resp.status_code(), Some(400));
+
+        let invalid_modify_type_resp = send_recv(
+            &mut stream,
+            format!(
+                "<modify_target target_id=\"{default_target_id}\"><{credential_element} id=\"{invalid_credential_id}\"/></modify_target>"
+            )
+            .as_bytes(),
+        )
+        .await;
+        assert_eq!(invalid_modify_type_resp.status_code(), Some(400));
+    }
 
     let delete_resp = send_recv(
         &mut stream,

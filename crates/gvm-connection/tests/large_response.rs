@@ -69,7 +69,8 @@ async fn create_large_report(conn: &mut UnixSocketConnection) -> (EntityId, Vec<
                 hosts: vec!["10.0.0.0/24".to_string()],
                 ..CreateTargetOpts::default()
             },
-        ),
+        )
+        .expect("valid target"),
     )
     .await;
     assert_eq!(target_response.status_code(), Some(201));

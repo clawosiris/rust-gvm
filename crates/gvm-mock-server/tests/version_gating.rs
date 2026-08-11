@@ -194,7 +194,8 @@ async fn base_commands_work_on_all_versions() {
                     hosts: vec!["127.0.0.1".to_string()],
                     ..CreateTargetOpts::default()
                 },
-            ),
+            )
+            .expect("valid target"),
         )
         .await;
         assert_eq!(response.status_code(), Some(201));
