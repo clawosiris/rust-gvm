@@ -52,6 +52,7 @@ sha2 = { version = "0.11", features = ["oid"] }
 
 # SSH (feature-gated)
 russh = "0.62"
+rustix = { version = "1", features = ["fs"] }
 getrandom = "0.4"
 
 # CLI

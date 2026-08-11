@@ -241,8 +241,13 @@ let mut client = GmpClient::connect(conn).await?;
 SSH verifies the server key against `~/.ssh/known_hosts` by default, including
 the configured port. Use `SshHostKeyPolicy::KnownHostsFile` for a nonstandard
 file or `SshHostKeyPolicy::Fingerprint` for an explicitly pinned SHA-256
-fingerprint. `SshHostKeyPolicy::AcceptAll` disables verification and is only
-appropriate for tests or an independently authenticated transport.
+fingerprint. Callers that need python-gvm's `auto_accept_host` behavior can opt
+in to `SshHostKeyPolicy::TrustOnFirstUse` or `TrustOnFirstUseFile`: an unknown
+key is persisted atomically, while repeat connections require that same key.
+TOFU does not authenticate the first connection, so that connection remains
+vulnerable to a man-in-the-middle attack. `SshHostKeyPolicy::AcceptAll` never
+pins a key, disables verification on every connection, and is only appropriate
+for tests or an independently authenticated transport.
 This secure default is a behavior change for callers that previously relied on
 implicit host-key acceptance; choose one of the explicit trust policies when
 migrating existing deployments.
