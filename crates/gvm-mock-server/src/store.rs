@@ -6,6 +6,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, RwLock};
 
+use gvm_gmp::AliveTest;
 use uuid::Uuid;
 
 use crate::util::{now_iso, xml_escape, xml_escape_attr};
@@ -369,12 +370,13 @@ impl Resource {
             }
         }
         if self.resource_type == "target" {
-            if let Some(alive_test) = self.attr("alive_test") {
-                xml.push_str(&format!(
-                    "<alive_tests>{}</alive_tests>",
-                    xml_escape(alive_test),
-                ));
-            }
+            let alive_test = self
+                .attr("alive_test")
+                .unwrap_or(AliveTest::ScanConfigDefault.as_target_name());
+            xml.push_str(&format!(
+                "<alive_tests>{}</alive_tests>",
+                xml_escape(alive_test),
+            ));
             if let Some(port_list_id) = self.attr("port_list_id") {
                 xml.push_str(&format!(
                     "<port_list id=\"{}\"><name></name></port_list>",
@@ -1707,6 +1709,24 @@ mod tests {
         let xml = resource.to_xml();
 
         assert!(xml.find("<alpha>").unwrap() < xml.find("<zeta>").unwrap());
+    }
+
+    #[test]
+    fn target_xml_always_observes_an_alive_test() {
+        let default_target = Resource::new("target", "Default");
+        assert!(default_target
+            .to_xml()
+            .contains("<alive_tests>Scan Config Default</alive_tests>"));
+
+        let mut explicit_target = Resource::new("target", "Explicit");
+        explicit_target.set_attr("alive_test", AliveTest::IcmpPing.as_target_name());
+        assert!(explicit_target
+            .to_xml()
+            .contains("<alive_tests>ICMP Ping</alive_tests>"));
+
+        assert!(!Resource::new("task", "Task")
+            .to_xml()
+            .contains("<alive_tests>"));
     }
 
     #[test]

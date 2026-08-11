@@ -345,7 +345,9 @@ target bindings.
 
 The stateful mock also preserves target alive-test values. Stateful responses
 and create/modify requests use gvmd's plural `alive_tests` field. The typed
-request option remains named `alive_test` for source compatibility.
+request option remains named `alive_test` for source compatibility. Target
+responses without an explicit alive-test value report `Scan Config Default`,
+matching gvmd's observation behavior.
 
 ### Command Modules (29)
 

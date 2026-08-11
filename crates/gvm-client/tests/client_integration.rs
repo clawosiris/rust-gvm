@@ -3152,7 +3152,10 @@ async fn typed_target_credentials_round_trip_in_stateful_mode() {
         .await
         .expect("target should be created");
     let created = target_by_id(&mut client, &target.id).await;
-    assert_eq!(created.alive_tests, None);
+    assert_eq!(
+        created.alive_tests.as_deref(),
+        Some(AliveTest::ScanConfigDefault.as_target_name())
+    );
     assert_target_credentials(&created, &first_ssh, 2222, &first_smb);
 
     client
@@ -3166,7 +3169,10 @@ async fn typed_target_credentials_round_trip_in_stateful_mode() {
         .await
         .expect("omitted target fields should be preserved");
     let preserved = target_by_id(&mut client, &target.id).await;
-    assert_eq!(preserved.alive_tests, None);
+    assert_eq!(
+        preserved.alive_tests.as_deref(),
+        Some(AliveTest::ScanConfigDefault.as_target_name())
+    );
     assert_target_credentials(&preserved, &first_ssh, 2222, &first_smb);
 
     client
@@ -3404,8 +3410,9 @@ async fn raw_singular_target_alive_test_matches_gvmd_behavior() {
     assert_eq!(
         target_by_id(&mut client, &singular_target_id)
             .await
-            .alive_tests,
-        None
+            .alive_tests
+            .as_deref(),
+        Some(AliveTest::ScanConfigDefault.as_target_name())
     );
 
     let target = client
