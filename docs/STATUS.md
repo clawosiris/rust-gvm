@@ -344,8 +344,10 @@ detach sentinels and credential types that gvmd does not allow for SSH or SMB
 target bindings.
 
 The stateful mock also preserves target alive-test values. Stateful responses
-use gvmd's plural `alive_tests` observation field while requests retain the
-singular `alive_test` field.
+and create/modify requests use gvmd's plural `alive_tests` field. The typed
+request option remains named `alive_test` for source compatibility. Target
+responses without an explicit alive-test value report `Scan Config Default`,
+matching gvmd's observation behavior.
 
 ### Command Modules (29)
 
@@ -357,13 +359,16 @@ AlertEvent, AlertCondition, AlertMethod, AliveTest, AggregateStatistic, Credenti
 
 ### Tests
 
-| Category | Count |
-|----------|-------|
+`cargo test -p gvm-gmp --all-features -- --list` currently discovers 640 tests.
+The categories below are a tracked subset of that complete inventory.
+
+| Tracked category | Count |
+|------------------|-------|
 | Inline unit tests (command XML) | 80 |
-| External command tests | 53 |
+| External command tests | 54 |
 | Enum exhaustive tests | 347 |
 | EntityId/type tests | 6 |
-| **Total gvm-gmp** | **480** |
+| **Tracked subset** | **487** |
 
 ## gvm-client
 
