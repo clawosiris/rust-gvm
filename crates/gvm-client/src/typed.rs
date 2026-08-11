@@ -101,8 +101,8 @@ use gvm_gmp::commands::secinfo::{
 };
 use gvm_gmp::commands::system::{
     describe_auth, get_settings, get_timezones, get_vulnerability as get_vulnerability_cmd,
-    get_vulns, modify_auth, modify_license_with_opts, run_wizard_with_opts,
-    FilteredGetOpts, ModifyLicenseOpts, RunWizardOpts,
+    get_vulns, modify_auth, modify_license_with_opts, run_wizard_with_opts, FilteredGetOpts,
+    ModifyLicenseOpts, RunWizardOpts,
 };
 use gvm_gmp::commands::system_reports::{get_system_reports, GetSystemReportsOpts};
 use gvm_gmp::commands::tags::{create_tag, get_tags, GetTagsOpts, TagOpts};
@@ -164,8 +164,7 @@ use gvm_gmp::responses::{
     ModifyScannerResponse, ModifyScheduleResponse, ModifyTargetResponse, ModifyTaskResponse,
     ModifyTicketResponse, ModifyUserResponse, ModifyWebApplicationTargetResponse, ReportExport,
     RestoreResponse, ResumeTaskResponse, RunWizardResponse, StartTaskResponse, StopTaskResponse,
-    SyncConfigResponse,
-    VerifyCredentialStoreResponse, VerifyScannerResponse,
+    SyncConfigResponse, VerifyCredentialStoreResponse, VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::{CredentialStoreCredentialType, FeedType, ScheduleInput};

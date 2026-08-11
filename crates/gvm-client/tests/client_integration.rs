@@ -4561,6 +4561,7 @@ async fn typed_trashcan_helpers_restore_deleted_task() {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn typed_resume_task_returns_report_id() {
     let Some(server) = stateful_server().await else {
         return;
@@ -4611,19 +4612,62 @@ async fn typed_resume_task_returns_report_id() {
         .await
         .expect("start_task should succeed");
     assert_eq!(start_response.status, 202);
-    assert!(start_response.report_id.is_some());
+    let report_id = start_response
+        .report_id
+        .expect("start should return report id");
+    let running = client
+        .get_tasks(Default::default())
+        .await
+        .expect("running task should be observable")
+        .items
+        .into_iter()
+        .find(|task| task.meta.id == task_id)
+        .expect("started task should be returned");
+    assert_eq!(
+        running.current_report.as_ref().map(|report| &report.id),
+        Some(&report_id)
+    );
+    assert_eq!(running.last_report, None);
 
     client
         .call(stop_task(&task_id))
         .await
         .expect("stop_task should succeed");
+    let stopped = client
+        .get_tasks(Default::default())
+        .await
+        .expect("stopped task should be observable")
+        .items
+        .into_iter()
+        .find(|task| task.meta.id == task_id)
+        .expect("stopped task should be returned");
+    assert_eq!(stopped.status.as_deref(), Some("Stopped"));
+    assert_eq!(
+        stopped.current_report.as_ref().map(|report| &report.id),
+        Some(&report_id)
+    );
+    assert_eq!(stopped.last_report, None);
 
     let resume_response = client
         .resume_task(&task_id)
         .await
         .expect("resume_task should succeed");
     assert_eq!(resume_response.status, 202);
-    assert!(resume_response.report_id.is_some());
+    assert_eq!(resume_response.report_id.as_ref(), Some(&report_id));
+    let resumed = client
+        .get_tasks(Default::default())
+        .await
+        .expect("resumed task should be observable")
+        .items
+        .into_iter()
+        .find(|task| task.meta.id == task_id)
+        .expect("resumed task should be returned");
+    assert_eq!(resumed.status.as_deref(), Some("Running"));
+    assert_eq!(
+        resumed.current_report.as_ref().map(|report| &report.id),
+        Some(&report_id)
+    );
+    assert_eq!(resumed.last_report, None);
 
     client
         .call(delete_task(&task_id, true))

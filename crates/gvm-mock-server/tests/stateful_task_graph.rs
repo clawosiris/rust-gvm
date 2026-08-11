@@ -443,6 +443,16 @@ async fn stop_and_resume_preserve_one_report_and_update_both_statuses() {
     )
     .await;
     let started_report_id = report_id(&start);
+    let running_task = send_recv(
+        &mut stream,
+        format!("<get_tasks task_id=\"{task_id}\"/>").as_bytes(),
+    )
+    .await;
+    let running_task = running_task.as_str().expect("UTF-8 response");
+    assert!(running_task.contains(&format!(
+        "<current_report><report id=\"{started_report_id}\"></report></current_report>"
+    )));
+    assert!(!running_task.contains("<report_id>"));
     let active_delete = send_recv(
         &mut stream,
         format!("<delete_report report_id=\"{started_report_id}\" ultimate=\"1\"/>").as_bytes(),
@@ -456,6 +466,16 @@ async fn stop_and_resume_preserve_one_report_and_update_both_statuses() {
     )
     .await;
     assert_eq!(stop.status_code(), Some(200));
+    let stopped_task = send_recv(
+        &mut stream,
+        format!("<get_tasks task_id=\"{task_id}\"/>").as_bytes(),
+    )
+    .await;
+    let stopped_task = stopped_task.as_str().expect("UTF-8 response");
+    assert!(stopped_task.contains(&format!(
+        "<current_report><report id=\"{started_report_id}\"></report></current_report>"
+    )));
+    assert!(!stopped_task.contains("<report_id>"));
     let stopped_report = send_recv(
         &mut stream,
         format!("<get_reports report_id=\"{started_report_id}\"/>").as_bytes(),
@@ -472,6 +492,16 @@ async fn stop_and_resume_preserve_one_report_and_update_both_statuses() {
     )
     .await;
     assert_eq!(report_id(&resume), started_report_id);
+    let resumed_task = send_recv(
+        &mut stream,
+        format!("<get_tasks task_id=\"{task_id}\"/>").as_bytes(),
+    )
+    .await;
+    let resumed_task = resumed_task.as_str().expect("UTF-8 response");
+    assert!(resumed_task.contains(&format!(
+        "<current_report><report id=\"{started_report_id}\"></report></current_report>"
+    )));
+    assert!(!resumed_task.contains("<report_id>"));
     let reports = send_recv(&mut stream, b"<get_reports/>").await;
     assert!(reports
         .as_str()
