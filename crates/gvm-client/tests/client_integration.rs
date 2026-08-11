@@ -3108,6 +3108,7 @@ async fn typed_target_host_updates_preserve_replace_and_clear_state() {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn typed_target_credentials_round_trip_in_stateful_mode() {
     let Some(server) = stateful_server().await else {
         return;
