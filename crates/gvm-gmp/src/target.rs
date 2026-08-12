@@ -970,31 +970,45 @@ mod tests {
     #[cfg(feature = "serde")]
     #[test]
     fn serde_uses_validated_string_representation() {
+        #[derive(Debug, serde::Deserialize, serde::Serialize)]
+        #[serde(rename = "target")]
+        struct TargetHostWire {
+            host: TargetHost,
+        }
+
         let host = host("192.0.2.0/30");
         assert_eq!(
-            serde_json::to_string(&host).expect("serialize host"),
-            "\"192.0.2.0/30\""
+            quick_xml::se::to_string(&TargetHostWire { host }).expect("serialize host"),
+            "<target><host>192.0.2.0/30</host></target>"
         );
         assert_eq!(
-            serde_json::from_str::<TargetHost>("\"2001:db8::1/128\"")
-                .expect("deserialize valid host")
-                .as_str(),
+            quick_xml::de::from_str::<TargetHostWire>(
+                "<target><host>2001:db8::1/128</host></target>",
+            )
+            .expect("deserialize valid host")
+            .host
+            .as_str(),
             "2001:db8::1/128"
         );
-        assert!(serde_json::from_str::<TargetHost>("\"192.0.2.0/31\"").is_err());
+        assert!(quick_xml::de::from_str::<TargetHostWire>(
+            "<target><host>192.0.2.0/31</host></target>",
+        )
+        .is_err());
         assert_eq!(
-            serde_json::from_str::<TargetHost>("\"000.001.002.003/030\"")
-                .expect("deserialize normalized host")
-                .as_str(),
+            quick_xml::de::from_str::<TargetHostWire>(
+                "<target><host>000.001.002.003/030</host></target>",
+            )
+            .expect("deserialize normalized host")
+            .host
+            .as_str(),
             "0.1.2.3/30"
         );
-        for value in [
-            "\"192.0.2.0/+24\"",
-            "\"2001:db8::/+64\"",
-            "\"192.0.2.1-+20\"",
-        ] {
+        for value in ["192.0.2.0/+24", "2001:db8::/+64", "192.0.2.1-+20"] {
             assert!(
-                serde_json::from_str::<TargetHost>(value).is_err(),
+                quick_xml::de::from_str::<TargetHostWire>(&format!(
+                    "<target><host>{value}</host></target>"
+                ))
+                .is_err(),
                 "{value}"
             );
         }

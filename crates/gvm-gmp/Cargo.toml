@@ -27,7 +27,6 @@ clap.workspace = true
 pretty_assertions.workspace = true
 rstest.workspace = true
 proptest.workspace = true
-serde_json.workspace = true
 
 [lints]
 workspace = true
