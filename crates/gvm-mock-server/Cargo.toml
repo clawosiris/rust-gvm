@@ -36,6 +36,7 @@ tracing-subscriber.workspace = true
 uuid.workspace = true
 tempfile.workspace = true
 clap.workspace = true
+chrono.workspace = true
 
 # Feature-gated
 tokio-rustls = { workspace = true, optional = true }

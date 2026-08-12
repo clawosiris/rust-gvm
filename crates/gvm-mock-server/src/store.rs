@@ -3,9 +3,10 @@
 
 //! In-memory resource store for Stateful mode.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, RwLock};
 
+use chrono::DateTime;
 use gvm_gmp::AliveTest;
 use uuid::Uuid;
 
@@ -123,16 +124,24 @@ pub enum TaskStatus {
     New,
     /// Start requested.
     Requested,
+    /// Waiting for scanner capacity.
+    Queued,
     /// Currently running.
     Running,
     /// Stop requested.
     StopRequested,
+    /// Delete requested while processing is still active.
+    DeleteRequested,
+    /// Ultimate deletion requested while processing is still active.
+    UltimateDeleteRequested,
     /// Stopped by user.
     Stopped,
     /// Completed successfully.
     Done,
     /// Interrupted before completion and eligible for resumption.
     Interrupted,
+    /// Report data is being processed.
+    Processing,
 }
 
 impl TaskStatus {
@@ -141,22 +150,15 @@ impl TaskStatus {
         match self {
             Self::New => "New",
             Self::Requested => "Requested",
+            Self::Queued => "Queued",
             Self::Running => "Running",
             Self::StopRequested => "Stop Requested",
+            Self::DeleteRequested => "Delete Requested",
+            Self::UltimateDeleteRequested => "Ultimate Delete Requested",
             Self::Stopped => "Stopped",
             Self::Done => "Done",
             Self::Interrupted => "Interrupted",
-        }
-    }
-
-    /// Return the gvmd task response wrapper used for the task's stored report.
-    fn report_reference_element(status: &str) -> Option<&'static str> {
-        match status {
-            "Requested" | "Running" | "Stop Requested" | "Stopped" | "Interrupted" => {
-                Some("current_report")
-            }
-            "Done" => Some("last_report"),
-            _ => None,
+            Self::Processing => "Processing",
         }
     }
 }
@@ -180,6 +182,110 @@ pub struct Resource {
     pub attrs: BTreeMap<String, String>,
     /// Whether this resource is in the trashcan.
     pub trashed: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct AuditComplianceCounts {
+    pub(crate) yes: usize,
+    pub(crate) no: usize,
+    pub(crate) incomplete: usize,
+    pub(crate) undefined: usize,
+}
+
+impl AuditComplianceCounts {
+    pub(crate) fn from_results<'a>(results: impl Iterator<Item = &'a Resource>) -> Self {
+        let mut counts = Self::default();
+        for result in results {
+            match result
+                .attr("compliance")
+                .unwrap_or("undefined")
+                .to_ascii_lowercase()
+                .as_str()
+            {
+                "yes" => counts.yes += 1,
+                "no" => counts.no += 1,
+                "incomplete" => counts.incomplete += 1,
+                _ => counts.undefined += 1,
+            }
+        }
+        counts
+    }
+
+    pub(crate) fn total(self) -> usize {
+        self.yes + self.no + self.incomplete + self.undefined
+    }
+
+    pub(crate) fn compliance(self) -> &'static str {
+        if self.no > 0 {
+            "no"
+        } else if self.incomplete > 0 {
+            "incomplete"
+        } else if self.yes > 0 {
+            "yes"
+        } else {
+            "undefined"
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct ScanReportResultCounts {
+    pub(crate) total: usize,
+    pub(crate) critical: usize,
+    pub(crate) high: usize,
+    pub(crate) medium: usize,
+    pub(crate) low: usize,
+    pub(crate) log: usize,
+    pub(crate) false_positive: usize,
+    pub(crate) errors: usize,
+    pub(crate) hosts: usize,
+    pub(crate) ports: usize,
+    pub(crate) max_severity: f64,
+}
+
+impl ScanReportResultCounts {
+    pub(crate) fn from_results<'a>(results: impl Iterator<Item = &'a Resource>) -> Self {
+        let mut counts = Self::default();
+        let mut hosts = BTreeSet::new();
+        let mut ports = BTreeSet::new();
+        for result in results {
+            counts.total += 1;
+            let severity = scan_report_result_severity(result);
+            counts.max_severity = counts.max_severity.max(severity);
+            if result.attr("false_positive") == Some("1") {
+                counts.false_positive += 1;
+            } else if severity >= 9.0 {
+                counts.critical += 1;
+            } else if severity >= 7.0 {
+                counts.high += 1;
+            } else if severity >= 4.0 {
+                counts.medium += 1;
+            } else if severity > 0.0 {
+                counts.low += 1;
+            } else {
+                counts.log += 1;
+            }
+            if result.attr("threat") == Some("Error") {
+                counts.errors += 1;
+            }
+            if let Some(host) = result.attr("host") {
+                hosts.insert(host);
+            }
+            if let Some(port) = result.attr("port") {
+                ports.insert(port);
+            }
+        }
+        counts.hosts = hosts.len();
+        counts.ports = ports.len();
+        counts
+    }
+}
+
+pub(crate) fn scan_report_result_severity(result: &Resource) -> f64 {
+    result
+        .attr("severity")
+        .and_then(|severity| severity.parse().ok())
+        .unwrap_or_default()
 }
 
 impl Resource {
@@ -318,6 +424,16 @@ impl Resource {
 
     /// Generate XML representation for get responses with command detail semantics.
     pub(crate) fn to_xml_with_details(&self, details: bool) -> String {
+        self.to_xml_with_task_reports(None, None, &[], details)
+    }
+
+    fn to_xml_with_task_reports(
+        &self,
+        current_report: Option<&Resource>,
+        last_report: Option<&Resource>,
+        last_report_results: &[&Resource],
+        details: bool,
+    ) -> String {
         // Notes and overrides use <text> instead of <name>
         let name_tag = if self.resource_type == "note" || self.resource_type == "override" {
             "text"
@@ -390,14 +506,14 @@ impl Resource {
                 "<schedule_periods>{}</schedule_periods>",
                 xml_escape(self.attr("schedule_periods").unwrap_or("0")),
             ));
-            if let (Some(report_id), Some(report_element)) = (
-                self.attr("report_id"),
-                self.attr("status")
-                    .and_then(TaskStatus::report_reference_element),
-            ) {
-                xml.push_str(&format!(
-                    "<{report_element}><report id=\"{}\"></report></{report_element}>",
-                    xml_escape_attr(report_id),
+            if let Some(report) = current_report {
+                xml.push_str(&task_report_reference_xml("current_report", report, &[]));
+            }
+            if let Some(report) = last_report {
+                xml.push_str(&task_report_reference_xml(
+                    "last_report",
+                    report,
+                    last_report_results,
                 ));
             }
         }
@@ -602,6 +718,55 @@ impl Resource {
     }
 }
 
+fn task_report_reference_xml(field: &str, report: &Resource, results: &[&Resource]) -> String {
+    let timestamp = report.attr("timestamp").unwrap_or(&report.creation_time);
+    let scan_start = report.attr("scan_start").unwrap_or(&report.creation_time);
+    let scan_end = report.attr("scan_end").unwrap_or_else(|| {
+        if report.attr("status") == Some(TaskStatus::Done.as_str()) {
+            &report.modification_time
+        } else {
+            ""
+        }
+    });
+    let mut xml = format!(
+        "<{field}><report id=\"{}\"><timestamp>{}</timestamp>\
+         <scan_start>{}</scan_start><scan_end>{}</scan_end>",
+        xml_escape_attr(&report.id.to_string()),
+        xml_escape(timestamp),
+        xml_escape(scan_start),
+        xml_escape(scan_end),
+    );
+    if field == "last_report" {
+        if report.attr("usage_type") == Some("audit") {
+            let counts = AuditComplianceCounts::from_results(results.iter().copied());
+            xml.push_str(&format!(
+                "<compliance_count><yes>{}</yes><no>{}</no><incomplete>{}</incomplete>\
+                 </compliance_count>",
+                counts.yes, counts.no, counts.incomplete,
+            ));
+        } else {
+            let counts = ScanReportResultCounts::from_results(results.iter().copied());
+            xml.push_str(&format!(
+                "<result_count><critical>{critical}</critical>\
+                 <hole deprecated=\"1\">{high}</hole><high>{high}</high>\
+                 <info deprecated=\"1\">{low}</info><low>{low}</low><log>{log}</log>\
+                 <warning deprecated=\"1\">{medium}</warning><medium>{medium}</medium>\
+                 <false_positive>{false_positive}</false_positive></result_count>\
+                 <severity>{severity:.1}</severity>",
+                critical = counts.critical,
+                high = counts.high,
+                low = counts.low,
+                log = counts.log,
+                medium = counts.medium,
+                false_positive = counts.false_positive,
+                severity = counts.max_severity,
+            ));
+        }
+    }
+    xml.push_str(&format!("</report></{field}>"));
+    xml
+}
+
 /// Thread-safe resource store.
 #[derive(Debug, Clone)]
 pub struct ResourceStore {
@@ -611,6 +776,8 @@ pub struct ResourceStore {
 #[derive(Debug)]
 struct StoreInner {
     resources: HashMap<Uuid, Resource>,
+    insertion_order: HashMap<Uuid, u64>,
+    next_insertion_order: u64,
     /// Stateful asset request parsing profile.
     asset_input_profile: AssetInputProfile,
     /// Authenticated sessions.
@@ -740,8 +907,133 @@ fn validate_stored_task_references(inner: &StoreInner, task: &Resource) -> Resul
 fn task_is_active(task: &Resource) -> bool {
     matches!(
         task.attr("status"),
-        Some("Requested" | "Running" | "Stop Requested")
+        Some(
+            "Requested"
+                | "Queued"
+                | "Running"
+                | "Stop Requested"
+                | "Delete Requested"
+                | "Ultimate Delete Requested"
+                | "Processing"
+        )
     )
+}
+
+fn task_has_current_report(task: &Resource) -> bool {
+    matches!(
+        task.attr("status"),
+        Some(
+            "Requested"
+                | "Queued"
+                | "Running"
+                | "Stop Requested"
+                | "Delete Requested"
+                | "Ultimate Delete Requested"
+                | "Stopped"
+                | "Interrupted"
+                | "Processing"
+        )
+    )
+}
+
+fn report_is_current(report: &Resource) -> bool {
+    matches!(
+        report.attr("status"),
+        Some(
+            "Requested"
+                | "Queued"
+                | "Running"
+                | "Stop Requested"
+                | "Delete Requested"
+                | "Ultimate Delete Requested"
+                | "Stopped"
+                | "Interrupted"
+                | "Processing"
+        )
+    )
+}
+
+fn insert_resource(inner: &mut StoreInner, resource: Resource) -> Uuid {
+    let id = resource.id;
+    inner.next_insertion_order = inner.next_insertion_order.saturating_add(1);
+    inner.insertion_order.insert(id, inner.next_insertion_order);
+    inner.resources.insert(id, resource);
+    id
+}
+
+fn remove_resource(inner: &mut StoreInner, id: &Uuid) -> Option<Resource> {
+    inner.insertion_order.remove(id);
+    inner.resources.remove(id)
+}
+
+fn insertion_order(inner: &StoreInner, report: &Resource) -> u64 {
+    inner.insertion_order.get(&report.id).copied().unwrap_or(0)
+}
+
+fn report_creation_instant(report: &Resource) -> i64 {
+    DateTime::parse_from_rfc3339(&report.creation_time)
+        .map(|timestamp| timestamp.timestamp())
+        .unwrap_or(i64::MIN)
+}
+
+fn latest_current_report<'a>(
+    inner: &StoreInner,
+    reports: impl Iterator<Item = &'a Resource>,
+) -> Option<&'a Resource> {
+    reports.max_by_key(|report| insertion_order(inner, report))
+}
+
+fn latest_completed_report<'a>(
+    inner: &StoreInner,
+    reports: impl Iterator<Item = &'a Resource>,
+) -> Option<&'a Resource> {
+    reports.max_by_key(|report| {
+        (
+            report_creation_instant(report),
+            insertion_order(inner, report),
+        )
+    })
+}
+
+fn resolve_task_reports(inner: &StoreInner, task: &Resource) -> (Option<Uuid>, Option<Uuid>) {
+    let task_id = task.id.to_string();
+    let linked = || {
+        inner.resources.values().filter(|report| {
+            report.trashed == task.trashed
+                && report.resource_type == "report"
+                && report.attr("task_id") == Some(task_id.as_str())
+        })
+    };
+
+    let current = if task_has_current_report(task) {
+        task.attr("report_id")
+            .and_then(|id| Uuid::parse_str(id).ok())
+            .and_then(|id| inner.resources.get(&id))
+            .filter(|report| {
+                report.trashed == task.trashed
+                    && report.resource_type == "report"
+                    && report.attr("task_id") == Some(task_id.as_str())
+                    && report_is_current(report)
+            })
+            .or_else(|| {
+                latest_current_report(inner, linked().filter(|report| report_is_current(report)))
+            })
+            .map(|report| report.id)
+    } else {
+        None
+    };
+    let last = latest_completed_report(
+        inner,
+        linked().filter(|report| report.attr("status") == Some("Done")),
+    )
+    .map(|report| report.id);
+    (current, last)
+}
+
+fn resolve_current_report_id(inner: &StoreInner, task: &Resource) -> Result<Uuid, StoreError> {
+    resolve_task_reports(inner, task)
+        .0
+        .ok_or(StoreError::Inconsistent("task report"))
 }
 
 impl ResourceStore {
@@ -752,9 +1044,19 @@ impl ResourceStore {
 
     /// Create a store with specific credentials.
     pub fn with_credentials(username: &str, password: &str) -> Self {
+        let resources = default_resources();
+        let insertion_order = resources
+            .keys()
+            .copied()
+            .enumerate()
+            .map(|(index, id)| (id, index as u64 + 1))
+            .collect();
+        let next_insertion_order = resources.len() as u64;
         Self {
             inner: Arc::new(RwLock::new(StoreInner {
-                resources: default_resources(),
+                resources,
+                insertion_order,
+                next_insertion_order,
                 asset_input_profile: AssetInputProfile::GvmdStrict,
                 authenticated_sessions: std::collections::HashSet::new(),
                 username: username.to_string(),
@@ -801,11 +1103,9 @@ impl ResourceStore {
 
     /// Create a resource. Returns the generated UUID.
     pub fn create(&self, mut resource: Resource) -> Uuid {
-        let id = resource.id;
         resource.modification_time = now_iso();
         let mut inner = self.inner.write().expect("store lock poisoned");
-        inner.resources.insert(id, resource);
-        id
+        insert_resource(&mut inner, resource)
     }
 
     pub(crate) fn create_task(
@@ -846,9 +1146,7 @@ impl ResourceStore {
             task.set_attr("status", TaskStatus::New.as_str());
         }
         task.modification_time = now_iso();
-        let id = task.id;
-        inner.resources.insert(id, task);
-        Ok(id)
+        Ok(insert_resource(&mut inner, task))
     }
 
     pub(crate) fn create_linked_report(
@@ -862,9 +1160,7 @@ impl ResourceStore {
             report.set_attr("task_id", &task_id.to_string());
         }
         report.modification_time = now_iso();
-        let id = report.id;
-        inner.resources.insert(id, report);
-        Ok(id)
+        Ok(insert_resource(&mut inner, report))
     }
 
     /// Get a resource by UUID.
@@ -876,6 +1172,29 @@ impl ResourceStore {
     pub(crate) fn get_typed(&self, id: &Uuid, resource_type: &str) -> Option<Resource> {
         self.get(id)
             .filter(|resource| resource.resource_type == resource_type)
+    }
+
+    pub(crate) fn render_resource_xml(&self, resource: &Resource) -> String {
+        if resource.resource_type != "task" {
+            return resource.to_xml();
+        }
+        let inner = self.inner.read().expect("store lock poisoned");
+        let (current_report, last_report) = resolve_task_reports(&inner, resource);
+        let current_report = current_report.and_then(|id| inner.resources.get(&id));
+        let last_report = last_report.and_then(|id| inner.resources.get(&id));
+        let last_report_results = last_report.map_or_else(Vec::new, |report| {
+            let report_id = report.id.to_string();
+            inner
+                .resources
+                .values()
+                .filter(|result| {
+                    result.resource_type == "result"
+                        && result.trashed == report.trashed
+                        && result.attr("report_id") == Some(report_id.as_str())
+                })
+                .collect()
+        });
+        resource.to_xml_with_task_reports(current_report, last_report, &last_report_results, false)
     }
 
     /// Return the configured user timezone, falling back as gvmd does.
@@ -1100,7 +1419,7 @@ impl ResourceStore {
     pub fn delete(&self, id: &Uuid, ultimate: bool) -> bool {
         let mut inner = self.inner.write().expect("store lock poisoned");
         if ultimate {
-            inner.resources.remove(id).is_some()
+            remove_resource(&mut inner, id).is_some()
         } else if let Some(resource) = inner.resources.get_mut(id) {
             resource.trashed = true;
             true
@@ -1126,7 +1445,7 @@ impl ResourceStore {
         {
             return DeleteAssetResult::InUse;
         }
-        inner.resources.remove(id);
+        remove_resource(&mut inner, id);
         DeleteAssetResult::Deleted
     }
 
@@ -1173,15 +1492,8 @@ impl ResourceStore {
         }
 
         if resource_type == "task" && !resource.trashed && task_is_active(&resource) {
-            if let Some(report_id) = resource
-                .attr("report_id")
-                .and_then(|report_id| Uuid::parse_str(report_id).ok())
-            {
-                let task_id = id.to_string();
-                if let Some(report) = inner.resources.get_mut(&report_id).filter(|report| {
-                    report.resource_type == "report"
-                        && report.attr("task_id") == Some(task_id.as_str())
-                }) {
+            if let Ok(report_id) = resolve_current_report_id(&inner, &resource) {
+                if let Some(report) = inner.resources.get_mut(&report_id) {
                     report.set_attr("status", TaskStatus::Stopped.as_str());
                     report.modification_time = now_iso();
                 }
@@ -1194,27 +1506,35 @@ impl ResourceStore {
 
         if resource_type == "report" {
             let report_id = id.to_string();
-            let linked_tasks: Vec<Uuid> = inner
+            let task_links: Vec<(Uuid, bool, Option<Uuid>)> = inner
                 .resources
                 .values()
-                .filter(|candidate| {
-                    candidate.resource_type == "task"
-                        && candidate.attr("report_id") == Some(report_id.as_str())
+                .filter(|candidate| candidate.resource_type == "task")
+                .map(|task| {
+                    let stored_reference = task.attr("report_id") == Some(report_id.as_str());
+                    let resolved_current = (!task.trashed && task_is_active(task))
+                        .then(|| resolve_task_reports(&inner, task).0)
+                        .flatten();
+                    (task.id, stored_reference, resolved_current)
                 })
-                .map(|candidate| candidate.id)
                 .collect();
-            if linked_tasks.iter().any(|task_id| {
-                inner
-                    .resources
-                    .get(task_id)
-                    .is_some_and(|task| !task.trashed && task_is_active(task))
-            }) {
+            if task_links
+                .iter()
+                .any(|(_, _, resolved_current)| *resolved_current == Some(*id))
+            {
                 return Err(StoreError::InUse("report"));
             }
-            for task_id in linked_tasks {
+            for (task_id, stored_reference, resolved_current) in task_links {
+                if !stored_reference {
+                    continue;
+                }
                 if let Some(task) = inner.resources.get_mut(&task_id) {
-                    task.attrs.remove("report_id");
-                    task.set_attr("status", TaskStatus::New.as_str());
+                    if let Some(current_id) = resolved_current {
+                        task.set_attr("report_id", &current_id.to_string());
+                    } else {
+                        task.attrs.remove("report_id");
+                        task.set_attr("status", TaskStatus::New.as_str());
+                    }
                     task.modification_time = now_iso();
                 }
             }
@@ -1248,7 +1568,7 @@ impl ResourceStore {
 
             if ultimate {
                 for dependent_id in report_ids.into_iter().chain(result_ids) {
-                    inner.resources.remove(&dependent_id);
+                    remove_resource(&mut inner, &dependent_id);
                 }
             } else {
                 for dependent_id in report_ids.into_iter().chain(result_ids) {
@@ -1261,7 +1581,7 @@ impl ResourceStore {
         }
 
         if ultimate {
-            inner.resources.remove(id);
+            remove_resource(&mut inner, id);
         } else if let Some(resource) = inner.resources.get_mut(id) {
             resource.trashed = true;
             resource.modification_time = now_iso();
@@ -1336,7 +1656,15 @@ impl ResourceStore {
     /// Empty the trashcan (permanently remove all trashed resources).
     pub fn empty_trashcan(&self) {
         let mut inner = self.inner.write().expect("store lock poisoned");
-        inner.resources.retain(|_, r| !r.trashed);
+        let trashed: Vec<Uuid> = inner
+            .resources
+            .values()
+            .filter(|resource| resource.trashed)
+            .map(|resource| resource.id)
+            .collect();
+        for id in trashed {
+            remove_resource(&mut inner, &id);
+        }
     }
 
     /// Clone a resource (create a copy with a new UUID).
@@ -1353,7 +1681,7 @@ impl ResourceStore {
         copy.creation_time = now.clone();
         copy.modification_time = now;
         let new_id = copy.id;
-        inner.resources.insert(new_id, copy);
+        insert_resource(&mut inner, copy);
         Some(new_id)
     }
 
@@ -1392,7 +1720,7 @@ impl ResourceStore {
         copy.creation_time = now.clone();
         copy.modification_time = now;
         let new_id = copy.id;
-        inner.resources.insert(new_id, copy);
+        insert_resource(&mut inner, copy);
         Ok(new_id)
     }
 
@@ -1425,7 +1753,7 @@ impl ResourceStore {
         if let Some(usage_type) = task.attr("usage_type") {
             report.set_attr("usage_type", usage_type);
         }
-        inner.resources.insert(report_id, report);
+        insert_resource(&mut inner, report);
 
         let task = inner
             .resources
@@ -1451,12 +1779,7 @@ impl ResourceStore {
             None => return Err(StoreError::Inconsistent("task status")),
         }
 
-        let report_id = stored_task_reference(&task, "report_id", "report")?;
-        let report = active_typed_resource(&inner, &report_id, "report")?;
-        let task_id = id.to_string();
-        if report.attr("task_id") != Some(task_id.as_str()) {
-            return Err(StoreError::Inconsistent("task report"));
-        }
+        let report_id = resolve_current_report_id(&inner, &task)?;
 
         let report = inner
             .resources
@@ -1469,6 +1792,7 @@ impl ResourceStore {
             .get_mut(id)
             .expect("validated task should remain present while locked");
         task.set_attr("status", TaskStatus::Stopped.as_str());
+        task.set_attr("report_id", &report_id.to_string());
         task.modification_time = now_iso();
         Ok(())
     }
@@ -1490,12 +1814,7 @@ impl ResourceStore {
             None => return Err(StoreError::Inconsistent("task status")),
         }
 
-        let report_id = stored_task_reference(&task, "report_id", "report")?;
-        let report = active_typed_resource(&inner, &report_id, "report")?;
-        let task_id = id.to_string();
-        if report.attr("task_id") != Some(task_id.as_str()) {
-            return Err(StoreError::Inconsistent("task report"));
-        }
+        let report_id = resolve_current_report_id(&inner, &task)?;
 
         let report = inner
             .resources
@@ -1508,6 +1827,7 @@ impl ResourceStore {
             .get_mut(id)
             .expect("validated task should remain present while locked");
         task.set_attr("status", TaskStatus::Running.as_str());
+        task.set_attr("report_id", &report_id.to_string());
         task.modification_time = now_iso();
         Ok(report_id)
     }
@@ -1561,7 +1881,7 @@ impl ResourceStore {
         let mut resource = resource;
         resource.modification_time = now_iso();
         let mut inner = self.inner.write().expect("store lock poisoned");
-        inner.resources.insert(resource.id, resource);
+        insert_resource(&mut inner, resource);
     }
 }
 
@@ -1700,6 +2020,8 @@ mod tests {
         assert!(store.delete(&id, true));
         assert!(store.get(&id).is_none());
         assert_eq!(store.list_trashed("task").len(), 0);
+        let inner = store.inner.read().expect("store lock");
+        assert!(!inner.insertion_order.contains_key(&id));
     }
 
     #[test]
@@ -1721,6 +2043,9 @@ mod tests {
         store.delete(&id2, false);
         store.empty_trashcan();
         assert_eq!(store.list_trashed("task").len(), 0);
+        let inner = store.inner.read().expect("store lock");
+        assert!(!inner.insertion_order.contains_key(&id1));
+        assert!(!inner.insertion_order.contains_key(&id2));
     }
 
     #[test]
@@ -1848,6 +2173,263 @@ mod tests {
     }
 
     #[test]
+    fn task_report_references_are_selected_independently_from_linked_history() {
+        let store = ResourceStore::new();
+        let mut task = Resource::new("task", "Lifecycle task");
+        let task_id = task.id;
+        let target_id = store.create(Resource::new("target", "Lifecycle target"));
+        task.set_attr("target_id", &target_id.to_string());
+        task.set_attr("config_id", &DEFAULT_CONFIG_ID.to_string());
+        task.set_attr("scanner_id", &DEFAULT_SCANNER_ID.to_string());
+        task.set_attr("status", TaskStatus::Running.as_str());
+        let active_id = Uuid::new_v4();
+        task.set_attr("report_id", &active_id.to_string());
+        store.seed(task);
+
+        let mut older_done = Resource::new("report", "Older completed report");
+        older_done.creation_time = "2026-01-01T00:00:00Z".to_string();
+        older_done.set_attr("task_id", &task_id.to_string());
+        older_done.set_attr("status", TaskStatus::Done.as_str());
+        let older_done_id = older_done.id;
+        store.seed(older_done);
+
+        let mut last_done = Resource::new("report", "Latest completed report");
+        last_done.creation_time = "2026-02-01T00:00:00Z".to_string();
+        last_done.set_attr("task_id", &task_id.to_string());
+        last_done.set_attr("status", TaskStatus::Done.as_str());
+        let last_done_id = last_done.id;
+        store.seed(last_done);
+
+        let mut active = Resource::with_id("report", "Active report", active_id);
+        active.creation_time = "2026-03-01T00:00:00Z".to_string();
+        active.set_attr("task_id", &task_id.to_string());
+        active.set_attr("status", TaskStatus::Running.as_str());
+        store.seed(active);
+
+        let mut mismatched = Resource::new("report", "Another task's report");
+        let mismatched_id = mismatched.id;
+        mismatched.set_attr("task_id", &Uuid::new_v4().to_string());
+        mismatched.set_attr("status", TaskStatus::Running.as_str());
+        store.seed(mismatched);
+
+        let task = store.get(&task_id).expect("seeded task");
+        let running = store.render_resource_xml(&task);
+        assert!(running.contains(&format!("<current_report><report id=\"{active_id}\">")));
+        assert!(running.contains(&format!("<last_report><report id=\"{last_done_id}\">")));
+        assert!(running.contains("<timestamp>2026-03-01T00:00:00Z</timestamp>"));
+        assert!(running.contains("<result_count><critical>0</critical>"));
+        assert!(!running.contains(&older_done_id.to_string()));
+        assert!(!running.contains("<report_id>"));
+
+        assert!(store.modify(&task_id, |task| task
+            .set_attr("report_id", &mismatched_id.to_string())));
+        store
+            .stop_task(&task_id)
+            .expect("recover linked current report");
+        let task = store.get(&task_id).expect("seeded task");
+        assert_eq!(task.attr("report_id"), Some(active_id.to_string().as_str()));
+        let stopped = store.render_resource_xml(&task);
+        assert!(stopped.contains(&format!("<current_report><report id=\"{active_id}\">")));
+        assert!(stopped.contains(&format!("<last_report><report id=\"{last_done_id}\">")));
+        assert!(!stopped.contains(&mismatched_id.to_string()));
+
+        assert_eq!(store.resume_task(&task_id), Ok(active_id));
+
+        assert!(store.modify(&task_id, |task| {
+            task.set_attr("status", TaskStatus::Interrupted.as_str());
+            task.set_attr("report_id", &active_id.to_string());
+        }));
+        assert!(store.modify(&active_id, |report| {
+            report.set_attr("status", TaskStatus::Interrupted.as_str());
+        }));
+        let task = store.get(&task_id).expect("seeded task");
+        let interrupted = store.render_resource_xml(&task);
+        assert!(interrupted.contains(&format!("<current_report><report id=\"{active_id}\">")));
+        assert!(interrupted.contains(&format!("<last_report><report id=\"{last_done_id}\">")));
+
+        assert!(store.modify(&task_id, |task| {
+            task.set_attr("status", TaskStatus::Done.as_str());
+        }));
+        let task = store.get(&task_id).expect("seeded task");
+        let done = store.render_resource_xml(&task);
+        assert!(!done.contains("<current_report>"));
+        assert!(done.contains(&format!("<last_report><report id=\"{last_done_id}\">")));
+    }
+
+    #[test]
+    fn task_last_report_summaries_use_linked_scan_and_audit_results() {
+        let scan_store = ResourceStore::new();
+        let mut scan_task = Resource::new("task", "Scan summary");
+        let scan_task_id = scan_task.id;
+        scan_task.set_attr("status", TaskStatus::Done.as_str());
+        scan_store.seed(scan_task);
+        let mut scan_report = Resource::new("report", "Completed scan");
+        let scan_report_id = scan_report.id;
+        scan_report.set_attr("task_id", &scan_task_id.to_string());
+        scan_report.set_attr("status", TaskStatus::Done.as_str());
+        scan_report.set_attr("usage_type", "scan");
+        scan_store.seed(scan_report);
+        for severity in ["9.8", "7.5", "5.0", "2.0", "0.0"] {
+            let mut result = Resource::new("result", "Scan result");
+            result.set_attr("report_id", &scan_report_id.to_string());
+            result.set_attr("severity", severity);
+            scan_store.seed(result);
+        }
+        let mut false_positive = Resource::new("result", "False positive");
+        false_positive.set_attr("report_id", &scan_report_id.to_string());
+        false_positive.set_attr("severity", "10.0");
+        false_positive.set_attr("false_positive", "1");
+        scan_store.seed(false_positive);
+        let mut trashed_result = Resource::new("result", "Trashed critical result");
+        trashed_result.set_attr("report_id", &scan_report_id.to_string());
+        trashed_result.set_attr("severity", "9.9");
+        trashed_result.trashed = true;
+        scan_store.seed(trashed_result);
+
+        let scan_xml = scan_store
+            .render_resource_xml(&scan_store.get(&scan_task_id).expect("seeded scan task"));
+        for expected in [
+            "<critical>1</critical>",
+            "<high>1</high>",
+            "<medium>1</medium>",
+            "<low>1</low>",
+            "<log>1</log>",
+            "<false_positive>1</false_positive>",
+            "<severity>10.0</severity>",
+        ] {
+            assert!(
+                scan_xml.contains(expected),
+                "missing {expected}: {scan_xml}"
+            );
+        }
+
+        let audit_store = ResourceStore::new();
+        let mut audit_task = Resource::new("task", "Audit summary");
+        let audit_task_id = audit_task.id;
+        audit_task.set_attr("status", TaskStatus::Done.as_str());
+        audit_store.seed(audit_task);
+        let mut audit_report = Resource::new("report", "Completed audit");
+        let audit_report_id = audit_report.id;
+        audit_report.set_attr("task_id", &audit_task_id.to_string());
+        audit_report.set_attr("status", TaskStatus::Done.as_str());
+        audit_report.set_attr("usage_type", "audit");
+        audit_store.seed(audit_report);
+        for compliance in ["yes", "yes", "no", "incomplete", "undefined"] {
+            let mut result = Resource::new("result", "Audit result");
+            result.set_attr("report_id", &audit_report_id.to_string());
+            result.set_attr("compliance", compliance);
+            audit_store.seed(result);
+        }
+
+        let audit_xml = audit_store
+            .render_resource_xml(&audit_store.get(&audit_task_id).expect("seeded audit task"));
+        assert!(audit_xml
+            .contains("<compliance_count><yes>2</yes><no>1</no><incomplete>1</incomplete>"));
+    }
+
+    #[test]
+    fn permanent_task_deletion_prunes_dependent_insertion_order() {
+        let store = ResourceStore::new();
+        let mut task = Resource::new("task", "Disposable history");
+        let task_id = task.id;
+        task.set_attr("status", TaskStatus::Done.as_str());
+        store.seed(task);
+        let mut report = Resource::new("report", "Disposable report");
+        let report_id = report.id;
+        report.set_attr("task_id", &task_id.to_string());
+        report.set_attr("status", TaskStatus::Done.as_str());
+        store.seed(report);
+        let mut result = Resource::new("result", "Disposable result");
+        let result_id = result.id;
+        result.set_attr("report_id", &report_id.to_string());
+        store.seed(result);
+
+        store
+            .delete_typed(&task_id, "task", true)
+            .expect("delete task graph");
+
+        let inner = store.inner.read().expect("store lock");
+        for id in [task_id, report_id, result_id] {
+            assert!(!inner.resources.contains_key(&id));
+            assert!(!inner.insertion_order.contains_key(&id));
+        }
+    }
+
+    #[test]
+    fn task_report_ordering_uses_instants_and_insertion_order() {
+        let store = ResourceStore::new();
+        let mut task = Resource::new("task", "Ordered reports");
+        let task_id = task.id;
+        task.set_attr("status", TaskStatus::Running.as_str());
+        store.seed(task);
+
+        let mut later_text_earlier_instant = Resource::new("report", "Earlier instant");
+        later_text_earlier_instant.creation_time = "2026-03-01T01:30:00+02:00".to_string();
+        later_text_earlier_instant.set_attr("task_id", &task_id.to_string());
+        later_text_earlier_instant.set_attr("status", TaskStatus::Done.as_str());
+        store.seed(later_text_earlier_instant);
+
+        let mut earlier_text_later_instant = Resource::new("report", "Later instant");
+        earlier_text_later_instant.creation_time = "2026-03-01T00:00:00Z".to_string();
+        earlier_text_later_instant.set_attr("task_id", &task_id.to_string());
+        earlier_text_later_instant.set_attr("status", TaskStatus::Done.as_str());
+        let expected_last = earlier_text_later_instant.id;
+        store.seed(earlier_text_later_instant);
+
+        let mut first_current = Resource::new("report", "First current");
+        first_current.creation_time = "2026-03-01T01:00:00Z".to_string();
+        first_current.set_attr("task_id", &task_id.to_string());
+        first_current.set_attr("status", TaskStatus::Running.as_str());
+        store.seed(first_current);
+
+        let mut second_current = Resource::new("report", "Second current");
+        second_current.creation_time = "2026-03-01T01:00:00Z".to_string();
+        second_current.set_attr("task_id", &task_id.to_string());
+        second_current.set_attr("status", TaskStatus::Processing.as_str());
+        let expected_current = second_current.id;
+        store.seed(second_current);
+
+        let task = store.get(&task_id).expect("seeded task");
+        let (current, last) = {
+            let inner = store.inner.read().expect("store lock");
+            resolve_task_reports(&inner, &task)
+        };
+        assert_eq!(current, Some(expected_current));
+        assert_eq!(last, Some(expected_last));
+    }
+
+    #[test]
+    fn every_gvmd_current_report_task_state_is_rendered() {
+        for status in [
+            TaskStatus::Requested,
+            TaskStatus::Queued,
+            TaskStatus::Running,
+            TaskStatus::StopRequested,
+            TaskStatus::DeleteRequested,
+            TaskStatus::UltimateDeleteRequested,
+            TaskStatus::Stopped,
+            TaskStatus::Interrupted,
+            TaskStatus::Processing,
+        ] {
+            let store = ResourceStore::new();
+            let mut task = Resource::new("task", "State coverage");
+            let task_id = task.id;
+            task.set_attr("status", status.as_str());
+            store.seed(task);
+            let mut report = Resource::new("report", "Current report");
+            let report_id = report.id;
+            report.set_attr("task_id", &task_id.to_string());
+            report.set_attr("status", status.as_str());
+            store.seed(report);
+
+            let task = store.get(&task_id).expect("seeded task");
+            assert!(store
+                .render_resource_xml(&task)
+                .contains(&format!("<current_report><report id=\"{report_id}\">")));
+        }
+    }
+
+    #[test]
     fn target_xml_always_observes_an_alive_test() {
         let default_target = Resource::new("target", "Default");
         assert!(default_target
@@ -1867,23 +2449,26 @@ mod tests {
 
     #[test]
     fn task_xml_uses_typed_report_reference_vocabulary() {
-        let report_id = Uuid::new_v4();
+        let store = ResourceStore::new();
         let mut running = Resource::new("task", "Running Task");
+        let task_id = running.id;
         running.set_attr("status", TaskStatus::Running.as_str());
+        let mut report = Resource::new("report", "Running Report");
+        let report_id = report.id;
         running.set_attr("report_id", &report_id.to_string());
-        let running_xml = running.to_xml();
-        assert!(running_xml.contains(&format!(
-            "<current_report><report id=\"{report_id}\"></report></current_report>"
-        )));
+        report.set_attr("task_id", &task_id.to_string());
+        report.set_attr("status", TaskStatus::Running.as_str());
+        store.seed(running);
+        store.seed(report);
+
+        let running_xml = store.render_resource_xml(&store.get(&task_id).expect("running task"));
+        assert!(running_xml.contains(&format!("<current_report><report id=\"{report_id}\">")));
         assert!(!running_xml.contains("<report_id>"));
 
-        let mut done = Resource::new("task", "Done Task");
-        done.set_attr("status", TaskStatus::Done.as_str());
-        done.set_attr("report_id", &report_id.to_string());
-        let done_xml = done.to_xml();
-        assert!(done_xml.contains(&format!(
-            "<last_report><report id=\"{report_id}\"></report></last_report>"
-        )));
+        assert!(store.modify(&task_id, |task| task.set_attr("status", "Done")));
+        assert!(store.modify(&report_id, |report| report.set_attr("status", "Done")));
+        let done_xml = store.render_resource_xml(&store.get(&task_id).expect("done task"));
+        assert!(done_xml.contains(&format!("<last_report><report id=\"{report_id}\">")));
         assert!(!done_xml.contains("<report_id>"));
     }
 
@@ -2253,6 +2838,56 @@ mod tests {
             other_report.attr("status"),
             Some(TaskStatus::Running.as_str())
         );
+    }
+
+    #[test]
+    fn fallback_selected_active_report_is_protected_from_deletion() {
+        let store = ResourceStore::new();
+        let task_id = create_valid_task(&store, "Missing Current Pointer");
+        let current_report_id = store.start_task(&task_id).expect("start task");
+        assert!(store.modify(&task_id, |task| {
+            task.set_attr("report_id", &Uuid::new_v4().to_string());
+        }));
+
+        let task = store.get(&task_id).expect("active task");
+        let resolved = {
+            let inner = store.inner.read().expect("store lock");
+            resolve_task_reports(&inner, &task).0
+        };
+        assert_eq!(resolved, Some(current_report_id));
+        assert_eq!(
+            store.delete_typed(&current_report_id, "report", true),
+            Err(StoreError::InUse("report"))
+        );
+        assert!(store.get(&current_report_id).is_some());
+    }
+
+    #[test]
+    fn deleting_stale_report_pointer_repairs_active_task_to_resolved_report() {
+        let store = ResourceStore::new();
+        let task_id = create_valid_task(&store, "Stale Current Pointer");
+        let current_report_id = store.start_task(&task_id).expect("start task");
+        let mut stale_report = Resource::new("report", "Stale completed report");
+        stale_report.set_attr("status", TaskStatus::Done.as_str());
+        let stale_report_id = store
+            .create_linked_report(stale_report, Some(task_id))
+            .expect("create stale report");
+        assert!(store.modify(&task_id, |task| {
+            task.set_attr("report_id", &stale_report_id.to_string());
+        }));
+
+        store
+            .delete_typed(&stale_report_id, "report", true)
+            .expect("delete non-current stale report");
+
+        let task = store.get(&task_id).expect("active task remains");
+        assert_eq!(task.attr("status"), Some(TaskStatus::Running.as_str()));
+        assert_eq!(
+            task.attr("report_id"),
+            Some(current_report_id.to_string().as_str())
+        );
+        assert!(store.get(&stale_report_id).is_none());
+        assert!(store.get(&current_report_id).is_some());
     }
 
     #[test]

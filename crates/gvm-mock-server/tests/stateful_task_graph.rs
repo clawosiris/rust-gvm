@@ -450,7 +450,7 @@ async fn stop_and_resume_preserve_one_report_and_update_both_statuses() {
     .await;
     let running_task = running_task.as_str().expect("UTF-8 response");
     assert!(running_task.contains(&format!(
-        "<current_report><report id=\"{started_report_id}\"></report></current_report>"
+        "<current_report><report id=\"{started_report_id}\">"
     )));
     assert!(!running_task.contains("<report_id>"));
     let active_delete = send_recv(
@@ -473,7 +473,7 @@ async fn stop_and_resume_preserve_one_report_and_update_both_statuses() {
     .await;
     let stopped_task = stopped_task.as_str().expect("UTF-8 response");
     assert!(stopped_task.contains(&format!(
-        "<current_report><report id=\"{started_report_id}\"></report></current_report>"
+        "<current_report><report id=\"{started_report_id}\">"
     )));
     assert!(!stopped_task.contains("<report_id>"));
     let stopped_report = send_recv(
@@ -499,7 +499,7 @@ async fn stop_and_resume_preserve_one_report_and_update_both_statuses() {
     .await;
     let resumed_task = resumed_task.as_str().expect("UTF-8 response");
     assert!(resumed_task.contains(&format!(
-        "<current_report><report id=\"{started_report_id}\"></report></current_report>"
+        "<current_report><report id=\"{started_report_id}\">"
     )));
     assert!(!resumed_task.contains("<report_id>"));
     let reports = send_recv(&mut stream, b"<get_reports/>").await;
