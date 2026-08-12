@@ -180,6 +180,128 @@ async fn authenticated_client(server: &MockGmpServer) -> GmpClient<UnixSocketCon
     client
 }
 
+async fn assert_task_report_observation(
+    client: &mut GmpClient<UnixSocketConnection>,
+    task_id: &EntityId,
+    expected_status: &str,
+    expected_current_report: Option<&EntityId>,
+    expected_last_report: Option<&EntityId>,
+) {
+    let tasks = client
+        .get_tasks(Default::default())
+        .await
+        .expect("task reports should be observable");
+    let task = tasks
+        .items
+        .iter()
+        .find(|task| task.meta.id == *task_id)
+        .expect("expected task should be present");
+    assert_eq!(task.status.as_deref(), Some(expected_status));
+    assert_eq!(
+        task.current_report.as_ref().map(|report| &report.id),
+        expected_current_report
+    );
+    assert_eq!(
+        task.last_report.as_ref().map(|report| &report.id),
+        expected_last_report
+    );
+}
+
+async fn assert_task_report_survives_trash_and_restore(
+    client: &mut GmpClient<UnixSocketConnection>,
+    task_id: &EntityId,
+    current_report_id: &EntityId,
+) {
+    client
+        .delete_task(task_id, false)
+        .await
+        .expect("stopped task should move to trash");
+    let trashed = client
+        .get_tasks(gvm_gmp::commands::tasks::GetTasksOpts {
+            trash: Some(true),
+            ..Default::default()
+        })
+        .await
+        .expect("trashed task reports should be observable");
+    let trashed_task = trashed
+        .items
+        .iter()
+        .find(|task| task.meta.id == *task_id)
+        .expect("trashed task should be present");
+    assert_eq!(
+        trashed_task
+            .current_report
+            .as_ref()
+            .map(|report| &report.id),
+        Some(current_report_id)
+    );
+    client
+        .restore_from_trashcan(task_id)
+        .await
+        .expect("task should restore");
+    assert_task_report_observation(client, task_id, "Stopped", Some(current_report_id), None).await;
+}
+
+const TASK_HISTORY_TASK_ID: &str = "51000000-0000-4000-8000-000000000001";
+const TASK_HISTORY_TARGET_ID: &str = "52000000-0000-4000-8000-000000000001";
+const TASK_HISTORY_LAST_REPORT_ID: &str = "53000000-0000-4000-8000-000000000001";
+
+async fn stateful_task_history_server() -> Option<MockGmpServer> {
+    match MockGmpServer::builder()
+        .mode(ServerMode::Stateful)
+        .version(MockVersion::V22_8)
+        .unix_socket_auto()
+        .seed(|store| {
+            let target = Resource::with_id(
+                "target",
+                "Task History Target",
+                TASK_HISTORY_TARGET_ID.parse().expect("valid target UUID"),
+            );
+            store.seed(target);
+
+            let mut task = Resource::with_id(
+                "task",
+                "Task With Completed History",
+                TASK_HISTORY_TASK_ID.parse().expect("valid task UUID"),
+            );
+            task.set_attr("target_id", TASK_HISTORY_TARGET_ID);
+            task.set_attr("config_id", "daba56c8-73ec-11df-a475-002264764cea");
+            task.set_attr("scanner_id", "08b69003-5fc2-4037-a479-93b440211c73");
+            task.set_attr("usage_type", "scan");
+            task.set_attr("status", "Done");
+            task.set_attr("report_id", TASK_HISTORY_LAST_REPORT_ID);
+            store.seed(task);
+
+            let mut report = Resource::with_id(
+                "report",
+                "Completed Report",
+                TASK_HISTORY_LAST_REPORT_ID
+                    .parse()
+                    .expect("valid report UUID"),
+            );
+            report.set_attr("task_id", TASK_HISTORY_TASK_ID);
+            report.set_attr("status", "Done");
+            report.set_attr("usage_type", "scan");
+            store.seed(report);
+
+            let mut high = Resource::new("result", "High task-history result");
+            high.set_attr("report_id", TASK_HISTORY_LAST_REPORT_ID);
+            high.set_attr("severity", "8.8");
+            store.seed(high);
+            let mut medium = Resource::new("result", "Medium task-history result");
+            medium.set_attr("report_id", TASK_HISTORY_LAST_REPORT_ID);
+            medium.set_attr("severity", "5.0");
+            store.seed(medium);
+        })
+        .build()
+        .await
+    {
+        Ok(server) => Some(server),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => None,
+        Err(error) => panic!("server should start: {error}"),
+    }
+}
+
 async fn target_by_id(
     client: &mut GmpClient<UnixSocketConnection>,
     target_id: &EntityId,
@@ -4577,8 +4699,7 @@ async fn typed_trashcan_helpers_restore_deleted_task() {
 }
 
 #[tokio::test]
-#[allow(clippy::too_many_lines)]
-async fn typed_resume_task_returns_report_id() {
+async fn typed_task_report_reference_tracks_start_stop_and_resume() {
     let Some(server) = stateful_server().await else {
         return;
     };
@@ -4631,38 +4752,15 @@ async fn typed_resume_task_returns_report_id() {
     let report_id = start_response
         .report_id
         .expect("start should return report id");
-    let running = client
-        .get_tasks(Default::default())
-        .await
-        .expect("running task should be observable")
-        .items
-        .into_iter()
-        .find(|task| task.meta.id == task_id)
-        .expect("started task should be returned");
-    assert_eq!(
-        running.current_report.as_ref().map(|report| &report.id),
-        Some(&report_id)
-    );
-    assert_eq!(running.last_report, None);
+
+    assert_task_report_observation(&mut client, &task_id, "Running", Some(&report_id), None).await;
 
     client
-        .call(stop_task(&task_id))
+        .stop_task(&task_id)
         .await
         .expect("stop_task should succeed");
-    let stopped = client
-        .get_tasks(Default::default())
-        .await
-        .expect("stopped task should be observable")
-        .items
-        .into_iter()
-        .find(|task| task.meta.id == task_id)
-        .expect("stopped task should be returned");
-    assert_eq!(stopped.status.as_deref(), Some("Stopped"));
-    assert_eq!(
-        stopped.current_report.as_ref().map(|report| &report.id),
-        Some(&report_id)
-    );
-    assert_eq!(stopped.last_report, None);
+
+    assert_task_report_observation(&mut client, &task_id, "Stopped", Some(&report_id), None).await;
 
     let resume_response = client
         .resume_task(&task_id)
@@ -4670,20 +4768,14 @@ async fn typed_resume_task_returns_report_id() {
         .expect("resume_task should succeed");
     assert_eq!(resume_response.status, 202);
     assert_eq!(resume_response.report_id.as_ref(), Some(&report_id));
-    let resumed = client
-        .get_tasks(Default::default())
+
+    assert_task_report_observation(&mut client, &task_id, "Running", Some(&report_id), None).await;
+
+    client
+        .stop_task(&task_id)
         .await
-        .expect("resumed task should be observable")
-        .items
-        .into_iter()
-        .find(|task| task.meta.id == task_id)
-        .expect("resumed task should be returned");
-    assert_eq!(resumed.status.as_deref(), Some("Running"));
-    assert_eq!(
-        resumed.current_report.as_ref().map(|report| &report.id),
-        Some(&report_id)
-    );
-    assert_eq!(resumed.last_report, None);
+        .expect("resumed task should stop before trashing");
+    assert_task_report_survives_trash_and_restore(&mut client, &task_id, &report_id).await;
 
     client
         .call(delete_task(&task_id, true))
@@ -4693,6 +4785,109 @@ async fn typed_resume_task_returns_report_id() {
         .call(delete_target(&target_id, true))
         .await
         .expect("delete_target should succeed");
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_task_observation_keeps_completed_history_during_a_new_run() {
+    let Some(server) = stateful_task_history_server().await else {
+        return;
+    };
+    let mut client = authenticated_client(&server).await;
+
+    let task_id = EntityId::new(TASK_HISTORY_TASK_ID).expect("valid task ID");
+    let last_report_id = EntityId::new(TASK_HISTORY_LAST_REPORT_ID).expect("valid report ID");
+    assert_task_report_observation(&mut client, &task_id, "Done", None, Some(&last_report_id))
+        .await;
+    let completed = client
+        .get_tasks(Default::default())
+        .await
+        .expect("completed metadata should be observable");
+    let last_report = completed
+        .items
+        .iter()
+        .find(|task| task.meta.id == task_id)
+        .and_then(|task| task.last_report.as_ref())
+        .expect("completed report metadata should be present");
+    assert!(last_report.timestamp.is_some());
+    assert!(last_report.scan_start.is_some());
+    assert!(last_report.scan_end.is_some());
+    let result_count = last_report
+        .result_count
+        .as_ref()
+        .expect("result counts should be present");
+    assert_eq!(result_count.high, Some(1));
+    assert_eq!(result_count.medium, Some(1));
+    assert_eq!(last_report.severity.as_deref(), Some("8.8"));
+    let full_report = client
+        .get_scan_report(&last_report_id, GetScanReportOpts::default())
+        .await
+        .expect("full report summary should be observable");
+    let full_counts = full_report
+        .report
+        .result_count
+        .as_ref()
+        .expect("full report counts should be present");
+    assert_eq!(
+        full_counts.high.as_ref().and_then(|count| count.full),
+        Some(1)
+    );
+    assert_eq!(
+        full_counts.medium.as_ref().and_then(|count| count.full),
+        Some(1)
+    );
+    assert_eq!(
+        full_report
+            .report
+            .severity
+            .as_ref()
+            .and_then(|severity| severity.full.as_deref()),
+        Some("8.8")
+    );
+
+    let started = client
+        .start_task(&task_id)
+        .await
+        .expect("completed task should start a new run");
+    let current_report_id = started.report_id.expect("start should return report ID");
+    assert_ne!(current_report_id, last_report_id);
+
+    assert_task_report_observation(
+        &mut client,
+        &task_id,
+        "Running",
+        Some(&current_report_id),
+        Some(&last_report_id),
+    )
+    .await;
+
+    client
+        .stop_task(&task_id)
+        .await
+        .expect("running task should stop");
+    assert_task_report_observation(
+        &mut client,
+        &task_id,
+        "Stopped",
+        Some(&current_report_id),
+        Some(&last_report_id),
+    )
+    .await;
+
+    let resumed = client
+        .resume_task(&task_id)
+        .await
+        .expect("stopped task should resume");
+    assert_eq!(resumed.report_id.as_ref(), Some(&current_report_id));
+    assert_task_report_observation(
+        &mut client,
+        &task_id,
+        "Running",
+        Some(&current_report_id),
+        Some(&last_report_id),
+    )
+    .await;
 
     server.shutdown().await;
 }
