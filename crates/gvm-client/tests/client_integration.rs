@@ -76,12 +76,29 @@ use gvm_gmp::{
     AlertCondition, AlertEvent, AlertMethod, AliveTest, CollectionUpdate, CredentialType, FeedType,
     PermissionSubjectType, ScalarUpdate, ScheduleDefinition, ScheduleInput, ScheduleRecurrence,
     ScheduleRecurrenceObservation, ScheduleTimestamp, ScheduleTimezone, ServicePort,
-    SnmpAuthAlgorithm, SnmpPrivacyAlgorithm, SortOrder, TicketStatus,
+    SnmpAuthAlgorithm, SnmpPrivacyAlgorithm, SortOrder, TargetHost, TargetHosts,
+    TargetPortSelection, TicketStatus,
 };
 use gvm_mock_server::{
     GmpVersion as MockVersion, MockGmpServer, Resource, ResourceStore, ServerMode,
 };
 use std::sync::{Arc, Mutex};
+
+fn target_host(value: &str) -> TargetHost {
+    value.parse().expect("valid target host")
+}
+
+fn target_hosts(included: &[&str], excluded: &[&str]) -> TargetHosts {
+    TargetHosts::new(
+        included.iter().map(|value| target_host(value)),
+        excluded.iter().map(|value| target_host(value)),
+    )
+    .expect("valid target hosts")
+}
+
+fn target_ports() -> TargetPortSelection {
+    TargetPortSelection::PortRange("T:1-65535".parse().expect("valid port range"))
+}
 
 async fn stateful_server() -> Option<MockGmpServer> {
     stateful_server_with_version(MockVersion::V22_5).await
@@ -858,8 +875,8 @@ async fn create_target_and_get_targets_succeed() {
             create_target(
                 "Integration Target",
                 CreateTargetOpts {
-                    hosts: vec!["127.0.0.1".to_string()],
-                    ..CreateTargetOpts::default()
+                    hosts: target_hosts(&["127.0.0.1"], &[]),
+                    ..CreateTargetOpts::new(target_hosts(&["127.0.0.1"], &[]), target_ports())
                 },
             )
             .expect("valid target"),
@@ -3060,8 +3077,8 @@ async fn typed_permission_lifecycle_uses_nested_references() {
         .create_target(
             "Permission Target",
             CreateTargetOpts {
-                hosts: vec!["192.0.2.1".into()],
-                ..Default::default()
+                hosts: target_hosts(&["192.0.2.1"], &[]),
+                ..CreateTargetOpts::new(target_hosts(&["192.0.2.1"], &[]), target_ports())
             },
         )
         .await
@@ -3144,7 +3161,7 @@ async fn typed_permission_lifecycle_uses_nested_references() {
 }
 
 #[tokio::test]
-async fn typed_target_host_updates_preserve_replace_and_clear_state() {
+async fn typed_target_host_updates_are_atomic_and_can_clear_exclusions() {
     let Some(server) = stateful_server().await else {
         return;
     };
@@ -3162,9 +3179,8 @@ async fn typed_target_host_updates_preserve_replace_and_clear_state() {
         .create_target(
             "Collection Target",
             CreateTargetOpts {
-                hosts: vec!["192.0.2.1".into(), "192.0.2.2".into()],
-                exclude_hosts: vec!["192.0.2.3".into()],
-                ..Default::default()
+                hosts: target_hosts(&["192.0.2.1", "192.0.2.2"], &["192.0.2.3"]),
+                ..CreateTargetOpts::new(target_hosts(&["192.0.2.1"], &[]), target_ports())
             },
         )
         .await
@@ -3198,13 +3214,12 @@ async fn typed_target_host_updates_preserve_replace_and_clear_state() {
         .modify_target(
             &target.id,
             ModifyTargetOpts {
-                hosts: CollectionUpdate::Clear,
-                exclude_hosts: CollectionUpdate::replace(["192.0.2.4".into()]),
+                hosts: Some(target_hosts(&["192.0.2.4"], &[])),
                 ..Default::default()
             },
         )
         .await
-        .expect("target hosts should be cleared and exclusions replaced");
+        .expect("target hosts should be atomically replaced");
     let targets = client
         .get_targets(GetTargetsOpts::default())
         .await
@@ -3214,14 +3229,15 @@ async fn typed_target_host_updates_preserve_replace_and_clear_state() {
         .iter()
         .find(|item| item.meta.id == target.id)
         .expect("target should be listed");
-    assert!(fetched_target.hosts.is_empty());
-    assert_eq!(fetched_target.exclude_hosts, vec!["192.0.2.4".to_string()]);
+    assert_eq!(fetched_target.hosts, vec!["192.0.2.4".to_string()]);
+    assert!(fetched_target.exclude_hosts.is_empty());
 
     let history = server.command_history();
     assert!(history.iter().any(|record| {
         record.command_name() == "modify_target"
-            && std::str::from_utf8(record.raw_xml())
-                .is_ok_and(|xml| xml.contains("<hosts></hosts>"))
+            && std::str::from_utf8(record.raw_xml()).is_ok_and(|xml| {
+                xml.contains("<hosts>192.0.2.4</hosts><exclude_hosts></exclude_hosts>")
+            })
     }));
 
     server.shutdown().await;
@@ -3243,9 +3259,9 @@ async fn typed_target_credentials_round_trip_in_stateful_mode() {
         .create_target(
             "Default Credential Port Target",
             CreateTargetOpts {
-                hosts: vec!["192.0.2.9".into()],
+                hosts: target_hosts(&["192.0.2.9"], &[]),
                 ssh_credential_id: Some(first_ssh.clone()),
-                ..Default::default()
+                ..CreateTargetOpts::new(target_hosts(&["192.0.2.1"], &[]), target_ports())
             },
         )
         .await
@@ -3262,11 +3278,11 @@ async fn typed_target_credentials_round_trip_in_stateful_mode() {
         .create_target(
             "Credential Target",
             CreateTargetOpts {
-                hosts: vec!["192.0.2.1".into()],
+                hosts: target_hosts(&["192.0.2.1"], &[]),
                 ssh_credential_id: Some(first_ssh.clone()),
                 ssh_credential_port: Some(ServicePort::new(2222).expect("valid port")),
                 smb_credential_id: Some(first_smb.clone()),
-                ..Default::default()
+                ..CreateTargetOpts::new(target_hosts(&["192.0.2.1"], &[]), target_ports())
             },
         )
         .await
@@ -3384,9 +3400,9 @@ async fn typed_target_create_rejects_an_orphaned_ssh_port_before_send() {
         .create_target(
             "Invalid Credential Port Target",
             CreateTargetOpts {
-                hosts: vec!["192.0.2.11".into()],
+                hosts: target_hosts(&["192.0.2.11"], &[]),
                 ssh_credential_port: Some(ServicePort::new(2222).expect("valid port")),
-                ..Default::default()
+                ..CreateTargetOpts::new(target_hosts(&["192.0.2.11"], &[]), target_ports())
             },
         )
         .await
@@ -3504,7 +3520,7 @@ async fn typed_target_alive_tests_preserve_replace_and_validate_state() {
         assert_raw_server_error(
             &mut client,
             format!(
-                "<create_target><name>Invalid Alive Test</name><hosts>192.0.2.2</hosts>{alive_test}</create_target>"
+                "<create_target><name>Invalid Alive Test</name><hosts>192.0.2.2</hosts>{alive_test}<port_range>T:1-65535</port_range></create_target>"
             )
             .into_bytes(),
             400,
@@ -3516,9 +3532,9 @@ async fn typed_target_alive_tests_preserve_replace_and_validate_state() {
         .create_target(
             "Alive Test Target",
             CreateTargetOpts {
-                hosts: vec!["192.0.2.1".into()],
+                hosts: target_hosts(&["192.0.2.1"], &[]),
                 alive_test: Some(AliveTest::ScanConfigDefault),
-                ..Default::default()
+                ..CreateTargetOpts::new(target_hosts(&["192.0.2.1"], &[]), target_ports())
             },
         )
         .await
@@ -3606,7 +3622,7 @@ async fn raw_singular_target_alive_test_matches_gvmd_behavior() {
     let mut client = authenticated_client(&server).await;
     let singular_create = client
         .call(
-            b"<create_target><name>Singular Alive Test</name><hosts>192.0.2.3</hosts><alive_test>ICMP Ping</alive_test></create_target>"
+            b"<create_target><name>Singular Alive Test</name><hosts>192.0.2.3</hosts><alive_test>ICMP Ping</alive_test><port_range>T:1-65535</port_range></create_target>"
                 .to_vec(),
         )
         .await
@@ -3628,9 +3644,9 @@ async fn raw_singular_target_alive_test_matches_gvmd_behavior() {
         .create_target(
             "Plural Alive Test",
             CreateTargetOpts {
-                hosts: vec!["192.0.2.4".into()],
+                hosts: target_hosts(&["192.0.2.4"], &[]),
                 alive_test: Some(AliveTest::ConsiderAlive),
-                ..Default::default()
+                ..CreateTargetOpts::new(target_hosts(&["192.0.2.4"], &[]), target_ports())
             },
         )
         .await
@@ -3683,9 +3699,9 @@ async fn typed_target_port_list_updates_preserve_omit_and_set_semantics() {
         .create_target(
             "Port List Target",
             CreateTargetOpts {
-                hosts: vec!["192.0.2.1".into()],
-                port_list_id: Some(first_port_list.id.clone()),
-                ..Default::default()
+                hosts: target_hosts(&["192.0.2.1"], &[]),
+                ports: TargetPortSelection::PortList(first_port_list.id.clone()),
+                ..CreateTargetOpts::new(target_hosts(&["192.0.2.1"], &[]), target_ports())
             },
         )
         .await
@@ -3766,8 +3782,8 @@ async fn typed_target_port_list_clear_is_rejected_before_send() {
         .create_target(
             "Port List Clear Target",
             CreateTargetOpts {
-                hosts: vec!["192.0.2.1".into()],
-                ..Default::default()
+                hosts: target_hosts(&["192.0.2.1"], &[]),
+                ..CreateTargetOpts::new(target_hosts(&["192.0.2.1"], &[]), target_ports())
             },
         )
         .await
@@ -4456,8 +4472,8 @@ async fn full_crud_lifecycle_succeeds() {
             create_target(
                 "Lifecycle Target",
                 CreateTargetOpts {
-                    hosts: vec!["127.0.0.1".to_string()],
-                    ..CreateTargetOpts::default()
+                    hosts: target_hosts(&["127.0.0.1"], &[]),
+                    ..CreateTargetOpts::new(target_hosts(&["127.0.0.1"], &[]), target_ports())
                 },
             )
             .expect("valid target"),
@@ -4601,8 +4617,8 @@ async fn typed_trashcan_helpers_restore_deleted_task() {
         .create_target(
             "Trashcan Target",
             CreateTargetOpts {
-                hosts: vec!["127.0.0.1".to_string()],
-                ..CreateTargetOpts::default()
+                hosts: target_hosts(&["127.0.0.1"], &[]),
+                ..CreateTargetOpts::new(target_hosts(&["127.0.0.1"], &[]), target_ports())
             },
         )
         .await
@@ -4669,8 +4685,8 @@ async fn typed_resume_task_returns_report_id() {
         .create_target(
             "Typed Resume Target",
             CreateTargetOpts {
-                hosts: vec!["127.0.0.1".to_string()],
-                ..CreateTargetOpts::default()
+                hosts: target_hosts(&["127.0.0.1"], &[]),
+                ..CreateTargetOpts::new(target_hosts(&["127.0.0.1"], &[]), target_ports())
             },
         )
         .await

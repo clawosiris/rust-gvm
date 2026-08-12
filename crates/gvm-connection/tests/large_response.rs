@@ -10,6 +10,7 @@ use gvm_gmp::commands::scan_configs::{get_scan_configs, GetScanConfigsOpts};
 use gvm_gmp::commands::targets::{create_target, CreateTargetOpts};
 use gvm_gmp::commands::tasks::{create_task, start_task, CreateTaskOpts};
 use gvm_gmp::types::EntityId;
+use gvm_gmp::TargetHost;
 use gvm_mock_server::{GmpVersion, LargeReportConfig, MockGmpServer, ServerMode};
 use gvm_protocol::{Request, Response};
 
@@ -66,8 +67,21 @@ async fn create_large_report(conn: &mut UnixSocketConnection) -> (EntityId, Vec<
         create_target(
             "large-test",
             CreateTargetOpts {
-                hosts: vec!["10.0.0.0/24".to_string()],
-                ..CreateTargetOpts::default()
+                hosts: gvm_gmp::TargetHosts::new(
+                    [TargetHost::new("10.0.0.0/24").expect("valid target host")],
+                    [],
+                )
+                .expect("valid target hosts"),
+                ..CreateTargetOpts::new(
+                    gvm_gmp::TargetHosts::new(
+                        [TargetHost::new("127.0.0.1").expect("valid target host")],
+                        [],
+                    )
+                    .expect("valid target hosts"),
+                    gvm_gmp::TargetPortSelection::PortRange(
+                        "T:1-65535".parse().expect("valid port range"),
+                    ),
+                )
             },
         )
         .expect("valid target"),

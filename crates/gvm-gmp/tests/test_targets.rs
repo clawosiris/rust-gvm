@@ -7,13 +7,33 @@ mod common;
 
 use common::{id, xml};
 use gvm_gmp::commands::targets::*;
-use gvm_gmp::{AliveTest, ScalarUpdate, ServicePort};
+use gvm_gmp::{AliveTest, ScalarUpdate, ServicePort, TargetHost, TargetHosts, TargetPortSelection};
+
+fn host(value: &str) -> TargetHost {
+    value.parse().expect("valid target host")
+}
+
+fn hosts(included: &[&str], excluded: &[&str]) -> TargetHosts {
+    TargetHosts::new(
+        included.iter().map(|value| host(value)),
+        excluded.iter().map(|value| host(value)),
+    )
+    .expect("valid target hosts")
+}
+
+fn direct_ports() -> TargetPortSelection {
+    TargetPortSelection::PortRange("T:1-65535".parse().expect("valid port range"))
+}
 
 #[test]
 fn test_create_target_basic() {
     assert_eq!(
-        xml(create_target("target", Default::default()).expect("valid target")),
-        "<create_target><name>target</name></create_target>"
+        xml(create_target(
+            "target",
+            CreateTargetOpts::new(hosts(&["192.0.2.1"], &[]), direct_ports()),
+        )
+        .expect("valid target")),
+        "<create_target><name>target</name><hosts>192.0.2.1</hosts><exclude_hosts></exclude_hosts><port_range>T:1-65535</port_range></create_target>"
     );
 }
 
@@ -25,13 +45,12 @@ fn test_create_target_with_optionals() {
                 "target",
                 CreateTargetOpts {
                 comment: Some("c".into()),
-                hosts: vec!["1.1.1.1".into(), "2.2.2.2".into()],
-                exclude_hosts: vec!["3.3.3.3".into()],
+                hosts: hosts(&["1.1.1.1", "2.2.2.2"], &["3.3.3.3"]),
                 alive_test: Some(AliveTest::IcmpAndArpPing),
-                port_list_id: Some(id("pl1")),
+                ports: TargetPortSelection::PortList(id("pl1")),
                 reverse_lookup_only: Some(true),
                 reverse_lookup_unify: Some(false),
-                ..Default::default()
+                ..CreateTargetOpts::new(hosts(&["192.0.2.1"], &[]), direct_ports())
                 },
             )
             .expect("valid target"),
@@ -64,14 +83,14 @@ fn test_target_ssh_credential_port_is_nested_in_credential() {
             create_target(
                 "target",
                 CreateTargetOpts {
-                ssh_credential_id: Some(id("ssh1")),
-                ssh_credential_port: Some(ServicePort::new(2222).expect("valid port")),
-                ..Default::default()
+                    ssh_credential_id: Some(id("ssh1")),
+                    ssh_credential_port: Some(ServicePort::new(2222).expect("valid port")),
+                    ..CreateTargetOpts::new(hosts(&["192.0.2.1"], &[]), direct_ports())
                 },
             )
             .expect("valid target"),
         ),
-        "<create_target><name>target</name><ssh_credential id=\"ssh1\"><port>2222</port></ssh_credential></create_target>"
+        "<create_target><name>target</name><hosts>192.0.2.1</hosts><exclude_hosts></exclude_hosts><port_range>T:1-65535</port_range><ssh_credential id=\"ssh1\"><port>2222</port></ssh_credential></create_target>"
     );
 
     assert_eq!(

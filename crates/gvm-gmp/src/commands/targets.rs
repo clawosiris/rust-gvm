@@ -12,21 +12,20 @@ use crate::common::{
     set_optional_bool_attr,
 };
 use crate::enums::AliveTest;
-use crate::types::{CollectionUpdate, EntityId, ScalarUpdate, ServicePort};
+use crate::target::{TargetHost, TargetHosts, TargetPortSelection};
+use crate::types::{EntityId, ScalarUpdate, ServicePort};
 
-/// Optional fields for `create_target` requests.
-#[derive(Debug, Clone, Default)]
+/// Required and optional fields for `create_target` requests.
+#[derive(Debug, Clone)]
 pub struct CreateTargetOpts {
     /// Optional comment text included in the request.
     pub comment: Option<String>,
-    /// Host entries associated with the request.
-    pub hosts: Vec<String>,
-    /// Hosts to exclude from the request.
-    pub exclude_hosts: Vec<String>,
+    /// Validated included and excluded target hosts.
+    pub hosts: TargetHosts,
     /// Optional alive-test strategy.
     pub alive_test: Option<AliveTest>,
-    /// Optional port-list identifier.
-    pub port_list_id: Option<EntityId>,
+    /// Required port list or direct port range.
+    pub ports: TargetPortSelection,
     /// Optional SSH credential identifier.
     pub ssh_credential_id: Option<EntityId>,
     /// Optional SSH service port nested below the SSH credential.
@@ -41,6 +40,26 @@ pub struct CreateTargetOpts {
     pub reverse_lookup_only: Option<bool>,
     /// Whether reverse-lookup unification should be enabled.
     pub reverse_lookup_unify: Option<bool>,
+}
+
+impl CreateTargetOpts {
+    /// Create options for the required manual target host selection.
+    #[must_use]
+    pub fn new(hosts: TargetHosts, ports: TargetPortSelection) -> Self {
+        Self {
+            comment: None,
+            hosts,
+            alive_test: None,
+            ports,
+            ssh_credential_id: None,
+            ssh_credential_port: None,
+            smb_credential_id: None,
+            esxi_credential_id: None,
+            snmp_credential_id: None,
+            reverse_lookup_only: None,
+            reverse_lookup_unify: None,
+        }
+    }
 }
 
 /// Options for `get_targets` requests.
@@ -63,10 +82,8 @@ pub struct ModifyTargetOpts {
     pub name: Option<String>,
     /// Optional comment text included in the request.
     pub comment: Option<String>,
-    /// Host update: omit, replace, or explicitly clear.
-    pub hosts: CollectionUpdate<String>,
-    /// Excluded-host update: omit, replace, or explicitly clear.
-    pub exclude_hosts: CollectionUpdate<String>,
+    /// Atomic replacement of included and excluded hosts, or `None` to omit.
+    pub hosts: Option<TargetHosts>,
     /// Optional alive-test strategy.
     pub alive_test: Option<AliveTest>,
     /// Port-list relationship update: omit or set/replace.
@@ -181,16 +198,19 @@ pub fn create_target(
     let mut cmd = XmlCommand::new("create_target");
     cmd.add_element_with_text("name", name);
     add_text_element(&mut cmd, "comment", opts.comment.as_deref());
-    if !opts.hosts.is_empty() {
-        cmd.add_element_with_text("hosts", &opts.hosts.join(","));
-    }
-    if !opts.exclude_hosts.is_empty() {
-        cmd.add_element_with_text("exclude_hosts", &opts.exclude_hosts.join(","));
-    }
+    cmd.add_element_with_text("hosts", &join_hosts(opts.hosts.included()));
+    cmd.add_element_with_text("exclude_hosts", &join_hosts(opts.hosts.excluded()));
     if let Some(alive_test) = opts.alive_test {
         cmd.add_element_with_text("alive_tests", alive_test.as_target_name());
     }
-    add_optional_id_element(&mut cmd, "port_list", opts.port_list_id.as_ref());
+    match &opts.ports {
+        TargetPortSelection::PortList(port_list_id) => {
+            add_optional_id_element(&mut cmd, "port_list", Some(port_list_id));
+        }
+        TargetPortSelection::PortRange(port_range) => {
+            cmd.add_element_with_text("port_range", port_range.as_str());
+        }
+    }
     add_create_target_credentials(&mut cmd, &opts);
     if let Some(value) = opts.reverse_lookup_only {
         cmd.add_element_with_text("reverse_lookup_only", bool_str(value));
@@ -253,8 +273,10 @@ pub fn modify_target(
     let mut cmd = XmlCommand::new("modify_target").attribute("target_id", target_id.as_str());
     add_text_element(&mut cmd, "name", opts.name.as_deref());
     add_text_element(&mut cmd, "comment", opts.comment.as_deref());
-    add_collection_update(&mut cmd, "hosts", &opts.hosts);
-    add_collection_update(&mut cmd, "exclude_hosts", &opts.exclude_hosts);
+    if let Some(hosts) = &opts.hosts {
+        cmd.add_element_with_text("hosts", &join_hosts(hosts.included()));
+        cmd.add_element_with_text("exclude_hosts", &join_hosts(hosts.excluded()));
+    }
     if let Some(alive_test) = opts.alive_test {
         cmd.add_element_with_text("alive_tests", alive_test.as_target_name());
     }
@@ -335,16 +357,12 @@ fn add_credential<'a>(
     credential
 }
 
-fn add_collection_update(cmd: &mut XmlCommand, element: &str, update: &CollectionUpdate<String>) {
-    match update {
-        CollectionUpdate::Omitted => {}
-        CollectionUpdate::Replace(values) => {
-            cmd.add_element_with_text(element, &values.join(","));
-        }
-        CollectionUpdate::Clear => {
-            cmd.add_element_with_text(element, "");
-        }
-    }
+fn join_hosts(hosts: &[TargetHost]) -> String {
+    hosts
+        .iter()
+        .map(TargetHost::as_str)
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 fn validate_host_update(
@@ -462,16 +480,31 @@ mod tests {
         EntityId::new(value).expect("valid id")
     }
 
+    fn host(value: &str) -> TargetHost {
+        value.parse().expect("valid target host")
+    }
+
+    fn hosts(included: &[&str], excluded: &[&str]) -> TargetHosts {
+        TargetHosts::new(
+            included.iter().map(|value| host(value)),
+            excluded.iter().map(|value| host(value)),
+        )
+        .expect("valid target hosts")
+    }
+
+    fn direct_ports() -> TargetPortSelection {
+        TargetPortSelection::PortRange("T:1-65535".parse().expect("valid port range"))
+    }
+
     #[test]
     fn target_commands_build_xml() {
         let rendered = xml(create_target(
             "target",
             CreateTargetOpts {
                 comment: Some("c".into()),
-                hosts: vec!["1.1.1.1".into()],
-                exclude_hosts: vec!["2.2.2.2".into()],
+                hosts: hosts(&["1.1.1.1"], &["2.2.2.2"]),
                 alive_test: Some(AliveTest::IcmpPing),
-                port_list_id: Some(id("pl1")),
+                ports: TargetPortSelection::PortList(id("pl1")),
                 ssh_credential_id: Some(id("ssh1")),
                 ssh_credential_port: Some(ServicePort::new(2222).expect("valid port")),
                 smb_credential_id: Some(id("smb1")),
@@ -541,7 +574,7 @@ mod tests {
     }
 
     #[test]
-    fn modify_target_distinguishes_omitted_replaced_and_cleared_hosts() {
+    fn modify_target_omits_or_atomically_replaces_hosts() {
         assert_eq!(
             xml(modify_target(&id("t1"), ModifyTargetOpts::default()).expect("valid update")),
             "<modify_target target_id=\"t1\"/>"
@@ -550,8 +583,10 @@ mod tests {
             xml(modify_target(
                 &id("t1"),
                 ModifyTargetOpts {
-                    hosts: CollectionUpdate::replace(["192.0.2.1".into(), "192.0.2.2".into()]),
-                    exclude_hosts: CollectionUpdate::replace(["192.0.2.3".into()]),
+                    hosts: Some(hosts(
+                        &["192.0.2.1", "192.0.2.2"],
+                        &["192.0.2.3"],
+                    )),
                     ..Default::default()
                 }
             ).expect("valid update")),
@@ -561,12 +596,12 @@ mod tests {
             xml(modify_target(
                 &id("t1"),
                 ModifyTargetOpts {
-                    hosts: CollectionUpdate::Clear,
-                    exclude_hosts: CollectionUpdate::Clear,
+                    hosts: Some(hosts(&["192.0.2.1"], &[])),
                     ..Default::default()
                 }
-            ).expect("valid update")),
-            "<modify_target target_id=\"t1\"><hosts></hosts><exclude_hosts></exclude_hosts></modify_target>"
+            )
+            .expect("valid update")),
+            "<modify_target target_id=\"t1\"><hosts>192.0.2.1</hosts><exclude_hosts></exclude_hosts></modify_target>"
         );
     }
 
@@ -686,7 +721,7 @@ mod tests {
                 "target",
                 CreateTargetOpts {
                     ssh_credential_port: Some(ServicePort::new(2222).expect("valid port")),
-                    ..Default::default()
+                    ..CreateTargetOpts::new(hosts(&["192.0.2.1"], &[]), direct_ports())
                 }
             )
             .err(),
