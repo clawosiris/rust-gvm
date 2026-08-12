@@ -1506,27 +1506,35 @@ impl ResourceStore {
 
         if resource_type == "report" {
             let report_id = id.to_string();
-            let linked_tasks: Vec<Uuid> = inner
+            let task_links: Vec<(Uuid, bool, Option<Uuid>)> = inner
                 .resources
                 .values()
-                .filter(|candidate| {
-                    candidate.resource_type == "task"
-                        && candidate.attr("report_id") == Some(report_id.as_str())
+                .filter(|candidate| candidate.resource_type == "task")
+                .map(|task| {
+                    let stored_reference = task.attr("report_id") == Some(report_id.as_str());
+                    let resolved_current = (!task.trashed && task_is_active(task))
+                        .then(|| resolve_task_reports(&inner, task).0)
+                        .flatten();
+                    (task.id, stored_reference, resolved_current)
                 })
-                .map(|candidate| candidate.id)
                 .collect();
-            if linked_tasks.iter().any(|task_id| {
-                inner
-                    .resources
-                    .get(task_id)
-                    .is_some_and(|task| !task.trashed && task_is_active(task))
-            }) {
+            if task_links
+                .iter()
+                .any(|(_, _, resolved_current)| *resolved_current == Some(*id))
+            {
                 return Err(StoreError::InUse("report"));
             }
-            for task_id in linked_tasks {
+            for (task_id, stored_reference, resolved_current) in task_links {
+                if !stored_reference {
+                    continue;
+                }
                 if let Some(task) = inner.resources.get_mut(&task_id) {
-                    task.attrs.remove("report_id");
-                    task.set_attr("status", TaskStatus::New.as_str());
+                    if let Some(current_id) = resolved_current {
+                        task.set_attr("report_id", &current_id.to_string());
+                    } else {
+                        task.attrs.remove("report_id");
+                        task.set_attr("status", TaskStatus::New.as_str());
+                    }
                     task.modification_time = now_iso();
                 }
             }
@@ -2830,6 +2838,56 @@ mod tests {
             other_report.attr("status"),
             Some(TaskStatus::Running.as_str())
         );
+    }
+
+    #[test]
+    fn fallback_selected_active_report_is_protected_from_deletion() {
+        let store = ResourceStore::new();
+        let task_id = create_valid_task(&store, "Missing Current Pointer");
+        let current_report_id = store.start_task(&task_id).expect("start task");
+        assert!(store.modify(&task_id, |task| {
+            task.set_attr("report_id", &Uuid::new_v4().to_string());
+        }));
+
+        let task = store.get(&task_id).expect("active task");
+        let resolved = {
+            let inner = store.inner.read().expect("store lock");
+            resolve_task_reports(&inner, &task).0
+        };
+        assert_eq!(resolved, Some(current_report_id));
+        assert_eq!(
+            store.delete_typed(&current_report_id, "report", true),
+            Err(StoreError::InUse("report"))
+        );
+        assert!(store.get(&current_report_id).is_some());
+    }
+
+    #[test]
+    fn deleting_stale_report_pointer_repairs_active_task_to_resolved_report() {
+        let store = ResourceStore::new();
+        let task_id = create_valid_task(&store, "Stale Current Pointer");
+        let current_report_id = store.start_task(&task_id).expect("start task");
+        let mut stale_report = Resource::new("report", "Stale completed report");
+        stale_report.set_attr("status", TaskStatus::Done.as_str());
+        let stale_report_id = store
+            .create_linked_report(stale_report, Some(task_id))
+            .expect("create stale report");
+        assert!(store.modify(&task_id, |task| {
+            task.set_attr("report_id", &stale_report_id.to_string());
+        }));
+
+        store
+            .delete_typed(&stale_report_id, "report", true)
+            .expect("delete non-current stale report");
+
+        let task = store.get(&task_id).expect("active task remains");
+        assert_eq!(task.attr("status"), Some(TaskStatus::Running.as_str()));
+        assert_eq!(
+            task.attr("report_id"),
+            Some(current_report_id.to_string().as_str())
+        );
+        assert!(store.get(&stale_report_id).is_none());
+        assert!(store.get(&current_report_id).is_some());
     }
 
     #[test]
