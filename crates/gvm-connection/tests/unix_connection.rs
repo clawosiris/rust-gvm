@@ -75,7 +75,7 @@ async fn connect_authenticate_and_create_target() {
     assert_eq!(auth_response.status_code(), Some(200));
 
     let create_xml =
-        b"<create_target><name>Test Target</name><hosts>192.168.1.0/24</hosts></create_target>";
+        b"<create_target><name>Test Target</name><hosts>192.168.1.0/24</hosts><port_range>T:1-65535</port_range></create_target>";
     conn.send(create_xml).await.expect("send create failed");
     let create_resp = conn.read().await.expect("read create failed");
     let create_response = Response::new(create_resp);

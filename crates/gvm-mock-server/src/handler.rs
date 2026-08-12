@@ -13,7 +13,7 @@ use base64::Engine as _;
 use gvm_gmp::schedule::{
     parse_icalendar_with_timezone, ScheduleStartObservation, ScheduleTimestamp,
 };
-use gvm_gmp::AliveTest;
+use gvm_gmp::{AliveTest, TargetHost, TargetHosts, TargetPortRange};
 use uuid::Uuid;
 
 use crate::command_parser::{parse_command, parse_element_text, ParsedCommand, ParsedElement};
@@ -67,6 +67,202 @@ fn asset_sort_value<'a>(resource: &'a Resource, field: &str) -> &'a str {
         "comment" => &resource.comment,
         "type" => resource.asset_type().unwrap_or_default(),
         _ => resource.attr(field).unwrap_or_default(),
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum AssetFilterRelation {
+    Equal,
+    Contains,
+    Keyword,
+    Greater,
+    Less,
+}
+
+struct FilteredAssets {
+    resources: Vec<Resource>,
+    filtered: usize,
+}
+
+fn filter_assets(
+    mut resources: Vec<Resource>,
+    filter: Option<&str>,
+    paginate: bool,
+) -> Result<FilteredAssets, String> {
+    let mut first = 1usize;
+    let mut rows = None;
+    let mut sort_field = "name".to_string();
+    let mut reverse = false;
+
+    if let Some(filter) = filter {
+        for predicate in tokenize_asset_filter(filter)? {
+            let (key, relation, value) = parse_asset_filter_predicate(&predicate)?;
+            match key {
+                "first" => {
+                    require_equal_filter_relation(relation, key)?;
+                    first = value
+                        .parse::<isize>()
+                        .map_err(|_| format!("Invalid asset filter value for '{key}'"))?
+                        .max(0) as usize;
+                }
+                "rows" => {
+                    require_equal_filter_relation(relation, key)?;
+                    let value = value
+                        .parse::<isize>()
+                        .map_err(|_| format!("Invalid asset filter value for '{key}'"))?;
+                    rows = (value > 0).then_some(value as usize);
+                }
+                "sort" => {
+                    require_equal_filter_relation(relation, key)?;
+                    sort_field = value.to_string();
+                    reverse = false;
+                }
+                "sort-reverse" => {
+                    require_equal_filter_relation(relation, key)?;
+                    sort_field = value.to_string();
+                    reverse = true;
+                }
+                "permission" | "min_qod" => {
+                    return Err(format!("Unsupported asset filter field '{key}'"));
+                }
+                "uuid" | "id" => resources.retain(|resource| {
+                    asset_filter_matches(&resource.id.to_string(), relation, value)
+                }),
+                _ => resources.retain(|resource| {
+                    asset_filter_value(resource, key)
+                        .is_some_and(|candidate| asset_filter_matches(candidate, relation, value))
+                }),
+            }
+        }
+    }
+
+    resources.sort_by(|left, right| {
+        let left = asset_sort_value(left, &sort_field);
+        let right = asset_sort_value(right, &sort_field);
+        if reverse {
+            right.cmp(left)
+        } else {
+            left.cmp(right)
+        }
+    });
+    let filtered = resources.len();
+    if paginate {
+        let start = first.saturating_sub(1).min(resources.len());
+        let end = rows.map_or(resources.len(), |rows| {
+            start.saturating_add(rows).min(resources.len())
+        });
+        resources = resources[start..end].to_vec();
+    }
+    Ok(FilteredAssets {
+        resources,
+        filtered,
+    })
+}
+
+fn tokenize_asset_filter(filter: &str) -> Result<Vec<String>, String> {
+    let mut predicates = Vec::new();
+    let mut current = String::new();
+    let mut quote = None;
+    let mut escaped = false;
+    for character in filter.chars() {
+        if escaped {
+            current.push(character);
+            escaped = false;
+            continue;
+        }
+        if character == '\\' && quote.is_some() {
+            escaped = true;
+            continue;
+        }
+        if matches!(character, '\'' | '"') {
+            if quote == Some(character) {
+                quote = None;
+            } else if quote.is_none() {
+                quote = Some(character);
+            } else {
+                current.push(character);
+            }
+            continue;
+        }
+        if character.is_whitespace() && quote.is_none() {
+            if !current.is_empty() {
+                predicates.push(std::mem::take(&mut current));
+            }
+        } else {
+            current.push(character);
+        }
+    }
+    if quote.is_some() || escaped {
+        return Err("Malformed quoted asset filter".to_string());
+    }
+    if !current.is_empty() {
+        predicates.push(current);
+    }
+    Ok(predicates)
+}
+
+fn parse_asset_filter_predicate(
+    predicate: &str,
+) -> Result<(&str, AssetFilterRelation, &str), String> {
+    let Some((index, operator)) = predicate
+        .char_indices()
+        .find(|(_, character)| matches!(character, '=' | '~' | ':' | '>' | '<'))
+    else {
+        return Err(format!("Malformed asset filter predicate '{predicate}'"));
+    };
+    let key = &predicate[..index];
+    let value = &predicate[index + operator.len_utf8()..];
+    if key.is_empty() || value.is_empty() {
+        return Err(format!("Malformed asset filter predicate '{predicate}'"));
+    }
+    let relation = match operator {
+        '=' => AssetFilterRelation::Equal,
+        '~' => AssetFilterRelation::Contains,
+        ':' => AssetFilterRelation::Keyword,
+        '>' => AssetFilterRelation::Greater,
+        '<' => AssetFilterRelation::Less,
+        _ => unreachable!("matched filter operator"),
+    };
+    Ok((key, relation, value))
+}
+
+fn require_equal_filter_relation(relation: AssetFilterRelation, key: &str) -> Result<(), String> {
+    if matches!(relation, AssetFilterRelation::Equal) {
+        Ok(())
+    } else {
+        Err(format!("Invalid relation for asset filter field '{key}'"))
+    }
+}
+
+fn asset_filter_value<'a>(resource: &'a Resource, key: &str) -> Option<&'a str> {
+    match key {
+        "name" => Some(&resource.name),
+        "comment" => Some(&resource.comment),
+        "type" => resource.asset_type(),
+        "owner" => Some("admin"),
+        _ => resource.attr(key),
+    }
+}
+
+fn asset_filter_matches(candidate: &str, relation: AssetFilterRelation, value: &str) -> bool {
+    match relation {
+        AssetFilterRelation::Equal => candidate == value,
+        AssetFilterRelation::Contains | AssetFilterRelation::Keyword => candidate
+            .to_ascii_lowercase()
+            .contains(&value.to_ascii_lowercase()),
+        AssetFilterRelation::Greater | AssetFilterRelation::Less => {
+            let ordering = match (candidate.parse::<f64>(), value.parse::<f64>()) {
+                (Ok(candidate), Ok(value)) => candidate.partial_cmp(&value),
+                _ => Some(candidate.cmp(value)),
+            };
+            matches!(
+                (relation, ordering),
+                (
+                    AssetFilterRelation::Greater,
+                    Some(std::cmp::Ordering::Greater)
+                ) | (AssetFilterRelation::Less, Some(std::cmp::Ordering::Less))
+            )
+        }
     }
 }
 
@@ -461,64 +657,13 @@ impl SessionHandler {
             .into_bytes();
         }
 
-        let mut first = 1usize;
-        let mut rows = None;
-        let mut sort_field = "name";
-        let mut reverse = false;
-        if let Some(filter) = cmd.attr("filter") {
-            for predicate in filter.split_whitespace() {
-                let Some((key, value)) = predicate.split_once('=') else {
-                    continue;
-                };
-                match key {
-                    "first" => {
-                        first = value
-                            .parse::<isize>()
-                            .ok()
-                            .map_or(1, |value| value.max(0) as usize);
-                    }
-                    "rows" => {
-                        rows = value
-                            .parse::<isize>()
-                            .ok()
-                            .and_then(|value| (value > 0).then_some(value as usize));
-                    }
-                    "sort" => sort_field = value,
-                    "sort-reverse" => {
-                        sort_field = value;
-                        reverse = true;
-                    }
-                    "permission" | "owner" | "min_qod" => {}
-                    "name" => resources.retain(|resource| resource.name == value),
-                    "comment" => resources.retain(|resource| resource.comment == value),
-                    "uuid" | "id" => {
-                        resources.retain(|resource| resource.id.to_string() == value);
-                    }
-                    "type" => {
-                        resources.retain(|resource| resource.asset_type() == Some(value));
-                    }
-                    _ => resources.retain(|resource| resource.attr(key) == Some(value)),
-                }
-            }
-        }
-        resources.sort_by(|left, right| {
-            let left = asset_sort_value(left, sort_field);
-            let right = asset_sort_value(right, sort_field);
-            if reverse {
-                right.cmp(left)
-            } else {
-                left.cmp(right)
-            }
-        });
-
-        let filtered = resources.len();
-        if !matches!(cmd.attr("ignore_pagination"), Some("1" | "true")) {
-            let start = first.saturating_sub(1).min(resources.len());
-            let end = rows.map_or(resources.len(), |rows| {
-                start.saturating_add(rows).min(resources.len())
-            });
-            resources = resources[start..end].to_vec();
-        }
+        let paginate = !matches!(cmd.attr("ignore_pagination"), Some("1" | "true"));
+        let filtered_assets = match filter_assets(resources, cmd.attr("filter"), paginate) {
+            Ok(filtered_assets) => filtered_assets,
+            Err(message) => return error_response(&cmd.name, 400, &message),
+        };
+        resources = filtered_assets.resources;
+        let filtered = filtered_assets.filtered;
 
         let page = resources.len();
         let items: String = resources.iter().map(Resource::to_asset_xml).collect();
@@ -695,19 +840,37 @@ impl SessionHandler {
 
         let mut resource = Resource::new(resource_type, &name);
 
-        let target_port_list_id = if resource_type == "target" {
+        let (target_port_list_id, target_port_range) = if resource_type == "target" {
             let port_list_id = match optional_child_uuid(cmd, "port_list") {
                 Ok(port_list_id) => port_list_id,
                 Err(message) => return error_response(&cmd.name, 400, message),
+            };
+            let port_range = element_text_including_empty(cmd, raw_xml, "port_range");
+            let port_range = match port_range {
+                Some(port_range) => {
+                    let Ok(port_range) = TargetPortRange::new(port_range) else {
+                        return error_response(&cmd.name, 400, "Error in port range");
+                    };
+                    Some(port_range.to_string())
+                }
+                None => None,
             };
             if let Some(port_list_id) = port_list_id {
                 if store.get_typed(&port_list_id, "port_list").is_none() {
                     return error_response(&cmd.name, 404, "Port list not found");
                 }
+                (Some(port_list_id), None)
+            } else if let Some(port_range) = port_range {
+                (None, Some(port_range))
+            } else {
+                return error_response(
+                    &cmd.name,
+                    400,
+                    "One of PORT_LIST and PORT_RANGE is required",
+                );
             }
-            port_list_id
         } else {
-            None
+            (None, None)
         };
         let target_ssh_credential = if resource_type == "target" {
             match target_credential_update(cmd, store, "ssh_credential") {
@@ -950,14 +1113,38 @@ impl SessionHandler {
 
         // Target-specific
         if resource_type == "target" {
-            if let Some(hosts) = parse_element_text(raw_xml, "hosts") {
-                resource.set_attr("hosts", &hosts);
-            }
-            if let Some(exclude_hosts) = parse_element_text(raw_xml, "exclude_hosts") {
-                resource.set_attr("exclude_hosts", &exclude_hosts);
-            }
+            let asset_hosts_filter = cmd.child_attr("asset_hosts", "filter");
+            let hosts = if let Some(filter) = asset_hosts_filter {
+                match resolve_asset_target_hosts(store, filter) {
+                    Ok(hosts) => hosts,
+                    Err(message) => return error_response(&cmd.name, 400, &message),
+                }
+            } else {
+                let Some(hosts) = element_text_including_empty(cmd, raw_xml, "hosts") else {
+                    return error_response(&cmd.name, 400, "A host is required");
+                };
+                hosts
+            };
+            let exclude_hosts =
+                element_text_including_empty(cmd, raw_xml, "exclude_hosts").unwrap_or_default();
+            let (hosts, exclude_hosts) = match normalize_target_host_pair(&hosts, &exclude_hosts) {
+                Ok(hosts) => hosts,
+                Err(()) => {
+                    return error_response(&cmd.name, 400, "Error in host specification");
+                }
+            };
+            resource.set_attr("hosts", &hosts);
+            resource.set_attr("exclude_hosts", &exclude_hosts);
             if let Some(port_list_id) = target_port_list_id {
                 resource.set_attr("port_list_id", &port_list_id.to_string());
+            }
+            if let Some(port_range) = target_port_range {
+                let mut port_list = Resource::new("port_list", &name);
+                port_list.comment = format!("Autogenerated for target {name}.");
+                port_list.set_attr("port_range", &port_range);
+                let port_list_id = store.create(port_list);
+                resource.set_attr("port_list_id", &port_list_id.to_string());
+                resource.set_attr("port_range", &port_range);
             }
             apply_target_credential_update(&mut resource, "ssh_credential", &target_ssh_credential);
             apply_target_credential_update(&mut resource, "smb_credential", &target_smb_credential);
@@ -1097,6 +1284,8 @@ impl SessionHandler {
                 }
                 let xml = if cmd.name == "get_integration_configs" {
                     resource.to_integration_config_xml(cmd.attr("details") == Some("1"))
+                } else if cmd.name == "get_targets" {
+                    resource.to_xml_with_details(cmd.attr("details") == Some("1"))
                 } else {
                     resource.to_xml()
                 };
@@ -1159,6 +1348,12 @@ impl SessionHandler {
             resources
                 .iter()
                 .map(|resource| resource.to_integration_config_xml(details))
+                .collect()
+        } else if cmd.name == "get_targets" {
+            let details = cmd.attr("details") == Some("1");
+            resources
+                .iter()
+                .map(|resource| resource.to_xml_with_details(details))
                 .collect()
         } else {
             resources.iter().map(|resource| resource.to_xml()).collect()
@@ -1244,8 +1439,27 @@ impl SessionHandler {
         let new_text = parse_element_text(raw_xml, "text");
         let new_comment = parse_element_text(raw_xml, "comment");
         let new_host = parse_element_text(raw_xml, "host");
-        let new_hosts = parse_element_text(raw_xml, "hosts");
-        let new_exclude_hosts = parse_element_text(raw_xml, "exclude_hosts");
+        let (new_hosts, new_exclude_hosts) = if resource_type == "target" {
+            let hosts = element_text_including_empty(cmd, raw_xml, "hosts");
+            let exclude_hosts = element_text_including_empty(cmd, raw_xml, "exclude_hosts");
+            match (hosts, exclude_hosts) {
+                (None, None) => (None, None),
+                (Some(hosts), Some(exclude_hosts)) => {
+                    match normalize_target_host_pair(&hosts, &exclude_hosts) {
+                        Ok((hosts, exclude_hosts)) => (Some(hosts), Some(exclude_hosts)),
+                        Err(()) => {
+                            return error_response(&cmd.name, 400, "Error in host specification");
+                        }
+                    }
+                }
+                _ => return error_response(&cmd.name, 400, "Error in host specification"),
+            }
+        } else {
+            (
+                parse_element_text(raw_xml, "hosts"),
+                parse_element_text(raw_xml, "exclude_hosts"),
+            )
+        };
         let new_image_references = parse_element_text(raw_xml, "image_references");
         let new_urls = parse_element_text(raw_xml, "urls");
         let new_exclude_urls = parse_element_text(raw_xml, "exclude_urls");
@@ -1595,6 +1809,15 @@ impl SessionHandler {
 
         if resource_type == "task" {
             return match store.modify_task(&uuid, task_reference_updates, update_resource) {
+                Ok(()) => format!("<{}_response status=\"200\" status_text=\"OK\"/>", cmd.name)
+                    .into_bytes(),
+                Err(error) => store_error_response(&cmd.name, error),
+            };
+        }
+
+        if resource_type == "target" {
+            let changes_hosts = new_hosts.is_some();
+            return match store.modify_target(&uuid, changes_hosts, update_resource) {
                 Ok(()) => format!("<{}_response status=\"200\" status_text=\"OK\"/>", cmd.name)
                     .into_bytes(),
                 Err(error) => store_error_response(&cmd.name, error),
@@ -4132,6 +4355,70 @@ fn apply_target_credential_update(
     }
 }
 
+fn element_text_including_empty(cmd: &ParsedCommand, raw_xml: &[u8], name: &str) -> Option<String> {
+    parse_element_text(raw_xml, name).or_else(|| {
+        cmd.children
+            .iter()
+            .any(|child| child.name == name)
+            .then(String::new)
+    })
+}
+
+fn resolve_asset_target_hosts(store: &ResourceStore, filter: &str) -> Result<String, String> {
+    let assets = store
+        .list("asset")
+        .into_iter()
+        .filter(|resource| resource.asset_type() == Some("host"))
+        .collect::<Vec<_>>();
+    let assets = filter_assets(assets, Some(filter), true)?.resources;
+    Ok(assets
+        .into_iter()
+        .map(|asset| asset.name)
+        .collect::<Vec<_>>()
+        .join(", "))
+}
+
+fn normalize_target_host_pair(included: &str, excluded: &str) -> Result<(String, String), ()> {
+    let included = clean_target_host_list(included);
+    let excluded = clean_target_host_list(excluded);
+    let hosts = TargetHosts::new(
+        parse_clean_target_hosts(&included)?,
+        parse_clean_target_hosts(&excluded)?,
+    )
+    .map_err(|_| ())?;
+    if !hosts.has_effective_hosts() {
+        return Err(());
+    }
+    Ok((included.join(", "), excluded.join(", ")))
+}
+
+#[cfg(test)]
+fn normalize_target_host_list(value: &str) -> Result<String, ()> {
+    let hosts = clean_target_host_list(value);
+    parse_clean_target_hosts(&hosts)?;
+    Ok(hosts.join(", "))
+}
+
+fn clean_target_host_list(value: &str) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    value
+        .split([',', '\n'])
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .filter(|value| seen.insert((*value).to_string()))
+        .map(str::to_string)
+        .collect()
+}
+
+fn parse_clean_target_hosts(values: &[String]) -> Result<Vec<TargetHost>, ()> {
+    values
+        .iter()
+        .cloned()
+        .map(TargetHost::new)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| ())
+}
+
 fn credential_kdcs(cmd: &ParsedCommand) -> Option<Vec<String>> {
     cmd.children
         .iter()
@@ -4294,6 +4581,19 @@ mod tests {
                 Err("Invalid alive test")
             );
         }
+    }
+
+    #[test]
+    fn target_host_lists_clean_separators_duplicates_and_empty_items() {
+        assert_eq!(
+            normalize_target_host_list(
+                " 000.001.002.003/030, ,2001:db8::1/128\n192.0.2.1-002, 2001:db8::1/128 "
+            )
+            .expect("valid host list"),
+            "000.001.002.003/030, 2001:db8::1/128, 192.0.2.1-002"
+        );
+        assert_eq!(normalize_target_host_list(" , \n "), Ok(String::new()));
+        assert!(normalize_target_host_list("192.0.2.1/31").is_err());
     }
 
     #[test]
