@@ -33,10 +33,11 @@ fn test_create_task_with_optionals() {
                 comment: Some("bar".into()),
                 schedule_periods: Some(5),
                 observers: vec!["alice".into(), "bob".into()],
+                observer_group_ids: vec![id("group-1")],
                 preferences: vec![("k".into(), "v".into())],
             }
         )),
-        "<create_task><name>foo</name><usage_type>scan</usage_type><config id=\"c1\"/><target id=\"t1\"/><scanner id=\"s1\"/><comment>bar</comment><alterable>1</alterable><hosts_ordering>random</hosts_ordering><schedule id=\"sched1\"/><schedule_periods>5</schedule_periods><alert id=\"a1\"/><alert id=\"a2\"/><observers><observer>alice</observer><observer>bob</observer></observers><preferences><preference><scanner_name>k</scanner_name><value>v</value></preference></preferences></create_task>"
+        "<create_task><name>foo</name><usage_type>scan</usage_type><config id=\"c1\"/><target id=\"t1\"/><scanner id=\"s1\"/><comment>bar</comment><alterable>1</alterable><hosts_ordering>random</hosts_ordering><schedule id=\"sched1\"/><schedule_periods>5</schedule_periods><alert id=\"a1\"/><alert id=\"a2\"/><observers>alice bob<group id=\"group-1\"/></observers><preferences><preference><scanner_name>k</scanner_name><value>v</value></preference></preferences></create_task>"
     );
 }
 
@@ -67,10 +68,11 @@ fn test_create_agent_group_task_with_optionals() {
                 alert_ids: vec![id("a1"), id("a2")],
                 schedule_periods: Some(5),
                 observers: vec!["alice".into(), "bob".into()],
+                observer_group_ids: vec![id("group-1")],
                 preferences: vec![("k".into(), "v".into())],
             }
         )),
-        "<create_task><name>foo</name><usage_type>scan</usage_type><agent_group id=\"ag1\"/><scanner id=\"s1\"/><comment>bar</comment><alterable>1</alterable><alert id=\"a1\"/><alert id=\"a2\"/><schedule id=\"sched1\"/><schedule_periods>5</schedule_periods><observers><observer>alice</observer><observer>bob</observer></observers><preferences><preference><scanner_name>k</scanner_name><value>v</value></preference></preferences></create_task>"
+        "<create_task><name>foo</name><usage_type>scan</usage_type><agent_group id=\"ag1\"/><scanner id=\"s1\"/><comment>bar</comment><alterable>1</alterable><alert id=\"a1\"/><alert id=\"a2\"/><schedule id=\"sched1\"/><schedule_periods>5</schedule_periods><observers>alice bob<group id=\"group-1\"/></observers><preferences><preference><scanner_name>k</scanner_name><value>v</value></preference></preferences></create_task>"
     );
 }
 
@@ -126,10 +128,11 @@ fn test_create_oci_image_target_task_with_optionals() {
                 alert_ids: vec![id("a1"), id("a2")],
                 schedule_periods: Some(5),
                 observers: vec!["alice".into(), "bob".into()],
+                observer_group_ids: vec![id("group-1")],
                 preferences: vec![("k".into(), "v".into())],
             }
         )),
-        "<create_task><name>foo</name><usage_type>scan</usage_type><oci_image_target id=\"oci1\"/><scanner id=\"s1\"/><comment>bar</comment><alterable>1</alterable><alert id=\"a1\"/><alert id=\"a2\"/><schedule id=\"sched1\"/><schedule_periods>5</schedule_periods><observers><observer>alice</observer><observer>bob</observer></observers><preferences><preference><scanner_name>k</scanner_name><value>v</value></preference></preferences></create_task>"
+        "<create_task><name>foo</name><usage_type>scan</usage_type><oci_image_target id=\"oci1\"/><scanner id=\"s1\"/><comment>bar</comment><alterable>1</alterable><alert id=\"a1\"/><alert id=\"a2\"/><schedule id=\"sched1\"/><schedule_periods>5</schedule_periods><observers>alice bob<group id=\"group-1\"/></observers><preferences><preference><scanner_name>k</scanner_name><value>v</value></preference></preferences></create_task>"
     );
 }
 
@@ -176,10 +179,11 @@ fn test_create_web_application_task_with_optionals() {
                 comment: Some("bar".into()),
                 schedule_periods: Some(5),
                 observers: vec!["alice".into(), "bob".into()],
+                observer_group_ids: vec![id("group-1")],
                 preferences: vec![("k".into(), "v".into())],
             }
         )),
-        "<create_task><name>foo</name><usage_type>scan</usage_type><web_application_target id=\"wt1\"/><scanner id=\"s1\"/><comment>bar</comment><alterable>1</alterable><alert id=\"a1\"/><alert id=\"a2\"/><schedule id=\"sched1\"/><schedule_periods>5</schedule_periods><observers><observer>alice</observer><observer>bob</observer></observers><preferences><preference><scanner_name>k</scanner_name><value>v</value></preference></preferences></create_task>"
+        "<create_task><name>foo</name><usage_type>scan</usage_type><web_application_target id=\"wt1\"/><scanner id=\"s1\"/><comment>bar</comment><alterable>1</alterable><alert id=\"a1\"/><alert id=\"a2\"/><schedule id=\"sched1\"/><schedule_periods>5</schedule_periods><observers>alice bob<group id=\"group-1\"/></observers><preferences><preference><scanner_name>k</scanner_name><value>v</value></preference></preferences></create_task>"
     );
 }
 
@@ -232,4 +236,32 @@ fn test_task_mutation_and_actions() {
     assert_eq!(xml(start_task(&id("a1"))), "<start_task task_id=\"a1\"/>");
     assert_eq!(xml(resume_task(&id("a1"))), "<resume_task task_id=\"a1\"/>");
     assert_eq!(xml(stop_task(&id("a1"))), "<stop_task task_id=\"a1\"/>");
+}
+
+#[test]
+fn test_audit_and_modify_task_observers_use_user_list_text() {
+    assert_eq!(
+        xml(create_audit(
+            "audit",
+            &id("c1"),
+            &id("t1"),
+            &id("s1"),
+            CreateTaskOpts {
+                observers: vec!["alice".into(), "bob".into()],
+                observer_group_ids: vec![id("group-1")],
+                ..Default::default()
+            },
+        )),
+        "<create_task><name>audit</name><usage_type>audit</usage_type><config id=\"c1\"/><target id=\"t1\"/><scanner id=\"s1\"/><observers>alice bob<group id=\"group-1\"/></observers></create_task>"
+    );
+    assert_eq!(
+        xml(modify_task(
+            &id("t1"),
+            ModifyTaskOpts {
+                observers: vec!["alice".into(), "bob".into()],
+                ..Default::default()
+            },
+        )),
+        "<modify_task task_id=\"t1\"><observers>alice bob</observers></modify_task>"
+    );
 }

@@ -4590,6 +4590,81 @@ async fn full_crud_lifecycle_succeeds() {
 }
 
 #[tokio::test]
+async fn typed_task_observers_round_trip_create_and_modify() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let target = client
+        .create_target(
+            "Observer Target",
+            CreateTargetOpts::new(target_hosts(&["127.0.0.1"], &[]), target_ports()),
+        )
+        .await
+        .expect("target create should succeed");
+    let config_id = EntityId::new("daba56c8-73ec-11df-a475-002264764cea").expect("config id");
+    let scanner_id = EntityId::new("08b69003-5fc2-4037-a479-93b440211c73").expect("scanner id");
+    let task = client
+        .create_task(
+            "Observer Task",
+            &config_id,
+            &target.id,
+            &scanner_id,
+            CreateTaskOpts {
+                observers: vec!["alice".into(), "bob".into()],
+                observer_group_ids: vec![EntityId::new("group-1").expect("group id")],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("task create should succeed");
+
+    let created = client
+        .get_tasks(GetTasksOpts::default())
+        .await
+        .expect("created task should be observable")
+        .items
+        .into_iter()
+        .find(|candidate| candidate.meta.id == task.id)
+        .expect("created task should be returned");
+    let created_observers = created.observers.expect("created observers");
+    assert_eq!(created_observers.users, ["alice", "bob"]);
+    assert_eq!(created_observers.groups[0].id.as_str(), "group-1");
+
+    client
+        .modify_task(
+            &task.id,
+            ModifyTaskOpts {
+                observers: vec!["carol".into(), "dave".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("observer replacement should succeed");
+    let modified = client
+        .get_tasks(GetTasksOpts::default())
+        .await
+        .expect("modified task should be observable")
+        .items
+        .into_iter()
+        .find(|candidate| candidate.meta.id == task.id)
+        .expect("modified task should be returned");
+    let modified_observers = modified.observers.expect("modified observers");
+    assert_eq!(modified_observers.users, ["carol", "dave"]);
+    assert_eq!(modified_observers.groups[0].id.as_str(), "group-1");
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn typed_create_import_task_uses_import_task_shape() {
     let Some(server) = stateful_server().await else {
         return;

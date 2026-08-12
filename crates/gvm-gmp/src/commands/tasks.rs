@@ -8,7 +8,7 @@ use gvm_protocol::{Request, XmlCommand};
 use crate::commands::usage_type::UsageType;
 use crate::common::{
     add_filter_attrs, add_id_element, add_optional_id_element, add_preferences,
-    add_scalar_id_update, add_string_list, add_text_element, bool_str, set_optional_bool_attr,
+    add_scalar_id_update, add_text_element, bool_str, set_optional_bool_attr,
 };
 use crate::enums::HostsOrdering;
 use crate::types::{EntityId, ScalarUpdate};
@@ -30,6 +30,8 @@ pub struct CreateTaskOpts {
     pub schedule_periods: Option<u32>,
     /// Observer names associated with the task.
     pub observers: Vec<String>,
+    /// Observer group identifiers associated with the task.
+    pub observer_group_ids: Vec<EntityId>,
     /// Preference key/value pairs to include.
     pub preferences: Vec<(String, String)>,
 }
@@ -49,6 +51,8 @@ pub struct CreateAgentGroupTaskOpts {
     pub schedule_periods: Option<u32>,
     /// Observer names associated with the task.
     pub observers: Vec<String>,
+    /// Observer group identifiers associated with the task.
+    pub observer_group_ids: Vec<EntityId>,
     /// Preference key/value pairs to include.
     pub preferences: Vec<(String, String)>,
 }
@@ -68,6 +72,8 @@ pub struct CreateOciImageTargetTaskOpts {
     pub schedule_periods: Option<u32>,
     /// Observer names associated with the task.
     pub observers: Vec<String>,
+    /// Observer group identifiers associated with the task.
+    pub observer_group_ids: Vec<EntityId>,
     /// Preference key/value pairs to include.
     pub preferences: Vec<(String, String)>,
 }
@@ -87,6 +93,8 @@ pub struct CreateWebApplicationTaskOpts {
     pub schedule_periods: Option<u32>,
     /// Observer names associated with the task.
     pub observers: Vec<String>,
+    /// Observer group identifiers associated with the task.
+    pub observer_group_ids: Vec<EntityId>,
     /// Preference key/value pairs to include.
     pub preferences: Vec<(String, String)>,
 }
@@ -187,7 +195,7 @@ pub fn create_agent_group_task(
             cmd.add_element_with_text("schedule_periods", &schedule_periods.to_string());
         }
     }
-    add_string_list(&mut cmd, "observers", "observer", &opts.observers);
+    add_task_observers(&mut cmd, &opts.observers, &opts.observer_group_ids);
     add_preferences(&mut cmd, &opts.preferences);
     cmd
 }
@@ -218,7 +226,7 @@ pub fn create_oci_image_target_task(
             cmd.add_element_with_text("schedule_periods", &schedule_periods.to_string());
         }
     }
-    add_string_list(&mut cmd, "observers", "observer", &opts.observers);
+    add_task_observers(&mut cmd, &opts.observers, &opts.observer_group_ids);
     add_preferences(&mut cmd, &opts.preferences);
     cmd
 }
@@ -284,7 +292,7 @@ fn create_task_with_usage(
     for alert_id in &opts.alert_ids {
         add_id_element(&mut cmd, "alert", alert_id);
     }
-    add_string_list(&mut cmd, "observers", "observer", &opts.observers);
+    add_task_observers(&mut cmd, &opts.observers, &opts.observer_group_ids);
     add_preferences(&mut cmd, &opts.preferences);
     cmd
 }
@@ -319,7 +327,7 @@ pub fn create_web_application_task(
             cmd.add_element_with_text("schedule_periods", &schedule_periods.to_string());
         }
     }
-    add_string_list(&mut cmd, "observers", "observer", &opts.observers);
+    add_task_observers(&mut cmd, &opts.observers, &opts.observer_group_ids);
     add_preferences(&mut cmd, &opts.preferences);
     cmd
 }
@@ -400,9 +408,24 @@ fn modify_task_with_usage(
             }
         }
     }
-    add_string_list(&mut cmd, "observers", "observer", &opts.observers);
+    add_task_observers(&mut cmd, &opts.observers, &[]);
     add_preferences(&mut cmd, &opts.preferences);
     cmd
+}
+
+fn add_task_observers(cmd: &mut XmlCommand, observers: &[String], observer_group_ids: &[EntityId]) {
+    if observers.is_empty() && observer_group_ids.is_empty() {
+        return;
+    }
+    let element = cmd.add_element("observers");
+    if !observers.is_empty() {
+        element.set_text(&observers.join(" "));
+    }
+    for group_id in observer_group_ids {
+        element
+            .add_child("group")
+            .set_attribute("id", group_id.as_str());
+    }
 }
 
 /// Build a `move_task` request.
@@ -536,6 +559,7 @@ mod tests {
                 comment: Some("bar".into()),
                 schedule_periods: Some(5),
                 observers: vec!["alice".into(), "bob".into()],
+                observer_group_ids: vec![id("group-1")],
                 preferences: vec![("k".into(), "v".into())],
             },
         ));
@@ -544,7 +568,7 @@ mod tests {
         assert!(rendered.contains("<hosts_ordering>random</hosts_ordering>"));
         assert!(rendered.contains("<schedule id=\"sched1\"/>"));
         assert!(rendered.contains("<alert id=\"a1\"/>"));
-        assert!(rendered.contains("<observer>alice</observer>"));
+        assert!(rendered.contains("<observers>alice bob<group id=\"group-1\"/></observers>"));
         assert!(rendered.contains("<scanner_name>k</scanner_name><value>v</value>"));
     }
 
@@ -561,12 +585,13 @@ mod tests {
                 comment: Some("scan web app".into()),
                 schedule_periods: Some(5),
                 observers: vec!["alice".into(), "bob".into()],
+                observer_group_ids: vec![id("group-1")],
                 preferences: vec![("k".into(), "v".into())],
             },
         ));
         assert_eq!(
             rendered,
-            "<create_task><name>web task</name><usage_type>scan</usage_type><web_application_target id=\"wt1\"/><scanner id=\"s1\"/><comment>scan web app</comment><alterable>1</alterable><alert id=\"a1\"/><alert id=\"a2\"/><schedule id=\"sched1\"/><schedule_periods>5</schedule_periods><observers><observer>alice</observer><observer>bob</observer></observers><preferences><preference><scanner_name>k</scanner_name><value>v</value></preference></preferences></create_task>"
+            "<create_task><name>web task</name><usage_type>scan</usage_type><web_application_target id=\"wt1\"/><scanner id=\"s1\"/><comment>scan web app</comment><alterable>1</alterable><alert id=\"a1\"/><alert id=\"a2\"/><schedule id=\"sched1\"/><schedule_periods>5</schedule_periods><observers>alice bob<group id=\"group-1\"/></observers><preferences><preference><scanner_name>k</scanner_name><value>v</value></preference></preferences></create_task>"
         );
     }
 
@@ -619,6 +644,20 @@ mod tests {
         assert_eq!(xml(start_task(&id("a1"))), "<start_task task_id=\"a1\"/>");
         assert_eq!(xml(resume_task(&id("a1"))), "<resume_task task_id=\"a1\"/>");
         assert_eq!(xml(stop_task(&id("a1"))), "<stop_task task_id=\"a1\"/>");
+    }
+
+    #[test]
+    fn modify_task_builds_observer_user_list_text() {
+        assert_eq!(
+            xml(modify_task(
+                &id("t1"),
+                ModifyTaskOpts {
+                    observers: vec!["alice".into(), "bob".into()],
+                    ..Default::default()
+                },
+            )),
+            "<modify_task task_id=\"t1\"><observers>alice bob</observers></modify_task>"
+        );
     }
 
     #[test]
