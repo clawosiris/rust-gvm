@@ -270,7 +270,7 @@ pub fn modify_target(
         _ => {}
     }
     if matches!(opts.ssh_elevate_credential_id, ScalarUpdate::Set(_))
-        && !matches!(opts.ssh_credential_id, ScalarUpdate::Set(_))
+        && matches!(opts.ssh_credential_id, ScalarUpdate::Clear)
     {
         return Err(ModifyTargetError::SshElevateWithoutSshCredential);
     }
@@ -706,6 +706,17 @@ mod tests {
             .expect("valid target update")),
             "<modify_target target_id=\"t1\"><ssh_credential id=\"ssh1\"/><ssh_elevate_credential id=\"elevate1\"/><krb5_credential id=\"krb1\"/><allow_simultaneous_ips>1</allow_simultaneous_ips></modify_target>"
         );
+        assert_eq!(
+            xml(modify_target(
+                &id("t1"),
+                ModifyTargetOpts {
+                    ssh_elevate_credential_id: ScalarUpdate::set(id("elevate1")),
+                    ..Default::default()
+                }
+            )
+            .expect("existing SSH credential may be preserved")),
+            "<modify_target target_id=\"t1\"><ssh_elevate_credential id=\"elevate1\"/></modify_target>"
+        );
     }
 
     #[test]
@@ -751,17 +762,6 @@ mod tests {
                 &id("t1"),
                 ModifyTargetOpts {
                     ssh_credential_id: ScalarUpdate::Clear,
-                    ssh_elevate_credential_id: ScalarUpdate::set(id("elevate1")),
-                    ..Default::default()
-                }
-            )
-            .err(),
-            Some(ModifyTargetError::SshElevateWithoutSshCredential)
-        );
-        assert_eq!(
-            modify_target(
-                &id("t1"),
-                ModifyTargetOpts {
                     ssh_elevate_credential_id: ScalarUpdate::set(id("elevate1")),
                     ..Default::default()
                 }
