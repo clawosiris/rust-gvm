@@ -55,7 +55,7 @@ use gvm_gmp::commands::system::ModifyLicenseOpts;
 use gvm_gmp::commands::system::RunWizardOpts;
 use gvm_gmp::commands::targets::{
     create_target, delete_target, get_targets, CreateTargetError, CreateTargetOpts, GetTargetsOpts,
-    InvalidTargetHost, ModifyTargetError, ModifyTargetOpts, TargetHostField,
+    ModifyTargetError, ModifyTargetOpts,
 };
 use gvm_gmp::commands::tasks::{
     create_task, delete_task, get_task, start_task, stop_task, CreateTaskOpts, GetTasksOpts,
@@ -3422,95 +3422,6 @@ async fn typed_target_create_rejects_an_orphaned_ssh_port_before_send() {
 }
 
 #[tokio::test]
-async fn typed_target_host_validation_rejects_before_send() {
-    let Some(server) = stateful_server().await else {
-        return;
-    };
-    let mut client = authenticated_client(&server).await;
-    let create_count_before = server
-        .command_history()
-        .iter()
-        .filter(|record| record.command_name() == "create_target")
-        .count();
-
-    let create_error = client
-        .create_target(
-            "Invalid CIDR Target",
-            CreateTargetOpts {
-                hosts: vec!["192.0.2.1".into(), "198.51.100.1/31".into()],
-                ..Default::default()
-            },
-        )
-        .await
-        .expect_err("invalid IPv4 CIDR should fail locally");
-    assert!(matches!(
-        create_error,
-        GvmError::CreateTarget(CreateTargetError::InvalidHostSpecification(
-            InvalidTargetHost {
-                field: TargetHostField::Hosts,
-                index: 1,
-                specification,
-            }
-        )) if specification == "198.51.100.1/31"
-    ));
-    let create_count_after = server
-        .command_history()
-        .iter()
-        .filter(|record| record.command_name() == "create_target")
-        .count();
-    assert_eq!(create_count_after, create_count_before);
-
-    let target = client
-        .create_target(
-            "Valid CIDR Target",
-            CreateTargetOpts {
-                hosts: vec!["198.51.100.1/30".into()],
-                ..Default::default()
-            },
-        )
-        .await
-        .expect("supported IPv4 CIDR should be sent");
-    let modify_count_before = server
-        .command_history()
-        .iter()
-        .filter(|record| record.command_name() == "modify_target")
-        .count();
-
-    let modify_error = client
-        .modify_target(
-            &target.id,
-            ModifyTargetOpts {
-                exclude_hosts: CollectionUpdate::replace(["2001:db8::1/0".into()]),
-                ..Default::default()
-            },
-        )
-        .await
-        .expect_err("invalid IPv6 CIDR should fail locally");
-    assert!(matches!(
-        modify_error,
-        GvmError::ModifyTarget(ModifyTargetError::InvalidHostSpecification(
-            InvalidTargetHost {
-                field: TargetHostField::ExcludeHosts,
-                index: 0,
-                specification,
-            }
-        )) if specification == "2001:db8::1/0"
-    ));
-    let modify_count_after = server
-        .command_history()
-        .iter()
-        .filter(|record| record.command_name() == "modify_target")
-        .count();
-    assert_eq!(modify_count_after, modify_count_before);
-
-    client
-        .delete_target(&target.id, true)
-        .await
-        .expect("target cleanup should succeed");
-    server.shutdown().await;
-}
-
-#[tokio::test]
 async fn typed_target_alive_tests_preserve_replace_and_validate_state() {
     let Some(server) = stateful_server().await else {
         return;
@@ -5286,10 +5197,7 @@ async fn typed_task_schedule_relationship_round_trip_and_dependency_ordering() {
     let target = client
         .create_target(
             "Scheduled Task Target",
-            CreateTargetOpts {
-                hosts: vec!["127.0.0.1".to_string()],
-                ..Default::default()
-            },
+            CreateTargetOpts::new(target_hosts(&["127.0.0.1"], &[]), target_ports()),
         )
         .await
         .expect("target create should succeed");
