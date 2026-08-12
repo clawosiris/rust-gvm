@@ -155,16 +155,16 @@ Each domain follows a consistent structure:
 // target/request.rs
 
 use crate::enums::AliveTest;
-use crate::types::EntityId;
+use crate::target::{TargetHosts, TargetPortSelection};
+use crate::types::{EntityId, ScalarUpdate};
 
 /// Options for creating a target.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct CreateTargetOpts {
     pub comment: Option<String>,
-    pub hosts: Vec<String>,
-    pub exclude_hosts: Vec<String>,
+    pub hosts: TargetHosts,
     pub alive_test: Option<AliveTest>,
-    pub port_list_id: Option<EntityId>,
+    pub ports: TargetPortSelection,
     pub reverse_lookup_only: Option<bool>,
     pub reverse_lookup_unify: Option<bool>,
 }
@@ -183,12 +183,17 @@ pub struct GetTargetsOpts {
 pub struct ModifyTargetOpts {
     pub name: Option<String>,
     pub comment: Option<String>,
-    pub hosts: Vec<String>,
-    pub exclude_hosts: Vec<String>,
+    pub hosts: Option<TargetHosts>,
     pub alive_test: Option<AliveTest>,
-    pub port_list_id: Option<EntityId>,
+    pub port_list_id: ScalarUpdate<EntityId>,
 }
 ```
+
+`CreateTargetOpts` intentionally models manual-host target creation. The raw GMP
+surface remains available for gvmd's alternative `<asset_hosts filter="..."/>`
+form. `TargetHosts` uses semantic IP/network/range identities for deterministic
+deduplication and exposes effective-set coverage without applying gvmd's
+deployment-configured maximum-host limit.
 
 ### response.rs — Output Types
 ```rust
@@ -382,16 +387,16 @@ pub enum ParseError {
 
 ### Consumer Code (After)
 ```rust
-use gvm_gmp::target::{CreateTargetOpts, create_target, CreateTargetResponse};
+use gvm_gmp::commands::targets::{create_target, CreateTargetOpts};
+use gvm_gmp::responses::CreateTargetResponse;
+use gvm_gmp::{TargetHost, TargetHosts, TargetPortSelection};
 use gvm_gmp::scanner::{get_scanners, GetScannersOpts, Scanner};
 use gvm_gmp::task::{Task, get_tasks, GetTasksOpts};
 
 // Create a target
-let opts = CreateTargetOpts {
-    hosts: vec!["192.168.1.0/24".to_string()],
-    port_list_id: Some(port_list_id),
-    ..Default::default()
-};
+let hosts = TargetHosts::new(["192.168.1.0/24".parse::<TargetHost>()?], [])?;
+let ports = TargetPortSelection::PortList(port_list_id);
+let opts = CreateTargetOpts::new(hosts, ports);
 let response = client.call(create_target("My Target", opts)).await?;
 let result = CreateTargetResponse::from_response(&response)?;
 println!("Created target: {}", result.id);

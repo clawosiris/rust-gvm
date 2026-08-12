@@ -54,13 +54,14 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for the support direction, version policy
 The high-level client handles version negotiation automatically and exposes typed convenience methods for every GMP domain:
 
 ```rust
-use gvm_client::{GmpClient, GvmError};
+use gvm_client::GmpClient;
 use gvm_connection::{UnixSocketConfig, UnixSocketConnection};
 use gvm_gmp::commands::targets::CreateTargetOpts;
 use gvm_gmp::commands::tasks::CreateTaskOpts;
+use gvm_gmp::{TargetHost, TargetHosts, TargetPortSelection};
 
 #[tokio::main]
-async fn main() -> Result<(), GvmError> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Create a transport and connect — auto-negotiates GMP version (22.4–22.8+)
     let conn = UnixSocketConnection::new(UnixSocketConfig::new("/run/gvmd/gvmd.sock"));
     let mut client = GmpClient::connect(conn).await?;
@@ -70,10 +71,11 @@ async fn main() -> Result<(), GvmError> {
     client.authenticate("admin", "admin").await?;
 
     // 3. Create a target — typed response, no manual XML parsing
-    let target = client.create_target("My Target", CreateTargetOpts {
-        hosts: vec!["192.168.1.0/24".to_string()],
-        ..Default::default()
-    }).await?;
+    let hosts = TargetHosts::new(["192.168.1.0/24".parse::<TargetHost>()?], [])?;
+    let ports = TargetPortSelection::PortRange("T:1-65535".parse()?);
+    let target = client
+        .create_target("My Target", CreateTargetOpts::new(hosts, ports))
+        .await?;
     println!("Created target: {}", target.id);
 
     // 4. List all targets
@@ -134,6 +136,56 @@ keeps the existing value. Valid but unsupported timezone or recurrence semantics
 typed observation instead of being treated as one-time schedules. Floating or
 `TZID`-qualified iCalendar starts remain observable but are not converted locally;
 typed `first_run_at` and `next_run_at` values use gvmd's normalized response fields.
+
+#### Validated target hosts
+
+Target create and modify options use [`TargetHost`](crates/gvm-gmp/src/target.rs)
+and the non-empty [`TargetHosts`](crates/gvm-gmp/src/target.rs) aggregate, so
+invalid individual specifications, fully excluded host sets, and invalid request
+shapes are rejected before a GMP request is built or sent. Included and excluded
+hosts are replaced together on modify, matching gvmd. Individual IPv4 and IPv6
+addresses, gvmd-supported CIDR networks, address ranges, and ASCII hostnames can
+be parsed directly. IPv4 components with leading zeroes are normalized before
+serialization:
+
+```rust
+use gvm_gmp::{TargetHost, TargetHosts};
+
+let hosts: Vec<TargetHost> = ["192.0.2.1", "10.0.0.0/24", "scanner.example.com"]
+    .into_iter()
+    .map(str::parse)
+    .collect::<Result<_, _>>()?;
+let target_hosts = TargetHosts::new(hosts, [])?;
+assert!(target_hosts.has_effective_hosts());
+```
+
+This is a source-level change from the earlier `Vec<String>` fields. Callers
+should parse external text into `TargetHost` before constructing
+`CreateTargetOpts` or `ModifyTargetOpts`. IPv4 CIDR prefixes are limited to
+`/1` through `/30`; IPv6 prefixes are validated independently through `/128`.
+Hostname labels intentionally use an ASCII policy; Unicode case-fold lookalikes
+accepted incidentally by some GLib regex versions are rejected.
+Canonical identities de-duplicate equivalent IP, network, range, and ASCII
+hostname spellings while retaining the first wire spelling; a hostname with a
+trailing dot remains distinct from the same spelling without one, as in gvmd.
+The aggregate can also detect when exclusions cover every included specification
+without expanding large networks. CIDR coverage follows gvmd's usable-address
+rules (excluding the first and last addresses except for IPv6 `/127` and `/128`).
+gvmd remains authoritative for DNS resolution and deployment policy such as its
+configured maximum number of IPs per target.
+
+The typed `CreateTargetOpts` models manual-host creation. Raw GMP callers can
+still use gvmd's `<asset_hosts filter="..."/>` target form; stateful mock mode
+resolves matching host assets and gives that filter precedence over `<hosts>`,
+matching gvmd. Its shared asset-filter subset supports quoted values, equality,
+case-insensitive containment (`~` and `:`), comparisons, sorting, and pagination;
+malformed or explicitly unsupported predicates receive a client error.
+Creation also requires a typed `TargetPortSelection`: either an existing port-list
+ID or a validated direct range such as `"T:22, U:53, T:80-443"`. This is an
+intentional one-of restriction in the typed API. Raw GMP permits both elements;
+gvmd validates the supplied range and gives `<port_list>` precedence. Existing
+callers should replace `CreateTargetOpts::port_list_id` with `ports` and pass that
+selection as the second argument to `CreateTargetOpts::new`.
 
 #### Raw API (send/call)
 

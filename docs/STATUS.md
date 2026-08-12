@@ -28,6 +28,25 @@ rules from one-time schedules; raw iCalendar remains available for compatibility
 Raw create follows gvmd's default-timezone behavior, and raw modify requires an
 iCalendar payload.
 
+Target create and modify inputs use validated `TargetHost` values inside a
+non-empty `TargetHosts` aggregate. The aggregate de-duplicates canonical values
+across alternate address/network/range spellings and makes included/excluded
+modify updates atomic. It can test whether exclusions cover every included
+specification without expanding networks, using gvmd's usable-address treatment
+for CIDRs; trailing-dot hostnames remain distinct from undotted hostnames.
+IPv4 and IPv6 addresses, CIDR networks, address ranges, and ASCII hostnames are
+rejected locally when malformed; IPv4 leading zeroes are normalized like gvmd,
+and CIDR prefixes follow gvmd's `/1` through `/30` restriction. Unicode hostname
+case-fold lookalikes are intentionally outside the typed API's accepted hostname
+policy. DNS resolution and deployment policy, including gvmd's configured maximum
+IP count, remain server-side. Typed creation models manual hosts; the stateful raw
+mock also resolves gvmd-style `asset_hosts` filters, with filter precedence over a
+supplied manual host list.
+The same strict filter evaluator drives `get_assets` and target resolution,
+including quoted values, relations, sorting, and pagination. Raw mock target
+storage applies gvmd-style trimming, separator cleanup, and exact textual
+de-duplication without rewriting otherwise valid host spellings.
+
 ---
 
 ## gvm-protocol
@@ -318,8 +337,12 @@ representation for detaching an existing port list. Consequently,
 `ScalarUpdate::Clear` is rejected locally with
 `ModifyTargetError::UnsupportedPortListClear`; no GMP request is sent.
 
-`CreateTargetOpts::port_list_id` remains `Option<EntityId>` because target
-creation only needs to distinguish including a port list from leaving it out.
+`CreateTargetOpts` requires a `TargetPortSelection`, enforcing a typed one-of
+choice between an existing `<port_list>` and a validated direct `<port_range>`.
+Raw GMP also permits both, with gvmd validating the range before giving the port
+list precedence. Direct ranges support gvmd's implicit TCP and protocol
+carry-forward grammar, and validate the `1..=65535` port domain and ascending
+range bounds before canonical serialization.
 
 ### Target Credential Service Ports
 
@@ -360,7 +383,7 @@ AlertEvent, AlertCondition, AlertMethod, AliveTest, AggregateStatistic, Credenti
 
 ### Tests
 
-`cargo test -p gvm-gmp --all-features -- --list` currently discovers 640 tests.
+`cargo test -p gvm-gmp --all-features -- --list` currently discovers 650 tests.
 The categories below are a tracked subset of that complete inventory.
 
 | Tracked category | Count |
