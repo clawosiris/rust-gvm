@@ -3537,7 +3537,6 @@ async fn typed_target_extended_credentials_and_simultaneous_ips_round_trip() {
             "Extended Credential Target",
             CreateTargetOpts {
                 ssh_credential_id: Some(ssh.clone()),
-                ssh_elevate_credential_id: Some(elevate.clone()),
                 allow_simultaneous_ips: Some(true),
                 ..CreateTargetOpts::new(target_hosts(&["192.0.2.20"], &[]), target_ports())
             },
@@ -3549,15 +3548,32 @@ async fn typed_target_extended_credentials_and_simultaneous_ips_round_trip() {
         target.ssh_credential.as_ref().map(|value| &value.id),
         Some(&ssh)
     );
+    assert_eq!(target.ssh_elevate_credential, None);
+    assert_eq!(target.krb5_credential, None);
+    assert!(target.allow_simultaneous_ips);
+
+    client
+        .modify_target(
+            &created.id,
+            ModifyTargetOpts {
+                ssh_elevate_credential_id: ScalarUpdate::set(elevate.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("elevation should be added while the existing SSH binding is preserved");
+    let elevated = target_by_id(&mut client, &created.id).await;
     assert_eq!(
-        target
+        elevated.ssh_credential.as_ref().map(|value| &value.id),
+        Some(&ssh)
+    );
+    assert_eq!(
+        elevated
             .ssh_elevate_credential
             .as_ref()
             .map(|value| &value.id),
         Some(&elevate)
     );
-    assert_eq!(target.krb5_credential, None);
-    assert!(target.allow_simultaneous_ips);
 
     client
         .modify_target(
@@ -3739,21 +3755,6 @@ async fn typed_target_credential_invariants_fail_before_send() {
         )
         .await
         .expect_err("elevation with SSH detach should fail locally");
-    assert!(matches!(
-        error,
-        GvmError::ModifyTarget(ModifyTargetError::SshElevateWithoutSshCredential)
-    ));
-
-    let error = client
-        .modify_target(
-            &target_id,
-            ModifyTargetOpts {
-                ssh_elevate_credential_id: ScalarUpdate::set(id("elevate")),
-                ..Default::default()
-            },
-        )
-        .await
-        .expect_err("elevation without an explicit SSH binding should fail locally");
     assert!(matches!(
         error,
         GvmError::ModifyTarget(ModifyTargetError::SshElevateWithoutSshCredential)
