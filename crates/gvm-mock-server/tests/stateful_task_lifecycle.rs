@@ -61,7 +61,7 @@ async fn create_task_id(stream: &mut UnixStream, name: &str) -> String {
     let target_id = create_and_get_id(
         stream,
         format!(
-            "<create_target><name>{name} Target</name><hosts>127.0.0.1</hosts></create_target>"
+            "<create_target><name>{name} Target</name><hosts>127.0.0.1</hosts><port_range>T:1-65535</port_range></create_target>"
         )
         .as_bytes(),
         "create_target",

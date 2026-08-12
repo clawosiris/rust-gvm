@@ -516,7 +516,7 @@ async fn ssh_authenticate_and_crud() {
     );
 
     conn.send(
-        b"<create_target><name>SSH Target</name><hosts>192.168.1.0/24</hosts></create_target>",
+        b"<create_target><name>SSH Target</name><hosts>192.168.1.0/24</hosts><port_range>T:1-65535</port_range></create_target>",
     )
     .await
     .expect("send create failed");

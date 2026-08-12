@@ -3,8 +3,6 @@
 
 //! Target command builders.
 
-use std::net::{Ipv4Addr, Ipv6Addr};
-
 use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::{
@@ -12,21 +10,20 @@ use crate::common::{
     set_optional_bool_attr,
 };
 use crate::enums::AliveTest;
-use crate::types::{CollectionUpdate, EntityId, ScalarUpdate, ServicePort};
+use crate::target::{TargetHost, TargetHosts, TargetPortSelection};
+use crate::types::{EntityId, ScalarUpdate, ServicePort};
 
-/// Optional fields for `create_target` requests.
-#[derive(Debug, Clone, Default)]
+/// Required and optional fields for `create_target` requests.
+#[derive(Debug, Clone)]
 pub struct CreateTargetOpts {
     /// Optional comment text included in the request.
     pub comment: Option<String>,
-    /// Host entries associated with the request.
-    pub hosts: Vec<String>,
-    /// Hosts to exclude from the request.
-    pub exclude_hosts: Vec<String>,
+    /// Validated included and excluded target hosts.
+    pub hosts: TargetHosts,
     /// Optional alive-test strategy.
     pub alive_test: Option<AliveTest>,
-    /// Optional port-list identifier.
-    pub port_list_id: Option<EntityId>,
+    /// Required port list or direct port range.
+    pub ports: TargetPortSelection,
     /// Optional SSH credential identifier.
     pub ssh_credential_id: Option<EntityId>,
     /// Optional SSH service port nested below the SSH credential.
@@ -41,6 +38,26 @@ pub struct CreateTargetOpts {
     pub reverse_lookup_only: Option<bool>,
     /// Whether reverse-lookup unification should be enabled.
     pub reverse_lookup_unify: Option<bool>,
+}
+
+impl CreateTargetOpts {
+    /// Create options for the required manual target host selection.
+    #[must_use]
+    pub fn new(hosts: TargetHosts, ports: TargetPortSelection) -> Self {
+        Self {
+            comment: None,
+            hosts,
+            alive_test: None,
+            ports,
+            ssh_credential_id: None,
+            ssh_credential_port: None,
+            smb_credential_id: None,
+            esxi_credential_id: None,
+            snmp_credential_id: None,
+            reverse_lookup_only: None,
+            reverse_lookup_unify: None,
+        }
+    }
 }
 
 /// Options for `get_targets` requests.
@@ -63,10 +80,8 @@ pub struct ModifyTargetOpts {
     pub name: Option<String>,
     /// Optional comment text included in the request.
     pub comment: Option<String>,
-    /// Host update: omit, replace, or explicitly clear.
-    pub hosts: CollectionUpdate<String>,
-    /// Excluded-host update: omit, replace, or explicitly clear.
-    pub exclude_hosts: CollectionUpdate<String>,
+    /// Atomic replacement of included and excluded hosts, or `None` to omit.
+    pub hosts: Option<TargetHosts>,
     /// Optional alive-test strategy.
     pub alive_test: Option<AliveTest>,
     /// Port-list relationship update: omit or set/replace.
@@ -98,22 +113,16 @@ pub struct ModifyTargetOpts {
 }
 
 /// Errors raised while building a `create_target` request.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum CreateTargetError {
-    /// A host or excluded-host entry does not follow gvmd's host syntax.
-    #[error(transparent)]
-    InvalidHostSpecification(#[from] InvalidTargetHost),
     /// A service port cannot be encoded without an SSH credential identifier.
     #[error("setting an SSH credential port requires an SSH credential identifier")]
     SshPortWithoutCredential,
 }
 
 /// Errors raised while building a `modify_target` request.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ModifyTargetError {
-    /// A host or excluded-host entry does not follow gvmd's host syntax.
-    #[error(transparent)]
-    InvalidHostSpecification(#[from] InvalidTargetHost),
     /// gvmd has no wire representation for detaching a target port list.
     #[error("gvmd does not support clearing a target port-list relationship")]
     UnsupportedPortListClear,
@@ -123,36 +132,6 @@ pub enum ModifyTargetError {
     /// A service-port update is incompatible with detaching the credential.
     #[error("an SSH credential port cannot be updated while detaching the SSH credential")]
     SshPortWithCredentialClear,
-}
-
-/// Target collection containing an invalid host specification.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TargetHostField {
-    /// The target's included hosts.
-    Hosts,
-    /// The target's excluded hosts.
-    ExcludeHosts,
-}
-
-impl std::fmt::Display for TargetHostField {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(match self {
-            Self::Hosts => "hosts",
-            Self::ExcludeHosts => "exclude_hosts",
-        })
-    }
-}
-
-/// A target host specification rejected before the request is sent.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("invalid target host specification in {field}[{index}]: {specification:?}")]
-pub struct InvalidTargetHost {
-    /// Collection containing the invalid entry.
-    pub field: TargetHostField,
-    /// Zero-based index of the invalid entry.
-    pub index: usize,
-    /// Invalid host specification supplied by the caller.
-    pub specification: String,
 }
 
 /// Build a clone request for an existing target.
@@ -166,8 +145,6 @@ pub fn clone_target(target_id: &EntityId) -> impl Request {
 /// # Errors
 /// Returns [`CreateTargetError::SshPortWithoutCredential`] when a service port
 /// is supplied without the SSH credential identifier required by GMP.
-/// Returns [`CreateTargetError::InvalidHostSpecification`] when a host or
-/// excluded-host entry is not accepted by gvmd's host grammar.
 pub fn create_target(
     name: &str,
     opts: CreateTargetOpts,
@@ -175,22 +152,22 @@ pub fn create_target(
     if opts.ssh_credential_port.is_some() && opts.ssh_credential_id.is_none() {
         return Err(CreateTargetError::SshPortWithoutCredential);
     }
-    validate_host_entries(&opts.hosts, TargetHostField::Hosts)?;
-    validate_host_entries(&opts.exclude_hosts, TargetHostField::ExcludeHosts)?;
-
     let mut cmd = XmlCommand::new("create_target");
     cmd.add_element_with_text("name", name);
     add_text_element(&mut cmd, "comment", opts.comment.as_deref());
-    if !opts.hosts.is_empty() {
-        cmd.add_element_with_text("hosts", &opts.hosts.join(","));
-    }
-    if !opts.exclude_hosts.is_empty() {
-        cmd.add_element_with_text("exclude_hosts", &opts.exclude_hosts.join(","));
-    }
+    cmd.add_element_with_text("hosts", &join_hosts(opts.hosts.included()));
+    cmd.add_element_with_text("exclude_hosts", &join_hosts(opts.hosts.excluded()));
     if let Some(alive_test) = opts.alive_test {
         cmd.add_element_with_text("alive_tests", alive_test.as_target_name());
     }
-    add_optional_id_element(&mut cmd, "port_list", opts.port_list_id.as_ref());
+    match &opts.ports {
+        TargetPortSelection::PortList(port_list_id) => {
+            add_optional_id_element(&mut cmd, "port_list", Some(port_list_id));
+        }
+        TargetPortSelection::PortRange(port_range) => {
+            cmd.add_element_with_text("port_range", port_range.as_str());
+        }
+    }
     add_create_target_credentials(&mut cmd, &opts);
     if let Some(value) = opts.reverse_lookup_only {
         cmd.add_element_with_text("reverse_lookup_only", bool_str(value));
@@ -229,8 +206,6 @@ pub fn get_target(target_id: &EntityId) -> impl Request {
 /// Returns [`ModifyTargetError::UnsupportedPortListClear`] when the port-list
 /// update requests clearing. gvmd accepts omission and replacement, but does
 /// not define a sentinel for detaching an existing port list.
-/// Returns [`ModifyTargetError::InvalidHostSpecification`] when a replacement
-/// host or excluded-host entry is not accepted by gvmd's host grammar.
 pub fn modify_target(
     target_id: &EntityId,
     opts: ModifyTargetOpts,
@@ -247,14 +222,13 @@ pub fn modify_target(
         }
         _ => {}
     }
-    validate_host_update(&opts.hosts, TargetHostField::Hosts)?;
-    validate_host_update(&opts.exclude_hosts, TargetHostField::ExcludeHosts)?;
-
     let mut cmd = XmlCommand::new("modify_target").attribute("target_id", target_id.as_str());
     add_text_element(&mut cmd, "name", opts.name.as_deref());
     add_text_element(&mut cmd, "comment", opts.comment.as_deref());
-    add_collection_update(&mut cmd, "hosts", &opts.hosts);
-    add_collection_update(&mut cmd, "exclude_hosts", &opts.exclude_hosts);
+    if let Some(hosts) = &opts.hosts {
+        cmd.add_element_with_text("hosts", &join_hosts(hosts.included()));
+        cmd.add_element_with_text("exclude_hosts", &join_hosts(hosts.excluded()));
+    }
     if let Some(alive_test) = opts.alive_test {
         cmd.add_element_with_text("alive_tests", alive_test.as_target_name());
     }
@@ -335,122 +309,12 @@ fn add_credential<'a>(
     credential
 }
 
-fn add_collection_update(cmd: &mut XmlCommand, element: &str, update: &CollectionUpdate<String>) {
-    match update {
-        CollectionUpdate::Omitted => {}
-        CollectionUpdate::Replace(values) => {
-            cmd.add_element_with_text(element, &values.join(","));
-        }
-        CollectionUpdate::Clear => {
-            cmd.add_element_with_text(element, "");
-        }
-    }
-}
-
-fn validate_host_update(
-    update: &CollectionUpdate<String>,
-    field: TargetHostField,
-) -> Result<(), InvalidTargetHost> {
-    if let CollectionUpdate::Replace(entries) = update {
-        validate_host_entries(entries, field)?;
-    }
-    Ok(())
-}
-
-fn validate_host_entries(
-    entries: &[String],
-    field: TargetHostField,
-) -> Result<(), InvalidTargetHost> {
-    for (index, specification) in entries.iter().enumerate() {
-        let invalid = specification
-            .split([',', '\n'])
-            .map(str::trim)
-            .filter(|entry| !entry.is_empty())
-            .any(|entry| !is_valid_host_specification(entry));
-        if invalid {
-            return Err(InvalidTargetHost {
-                field,
-                index,
-                specification: specification.clone(),
-            });
-        }
-    }
-    Ok(())
-}
-
-fn is_valid_host_specification(specification: &str) -> bool {
-    if specification.is_empty() {
-        return false;
-    }
-
-    specification.parse::<Ipv4Addr>().is_ok()
-        || specification.parse::<Ipv6Addr>().is_ok()
-        || is_valid_cidr(specification)
-        || is_valid_range(specification)
-        || is_valid_hostname(specification)
-}
-
-fn is_valid_cidr(specification: &str) -> bool {
-    let Some((address, prefix)) = specification.split_once('/') else {
-        return false;
-    };
-    if prefix.is_empty() || !prefix.bytes().all(|byte| byte.is_ascii_digit()) {
-        return false;
-    }
-    let Ok(prefix) = prefix.parse::<u16>() else {
-        return false;
-    };
-
-    if address.parse::<Ipv4Addr>().is_ok() {
-        (1..=30).contains(&prefix)
-    } else if address.parse::<Ipv6Addr>().is_ok() {
-        (1..=128).contains(&prefix)
-    } else {
-        false
-    }
-}
-
-fn is_valid_range(specification: &str) -> bool {
-    let Some((first, last)) = specification.split_once('-') else {
-        return false;
-    };
-
-    if first.parse::<Ipv4Addr>().is_ok() {
-        return last.parse::<Ipv4Addr>().is_ok()
-            || (!last.is_empty()
-                && last.bytes().all(|byte| byte.is_ascii_digit())
-                && last.parse::<u8>().is_ok());
-    }
-    if first.parse::<Ipv6Addr>().is_ok() {
-        return last.parse::<Ipv6Addr>().is_ok()
-            || (!last.is_empty()
-                && last.len() <= 4
-                && last.bytes().all(|byte| byte.is_ascii_hexdigit()));
-    }
-    false
-}
-
-fn is_valid_hostname(specification: &str) -> bool {
-    let hostname = specification.strip_suffix('.').unwrap_or(specification);
-    if hostname.is_empty() || hostname.len() > 253 {
-        return false;
-    }
-
-    let mut labels = hostname.split('.').peekable();
-    while let Some(label) = labels.next() {
-        if label.is_empty()
-            || label.len() > 63
-            || label.starts_with('-')
-            || label.ends_with('-')
-            || !label
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-            || (labels.peek().is_none() && label.bytes().all(|byte| byte.is_ascii_digit()))
-        {
-            return false;
-        }
-    }
-    true
+fn join_hosts(hosts: &[TargetHost]) -> String {
+    hosts
+        .iter()
+        .map(TargetHost::as_str)
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 #[cfg(test)]
@@ -462,16 +326,31 @@ mod tests {
         EntityId::new(value).expect("valid id")
     }
 
+    fn host(value: &str) -> TargetHost {
+        value.parse().expect("valid target host")
+    }
+
+    fn hosts(included: &[&str], excluded: &[&str]) -> TargetHosts {
+        TargetHosts::new(
+            included.iter().map(|value| host(value)),
+            excluded.iter().map(|value| host(value)),
+        )
+        .expect("valid target hosts")
+    }
+
+    fn direct_ports() -> TargetPortSelection {
+        TargetPortSelection::PortRange("T:1-65535".parse().expect("valid port range"))
+    }
+
     #[test]
     fn target_commands_build_xml() {
         let rendered = xml(create_target(
             "target",
             CreateTargetOpts {
                 comment: Some("c".into()),
-                hosts: vec!["1.1.1.1".into()],
-                exclude_hosts: vec!["2.2.2.2".into()],
+                hosts: hosts(&["1.1.1.1"], &["2.2.2.2"]),
                 alive_test: Some(AliveTest::IcmpPing),
-                port_list_id: Some(id("pl1")),
+                ports: TargetPortSelection::PortList(id("pl1")),
                 ssh_credential_id: Some(id("ssh1")),
                 ssh_credential_port: Some(ServicePort::new(2222).expect("valid port")),
                 smb_credential_id: Some(id("smb1")),
@@ -541,7 +420,7 @@ mod tests {
     }
 
     #[test]
-    fn modify_target_distinguishes_omitted_replaced_and_cleared_hosts() {
+    fn modify_target_omits_or_atomically_replaces_hosts() {
         assert_eq!(
             xml(modify_target(&id("t1"), ModifyTargetOpts::default()).expect("valid update")),
             "<modify_target target_id=\"t1\"/>"
@@ -550,8 +429,10 @@ mod tests {
             xml(modify_target(
                 &id("t1"),
                 ModifyTargetOpts {
-                    hosts: CollectionUpdate::replace(["192.0.2.1".into(), "192.0.2.2".into()]),
-                    exclude_hosts: CollectionUpdate::replace(["192.0.2.3".into()]),
+                    hosts: Some(hosts(
+                        &["192.0.2.1", "192.0.2.2"],
+                        &["192.0.2.3"],
+                    )),
                     ..Default::default()
                 }
             ).expect("valid update")),
@@ -561,12 +442,12 @@ mod tests {
             xml(modify_target(
                 &id("t1"),
                 ModifyTargetOpts {
-                    hosts: CollectionUpdate::Clear,
-                    exclude_hosts: CollectionUpdate::Clear,
+                    hosts: Some(hosts(&["192.0.2.1"], &[])),
                     ..Default::default()
                 }
-            ).expect("valid update")),
-            "<modify_target target_id=\"t1\"><hosts></hosts><exclude_hosts></exclude_hosts></modify_target>"
+            )
+            .expect("valid update")),
+            "<modify_target target_id=\"t1\"><hosts>192.0.2.1</hosts><exclude_hosts></exclude_hosts></modify_target>"
         );
     }
 
@@ -686,153 +567,11 @@ mod tests {
                 "target",
                 CreateTargetOpts {
                     ssh_credential_port: Some(ServicePort::new(2222).expect("valid port")),
-                    ..Default::default()
+                    ..CreateTargetOpts::new(hosts(&["192.0.2.1"], &[]), direct_ports())
                 }
             )
             .err(),
             Some(CreateTargetError::SshPortWithoutCredential)
         );
-    }
-
-    #[test]
-    fn target_host_validation_matches_gvmd_supported_forms() {
-        for specification in [
-            "192.0.2.1",
-            "2001:db8::1",
-            "192.0.2.1/1",
-            "192.0.2.1/30",
-            "2001:db8::1/1",
-            "2001:db8::1/128",
-            "192.0.2.1-25",
-            "192.0.2.1-192.0.2.25",
-            "2001:db8::1-ff",
-            "2001:db8::1-2001:db8::ff",
-            "scanner_1.example",
-            "scanner.example.",
-        ] {
-            assert!(
-                is_valid_host_specification(specification),
-                "expected {specification:?} to be valid"
-            );
-        }
-
-        for specification in [
-            "",
-            "192.0.2.1/0",
-            "192.0.2.1/31",
-            "192.0.2.1/32",
-            "2001:db8::1/0",
-            "2001:db8::1/129",
-            "192.0.2.1/30/1",
-            "2001:db8::1-fffff",
-            "-scanner.example",
-            "scanner-.example",
-            "scanner.123",
-            "scanner..example",
-        ] {
-            assert!(
-                !is_valid_host_specification(specification),
-                "expected {specification:?} to be invalid"
-            );
-        }
-
-        assert!(validate_host_entries(
-            &["scanner.example, 192.0.2.1\n2001:db8::1".into()],
-            TargetHostField::Hosts,
-        )
-        .is_ok());
-    }
-
-    #[test]
-    fn create_target_classifies_invalid_host_and_excluded_host_entries() {
-        let hosts_error = create_target(
-            "target",
-            CreateTargetOpts {
-                hosts: vec!["192.0.2.1".into(), "192.0.2.2/31".into()],
-                ..Default::default()
-            },
-        )
-        .err();
-        assert_eq!(
-            hosts_error,
-            Some(CreateTargetError::InvalidHostSpecification(
-                InvalidTargetHost {
-                    field: TargetHostField::Hosts,
-                    index: 1,
-                    specification: "192.0.2.2/31".into(),
-                }
-            ))
-        );
-
-        let excluded_error = create_target(
-            "target",
-            CreateTargetOpts {
-                hosts: vec!["192.0.2.1/30".into()],
-                exclude_hosts: vec!["2001:db8::1/129".into()],
-                ..Default::default()
-            },
-        )
-        .err();
-        assert_eq!(
-            excluded_error,
-            Some(CreateTargetError::InvalidHostSpecification(
-                InvalidTargetHost {
-                    field: TargetHostField::ExcludeHosts,
-                    index: 0,
-                    specification: "2001:db8::1/129".into(),
-                }
-            ))
-        );
-    }
-
-    #[test]
-    fn modify_target_validates_replacements_but_allows_clear_and_omission() {
-        let hosts_error = modify_target(
-            &id("t1"),
-            ModifyTargetOpts {
-                hosts: CollectionUpdate::replace(["192.0.2.1/32".into()]),
-                ..Default::default()
-            },
-        )
-        .err();
-        assert_eq!(
-            hosts_error,
-            Some(ModifyTargetError::InvalidHostSpecification(
-                InvalidTargetHost {
-                    field: TargetHostField::Hosts,
-                    index: 0,
-                    specification: "192.0.2.1/32".into(),
-                }
-            ))
-        );
-
-        let excluded_error = modify_target(
-            &id("t1"),
-            ModifyTargetOpts {
-                exclude_hosts: CollectionUpdate::replace(["bad host".into()]),
-                ..Default::default()
-            },
-        )
-        .err();
-        assert_eq!(
-            excluded_error,
-            Some(ModifyTargetError::InvalidHostSpecification(
-                InvalidTargetHost {
-                    field: TargetHostField::ExcludeHosts,
-                    index: 0,
-                    specification: "bad host".into(),
-                }
-            ))
-        );
-
-        assert!(modify_target(
-            &id("t1"),
-            ModifyTargetOpts {
-                hosts: CollectionUpdate::Clear,
-                exclude_hosts: CollectionUpdate::Omitted,
-                ..Default::default()
-            }
-        )
-        .is_ok());
     }
 }

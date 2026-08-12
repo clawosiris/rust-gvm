@@ -84,7 +84,7 @@ fn report_id(response: &Response) -> String {
 async fn create_target(stream: &mut UnixStream, name: &str) -> String {
     let response = send_recv(
         stream,
-        format!("<create_target><name>{name}</name><hosts>127.0.0.1</hosts></create_target>")
+        format!("<create_target><name>{name}</name><hosts>127.0.0.1</hosts><port_range>T:1-65535</port_range></create_target>")
             .as_bytes(),
     )
     .await;

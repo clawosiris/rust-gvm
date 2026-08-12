@@ -230,7 +230,7 @@ async fn stateful_session_isolation() {
 
     let target_resp = send_recv(
         &mut client_a,
-        b"<create_target><name>Shared Target</name><hosts>127.0.0.1</hosts></create_target>",
+        b"<create_target><name>Shared Target</name><hosts>127.0.0.1</hosts><port_range>T:1-65535</port_range></create_target>",
     )
     .await;
     let target_id = target_resp.id().expect("target should have id");

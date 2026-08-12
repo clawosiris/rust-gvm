@@ -31,7 +31,7 @@ use gvm_gmp::commands::tasks::{create_web_application_task, CreateWebApplication
 use gvm_gmp::commands::web_application_targets::{
     create_web_application_target, get_web_application_targets, CreateWebApplicationTargetOpts,
 };
-use gvm_gmp::CredentialStoreCredentialType;
+use gvm_gmp::{CredentialStoreCredentialType, TargetHost};
 use gvm_mock_server::{GmpVersion, MockGmpServer, ServerMode};
 use gvm_protocol::{Request, Response, XmlCommand};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -191,8 +191,21 @@ async fn base_commands_work_on_all_versions() {
             create_target(
                 &format!("Base Target {}", version.as_str()),
                 CreateTargetOpts {
-                    hosts: vec!["127.0.0.1".to_string()],
-                    ..CreateTargetOpts::default()
+                    hosts: gvm_gmp::TargetHosts::new(
+                        [TargetHost::new("127.0.0.1").expect("valid target host")],
+                        [],
+                    )
+                    .expect("valid target hosts"),
+                    ..CreateTargetOpts::new(
+                        gvm_gmp::TargetHosts::new(
+                            [TargetHost::new("127.0.0.1").expect("valid target host")],
+                            [],
+                        )
+                        .expect("valid target hosts"),
+                        gvm_gmp::TargetPortSelection::PortRange(
+                            "T:1-65535".parse().expect("valid port range"),
+                        ),
+                    )
                 },
             )
             .expect("valid target"),

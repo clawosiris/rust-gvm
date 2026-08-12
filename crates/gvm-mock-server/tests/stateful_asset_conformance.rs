@@ -328,8 +328,14 @@ async fn legacy_asset_errors_trash_filters_and_sorting_are_deterministic() {
     let trashed = send_recv(&mut stream, b"<get_assets type=\"host\" trash=\"1\"/>").await;
     assert!(response_text(&trashed).contains(&trashed_id.to_string()));
 
+    let response = send_recv(
+        &mut stream,
+        b"<get_assets type=\"host\" filter=\"ignored-token sort-reverse=comment\"/>",
+    )
+    .await;
+    assert_eq!(response.status_code(), Some(400));
+
     for filter in [
-        "ignored-token sort-reverse=comment",
         "sort=type",
         "sort=severity",
         &format!("uuid={first_id}"),

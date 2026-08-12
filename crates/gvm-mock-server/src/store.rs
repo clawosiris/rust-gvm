@@ -313,6 +313,11 @@ impl Resource {
 
     /// Generate XML representation for get responses.
     pub fn to_xml(&self) -> String {
+        self.to_xml_with_details(false)
+    }
+
+    /// Generate XML representation for get responses with command detail semantics.
+    pub(crate) fn to_xml_with_details(&self, details: bool) -> String {
         // Notes and overrides use <text> instead of <name>
         let name_tag = if self.resource_type == "note" || self.resource_type == "override" {
             "text"
@@ -421,6 +426,14 @@ impl Resource {
                     xml_escape_attr(port_list_id),
                 ));
             }
+            if details {
+                if let Some(port_range) = self.attr("port_range") {
+                    xml.push_str(&format!(
+                        "<port_range>{}</port_range>",
+                        xml_escape(port_range),
+                    ));
+                }
+            }
             if let Some(id) = self.attr("ssh_credential_id") {
                 xml.push_str(&format!(
                     "<ssh_credential id=\"{}\"><name></name>",
@@ -518,6 +531,8 @@ impl Resource {
                     k.as_str(),
                     "port_list_id"
                         | "alive_test"
+                        | "port_range"
+                        | "asset_hosts_filter"
                         | "ssh_credential_id"
                         | "ssh_credential_port"
                         | "smb_credential_id"
@@ -945,6 +960,39 @@ impl ResourceStore {
         f(resource);
         resource.modification_time = now_iso();
         true
+    }
+
+    pub(crate) fn modify_target<F>(
+        &self,
+        id: &Uuid,
+        changes_hosts: bool,
+        f: F,
+    ) -> Result<(), StoreError>
+    where
+        F: FnOnce(&mut Resource),
+    {
+        let mut inner = self.inner.write().expect("store lock poisoned");
+        active_typed_resource(&inner, id, "target")?;
+
+        if changes_hosts {
+            let id_text = id.to_string();
+            let referenced = inner.resources.values().any(|candidate| {
+                candidate.resource_type == "task"
+                    && !candidate.trashed
+                    && candidate.attr("target_id") == Some(id_text.as_str())
+            });
+            if referenced {
+                return Err(StoreError::InUse("target"));
+            }
+        }
+
+        let target = inner
+            .resources
+            .get_mut(id)
+            .expect("validated target should remain present while locked");
+        f(target);
+        target.modification_time = now_iso();
+        Ok(())
     }
 
     pub(crate) fn modify_task<F>(

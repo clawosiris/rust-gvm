@@ -18,6 +18,8 @@ pub mod filtering;
 pub mod responses;
 /// Typed schedule recurrence and iCalendar helpers.
 pub mod schedule;
+/// Validated target-host specifications.
+pub mod target;
 /// Shared GMP identifier and version types.
 pub mod types;
 
@@ -30,6 +32,11 @@ pub use schedule::{
     ScheduleDefinition, ScheduleIcalendarError, ScheduleInput, ScheduleObservation,
     ScheduleRecurrence, ScheduleRecurrenceObservation, ScheduleStartObservation, ScheduleTimestamp,
     ScheduleTimestampError, ScheduleTimezone, ScheduleTimezoneError,
+};
+/// Re-exported validated target-host values.
+pub use target::{
+    TargetHost, TargetHostError, TargetHostErrorKind, TargetHostKind, TargetHosts,
+    TargetHostsError, TargetPortRange, TargetPortRangeError, TargetPortSelection,
 };
 /// Re-exported shared GMP types.
 pub use types::{

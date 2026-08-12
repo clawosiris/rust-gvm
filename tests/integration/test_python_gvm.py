@@ -137,6 +137,7 @@ def main() -> int:
                                 gmp.create_target(
                                     name="Python Target",
                                     hosts=["192.168.1.10"],
+                                    port_range="T:1-65535",
                                 )
                             ),
                         ),

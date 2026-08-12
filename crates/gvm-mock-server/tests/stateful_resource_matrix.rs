@@ -108,7 +108,7 @@ async fn matrix_targets_create_get_delete() {
     let target_id = create_and_get_id(
         &mut stream,
         format!(
-            "<create_target><name>Matrix Target</name><hosts>127.0.0.1</hosts><ssh_credential id=\"{credential_id}\"><port>2222</port></ssh_credential></create_target>"
+            "<create_target><name>Matrix Target</name><hosts>127.0.0.1</hosts><port_range>T:1-65535</port_range><ssh_credential id=\"{credential_id}\"><port>2222</port></ssh_credential></create_target>"
         )
         .as_bytes(),
         "create_target",
@@ -188,7 +188,7 @@ async fn matrix_targets_create_get_delete() {
     let default_target_id = create_and_get_id(
         &mut stream,
         format!(
-            "<create_target><name>Default SSH Port</name><hosts>127.0.0.2</hosts><ssh_credential id=\"{credential_id}\"/></create_target>"
+            "<create_target><name>Default SSH Port</name><hosts>127.0.0.2</hosts><port_range>T:1-65535</port_range><ssh_credential id=\"{credential_id}\"/></create_target>"
         )
         .as_bytes(),
         "create_target",
@@ -207,7 +207,7 @@ async fn matrix_targets_create_get_delete() {
     let smb_port_resp = send_recv(
         &mut stream,
         format!(
-            "<create_target><name>Invalid SMB Port</name><hosts>127.0.0.3</hosts><smb_credential id=\"{smb_credential_id}\"><port>445</port></smb_credential></create_target>"
+            "<create_target><name>Invalid SMB Port</name><hosts>127.0.0.3</hosts><port_range>T:1-65535</port_range><smb_credential id=\"{smb_credential_id}\"><port>445</port></smb_credential></create_target>"
         )
         .as_bytes(),
     )
@@ -216,7 +216,7 @@ async fn matrix_targets_create_get_delete() {
 
     let create_detach_resp = send_recv(
         &mut stream,
-        b"<create_target><name>Invalid Detach</name><hosts>127.0.0.4</hosts><ssh_credential id=\"0\"/></create_target>",
+        b"<create_target><name>Invalid Detach</name><hosts>127.0.0.4</hosts><port_range>T:1-65535</port_range><ssh_credential id=\"0\"/></create_target>",
     )
     .await;
     assert_eq!(create_detach_resp.status_code(), Some(400));
@@ -225,7 +225,7 @@ async fn matrix_targets_create_get_delete() {
         let invalid_type_resp = send_recv(
             &mut stream,
             format!(
-                "<create_target><name>Invalid Type {credential_element}</name><hosts>127.0.0.5</hosts><{credential_element} id=\"{invalid_credential_id}\"/></create_target>"
+                "<create_target><name>Invalid Type {credential_element}</name><hosts>127.0.0.5</hosts><port_range>T:1-65535</port_range><{credential_element} id=\"{invalid_credential_id}\"/></create_target>"
             )
             .as_bytes(),
         )
