@@ -889,6 +889,66 @@ impl SessionHandler {
         } else {
             TargetCredentialUpdate::Omitted
         };
+        let target_ssh_elevate_credential = if resource_type == "target" {
+            match target_credential_update(cmd, store, "ssh_elevate_credential") {
+                Ok(update) => update,
+                Err((status, message)) => return error_response(&cmd.name, status, message),
+            }
+        } else {
+            TargetCredentialUpdate::Omitted
+        };
+        let target_krb5_credential = if resource_type == "target" {
+            match target_credential_update(cmd, store, "krb5_credential") {
+                Ok(update) => update,
+                Err((status, message)) => return error_response(&cmd.name, status, message),
+            }
+        } else {
+            TargetCredentialUpdate::Omitted
+        };
+        let target_esxi_credential = if resource_type == "target" {
+            match target_credential_update(cmd, store, "esxi_credential") {
+                Ok(update) => update,
+                Err((status, message)) => return error_response(&cmd.name, status, message),
+            }
+        } else {
+            TargetCredentialUpdate::Omitted
+        };
+        let target_snmp_credential = if resource_type == "target" {
+            match target_credential_update(cmd, store, "snmp_credential") {
+                Ok(update) => update,
+                Err((status, message)) => return error_response(&cmd.name, status, message),
+            }
+        } else {
+            TargetCredentialUpdate::Omitted
+        };
+        if resource_type == "target" {
+            if let Err(message) = validate_target_credential_combination(
+                None,
+                &target_ssh_credential,
+                &target_ssh_elevate_credential,
+                &target_smb_credential,
+                &target_krb5_credential,
+            ) {
+                return error_response(&cmd.name, 400, message);
+            }
+        }
+        let target_allow_simultaneous_ips = if resource_type == "target" {
+            match cmd.child_text("allow_simultaneous_ips") {
+                Some(value) => match parse_filter_bool(value.trim()) {
+                    Some(value) => Some(value),
+                    None => {
+                        return error_response(
+                            &cmd.name,
+                            400,
+                            "Invalid allow_simultaneous_ips value",
+                        );
+                    }
+                },
+                None => None,
+            }
+        } else {
+            None
+        };
         let target_alive_test = if resource_type == "target" {
             match target_alive_test_update(cmd) {
                 Ok(update) => update,
@@ -1148,7 +1208,30 @@ impl SessionHandler {
                 resource.set_attr("port_range", &port_range);
             }
             apply_target_credential_update(&mut resource, "ssh_credential", &target_ssh_credential);
+            apply_target_credential_update(
+                &mut resource,
+                "ssh_elevate_credential",
+                &target_ssh_elevate_credential,
+            );
             apply_target_credential_update(&mut resource, "smb_credential", &target_smb_credential);
+            apply_target_credential_update(
+                &mut resource,
+                "krb5_credential",
+                &target_krb5_credential,
+            );
+            apply_target_credential_update(
+                &mut resource,
+                "esxi_credential",
+                &target_esxi_credential,
+            );
+            apply_target_credential_update(
+                &mut resource,
+                "snmp_credential",
+                &target_snmp_credential,
+            );
+            if let Some(value) = target_allow_simultaneous_ips {
+                resource.set_attr("allow_simultaneous_ips", if value { "1" } else { "0" });
+            }
             if let Some(alive_test) = target_alive_test {
                 resource.set_attr("alive_test", alive_test.as_target_name());
             }
@@ -1424,6 +1507,68 @@ impl SessionHandler {
         } else {
             TargetCredentialUpdate::Omitted
         };
+        let new_target_ssh_elevate_credential = if resource_type == "target" {
+            match target_credential_update(cmd, store, "ssh_elevate_credential") {
+                Ok(update) => update,
+                Err((status, message)) => return error_response(&cmd.name, status, message),
+            }
+        } else {
+            TargetCredentialUpdate::Omitted
+        };
+        let new_target_krb5_credential = if resource_type == "target" {
+            match target_credential_update(cmd, store, "krb5_credential") {
+                Ok(update) => update,
+                Err((status, message)) => return error_response(&cmd.name, status, message),
+            }
+        } else {
+            TargetCredentialUpdate::Omitted
+        };
+        let new_target_esxi_credential = if resource_type == "target" {
+            match target_credential_update(cmd, store, "esxi_credential") {
+                Ok(update) => update,
+                Err((status, message)) => return error_response(&cmd.name, status, message),
+            }
+        } else {
+            TargetCredentialUpdate::Omitted
+        };
+        let new_target_snmp_credential = if resource_type == "target" {
+            match target_credential_update(cmd, store, "snmp_credential") {
+                Ok(update) => update,
+                Err((status, message)) => return error_response(&cmd.name, status, message),
+            }
+        } else {
+            TargetCredentialUpdate::Omitted
+        };
+        let new_target_allow_simultaneous_ips = if resource_type == "target" {
+            match cmd.child_text("allow_simultaneous_ips") {
+                Some(value) => match parse_filter_bool(value.trim()) {
+                    Some(value) => Some(value),
+                    None => {
+                        return error_response(
+                            &cmd.name,
+                            400,
+                            "Invalid allow_simultaneous_ips value",
+                        );
+                    }
+                },
+                None => None,
+            }
+        } else {
+            None
+        };
+        if resource_type == "target" {
+            if let Some(existing) = store.get_typed(&uuid, "target") {
+                if let Err(message) = validate_target_credential_combination(
+                    Some(&existing),
+                    &new_target_ssh_credential,
+                    &new_target_ssh_elevate_credential,
+                    &new_target_smb_credential,
+                    &new_target_krb5_credential,
+                ) {
+                    return error_response(&cmd.name, 400, message);
+                }
+            }
+        }
         let new_target_alive_test = if resource_type == "target" {
             match target_alive_test_update(cmd) {
                 Ok(update) => update,
@@ -1656,7 +1801,18 @@ impl SessionHandler {
                 r.set_attr("port_list_id", &port_list_id.to_string());
             }
             apply_target_credential_update(r, "ssh_credential", &new_target_ssh_credential);
+            apply_target_credential_update(
+                r,
+                "ssh_elevate_credential",
+                &new_target_ssh_elevate_credential,
+            );
             apply_target_credential_update(r, "smb_credential", &new_target_smb_credential);
+            apply_target_credential_update(r, "krb5_credential", &new_target_krb5_credential);
+            apply_target_credential_update(r, "esxi_credential", &new_target_esxi_credential);
+            apply_target_credential_update(r, "snmp_credential", &new_target_snmp_credential);
+            if let Some(value) = new_target_allow_simultaneous_ips {
+                r.set_attr("allow_simultaneous_ips", if value { "1" } else { "0" });
+            }
             if let Some(alive_test) = new_target_alive_test {
                 r.set_attr("alive_test", alive_test.as_target_name());
             }
@@ -1820,8 +1976,19 @@ impl SessionHandler {
         }
 
         if resource_type == "target" {
-            let changes_hosts = new_hosts.is_some();
-            return match store.modify_target(&uuid, changes_hosts, update_resource) {
+            let changes_scan_settings = new_hosts.is_some()
+                || new_target_port_list_id.is_some()
+                || !matches!(new_target_ssh_credential, TargetCredentialUpdate::Omitted)
+                || !matches!(
+                    new_target_ssh_elevate_credential,
+                    TargetCredentialUpdate::Omitted
+                )
+                || !matches!(new_target_smb_credential, TargetCredentialUpdate::Omitted)
+                || !matches!(new_target_krb5_credential, TargetCredentialUpdate::Omitted)
+                || !matches!(new_target_esxi_credential, TargetCredentialUpdate::Omitted)
+                || !matches!(new_target_snmp_credential, TargetCredentialUpdate::Omitted)
+                || new_target_allow_simultaneous_ips.is_some();
+            return match store.modify_target(&uuid, changes_scan_settings, update_resource) {
                 Ok(()) => format!("<{}_response status=\"200\" status_text=\"OK\"/>", cmd.name)
                     .into_bytes(),
                 Err(error) => store_error_response(&cmd.name, error),
@@ -4200,7 +4367,11 @@ fn target_credential_update(
     let credential_type = credential.attr("type").unwrap_or("usk");
     let type_supported = match element {
         "ssh_credential" => matches!(credential_type, "up" | "usk" | "cs_up" | "cs_usk"),
+        "ssh_elevate_credential" => matches!(credential_type, "up" | "cs_up"),
         "smb_credential" => matches!(credential_type, "up" | "cs_up"),
+        "krb5_credential" => credential_type == "krb5",
+        "esxi_credential" => matches!(credential_type, "up" | "cs_up"),
+        "snmp_credential" => credential_type == "snmp",
         _ => true,
     };
     if !type_supported {
@@ -4253,6 +4424,45 @@ fn apply_target_credential_update(
             }
         }
     }
+}
+
+fn effective_target_credential_id(
+    existing: Option<&Resource>,
+    prefix: &str,
+    update: &TargetCredentialUpdate,
+) -> Option<Uuid> {
+    match update {
+        TargetCredentialUpdate::Omitted => existing
+            .and_then(|resource| resource.attr(&format!("{prefix}_id")))
+            .and_then(|id| Uuid::parse_str(id).ok()),
+        TargetCredentialUpdate::Clear => None,
+        TargetCredentialUpdate::Set { id, .. } => Some(*id),
+    }
+}
+
+fn validate_target_credential_combination(
+    existing: Option<&Resource>,
+    ssh: &TargetCredentialUpdate,
+    ssh_elevate: &TargetCredentialUpdate,
+    smb: &TargetCredentialUpdate,
+    krb5: &TargetCredentialUpdate,
+) -> Result<(), &'static str> {
+    let ssh = effective_target_credential_id(existing, "ssh_credential", ssh);
+    let ssh_elevate =
+        effective_target_credential_id(existing, "ssh_elevate_credential", ssh_elevate);
+    let smb = effective_target_credential_id(existing, "smb_credential", smb);
+    let krb5 = effective_target_credential_id(existing, "krb5_credential", krb5);
+
+    if ssh_elevate.is_some() && ssh.is_none() {
+        return Err("SSH elevate credential requires an SSH credential");
+    }
+    if ssh_elevate.is_some() && ssh_elevate == ssh {
+        return Err("SSH elevate credential must differ from SSH credential");
+    }
+    if smb.is_some() && krb5.is_some() {
+        return Err("SMB and Kerberos credentials are mutually exclusive");
+    }
+    Ok(())
 }
 
 fn element_text_including_empty(cmd: &ParsedCommand, raw_xml: &[u8], name: &str) -> Option<String> {

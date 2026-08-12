@@ -3507,6 +3507,126 @@ async fn typed_target_credentials_round_trip_in_stateful_mode() {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn typed_target_extended_credentials_and_simultaneous_ips_round_trip() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut client = authenticated_client(&server).await;
+    let ssh = create_test_credential(&mut client, "Extended SSH").await;
+    let elevate = create_test_smb_credential(&mut client, "Extended Elevation").await;
+    let smb = create_test_smb_credential(&mut client, "Extended SMB").await;
+    let krb5 = client
+        .create_credential(
+            "Extended Kerberos",
+            CredentialOpts {
+                credential_type: Some(CredentialType::Kerberos5),
+                login: Some("principal".into()),
+                password: Some("secret".into()),
+                kdcs: vec!["kdc.example".into()],
+                realm: Some("EXAMPLE.COM".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("Kerberos credential should be created")
+        .id;
+
+    let created = client
+        .create_target(
+            "Extended Credential Target",
+            CreateTargetOpts {
+                ssh_credential_id: Some(ssh.clone()),
+                ssh_elevate_credential_id: Some(elevate.clone()),
+                allow_simultaneous_ips: Some(true),
+                ..CreateTargetOpts::new(target_hosts(&["192.0.2.20"], &[]), target_ports())
+            },
+        )
+        .await
+        .expect("target should be created");
+    let target = target_by_id(&mut client, &created.id).await;
+    assert_eq!(
+        target.ssh_credential.as_ref().map(|value| &value.id),
+        Some(&ssh)
+    );
+    assert_eq!(
+        target
+            .ssh_elevate_credential
+            .as_ref()
+            .map(|value| &value.id),
+        Some(&elevate)
+    );
+    assert_eq!(target.krb5_credential, None);
+    assert!(target.allow_simultaneous_ips);
+
+    client
+        .modify_target(
+            &created.id,
+            ModifyTargetOpts {
+                comment: Some("new fields omitted".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("omitted fields should be preserved");
+    let preserved = target_by_id(&mut client, &created.id).await;
+    assert_eq!(
+        preserved
+            .ssh_elevate_credential
+            .as_ref()
+            .map(|value| &value.id),
+        Some(&elevate)
+    );
+    assert!(preserved.allow_simultaneous_ips);
+
+    client
+        .modify_target(
+            &created.id,
+            ModifyTargetOpts {
+                ssh_credential_id: ScalarUpdate::Clear,
+                ssh_elevate_credential_id: ScalarUpdate::Clear,
+                krb5_credential_id: ScalarUpdate::set(krb5.clone()),
+                allow_simultaneous_ips: Some(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("SSH credentials should detach while Kerberos is set");
+    let kerberos_target = target_by_id(&mut client, &created.id).await;
+    assert_eq!(kerberos_target.ssh_credential, None);
+    assert_eq!(kerberos_target.ssh_elevate_credential, None);
+    assert_eq!(
+        kerberos_target
+            .krb5_credential
+            .as_ref()
+            .map(|value| &value.id),
+        Some(&krb5)
+    );
+    assert!(!kerberos_target.allow_simultaneous_ips);
+
+    client
+        .modify_target(
+            &created.id,
+            ModifyTargetOpts {
+                krb5_credential_id: ScalarUpdate::Clear,
+                smb_credential_id: ScalarUpdate::set(smb.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("Kerberos should detach while SMB is set");
+    let smb_target = target_by_id(&mut client, &created.id).await;
+    assert_eq!(smb_target.krb5_credential, None);
+    assert_eq!(
+        smb_target.smb_credential.as_ref().map(|value| &value.id),
+        Some(&smb)
+    );
+    assert!(!smb_target.allow_simultaneous_ips);
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn typed_target_create_rejects_an_orphaned_ssh_port_before_send() {
     let Some(server) = stateful_server().await else {
         return;
@@ -3540,6 +3660,138 @@ async fn typed_target_create_rejects_an_orphaned_ssh_port_before_send() {
         .count();
     assert_eq!(create_count_after, create_count_before);
 
+    server.shutdown().await;
+}
+
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn typed_target_credential_invariants_fail_before_send() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut client = authenticated_client(&server).await;
+    let id = |value| EntityId::new(value).expect("valid credential ID");
+    let command_count = || {
+        server
+            .command_history()
+            .iter()
+            .filter(|record| matches!(record.command_name(), "create_target" | "modify_target"))
+            .count()
+    };
+    let before = command_count();
+
+    let error = client
+        .create_target(
+            "Missing SSH",
+            CreateTargetOpts {
+                ssh_elevate_credential_id: Some(id("elevate")),
+                ..CreateTargetOpts::new(target_hosts(&["192.0.2.12"], &[]), target_ports())
+            },
+        )
+        .await
+        .expect_err("elevation without SSH should fail locally");
+    assert!(matches!(
+        error,
+        GvmError::CreateTarget(CreateTargetError::SshElevateWithoutSshCredential)
+    ));
+
+    let error = client
+        .create_target(
+            "Same SSH",
+            CreateTargetOpts {
+                ssh_credential_id: Some(id("same")),
+                ssh_elevate_credential_id: Some(id("same")),
+                ..CreateTargetOpts::new(target_hosts(&["192.0.2.13"], &[]), target_ports())
+            },
+        )
+        .await
+        .expect_err("matching SSH credentials should fail locally");
+    assert!(matches!(
+        error,
+        GvmError::CreateTarget(CreateTargetError::SshElevateMatchesSshCredential)
+    ));
+
+    let error = client
+        .create_target(
+            "SMB and Kerberos",
+            CreateTargetOpts {
+                smb_credential_id: Some(id("smb")),
+                krb5_credential_id: Some(id("krb5")),
+                ..CreateTargetOpts::new(target_hosts(&["192.0.2.14"], &[]), target_ports())
+            },
+        )
+        .await
+        .expect_err("SMB and Kerberos should fail locally");
+    assert!(matches!(
+        error,
+        GvmError::CreateTarget(CreateTargetError::SmbAndKrb5Credentials)
+    ));
+
+    let target_id = id("target");
+    let error = client
+        .modify_target(
+            &target_id,
+            ModifyTargetOpts {
+                ssh_credential_id: ScalarUpdate::Clear,
+                ssh_elevate_credential_id: ScalarUpdate::set(id("elevate")),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("elevation with SSH detach should fail locally");
+    assert!(matches!(
+        error,
+        GvmError::ModifyTarget(ModifyTargetError::SshElevateWithoutSshCredential)
+    ));
+
+    let error = client
+        .modify_target(
+            &target_id,
+            ModifyTargetOpts {
+                ssh_elevate_credential_id: ScalarUpdate::set(id("elevate")),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("elevation without an explicit SSH binding should fail locally");
+    assert!(matches!(
+        error,
+        GvmError::ModifyTarget(ModifyTargetError::SshElevateWithoutSshCredential)
+    ));
+
+    let error = client
+        .modify_target(
+            &target_id,
+            ModifyTargetOpts {
+                ssh_credential_id: ScalarUpdate::set(id("same")),
+                ssh_elevate_credential_id: ScalarUpdate::set(id("same")),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("matching SSH credentials should fail locally");
+    assert!(matches!(
+        error,
+        GvmError::ModifyTarget(ModifyTargetError::SshElevateMatchesSshCredential)
+    ));
+
+    let error = client
+        .modify_target(
+            &target_id,
+            ModifyTargetOpts {
+                smb_credential_id: ScalarUpdate::set(id("smb")),
+                krb5_credential_id: ScalarUpdate::set(id("krb5")),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("SMB and Kerberos should fail locally");
+    assert!(matches!(
+        error,
+        GvmError::ModifyTarget(ModifyTargetError::SmbAndKrb5Credentials)
+    ));
+
+    assert_eq!(command_count(), before);
     server.shutdown().await;
 }
 

@@ -104,11 +104,17 @@ async fn matrix_targets_create_get_delete() {
         "create_credential",
     )
     .await;
+    let snmp_credential_id = create_and_get_id(
+        &mut stream,
+        b"<create_credential><name>Matrix SNMP</name><type>snmp</type></create_credential>",
+        "create_credential",
+    )
+    .await;
 
     let target_id = create_and_get_id(
         &mut stream,
         format!(
-            "<create_target><name>Matrix Target</name><hosts>127.0.0.1</hosts><port_range>T:1-65535</port_range><ssh_credential id=\"{credential_id}\"><port>2222</port></ssh_credential></create_target>"
+            "<create_target><name>Matrix Target</name><hosts>127.0.0.1</hosts><port_range>T:1-65535</port_range><ssh_credential id=\"{credential_id}\"><port>2222</port></ssh_credential><esxi_credential id=\"{smb_credential_id}\"/><snmp_credential id=\"{snmp_credential_id}\"/></create_target>"
         )
         .as_bytes(),
         "create_target",
@@ -126,6 +132,12 @@ async fn matrix_targets_create_get_delete() {
     assert!(get_text.contains("Matrix Target"));
     assert!(get_text.contains(&format!(
         "<ssh_credential id=\"{credential_id}\"><name></name><port>2222</port></ssh_credential>"
+    )));
+    assert!(get_text.contains(&format!(
+        "<esxi_credential id=\"{smb_credential_id}\"><name></name></esxi_credential>"
+    )));
+    assert!(get_text.contains(&format!(
+        "<snmp_credential id=\"{snmp_credential_id}\"><name></name></snmp_credential>"
     )));
 
     let modify_resp = send_recv(
@@ -256,6 +268,235 @@ async fn matrix_targets_create_get_delete() {
     )
     .await;
     assert_eq!(missing_resp.status_code(), Some(404));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn target_scan_settings_are_immutable_while_in_use() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let ssh_id = create_and_get_id(
+        &mut stream,
+        b"<create_credential><name>In-use SSH</name><type>usk</type></create_credential>",
+        "create_credential",
+    )
+    .await;
+    let elevate_id = create_and_get_id(
+        &mut stream,
+        b"<create_credential><name>In-use Elevation</name><type>up</type></create_credential>",
+        "create_credential",
+    )
+    .await;
+    let krb5_id = create_and_get_id(
+        &mut stream,
+        b"<create_credential><name>In-use Kerberos</name><type>krb5</type></create_credential>",
+        "create_credential",
+    )
+    .await;
+    let snmp_id = create_and_get_id(
+        &mut stream,
+        b"<create_credential><name>In-use SNMP</name><type>snmp</type></create_credential>",
+        "create_credential",
+    )
+    .await;
+    let target_id = create_and_get_id(
+        &mut stream,
+        format!(
+            "<create_target><name>In-use Extended Target</name><hosts>192.0.2.30</hosts><port_range>T:1-65535</port_range><ssh_credential id=\"{ssh_id}\"/><ssh_elevate_credential id=\"{elevate_id}\"/><allow_simultaneous_ips>1</allow_simultaneous_ips></create_target>"
+        )
+        .as_bytes(),
+        "create_target",
+    )
+    .await;
+    create_and_get_id(
+        &mut stream,
+        format!(
+            "<create_task><name>Uses extended target</name><target id=\"{target_id}\"/></create_task>"
+        )
+        .as_bytes(),
+        "create_task",
+    )
+    .await;
+
+    let rejected = send_recv(
+        &mut stream,
+        format!(
+            "<modify_target target_id=\"{target_id}\"><ssh_credential id=\"0\"/><ssh_elevate_credential id=\"0\"/><krb5_credential id=\"{krb5_id}\"/><allow_simultaneous_ips>0</allow_simultaneous_ips><comment>must not apply</comment></modify_target>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(rejected.status_code(), Some(409));
+
+    for update in [
+        "<ssh_elevate_credential id=\"0\"/>".to_string(),
+        format!("<smb_credential id=\"{elevate_id}\"/>"),
+        format!("<krb5_credential id=\"{krb5_id}\"/>"),
+        format!("<esxi_credential id=\"{elevate_id}\"/>"),
+        format!("<snmp_credential id=\"{snmp_id}\"/>"),
+        "<allow_simultaneous_ips>0</allow_simultaneous_ips>".to_string(),
+    ] {
+        let rejected = send_recv(
+            &mut stream,
+            format!("<modify_target target_id=\"{target_id}\">{update}</modify_target>").as_bytes(),
+        )
+        .await;
+        assert_eq!(rejected.status_code(), Some(409), "{update}");
+    }
+
+    let fetched = send_recv(
+        &mut stream,
+        format!("<get_targets target_id=\"{target_id}\"/>").as_bytes(),
+    )
+    .await;
+    let xml = fetched.as_str().expect("target response should be UTF-8");
+    assert!(xml.contains(&format!("<ssh_credential id=\"{ssh_id}\"")));
+    assert!(xml.contains(&format!("<ssh_elevate_credential id=\"{elevate_id}\"")));
+    assert!(xml.contains("<krb5_credential id=\"\">"));
+    assert!(xml.contains("<allow_simultaneous_ips>1</allow_simultaneous_ips>"));
+    assert!(!xml.contains("must not apply"));
+
+    let metadata = send_recv(
+        &mut stream,
+        format!(
+            "<modify_target target_id=\"{target_id}\"><comment>metadata allowed</comment></modify_target>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(metadata.status_code(), Some(200));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn target_extended_credential_combinations_are_atomic() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let mut stream = connect(&server).await;
+    auth_admin(&mut stream).await;
+
+    let ssh_id = create_and_get_id(
+        &mut stream,
+        b"<create_credential><name>Combination SSH</name><type>usk</type></create_credential>",
+        "create_credential",
+    )
+    .await;
+    let elevate_id = create_and_get_id(
+        &mut stream,
+        b"<create_credential><name>Combination Elevation</name><type>up</type></create_credential>",
+        "create_credential",
+    )
+    .await;
+    let smb_id = create_and_get_id(
+        &mut stream,
+        b"<create_credential><name>Combination SMB</name><type>up</type></create_credential>",
+        "create_credential",
+    )
+    .await;
+    let krb5_id = create_and_get_id(
+        &mut stream,
+        b"<create_credential><name>Combination Kerberos</name><type>krb5</type></create_credential>",
+        "create_credential",
+    )
+    .await;
+
+    for xml in [
+        format!(
+            "<create_target><name>Missing SSH</name><hosts>192.0.2.31</hosts><port_range>T:1-65535</port_range><ssh_elevate_credential id=\"{elevate_id}\"/></create_target>"
+        ),
+        format!(
+            "<create_target><name>Same SSH</name><hosts>192.0.2.32</hosts><port_range>T:1-65535</port_range><ssh_credential id=\"{elevate_id}\"/><ssh_elevate_credential id=\"{elevate_id}\"/></create_target>"
+        ),
+        format!(
+            "<create_target><name>SMB and Kerberos</name><hosts>192.0.2.33</hosts><port_range>T:1-65535</port_range><smb_credential id=\"{smb_id}\"/><krb5_credential id=\"{krb5_id}\"/></create_target>"
+        ),
+        format!(
+            "<create_target><name>Wrong Elevation Type</name><hosts>192.0.2.34</hosts><port_range>T:1-65535</port_range><ssh_credential id=\"{ssh_id}\"/><ssh_elevate_credential id=\"{ssh_id}\"/></create_target>"
+        ),
+        format!(
+            "<create_target><name>Wrong Kerberos Type</name><hosts>192.0.2.35</hosts><port_range>T:1-65535</port_range><krb5_credential id=\"{smb_id}\"/></create_target>"
+        ),
+    ] {
+        assert_eq!(send_recv(&mut stream, xml.as_bytes()).await.status_code(), Some(400));
+    }
+
+    let target_id = create_and_get_id(
+        &mut stream,
+        format!(
+            "<create_target><name>Combination Target</name><hosts>192.0.2.40</hosts><port_range>T:1-65535</port_range><ssh_credential id=\"{ssh_id}\"/><ssh_elevate_credential id=\"{elevate_id}\"/></create_target>"
+        )
+        .as_bytes(),
+        "create_target",
+    )
+    .await;
+
+    for update in [
+        "<ssh_credential id=\"0\"/>".to_string(),
+        format!("<ssh_elevate_credential id=\"{ssh_id}\"/>"),
+    ] {
+        let rejected = send_recv(
+            &mut stream,
+            format!(
+                "<modify_target target_id=\"{target_id}\">{update}<comment>invalid</comment></modify_target>"
+            )
+            .as_bytes(),
+        )
+        .await;
+        assert_eq!(rejected.status_code(), Some(400));
+    }
+    let unchanged = send_recv(
+        &mut stream,
+        format!("<get_targets target_id=\"{target_id}\"/>").as_bytes(),
+    )
+    .await;
+    let unchanged = unchanged.as_str().expect("target response should be UTF-8");
+    assert!(unchanged.contains(&format!("<ssh_credential id=\"{ssh_id}\"")));
+    assert!(unchanged.contains(&format!("<ssh_elevate_credential id=\"{elevate_id}\"")));
+    assert!(!unchanged.contains("invalid"));
+
+    let smb_update = send_recv(
+        &mut stream,
+        format!(
+            "<modify_target target_id=\"{target_id}\"><ssh_credential id=\"0\"/><ssh_elevate_credential id=\"0\"/><smb_credential id=\"{smb_id}\"/></modify_target>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(smb_update.status_code(), Some(200));
+    let invalid_krb5 = send_recv(
+        &mut stream,
+        format!(
+            "<modify_target target_id=\"{target_id}\"><krb5_credential id=\"{krb5_id}\"/></modify_target>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(invalid_krb5.status_code(), Some(400));
+    let krb5_update = send_recv(
+        &mut stream,
+        format!(
+            "<modify_target target_id=\"{target_id}\"><smb_credential id=\"0\"/><krb5_credential id=\"{krb5_id}\"/></modify_target>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(krb5_update.status_code(), Some(200));
+    let fetched = send_recv(
+        &mut stream,
+        format!("<get_targets target_id=\"{target_id}\"/>").as_bytes(),
+    )
+    .await;
+    let fetched = fetched.as_str().expect("target response should be UTF-8");
+    assert!(fetched.contains("<smb_credential id=\"\">"));
+    assert!(fetched.contains(&format!("<krb5_credential id=\"{krb5_id}\"")));
 
     server.shutdown().await;
 }
