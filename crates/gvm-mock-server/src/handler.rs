@@ -26,9 +26,10 @@ use crate::response_gen::{
 };
 use crate::scenario::{ScenarioEngine, ScenarioMode, ScenarioOutcome, ScenarioStep};
 use crate::store::{
-    AssetInputProfile, DeleteAssetResult, Resource, ResourceStore, SpecializedTaskTarget,
-    StoreError, TaskReferenceUpdates, TaskReferences, TaskScheduleUpdate, TaskStatus,
-    DEFAULT_CONFIG_ID, DEFAULT_SCANNER_ID,
+    scan_report_result_severity, AssetInputProfile, AuditComplianceCounts, DeleteAssetResult,
+    Resource, ResourceStore, ScanReportResultCounts, SpecializedTaskTarget, StoreError,
+    TaskReferenceUpdates, TaskReferences, TaskScheduleUpdate, TaskStatus, DEFAULT_CONFIG_ID,
+    DEFAULT_SCANNER_ID,
 };
 use crate::util::{xml_escape, xml_escape_attr};
 use crate::version::{command_available, GmpVersion};
@@ -1287,7 +1288,7 @@ impl SessionHandler {
                 } else if cmd.name == "get_targets" {
                     resource.to_xml_with_details(cmd.attr("details") == Some("1"))
                 } else {
-                    resource.to_xml()
+                    store.render_resource_xml(&resource)
                 };
                 return format!(
                     "<{}_response status=\"200\" status_text=\"OK\">\
@@ -1356,7 +1357,10 @@ impl SessionHandler {
                 .map(|resource| resource.to_xml_with_details(details))
                 .collect()
         } else {
-            resources.iter().map(|resource| resource.to_xml()).collect()
+            resources
+                .iter()
+                .map(|resource| store.render_resource_xml(resource))
+                .collect()
         };
 
         format!(
@@ -2838,50 +2842,6 @@ fn parse_filter_bool(value: &str) -> Option<bool> {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
-struct AuditComplianceCounts {
-    yes: usize,
-    no: usize,
-    incomplete: usize,
-    undefined: usize,
-}
-
-impl AuditComplianceCounts {
-    fn from_results<'a>(results: impl Iterator<Item = &'a Resource>) -> Self {
-        let mut counts = Self::default();
-        for result in results {
-            match result
-                .attr("compliance")
-                .unwrap_or("undefined")
-                .to_ascii_lowercase()
-                .as_str()
-            {
-                "yes" => counts.yes += 1,
-                "no" => counts.no += 1,
-                "incomplete" => counts.incomplete += 1,
-                _ => counts.undefined += 1,
-            }
-        }
-        counts
-    }
-
-    fn total(self) -> usize {
-        self.yes + self.no + self.incomplete + self.undefined
-    }
-
-    fn compliance(self) -> &'static str {
-        if self.no > 0 {
-            "no"
-        } else if self.incomplete > 0 {
-            "incomplete"
-        } else if self.yes > 0 {
-            "yes"
-        } else {
-            "undefined"
-        }
-    }
-}
-
 fn audit_compliance_level(result: &Resource) -> char {
     match result
         .attr("compliance")
@@ -3114,66 +3074,6 @@ fn audit_hosts_from_results(results: &[Resource], filter: &AuditFilter) -> Vec<A
             filter.host_matches(&host).then_some(host)
         })
         .collect()
-}
-
-#[derive(Default)]
-struct ScanReportResultCounts {
-    total: usize,
-    critical: usize,
-    high: usize,
-    medium: usize,
-    low: usize,
-    log: usize,
-    false_positive: usize,
-    errors: usize,
-    hosts: usize,
-    ports: usize,
-    max_severity: f64,
-}
-
-impl ScanReportResultCounts {
-    fn from_results<'a>(results: impl Iterator<Item = &'a Resource>) -> Self {
-        let mut counts = Self::default();
-        let mut hosts = BTreeSet::new();
-        let mut ports = BTreeSet::new();
-        for result in results {
-            counts.total += 1;
-            let severity = scan_report_result_severity(result);
-            counts.max_severity = counts.max_severity.max(severity);
-            if result.attr("false_positive") == Some("1") {
-                counts.false_positive += 1;
-            } else if severity >= 9.0 {
-                counts.critical += 1;
-            } else if severity >= 7.0 {
-                counts.high += 1;
-            } else if severity >= 4.0 {
-                counts.medium += 1;
-            } else if severity > 0.0 {
-                counts.low += 1;
-            } else {
-                counts.log += 1;
-            }
-            if result.attr("threat") == Some("Error") {
-                counts.errors += 1;
-            }
-            if let Some(host) = result.attr("host") {
-                hosts.insert(host);
-            }
-            if let Some(port) = result.attr("port") {
-                ports.insert(port);
-            }
-        }
-        counts.hosts = hosts.len();
-        counts.ports = ports.len();
-        counts
-    }
-}
-
-fn scan_report_result_severity(result: &Resource) -> f64 {
-    result
-        .attr("severity")
-        .and_then(|severity| severity.parse().ok())
-        .unwrap_or_default()
 }
 
 fn scan_report_result_matches(result: &Resource, filter: &str) -> bool {
