@@ -44,3 +44,21 @@ fn test_port_list_get_delete_commands() {
         "<delete_port_range port_range_id=\"pr1\"/>"
     );
 }
+
+#[test]
+fn test_modify_port_list_uses_only_gvmd_supported_replacement_fields() {
+    assert_eq!(
+        xml(modify_port_list(
+            &id("pl1"),
+            ModifyPortListOpts {
+                name: Some("renamed".into()),
+                comment: Some("replacement comment".into()),
+            },
+        )),
+        "<modify_port_list port_list_id=\"pl1\"><name>renamed</name><comment>replacement comment</comment></modify_port_list>"
+    );
+    assert_eq!(
+        xml(modify_port_list(&id("pl1"), ModifyPortListOpts::default())),
+        "<modify_port_list port_list_id=\"pl1\"/>"
+    );
+}

@@ -2262,7 +2262,7 @@ async fn typed_rest_support_gap_helpers_parse_fixture_responses() {
 }
 
 #[tokio::test]
-async fn typed_port_list_and_user_renames_round_trip() {
+async fn typed_port_list_replacement_round_trip() {
     let Some(server) = stateful_server().await else {
         return;
     };
@@ -2285,7 +2285,6 @@ async fn typed_port_list_and_user_renames_round_trip() {
             ModifyPortListOpts {
                 name: Some("Renamed Port List".into()),
                 comment: Some("renamed through typed client".into()),
-                ..Default::default()
             },
         )
         .await
@@ -2304,6 +2303,56 @@ async fn typed_port_list_and_user_renames_round_trip() {
         renamed_port_list.meta.comment.as_deref(),
         Some("renamed through typed client")
     );
+
+    server.clear_history();
+    client
+        .modify_port_list(
+            &port_list.id,
+            ModifyPortListOpts {
+                name: Some("Name Only".into()),
+                comment: None,
+            },
+        )
+        .await
+        .expect("port list replacement should succeed");
+    let port_lists = client
+        .get_port_lists(GetPortListsOpts::default())
+        .await
+        .expect("port list read-back should succeed");
+    let replaced_port_list = port_lists
+        .items
+        .iter()
+        .find(|item| item.meta.id == port_list.id)
+        .expect("replaced port list should be present");
+    assert_eq!(replaced_port_list.meta.name, "Name Only");
+    assert_eq!(replaced_port_list.meta.comment, None);
+    let history = server.command_history();
+    assert_eq!(history[0].command_name(), "modify_port_list");
+    assert_eq!(
+        history[0].raw_xml(),
+        format!(
+            "<modify_port_list port_list_id=\"{}\"><name>Name Only</name></modify_port_list>",
+            port_list.id
+        )
+        .as_bytes()
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn typed_user_rename_round_trip() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authentication should succeed");
 
     let user = client
         .create_user("old-user", UserOpts::default())

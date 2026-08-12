@@ -1637,10 +1637,14 @@ impl SessionHandler {
                 if let Some(ref text) = new_text {
                     r.name.clone_from(text);
                 }
+            } else if resource_type == "port_list" {
+                r.name = new_name.clone().unwrap_or_default();
             } else if let Some(ref name) = new_name {
                 r.name.clone_from(name);
             }
-            if let Some(ref comment) = new_comment {
+            if resource_type == "port_list" {
+                r.comment = new_comment.clone().unwrap_or_default();
+            } else if let Some(ref comment) = new_comment {
                 r.comment.clone_from(comment);
             }
             if let Some(ref host) = new_host {
