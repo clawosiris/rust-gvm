@@ -1236,6 +1236,90 @@ async fn typed_alert_data_maps_and_rename_round_trip() {
 }
 
 #[tokio::test]
+async fn typed_alert_active_round_trip() {
+    let Some(server) = stateful_server().await else {
+        return;
+    };
+    let connection = unix_connection(&server);
+    let mut client = GmpClient::connect(connection)
+        .await
+        .expect("client should connect");
+    client
+        .authenticate("admin", "admin")
+        .await
+        .expect("authenticate should succeed");
+
+    let created = client
+        .create_alert(
+            "Inactive Alert",
+            AlertOpts {
+                active: Some(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("create_alert should succeed");
+    let fetched = client
+        .get_alerts(GetAlertsOpts::default())
+        .await
+        .expect("get_alerts should succeed");
+    assert!(!only_alert(&fetched).active);
+
+    client
+        .modify_alert(
+            &created.id,
+            AlertOpts {
+                active: Some(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("enabling alert should succeed");
+    let enabled = client
+        .get_alerts(GetAlertsOpts::default())
+        .await
+        .expect("get_alerts after enabling should succeed");
+    assert!(only_alert(&enabled).active);
+
+    client
+        .modify_alert(
+            &created.id,
+            AlertOpts {
+                comment: Some("active omitted".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("partial modify_alert should succeed");
+    let preserved = client
+        .get_alerts(GetAlertsOpts::default())
+        .await
+        .expect("get_alerts after partial modify should succeed");
+    assert!(
+        only_alert(&preserved).active,
+        "omitting active must preserve its current state"
+    );
+
+    client
+        .modify_alert(
+            &created.id,
+            AlertOpts {
+                active: Some(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("disabling alert should succeed");
+    let disabled = client
+        .get_alerts(GetAlertsOpts::default())
+        .await
+        .expect("get_alerts after disabling should succeed");
+    assert!(!only_alert(&disabled).active);
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn typed_ticket_create_read_and_reassign_round_trip() {
     let Some(server) = stateful_server().await else {
         return;

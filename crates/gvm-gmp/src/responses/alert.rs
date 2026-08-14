@@ -26,6 +26,7 @@ pub struct Alert {
     pub method: Option<String>,
     pub method_data: HashMap<String, String>,
     pub filter: Option<NamedEntity>,
+    /// Whether the alert is enabled.
     pub active: bool,
 }
 

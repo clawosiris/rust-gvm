@@ -48,7 +48,15 @@ pub struct AlertOpts {
     /// Data entries applied when `method` is present.
     pub method_data: Vec<AlertData>,
     /// Optional saved filter identifier.
+    ///
+    /// When modifying an alert, gvmd clears the current filter binding if this
+    /// field is omitted. Pass the existing filter ID to preserve the binding.
     pub filter_id: Option<EntityId>,
+    /// Whether the alert is enabled.
+    ///
+    /// When modifying an alert, omitting this field preserves its current
+    /// active state.
+    pub active: Option<bool>,
 }
 
 /// Options for `get_alerts` requests.
@@ -184,6 +192,9 @@ fn add_alert_body(cmd: &mut XmlCommand, opts: &AlertOpts) {
     if let Some(filter_id) = opts.filter_id.as_ref() {
         cmd.add_element("filter")
             .set_attribute("id", filter_id.as_str());
+    }
+    if let Some(active) = opts.active {
+        cmd.add_element_with_text("active", bool_str(active));
     }
 }
 

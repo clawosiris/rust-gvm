@@ -31,10 +31,11 @@ fn test_create_alert_with_all_optionals() {
                 method: Some(AlertMethod::Email),
                 method_data: vec![AlertData::new("to_address", "ops@example.com")],
                 filter_id: Some(id("f1")),
+                active: Some(false),
                 ..Default::default()
             }
         )),
-        "<create_alert><name>a</name><comment>c</comment><event>Task run status changed<data>Done<name>status</name></data></event><condition>Severity at least<data>5.5<name>severity</name></data></condition><method>Email<data>ops@example.com<name>to_address</name></data></method><filter id=\"f1\"/></create_alert>"
+        "<create_alert><name>a</name><comment>c</comment><event>Task run status changed<data>Done<name>status</name></data></event><condition>Severity at least<data>5.5<name>severity</name></data></condition><method>Email<data>ops@example.com<name>to_address</name></data></method><filter id=\"f1\"/><active>0</active></create_alert>"
     );
 }
 
@@ -57,10 +58,11 @@ fn test_alert_get_modify_delete_and_test() {
                 event_data: vec![AlertData::new("status", "Done")],
                 condition: Some(AlertCondition::Always),
                 method: Some(AlertMethod::SysLog),
+                active: Some(true),
                 ..Default::default()
             }
         )),
-        "<modify_alert alert_id=\"a1\"><name>renamed</name><event>Task run status changed<data>Done<name>status</name></data></event><condition>Always</condition><method>Syslog</method></modify_alert>"
+        "<modify_alert alert_id=\"a1\"><name>renamed</name><event>Task run status changed<data>Done<name>status</name></data></event><condition>Always</condition><method>Syslog</method><active>1</active></modify_alert>"
     );
     assert_eq!(
         xml(delete_alert(&id("a1"), false)),
