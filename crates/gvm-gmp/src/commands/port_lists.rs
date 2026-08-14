@@ -9,7 +9,7 @@ use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_b
 use crate::enums::PortRangeType;
 use crate::types::EntityId;
 
-/// Optional fields for port-list create and modify requests.
+/// Optional fields for port-list create requests.
 #[derive(Debug, Clone, Default)]
 pub struct PortListOpts {
     /// Optional comment text included in the request.
@@ -18,25 +18,17 @@ pub struct PortListOpts {
     pub port_range: Option<String>,
 }
 
-/// Optional fields for port-list modify requests.
+/// Replacement fields for port-list modify requests.
+///
+/// `modify_port_list` uses replacement semantics: gvmd stores an empty string
+/// for each omitted field. Port ranges are changed separately with
+/// [`create_port_range`] and [`delete_port_range`].
 #[derive(Debug, Clone, Default)]
 pub struct ModifyPortListOpts {
-    /// Optional replacement name.
+    /// Replacement name. Omission clears the current name.
     pub name: Option<String>,
-    /// Optional comment text included in the request.
+    /// Replacement comment. Omission clears the current comment.
     pub comment: Option<String>,
-    /// Optional port range expression.
-    pub port_range: Option<String>,
-}
-
-impl From<PortListOpts> for ModifyPortListOpts {
-    fn from(opts: PortListOpts) -> Self {
-        Self {
-            name: None,
-            comment: opts.comment,
-            port_range: opts.port_range,
-        }
-    }
 }
 
 /// Options for `get_port_lists` requests.
@@ -106,17 +98,16 @@ pub fn get_port_list(port_list_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_port_list` request.
+///
+/// This is a full replacement of the port list's name and comment: gvmd
+/// clears either field when its element is omitted. Port ranges must instead
+/// be changed with [`create_port_range`] or [`delete_port_range`].
 #[must_use]
-pub fn modify_port_list(
-    port_list_id: &EntityId,
-    opts: impl Into<ModifyPortListOpts>,
-) -> impl Request {
-    let opts = opts.into();
+pub fn modify_port_list(port_list_id: &EntityId, opts: ModifyPortListOpts) -> impl Request {
     let mut cmd =
         XmlCommand::new("modify_port_list").attribute("port_list_id", port_list_id.as_str());
     add_text_element(&mut cmd, "name", opts.name.as_deref());
     add_text_element(&mut cmd, "comment", opts.comment.as_deref());
-    add_text_element(&mut cmd, "port_range", opts.port_range.as_deref());
     cmd
 }
 
@@ -179,7 +170,6 @@ mod tests {
             ModifyPortListOpts {
                 name: Some("Renamed ports".into()),
                 comment: Some("updated".into()),
-                ..Default::default()
             },
         ));
         assert_eq!(

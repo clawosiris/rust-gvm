@@ -799,6 +799,9 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// Send a `modify_port_list` request and return a typed
     /// [`ModifyPortListResponse`].
     ///
+    /// gvmd replaces both the name and comment, clearing either field when its
+    /// option is omitted. Use the port-range commands to change ranges.
+    ///
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn modify_port_list(

@@ -226,7 +226,7 @@ async fn matrix_tickets_create_delete_ultimate() {
 }
 
 #[tokio::test]
-async fn matrix_port_lists_create_list() {
+async fn matrix_port_lists_modify_replaces_and_blanks_omitted_fields() {
     let Some(server) = stateful_server().await else {
         return;
     };
@@ -245,6 +245,46 @@ async fn matrix_port_lists_create_list() {
     let list_text = list_resp.as_str().expect("valid utf8");
     assert!(list_text.contains(&port_list_id));
     assert!(list_text.contains("Matrix Port List"));
+
+    let modify_resp = send_recv(
+        &mut stream,
+        format!(
+            "<modify_port_list port_list_id=\"{port_list_id}\"><comment>replacement</comment></modify_port_list>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(modify_resp.status_code(), Some(200));
+
+    let get_resp = send_recv(
+        &mut stream,
+        format!("<get_port_lists port_list_id=\"{port_list_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(get_resp.status_code(), Some(200));
+    let get_text = get_resp.as_str().expect("valid utf8");
+    assert!(get_text.contains("<name></name>"));
+    assert!(get_text.contains("<comment>replacement</comment>"));
+
+    let modify_resp = send_recv(
+        &mut stream,
+        format!(
+            "<modify_port_list port_list_id=\"{port_list_id}\"><name>Replacement Name</name></modify_port_list>"
+        )
+        .as_bytes(),
+    )
+    .await;
+    assert_eq!(modify_resp.status_code(), Some(200));
+
+    let get_resp = send_recv(
+        &mut stream,
+        format!("<get_port_lists port_list_id=\"{port_list_id}\"/>").as_bytes(),
+    )
+    .await;
+    assert_eq!(get_resp.status_code(), Some(200));
+    let get_text = get_resp.as_str().expect("valid utf8");
+    assert!(get_text.contains("<name>Replacement Name</name>"));
+    assert!(get_text.contains("<comment></comment>"));
 
     server.shutdown().await;
 }
