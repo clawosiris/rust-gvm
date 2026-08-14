@@ -113,7 +113,7 @@ impl Target {
                 .optional_child_text("allow_simultaneous_ips")
                 .map(|value| crate::responses::common::parse_bool(&value, "allow_simultaneous_ips"))
                 .transpose()?
-                .unwrap_or(false),
+                .unwrap_or(true),
             max_hosts: optional_u32(node, "max_hosts", "max_hosts")?,
         })
     }
@@ -342,7 +342,7 @@ mod tests {
         assert_eq!(target.krb5_credential, None);
         assert_eq!(target.esxi_credential, None);
         assert_eq!(target.snmp_credential, None);
-        assert!(!target.allow_simultaneous_ips);
+        assert!(target.allow_simultaneous_ips);
         assert!(!target.meta.in_use);
         assert!(!target.meta.writable);
     }

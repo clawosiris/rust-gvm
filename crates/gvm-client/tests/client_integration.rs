@@ -3537,7 +3537,6 @@ async fn typed_target_extended_credentials_and_simultaneous_ips_round_trip() {
             "Extended Credential Target",
             CreateTargetOpts {
                 ssh_credential_id: Some(ssh.clone()),
-                allow_simultaneous_ips: Some(true),
                 ..CreateTargetOpts::new(target_hosts(&["192.0.2.20"], &[]), target_ports())
             },
         )

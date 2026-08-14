@@ -193,6 +193,8 @@ pub fn create_target(
     {
         return Err(CreateTargetError::SshElevateMatchesSshCredential);
     }
+    // gvmd enforces this in the GMP create-target handler in gmp.c, before
+    // dispatching to the SQL-layer create_target implementation.
     if opts.smb_credential_id.is_some() && opts.krb5_credential_id.is_some() {
         return Err(CreateTargetError::SmbAndKrb5Credentials);
     }

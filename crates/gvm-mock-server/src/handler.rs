@@ -944,7 +944,9 @@ impl SessionHandler {
                         );
                     }
                 },
-                None => None,
+                // gvmd stores this as enabled unless the request explicitly
+                // supplies a literal false value.
+                None => Some(true),
             }
         } else {
             None

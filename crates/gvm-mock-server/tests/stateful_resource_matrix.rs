@@ -139,6 +139,7 @@ async fn matrix_targets_create_get_delete() {
     assert!(get_text.contains(&format!(
         "<snmp_credential id=\"{snmp_credential_id}\"><name></name></snmp_credential>"
     )));
+    assert!(get_text.contains("<allow_simultaneous_ips>1</allow_simultaneous_ips>"));
 
     let modify_resp = send_recv(
         &mut stream,
