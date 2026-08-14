@@ -72,16 +72,6 @@ pub(crate) fn add_preferences(cmd: &mut XmlCommand, preferences: &[(String, Stri
     }
 }
 
-pub(crate) fn add_string_list(cmd: &mut XmlCommand, parent: &str, child: &str, values: &[String]) {
-    if values.is_empty() {
-        return;
-    }
-    let root = cmd.add_element(parent);
-    for value in values {
-        root.add_child_with_text(child, value);
-    }
-}
-
 pub(crate) fn validate_single_xml_document(
     xml: &str,
     field: &str,

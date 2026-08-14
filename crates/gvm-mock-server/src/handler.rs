@@ -992,6 +992,18 @@ impl SessionHandler {
                 resource.set_attr("usage_type", &usage_type);
             }
         }
+        if resource_type == "task" {
+            if let Some(observers) = element_text_including_empty(cmd, raw_xml, "observers") {
+                resource.set_attr("observers", &observers);
+            }
+            let observer_group_ids = task_observer_group_ids(cmd)
+                .into_iter()
+                .filter(|id| id != "0")
+                .collect::<Vec<_>>();
+            if !observer_group_ids.is_empty() {
+                resource.set_attr("observer_group_ids", &observer_group_ids.join(","));
+            }
+        }
         if resource_type == "credential" {
             if let Some(credential_type) = parse_element_text(raw_xml, "type") {
                 resource.set_attr("type", &credential_type);
@@ -1523,6 +1535,15 @@ impl SessionHandler {
         let new_new_severity = parse_element_text(raw_xml, "new_severity");
         let new_active = parse_element_text(raw_xml, "active");
         let new_usage_type = parse_element_text(raw_xml, "usage_type");
+        let new_task_observers = (resource_type == "task")
+            .then(|| element_text_including_empty(cmd, raw_xml, "observers"))
+            .flatten();
+        let new_task_observer_group_ids = if resource_type == "task" {
+            let group_ids = task_observer_group_ids(cmd);
+            (!group_ids.is_empty()).then_some(group_ids)
+        } else {
+            None
+        };
         let new_value = parse_element_text(raw_xml, "value");
         let new_value = if resource_type == "setting" {
             let Some(value) = new_value else {
@@ -1719,6 +1740,21 @@ impl SessionHandler {
             }
             if let Some(ref usage_type) = new_usage_type {
                 r.set_attr("usage_type", usage_type);
+            }
+            if let Some(ref observers) = new_task_observers {
+                r.set_attr("observers", observers);
+            }
+            if let Some(ref group_ids) = new_task_observer_group_ids {
+                let group_ids = group_ids
+                    .iter()
+                    .filter(|id| id.as_str() != "0")
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if group_ids.is_empty() {
+                    r.remove_attr("observer_group_ids");
+                } else {
+                    r.set_attr("observer_group_ids", &group_ids.join(","));
+                }
             }
             if let Some(ref value) = new_value {
                 r.set_attr("value", value);
@@ -4269,6 +4305,19 @@ fn element_text_including_empty(cmd: &ParsedCommand, raw_xml: &[u8], name: &str)
             .any(|child| child.name == name)
             .then(String::new)
     })
+}
+
+fn task_observer_group_ids(cmd: &ParsedCommand) -> Vec<String> {
+    cmd.children
+        .iter()
+        .find(|child| child.name == "observers")
+        .into_iter()
+        .flat_map(|observers| &observers.children)
+        .filter(|child| child.name == "group")
+        .filter_map(|group| group.attributes.get("id"))
+        .filter(|id| !id.is_empty())
+        .cloned()
+        .collect()
 }
 
 fn resolve_asset_target_hosts(store: &ResourceStore, filter: &str) -> Result<String, String> {

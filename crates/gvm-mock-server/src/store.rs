@@ -483,6 +483,22 @@ impl Resource {
             }
         }
         if self.resource_type == "task" {
+            if self.attr("observers").is_some() || self.attr("observer_group_ids").is_some() {
+                xml.push_str("<observers>");
+                if let Some(observers) = self.attr("observers") {
+                    xml.push_str(&xml_escape(observers));
+                }
+                if let Some(group_ids) = self.attr("observer_group_ids") {
+                    for group_id in group_ids.split(',').filter(|id| !id.is_empty()) {
+                        xml.push_str(&format!(
+                            "<group id=\"{}\"><name>{}</name></group>",
+                            xml_escape_attr(group_id),
+                            xml_escape(group_id),
+                        ));
+                    }
+                }
+                xml.push_str("</observers>");
+            }
             if self.attr("target_id").is_none() {
                 xml.push_str("<target id=\"\"><name></name></target>");
             }
