@@ -28,8 +28,12 @@ pub struct CreateTargetOpts {
     pub ssh_credential_id: Option<EntityId>,
     /// Optional SSH service port nested below the SSH credential.
     pub ssh_credential_port: Option<ServicePort>,
+    /// Optional SSH privilege-escalation credential identifier.
+    pub ssh_elevate_credential_id: Option<EntityId>,
     /// Optional SMB credential identifier.
     pub smb_credential_id: Option<EntityId>,
+    /// Optional Kerberos 5 credential identifier.
+    pub krb5_credential_id: Option<EntityId>,
     /// Optional `ESXi` credential identifier.
     pub esxi_credential_id: Option<EntityId>,
     /// Optional SNMP credential identifier.
@@ -38,6 +42,8 @@ pub struct CreateTargetOpts {
     pub reverse_lookup_only: Option<bool>,
     /// Whether reverse-lookup unification should be enabled.
     pub reverse_lookup_unify: Option<bool>,
+    /// Whether multiple IP addresses of one host may be scanned simultaneously.
+    pub allow_simultaneous_ips: Option<bool>,
 }
 
 impl CreateTargetOpts {
@@ -51,11 +57,14 @@ impl CreateTargetOpts {
             ports,
             ssh_credential_id: None,
             ssh_credential_port: None,
+            ssh_elevate_credential_id: None,
             smb_credential_id: None,
+            krb5_credential_id: None,
             esxi_credential_id: None,
             snmp_credential_id: None,
             reverse_lookup_only: None,
             reverse_lookup_unify: None,
+            allow_simultaneous_ips: None,
         }
     }
 }
@@ -100,8 +109,12 @@ pub struct ModifyTargetOpts {
     /// credential is set and this update is omitted, gvmd selects its default
     /// SSH port (22); omitting both updates preserves the existing binding.
     pub ssh_credential_port: ScalarUpdate<ServicePort>,
+    /// SSH privilege-escalation credential relationship update: omit, set, or detach.
+    pub ssh_elevate_credential_id: ScalarUpdate<EntityId>,
     /// SMB credential relationship update: omit, set, or detach.
     pub smb_credential_id: ScalarUpdate<EntityId>,
+    /// Kerberos 5 credential relationship update: omit, set, or detach.
+    pub krb5_credential_id: ScalarUpdate<EntityId>,
     /// `ESXi` credential relationship update: omit, set, or detach.
     pub esxi_credential_id: ScalarUpdate<EntityId>,
     /// SNMP credential relationship update: omit, set, or detach.
@@ -110,6 +123,8 @@ pub struct ModifyTargetOpts {
     pub reverse_lookup_only: Option<bool>,
     /// Whether reverse-lookup unification should be enabled.
     pub reverse_lookup_unify: Option<bool>,
+    /// Whether multiple IP addresses of one host may be scanned simultaneously.
+    pub allow_simultaneous_ips: Option<bool>,
 }
 
 /// Errors raised while building a `create_target` request.
@@ -118,6 +133,15 @@ pub enum CreateTargetError {
     /// A service port cannot be encoded without an SSH credential identifier.
     #[error("setting an SSH credential port requires an SSH credential identifier")]
     SshPortWithoutCredential,
+    /// An SSH elevation credential requires a separate SSH login credential.
+    #[error("setting an SSH elevation credential requires an SSH credential")]
+    SshElevateWithoutSshCredential,
+    /// The SSH login and elevation credentials must be different.
+    #[error("the SSH elevation credential must differ from the SSH credential")]
+    SshElevateMatchesSshCredential,
+    /// gvmd does not allow SMB and Kerberos credentials on the same target.
+    #[error("SMB and Kerberos credentials are mutually exclusive")]
+    SmbAndKrb5Credentials,
 }
 
 /// Errors raised while building a `modify_target` request.
@@ -132,6 +156,15 @@ pub enum ModifyTargetError {
     /// A service-port update is incompatible with detaching the credential.
     #[error("an SSH credential port cannot be updated while detaching the SSH credential")]
     SshPortWithCredentialClear,
+    /// A newly bound elevation credential cannot accompany SSH credential detachment.
+    #[error("setting an SSH elevation credential requires an SSH credential")]
+    SshElevateWithoutSshCredential,
+    /// The SSH login and elevation credentials must be different.
+    #[error("the SSH elevation credential must differ from the SSH credential")]
+    SshElevateMatchesSshCredential,
+    /// gvmd does not allow SMB and Kerberos credentials to be set together.
+    #[error("SMB and Kerberos credentials are mutually exclusive")]
+    SmbAndKrb5Credentials,
 }
 
 /// Build a clone request for an existing target.
@@ -151,6 +184,19 @@ pub fn create_target(
 ) -> Result<impl Request, CreateTargetError> {
     if opts.ssh_credential_port.is_some() && opts.ssh_credential_id.is_none() {
         return Err(CreateTargetError::SshPortWithoutCredential);
+    }
+    if opts.ssh_elevate_credential_id.is_some() && opts.ssh_credential_id.is_none() {
+        return Err(CreateTargetError::SshElevateWithoutSshCredential);
+    }
+    if opts.ssh_elevate_credential_id == opts.ssh_credential_id
+        && opts.ssh_elevate_credential_id.is_some()
+    {
+        return Err(CreateTargetError::SshElevateMatchesSshCredential);
+    }
+    // gvmd enforces this in the GMP create-target handler in gmp.c, before
+    // dispatching to the SQL-layer create_target implementation.
+    if opts.smb_credential_id.is_some() && opts.krb5_credential_id.is_some() {
+        return Err(CreateTargetError::SmbAndKrb5Credentials);
     }
     let mut cmd = XmlCommand::new("create_target");
     cmd.add_element_with_text("name", name);
@@ -174,6 +220,9 @@ pub fn create_target(
     }
     if let Some(value) = opts.reverse_lookup_unify {
         cmd.add_element_with_text("reverse_lookup_unify", bool_str(value));
+    }
+    if let Some(value) = opts.allow_simultaneous_ips {
+        cmd.add_element_with_text("allow_simultaneous_ips", bool_str(value));
     }
     Ok(cmd)
 }
@@ -222,6 +271,23 @@ pub fn modify_target(
         }
         _ => {}
     }
+    if matches!(opts.ssh_elevate_credential_id, ScalarUpdate::Set(_))
+        && matches!(opts.ssh_credential_id, ScalarUpdate::Clear)
+    {
+        return Err(ModifyTargetError::SshElevateWithoutSshCredential);
+    }
+    if let (ScalarUpdate::Set(ssh), ScalarUpdate::Set(elevate)) =
+        (&opts.ssh_credential_id, &opts.ssh_elevate_credential_id)
+    {
+        if ssh == elevate {
+            return Err(ModifyTargetError::SshElevateMatchesSshCredential);
+        }
+    }
+    if matches!(opts.smb_credential_id, ScalarUpdate::Set(_))
+        && matches!(opts.krb5_credential_id, ScalarUpdate::Set(_))
+    {
+        return Err(ModifyTargetError::SmbAndKrb5Credentials);
+    }
     let mut cmd = XmlCommand::new("modify_target").attribute("target_id", target_id.as_str());
     add_text_element(&mut cmd, "name", opts.name.as_deref());
     add_text_element(&mut cmd, "comment", opts.comment.as_deref());
@@ -242,6 +308,9 @@ pub fn modify_target(
     if let Some(value) = opts.reverse_lookup_unify {
         cmd.add_element_with_text("reverse_lookup_unify", bool_str(value));
     }
+    if let Some(value) = opts.allow_simultaneous_ips {
+        cmd.add_element_with_text("allow_simultaneous_ips", bool_str(value));
+    }
     Ok(cmd)
 }
 
@@ -259,7 +328,13 @@ fn add_create_target_credentials(cmd: &mut XmlCommand, opts: &CreateTargetOpts) 
         opts.ssh_credential_id.as_ref(),
         opts.ssh_credential_port,
     );
+    add_optional_id_element(
+        cmd,
+        "ssh_elevate_credential",
+        opts.ssh_elevate_credential_id.as_ref(),
+    );
     add_optional_id_element(cmd, "smb_credential", opts.smb_credential_id.as_ref());
+    add_optional_id_element(cmd, "krb5_credential", opts.krb5_credential_id.as_ref());
     add_optional_id_element(cmd, "esxi_credential", opts.esxi_credential_id.as_ref());
     add_optional_id_element(cmd, "snmp_credential", opts.snmp_credential_id.as_ref());
 }
@@ -284,7 +359,13 @@ fn add_modify_target_credentials(cmd: &mut XmlCommand, opts: &ModifyTargetOpts) 
             add_scalar_id_update(cmd, "ssh_credential", &ScalarUpdate::<EntityId>::Clear);
         }
     }
+    add_scalar_id_update(
+        cmd,
+        "ssh_elevate_credential",
+        &opts.ssh_elevate_credential_id,
+    );
     add_scalar_id_update(cmd, "smb_credential", &opts.smb_credential_id);
+    add_scalar_id_update(cmd, "krb5_credential", &opts.krb5_credential_id);
     add_scalar_id_update(cmd, "esxi_credential", &opts.esxi_credential_id);
     add_scalar_id_update(cmd, "snmp_credential", &opts.snmp_credential_id);
 }
@@ -353,11 +434,14 @@ mod tests {
                 ports: TargetPortSelection::PortList(id("pl1")),
                 ssh_credential_id: Some(id("ssh1")),
                 ssh_credential_port: Some(ServicePort::new(2222).expect("valid port")),
+                ssh_elevate_credential_id: Some(id("elevate1")),
                 smb_credential_id: Some(id("smb1")),
+                krb5_credential_id: None,
                 esxi_credential_id: Some(id("esxi1")),
                 snmp_credential_id: Some(id("snmp1")),
                 reverse_lookup_only: Some(true),
                 reverse_lookup_unify: Some(false),
+                allow_simultaneous_ips: Some(true),
             },
         )
         .expect("valid target"));
@@ -366,9 +450,11 @@ mod tests {
         assert!(rendered.contains("<alive_tests>ICMP Ping</alive_tests>"));
         assert!(rendered.contains("<port_list id=\"pl1\"/>"));
         assert!(rendered.contains("<ssh_credential id=\"ssh1\"><port>2222</port></ssh_credential>"));
+        assert!(rendered.contains("<ssh_elevate_credential id=\"elevate1\"/>"));
         assert!(rendered.contains("<smb_credential id=\"smb1\"/>"));
         assert!(rendered.contains("<esxi_credential id=\"esxi1\"/>"));
         assert!(rendered.contains("<snmp_credential id=\"snmp1\"/>"));
+        assert!(rendered.contains("<allow_simultaneous_ips>1</allow_simultaneous_ips>"));
         assert_eq!(
             xml(clone_target(&id("t1"))),
             "<create_target><copy>t1</copy></create_target>"
@@ -396,11 +482,13 @@ mod tests {
                 alive_test: Some(AliveTest::IcmpAndArpPing),
                 ssh_credential_id: ScalarUpdate::set(id("ssh1")),
                 ssh_credential_port: ScalarUpdate::set(ServicePort::new(2222).expect("valid port")),
+                ssh_elevate_credential_id: ScalarUpdate::set(id("elevate1")),
                 smb_credential_id: ScalarUpdate::set(id("smb1")),
                 esxi_credential_id: ScalarUpdate::set(id("esxi1")),
                 snmp_credential_id: ScalarUpdate::set(id("snmp1")),
                 reverse_lookup_only: Some(true),
                 reverse_lookup_unify: Some(false),
+                allow_simultaneous_ips: Some(false),
                 ..Default::default()
             },
         )
@@ -408,11 +496,13 @@ mod tests {
         assert!(rendered.contains("<name>n</name>"));
         assert!(rendered.contains("<alive_tests>ICMP &amp; ARP Ping</alive_tests>"));
         assert!(rendered.contains("<ssh_credential id=\"ssh1\"><port>2222</port></ssh_credential>"));
+        assert!(rendered.contains("<ssh_elevate_credential id=\"elevate1\"/>"));
         assert!(rendered.contains("<smb_credential id=\"smb1\"/>"));
         assert!(rendered.contains("<esxi_credential id=\"esxi1\"/>"));
         assert!(rendered.contains("<snmp_credential id=\"snmp1\"/>"));
         assert!(rendered.contains("<reverse_lookup_only>1</reverse_lookup_only>"));
         assert!(rendered.contains("<reverse_lookup_unify>0</reverse_lookup_unify>"));
+        assert!(rendered.contains("<allow_simultaneous_ips>0</allow_simultaneous_ips>"));
         assert_eq!(
             xml(delete_target(&id("t1"), false)),
             "<delete_target target_id=\"t1\" ultimate=\"0\"/>"
@@ -476,13 +566,15 @@ mod tests {
                 &id("t1"),
                 ModifyTargetOpts {
                     ssh_credential_id: ScalarUpdate::Clear,
+                    ssh_elevate_credential_id: ScalarUpdate::Clear,
                     smb_credential_id: ScalarUpdate::Clear,
+                    krb5_credential_id: ScalarUpdate::Clear,
                     esxi_credential_id: ScalarUpdate::Clear,
                     snmp_credential_id: ScalarUpdate::Clear,
                     ..Default::default()
                 }
             ).expect("valid update")),
-            "<modify_target target_id=\"t1\"><ssh_credential id=\"0\"/><smb_credential id=\"0\"/><esxi_credential id=\"0\"/><snmp_credential id=\"0\"/></modify_target>"
+            "<modify_target target_id=\"t1\"><ssh_credential id=\"0\"/><ssh_elevate_credential id=\"0\"/><smb_credential id=\"0\"/><krb5_credential id=\"0\"/><esxi_credential id=\"0\"/><snmp_credential id=\"0\"/></modify_target>"
         );
     }
 
@@ -572,6 +664,136 @@ mod tests {
             )
             .err(),
             Some(CreateTargetError::SshPortWithoutCredential)
+        );
+    }
+
+    #[test]
+    fn target_new_fields_have_exact_wire_shapes() {
+        assert_eq!(
+            xml(create_target(
+                "target",
+                CreateTargetOpts {
+                    ssh_credential_id: Some(id("ssh1")),
+                    ssh_elevate_credential_id: Some(id("elevate1")),
+                    allow_simultaneous_ips: Some(true),
+                    ..CreateTargetOpts::new(hosts(&["192.0.2.1"], &[]), direct_ports())
+                }
+            )
+            .expect("valid elevation target")),
+            "<create_target><name>target</name><hosts>192.0.2.1</hosts><exclude_hosts></exclude_hosts><port_range>T:1-65535</port_range><ssh_credential id=\"ssh1\"/><ssh_elevate_credential id=\"elevate1\"/><allow_simultaneous_ips>1</allow_simultaneous_ips></create_target>"
+        );
+        assert_eq!(
+            xml(create_target(
+                "target",
+                CreateTargetOpts {
+                    krb5_credential_id: Some(id("krb1")),
+                    allow_simultaneous_ips: Some(false),
+                    ..CreateTargetOpts::new(hosts(&["192.0.2.1"], &[]), direct_ports())
+                }
+            )
+            .expect("valid Kerberos target")),
+            "<create_target><name>target</name><hosts>192.0.2.1</hosts><exclude_hosts></exclude_hosts><port_range>T:1-65535</port_range><krb5_credential id=\"krb1\"/><allow_simultaneous_ips>0</allow_simultaneous_ips></create_target>"
+        );
+        assert_eq!(
+            xml(modify_target(
+                &id("t1"),
+                ModifyTargetOpts {
+                    ssh_credential_id: ScalarUpdate::set(id("ssh1")),
+                    ssh_elevate_credential_id: ScalarUpdate::set(id("elevate1")),
+                    krb5_credential_id: ScalarUpdate::set(id("krb1")),
+                    allow_simultaneous_ips: Some(true),
+                    ..Default::default()
+                }
+            )
+            .expect("valid target update")),
+            "<modify_target target_id=\"t1\"><ssh_credential id=\"ssh1\"/><ssh_elevate_credential id=\"elevate1\"/><krb5_credential id=\"krb1\"/><allow_simultaneous_ips>1</allow_simultaneous_ips></modify_target>"
+        );
+        assert_eq!(
+            xml(modify_target(
+                &id("t1"),
+                ModifyTargetOpts {
+                    ssh_elevate_credential_id: ScalarUpdate::set(id("elevate1")),
+                    ..Default::default()
+                }
+            )
+            .expect("existing SSH credential may be preserved")),
+            "<modify_target target_id=\"t1\"><ssh_elevate_credential id=\"elevate1\"/></modify_target>"
+        );
+    }
+
+    #[test]
+    fn target_new_credential_invariants_are_typed_errors() {
+        let base = || CreateTargetOpts::new(hosts(&["192.0.2.1"], &[]), direct_ports());
+        assert_eq!(
+            create_target(
+                "target",
+                CreateTargetOpts {
+                    ssh_elevate_credential_id: Some(id("elevate1")),
+                    ..base()
+                }
+            )
+            .err(),
+            Some(CreateTargetError::SshElevateWithoutSshCredential)
+        );
+        assert_eq!(
+            create_target(
+                "target",
+                CreateTargetOpts {
+                    ssh_credential_id: Some(id("same")),
+                    ssh_elevate_credential_id: Some(id("same")),
+                    ..base()
+                }
+            )
+            .err(),
+            Some(CreateTargetError::SshElevateMatchesSshCredential)
+        );
+        assert_eq!(
+            create_target(
+                "target",
+                CreateTargetOpts {
+                    smb_credential_id: Some(id("smb1")),
+                    krb5_credential_id: Some(id("krb1")),
+                    ..base()
+                }
+            )
+            .err(),
+            Some(CreateTargetError::SmbAndKrb5Credentials)
+        );
+        assert_eq!(
+            modify_target(
+                &id("t1"),
+                ModifyTargetOpts {
+                    ssh_credential_id: ScalarUpdate::Clear,
+                    ssh_elevate_credential_id: ScalarUpdate::set(id("elevate1")),
+                    ..Default::default()
+                }
+            )
+            .err(),
+            Some(ModifyTargetError::SshElevateWithoutSshCredential)
+        );
+        assert_eq!(
+            modify_target(
+                &id("t1"),
+                ModifyTargetOpts {
+                    ssh_credential_id: ScalarUpdate::set(id("same")),
+                    ssh_elevate_credential_id: ScalarUpdate::set(id("same")),
+                    ..Default::default()
+                }
+            )
+            .err(),
+            Some(ModifyTargetError::SshElevateMatchesSshCredential)
+        );
+        assert_eq!(
+            modify_target(
+                &id("t1"),
+                ModifyTargetOpts {
+                    smb_credential_id: ScalarUpdate::set(id("smb1")),
+                    krb5_credential_id: ScalarUpdate::set(id("krb1")),
+                    ..Default::default()
+                }
+            )
+            .err(),
+            Some(ModifyTargetError::SmbAndKrb5Credentials)
         );
     }
 }

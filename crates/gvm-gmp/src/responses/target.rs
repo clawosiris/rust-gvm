@@ -25,9 +25,12 @@ pub struct Target {
     pub port_list: Option<NamedEntity>,
     pub ssh_credential: Option<NamedEntity>,
     pub ssh_credential_port: Option<ServicePort>,
+    pub ssh_elevate_credential: Option<NamedEntity>,
     pub smb_credential: Option<NamedEntity>,
+    pub krb5_credential: Option<NamedEntity>,
     pub esxi_credential: Option<NamedEntity>,
     pub snmp_credential: Option<NamedEntity>,
+    pub allow_simultaneous_ips: bool,
     pub max_hosts: Option<u32>,
 }
 
@@ -101,9 +104,16 @@ impl Target {
             port_list: parse_named_entity(node, "port_list")?,
             ssh_credential,
             ssh_credential_port,
+            ssh_elevate_credential: parse_named_entity(node, "ssh_elevate_credential")?,
             smb_credential: parse_named_entity(node, "smb_credential")?,
+            krb5_credential: parse_named_entity(node, "krb5_credential")?,
             esxi_credential: parse_named_entity(node, "esxi_credential")?,
             snmp_credential: parse_named_entity(node, "snmp_credential")?,
+            allow_simultaneous_ips: node
+                .optional_child_text("allow_simultaneous_ips")
+                .map(|value| crate::responses::common::parse_bool(&value, "allow_simultaneous_ips"))
+                .transpose()?
+                .unwrap_or(true),
             max_hosts: optional_u32(node, "max_hosts", "max_hosts")?,
         })
     }
@@ -153,6 +163,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn parses_multiple_targets() {
         let response = Response::from(
             r#"<get_targets_response status="200" status_text="OK">
@@ -171,9 +182,12 @@ mod tests {
                     <reverse_lookup_unify>1</reverse_lookup_unify>
                     <port_list id="pl-1"><name>All TCP</name></port_list>
                     <ssh_credential id="cred-ssh"><name>SSH Cred</name><port>2222</port></ssh_credential>
+                    <ssh_elevate_credential id="cred-elevate"><name>Elevation Cred</name></ssh_elevate_credential>
                     <smb_credential id="cred-smb"><name>SMB Cred</name></smb_credential>
+                    <krb5_credential id="cred-krb5"><name>Kerberos Cred</name></krb5_credential>
                     <esxi_credential id="cred-esxi"><name>ESXi Cred</name></esxi_credential>
                     <snmp_credential id="cred-snmp"><name>SNMP Cred</name></snmp_credential>
+                    <allow_simultaneous_ips>1</allow_simultaneous_ips>
                     <max_hosts>4096</max_hosts>
                 </target>
                 <target id="t-2">
@@ -219,10 +233,24 @@ mod tests {
         );
         assert_eq!(
             parsed.items[0]
+                .ssh_elevate_credential
+                .as_ref()
+                .map(|credential| credential.name.as_str()),
+            Some("Elevation Cred")
+        );
+        assert_eq!(
+            parsed.items[0]
                 .smb_credential
                 .as_ref()
                 .map(|credential| credential.name.as_str()),
             Some("SMB Cred")
+        );
+        assert_eq!(
+            parsed.items[0]
+                .krb5_credential
+                .as_ref()
+                .map(|credential| credential.name.as_str()),
+            Some("Kerberos Cred")
         );
         assert_eq!(
             parsed.items[0]
@@ -247,6 +275,7 @@ mod tests {
             vec!["192.168.1.5".to_string(), "192.168.1.6".to_string()]
         );
         assert!(parsed.items[0].reverse_lookup_unify);
+        assert!(parsed.items[0].allow_simultaneous_ips);
         assert!(parsed.items[1].meta.in_use);
     }
 
@@ -308,9 +337,12 @@ mod tests {
         assert_eq!(target.port_list, None);
         assert_eq!(target.ssh_credential, None);
         assert_eq!(target.ssh_credential_port, None);
+        assert_eq!(target.ssh_elevate_credential, None);
         assert_eq!(target.smb_credential, None);
+        assert_eq!(target.krb5_credential, None);
         assert_eq!(target.esxi_credential, None);
         assert_eq!(target.snmp_credential, None);
+        assert!(target.allow_simultaneous_ips);
         assert!(!target.meta.in_use);
         assert!(!target.meta.writable);
     }

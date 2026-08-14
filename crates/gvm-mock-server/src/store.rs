@@ -586,6 +586,21 @@ impl Resource {
             } else {
                 xml.push_str("<smb_credential id=\"\"><name></name></smb_credential>");
             }
+            for (attribute, element) in [
+                ("ssh_elevate_credential_id", "ssh_elevate_credential"),
+                ("krb5_credential_id", "krb5_credential"),
+                ("esxi_credential_id", "esxi_credential"),
+                ("snmp_credential_id", "snmp_credential"),
+            ] {
+                if let Some(id) = self.attr(attribute) {
+                    xml.push_str(&format!(
+                        "<{element} id=\"{}\"><name></name></{element}>",
+                        xml_escape_attr(id),
+                    ));
+                } else {
+                    xml.push_str(&format!("<{element} id=\"\"><name></name></{element}>"));
+                }
+            }
         }
         // Add type-specific attributes
         if self.resource_type == "alert" {
@@ -668,6 +683,10 @@ impl Resource {
                         | "ssh_credential_id"
                         | "ssh_credential_port"
                         | "smb_credential_id"
+                        | "ssh_elevate_credential_id"
+                        | "krb5_credential_id"
+                        | "esxi_credential_id"
+                        | "snmp_credential_id"
                 )
             {
                 continue;
@@ -1300,7 +1319,7 @@ impl ResourceStore {
     pub(crate) fn modify_target<F>(
         &self,
         id: &Uuid,
-        changes_hosts: bool,
+        changes_scan_settings: bool,
         f: F,
     ) -> Result<(), StoreError>
     where
@@ -1309,7 +1328,7 @@ impl ResourceStore {
         let mut inner = self.inner.write().expect("store lock poisoned");
         active_typed_resource(&inner, id, "target")?;
 
-        if changes_hosts {
+        if changes_scan_settings {
             let id_text = id.to_string();
             let referenced = inner.resources.values().any(|candidate| {
                 candidate.resource_type == "task"
