@@ -882,7 +882,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         task_id: &EntityId,
         opts: ModifyTaskOpts,
     ) -> Result<ModifyTaskResponse, GvmError> {
-        let response = self.send(modify_task(task_id, opts)).await?;
+        let request = modify_task(task_id, opts)?;
+        let response = self.send(request).await?;
         ModifyTaskResponse::from_response(&response).map_err(GvmError::Parse)
     }
 

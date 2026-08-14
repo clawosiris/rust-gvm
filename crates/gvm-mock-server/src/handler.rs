@@ -996,7 +996,10 @@ impl SessionHandler {
             if let Some(observers) = element_text_including_empty(cmd, raw_xml, "observers") {
                 resource.set_attr("observers", &observers);
             }
-            let observer_group_ids = task_observer_group_ids(cmd);
+            let observer_group_ids = task_observer_group_ids(cmd)
+                .into_iter()
+                .filter(|id| id != "0")
+                .collect::<Vec<_>>();
             if !observer_group_ids.is_empty() {
                 resource.set_attr("observer_group_ids", &observer_group_ids.join(","));
             }
@@ -1535,6 +1538,12 @@ impl SessionHandler {
         let new_task_observers = (resource_type == "task")
             .then(|| element_text_including_empty(cmd, raw_xml, "observers"))
             .flatten();
+        let new_task_observer_group_ids = if resource_type == "task" {
+            let group_ids = task_observer_group_ids(cmd);
+            (!group_ids.is_empty()).then_some(group_ids)
+        } else {
+            None
+        };
         let new_value = parse_element_text(raw_xml, "value");
         let new_value = if resource_type == "setting" {
             let Some(value) = new_value else {
@@ -1730,6 +1739,18 @@ impl SessionHandler {
             }
             if let Some(ref observers) = new_task_observers {
                 r.set_attr("observers", observers);
+            }
+            if let Some(ref group_ids) = new_task_observer_group_ids {
+                let group_ids = group_ids
+                    .iter()
+                    .filter(|id| id.as_str() != "0")
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if group_ids.is_empty() {
+                    r.remove_attr("observer_group_ids");
+                } else {
+                    r.set_attr("observer_group_ids", &group_ids.join(","));
+                }
             }
             if let Some(ref value) = new_value {
                 r.set_attr("value", value);

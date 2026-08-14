@@ -7,7 +7,7 @@ mod common;
 
 use common::{id, xml};
 use gvm_gmp::commands::tasks::*;
-use gvm_gmp::HostsOrdering;
+use gvm_gmp::{CollectionUpdate, HostsOrdering};
 
 #[test]
 fn test_create_task_basic() {
@@ -258,10 +258,11 @@ fn test_audit_and_modify_task_observers_use_user_list_text() {
         xml(modify_task(
             &id("t1"),
             ModifyTaskOpts {
-                observers: vec!["alice".into(), "bob".into()],
+                observers: CollectionUpdate::replace(["alice".into(), "bob".into()]),
                 ..Default::default()
             },
-        )),
+        )
+        .expect("valid observer update"),),
         "<modify_task task_id=\"t1\"><observers>alice bob</observers></modify_task>"
     );
 }

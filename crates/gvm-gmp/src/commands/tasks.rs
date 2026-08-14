@@ -11,7 +11,7 @@ use crate::common::{
     add_scalar_id_update, add_text_element, bool_str, set_optional_bool_attr,
 };
 use crate::enums::HostsOrdering;
-use crate::types::{EntityId, ScalarUpdate};
+use crate::types::{CollectionUpdate, EntityId, ScalarUpdate};
 
 /// Optional fields for `create_task` requests.
 #[derive(Debug, Clone, Default)]
@@ -139,10 +139,31 @@ pub struct ModifyTaskOpts {
     pub scanner_id: Option<EntityId>,
     /// Alert identifiers associated with the request.
     pub alert_ids: Option<Vec<EntityId>>,
-    /// Observer names associated with the task.
-    pub observers: Vec<String>,
+    /// Observer-user update: omit, replace, or clear.
+    ///
+    /// An explicit clear emits an empty `<observers>` element, which gvmd
+    /// interprets as removing every user observer.
+    pub observers: CollectionUpdate<String>,
+    /// Observer-group update: omit, replace, or clear.
+    ///
+    /// gvmd accepts group children on `modify_task` even though the published
+    /// GMP grammar documents only observer-user text. Because opening the
+    /// shared `<observers>` container also updates the user list, a group
+    /// update requires [`Self::observers`] to explicitly replace or clear the
+    /// users. Clearing groups is encoded with gvmd's `group id="0"` sentinel.
+    pub observer_group_ids: CollectionUpdate<EntityId>,
     /// Preference key/value pairs to include.
     pub preferences: Vec<(String, String)>,
+}
+
+/// Errors raised while building a `modify_task` request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum ModifyTaskError {
+    /// A group update would otherwise clear users implicitly on gvmd.
+    #[error(
+        "updating task observer groups requires explicitly replacing or clearing observer users"
+    )]
+    ObserverGroupsWithoutUserUpdate,
 }
 
 /// Build a clone request for an existing task.
@@ -370,8 +391,14 @@ pub fn get_task(task_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_task` request.
-#[must_use]
-pub fn modify_task(task_id: &EntityId, opts: ModifyTaskOpts) -> impl Request {
+///
+/// # Errors
+/// Returns [`ModifyTaskError::ObserverGroupsWithoutUserUpdate`] when observer
+/// groups are updated without an explicit observer-user replacement or clear.
+pub fn modify_task(
+    task_id: &EntityId,
+    opts: ModifyTaskOpts,
+) -> Result<impl Request, ModifyTaskError> {
     modify_task_with_usage(task_id, opts, None)
 }
 
@@ -379,7 +406,7 @@ fn modify_task_with_usage(
     task_id: &EntityId,
     opts: ModifyTaskOpts,
     usage_type: Option<UsageType>,
-) -> XmlCommand {
+) -> Result<XmlCommand, ModifyTaskError> {
     let mut cmd = XmlCommand::new("modify_task").attribute("task_id", task_id.as_str());
     add_text_element(&mut cmd, "name", opts.name.as_deref());
     add_text_element(&mut cmd, "comment", opts.comment.as_deref());
@@ -408,9 +435,9 @@ fn modify_task_with_usage(
             }
         }
     }
-    add_task_observers(&mut cmd, &opts.observers, &[]);
+    add_task_observer_update(&mut cmd, &opts.observers, &opts.observer_group_ids)?;
     add_preferences(&mut cmd, &opts.preferences);
-    cmd
+    Ok(cmd)
 }
 
 fn add_task_observers(cmd: &mut XmlCommand, observers: &[String], observer_group_ids: &[EntityId]) {
@@ -426,6 +453,44 @@ fn add_task_observers(cmd: &mut XmlCommand, observers: &[String], observer_group
             .add_child("group")
             .set_attribute("id", group_id.as_str());
     }
+}
+
+fn add_task_observer_update(
+    cmd: &mut XmlCommand,
+    observers: &CollectionUpdate<String>,
+    observer_group_ids: &CollectionUpdate<EntityId>,
+) -> Result<(), ModifyTaskError> {
+    if !matches!(observer_group_ids, CollectionUpdate::Omitted)
+        && matches!(observers, CollectionUpdate::Omitted)
+    {
+        return Err(ModifyTaskError::ObserverGroupsWithoutUserUpdate);
+    }
+    if matches!(observers, CollectionUpdate::Omitted)
+        && matches!(observer_group_ids, CollectionUpdate::Omitted)
+    {
+        return Ok(());
+    }
+
+    let element = cmd.add_element("observers");
+    if let CollectionUpdate::Replace(observers) = observers {
+        if !observers.is_empty() {
+            element.set_text(&observers.join(" "));
+        }
+    }
+    match observer_group_ids {
+        CollectionUpdate::Omitted => {}
+        CollectionUpdate::Replace(group_ids) if !group_ids.is_empty() => {
+            for group_id in group_ids {
+                element
+                    .add_child("group")
+                    .set_attribute("id", group_id.as_str());
+            }
+        }
+        CollectionUpdate::Replace(_) | CollectionUpdate::Clear => {
+            element.add_child("group").set_attribute("id", "0");
+        }
+    }
+    Ok(())
 }
 
 /// Build a `move_task` request.
@@ -515,8 +580,14 @@ pub fn resume_audit(task_id: &EntityId) -> impl Request {
 }
 
 /// Build a `modify_task` request scoped to audits.
-#[must_use]
-pub fn modify_audit(task_id: &EntityId, opts: ModifyTaskOpts) -> impl Request {
+///
+/// # Errors
+/// Returns [`ModifyTaskError::ObserverGroupsWithoutUserUpdate`] when observer
+/// groups are updated without an explicit observer-user replacement or clear.
+pub fn modify_audit(
+    task_id: &EntityId,
+    opts: ModifyTaskOpts,
+) -> Result<impl Request, ModifyTaskError> {
     modify_task_with_usage(task_id, opts, Some(UsageType::Audit))
 }
 
@@ -632,7 +703,8 @@ mod tests {
                 alert_ids: Some(Vec::new()),
                 ..Default::default()
             },
-        ));
+        )
+        .expect("valid task update"));
         assert_eq!(
             rendered,
             "<modify_task task_id=\"t1\"><name>foo</name><alert id=\"0\"/></modify_task>"
@@ -652,18 +724,81 @@ mod tests {
             xml(modify_task(
                 &id("t1"),
                 ModifyTaskOpts {
-                    observers: vec!["alice".into(), "bob".into()],
+                    observers: CollectionUpdate::replace(["alice".into(), "bob".into(),]),
                     ..Default::default()
                 },
-            )),
+            )
+            .expect("valid observer update"),),
             "<modify_task task_id=\"t1\"><observers>alice bob</observers></modify_task>"
+        );
+    }
+
+    #[test]
+    fn modify_task_distinguishes_omitted_replaced_and_cleared_observers() {
+        assert_eq!(
+            xml(modify_task(&id("t1"), ModifyTaskOpts::default()).expect("valid omission")),
+            "<modify_task task_id=\"t1\"/>"
+        );
+        assert_eq!(
+            xml(
+                modify_task(
+                    &id("t1"),
+                    ModifyTaskOpts {
+                        observers: CollectionUpdate::replace(["alice".into()]),
+                        observer_group_ids: CollectionUpdate::replace([id("group-1")]),
+                        ..Default::default()
+                    },
+                )
+                .expect("valid observer replacement"),
+            ),
+            "<modify_task task_id=\"t1\"><observers>alice<group id=\"group-1\"/></observers></modify_task>"
+        );
+        assert_eq!(
+            xml(modify_task(
+                &id("t1"),
+                ModifyTaskOpts {
+                    observers: CollectionUpdate::Clear,
+                    ..Default::default()
+                },
+            )
+            .expect("valid observer clear"),),
+            "<modify_task task_id=\"t1\"><observers/></modify_task>"
+        );
+        assert_eq!(
+            xml(
+                modify_task(
+                    &id("t1"),
+                    ModifyTaskOpts {
+                        observers: CollectionUpdate::replace(["alice".into()]),
+                        observer_group_ids: CollectionUpdate::Clear,
+                        ..Default::default()
+                    },
+                )
+                .expect("valid observer-group clear"),
+            ),
+            "<modify_task task_id=\"t1\"><observers>alice<group id=\"0\"/></observers></modify_task>"
+        );
+    }
+
+    #[test]
+    fn modify_task_rejects_group_update_without_explicit_users() {
+        assert_eq!(
+            modify_task(
+                &id("t1"),
+                ModifyTaskOpts {
+                    observer_group_ids: CollectionUpdate::replace([id("group-1")]),
+                    ..Default::default()
+                },
+            )
+            .err(),
+            Some(ModifyTaskError::ObserverGroupsWithoutUserUpdate)
         );
     }
 
     #[test]
     fn modify_task_distinguishes_omitted_set_and_cleared_schedule() {
         assert_eq!(
-            xml(modify_task(&id("t1"), ModifyTaskOpts::default())),
+            xml(modify_task(&id("t1"), ModifyTaskOpts::default()).expect("valid omission")),
             "<modify_task task_id=\"t1\"/>"
         );
         assert_eq!(
@@ -672,8 +807,9 @@ mod tests {
                 ModifyTaskOpts {
                     schedule_id: ScalarUpdate::set(id("schedule-1")),
                     ..Default::default()
-                }
-            )),
+                },
+            )
+            .expect("valid schedule update"),),
             "<modify_task task_id=\"t1\"><schedule id=\"schedule-1\"/></modify_task>"
         );
         assert_eq!(
@@ -682,8 +818,9 @@ mod tests {
                 ModifyTaskOpts {
                     schedule_id: ScalarUpdate::Clear,
                     ..Default::default()
-                }
-            )),
+                },
+            )
+            .expect("valid schedule clear"),),
             "<modify_task task_id=\"t1\"><schedule id=\"0\"/></modify_task>"
         );
     }
@@ -730,13 +867,16 @@ mod tests {
             "<get_tasks details=\"1\" task_id=\"a1\" usage_type=\"audit\"/>"
         );
         assert_eq!(
-            xml(modify_audit(
-                &id("a1"),
-                ModifyTaskOpts {
-                    comment: Some("updated".into()),
-                    ..Default::default()
-                }
-            )),
+            xml(
+                modify_audit(
+                    &id("a1"),
+                    ModifyTaskOpts {
+                        comment: Some("updated".into()),
+                        ..Default::default()
+                    },
+                )
+                .expect("valid audit update"),
+            ),
             "<modify_task task_id=\"a1\"><comment>updated</comment><usage_type>audit</usage_type></modify_task>"
         );
         assert_eq!(xml(start_audit(&id("a1"))), "<start_task task_id=\"a1\"/>");

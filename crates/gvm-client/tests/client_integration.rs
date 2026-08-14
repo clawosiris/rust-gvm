@@ -59,12 +59,13 @@ use gvm_gmp::commands::targets::{
 };
 use gvm_gmp::commands::tasks::{
     create_task, delete_task, get_task, start_task, stop_task, CreateTaskOpts, GetTasksOpts,
-    ModifyTaskOpts,
+    ModifyTaskError, ModifyTaskOpts,
 };
 use gvm_gmp::commands::tickets::{
     CreateTicketOpts, GetTicketsOpts, ModifyTicketOpts, TicketOpenNote,
 };
 use gvm_gmp::commands::users::{GetUsersOpts, ModifyUserOpts, UserOpts};
+use gvm_gmp::responses::task::TaskObservers;
 use gvm_gmp::responses::{
     Asset, ConfigUsageKind, CreateScanConfigResponse, CredentialKind, GetConfigsResponse,
     GetPermissionsResponse, GetScanConfigsResponse, GetScanReportResponse, ParseError, Permission,
@@ -4589,6 +4590,22 @@ async fn full_crud_lifecycle_succeeds() {
     server.shutdown().await;
 }
 
+async fn observed_task_observers(
+    client: &mut GmpClient<UnixSocketConnection>,
+    task_id: &EntityId,
+) -> TaskObservers {
+    client
+        .get_tasks(GetTasksOpts::default())
+        .await
+        .expect("task should be observable")
+        .items
+        .into_iter()
+        .find(|candidate| candidate.meta.id == *task_id)
+        .expect("task should be returned")
+        .observers
+        .expect("observer container should be observable")
+}
+
 #[tokio::test]
 async fn typed_task_observers_round_trip_create_and_modify() {
     let Some(server) = stateful_server().await else {
@@ -4627,39 +4644,74 @@ async fn typed_task_observers_round_trip_create_and_modify() {
         .await
         .expect("task create should succeed");
 
-    let created = client
-        .get_tasks(GetTasksOpts::default())
-        .await
-        .expect("created task should be observable")
-        .items
-        .into_iter()
-        .find(|candidate| candidate.meta.id == task.id)
-        .expect("created task should be returned");
-    let created_observers = created.observers.expect("created observers");
+    let created_observers = observed_task_observers(&mut client, &task.id).await;
     assert_eq!(created_observers.users, ["alice", "bob"]);
     assert_eq!(created_observers.groups[0].id.as_str(), "group-1");
+
+    let history_len = server.command_history().len();
+    let error = client
+        .modify_task(
+            &task.id,
+            ModifyTaskOpts {
+                observer_group_ids: CollectionUpdate::replace([
+                    EntityId::new("group-2").expect("group id")
+                ]),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("group-only update must be rejected before sending");
+    assert!(matches!(
+        error,
+        GvmError::ModifyTask(ModifyTaskError::ObserverGroupsWithoutUserUpdate)
+    ));
+    assert_eq!(server.command_history().len(), history_len);
 
     client
         .modify_task(
             &task.id,
             ModifyTaskOpts {
-                observers: vec!["carol".into(), "dave".into()],
+                observers: CollectionUpdate::replace(["carol".into(), "dave".into()]),
+                observer_group_ids: CollectionUpdate::replace([
+                    EntityId::new("group-2").expect("group id")
+                ]),
                 ..Default::default()
             },
         )
         .await
         .expect("observer replacement should succeed");
-    let modified = client
-        .get_tasks(GetTasksOpts::default())
-        .await
-        .expect("modified task should be observable")
-        .items
-        .into_iter()
-        .find(|candidate| candidate.meta.id == task.id)
-        .expect("modified task should be returned");
-    let modified_observers = modified.observers.expect("modified observers");
+    let modified_observers = observed_task_observers(&mut client, &task.id).await;
     assert_eq!(modified_observers.users, ["carol", "dave"]);
-    assert_eq!(modified_observers.groups[0].id.as_str(), "group-1");
+    assert_eq!(modified_observers.groups[0].id.as_str(), "group-2");
+
+    client
+        .modify_task(
+            &task.id,
+            ModifyTaskOpts {
+                observers: CollectionUpdate::Clear,
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("observer-user clear should succeed");
+    let users_cleared = observed_task_observers(&mut client, &task.id).await;
+    assert!(users_cleared.users.is_empty());
+    assert_eq!(users_cleared.groups[0].id.as_str(), "group-2");
+
+    client
+        .modify_task(
+            &task.id,
+            ModifyTaskOpts {
+                observers: CollectionUpdate::Clear,
+                observer_group_ids: CollectionUpdate::Clear,
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("all-observer clear should succeed");
+    let all_cleared = observed_task_observers(&mut client, &task.id).await;
+    assert!(all_cleared.users.is_empty());
+    assert!(all_cleared.groups.is_empty());
 
     server.shutdown().await;
 }

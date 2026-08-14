@@ -348,7 +348,10 @@ impl Tasks {
 
     pub fn get_tasks(opts: GetTasksOpts) -> impl Request;
     pub fn get_task(task_id: &EntityId) -> impl Request;
-    pub fn modify_task(task_id: &EntityId, opts: ModifyTaskOpts) -> impl Request;
+    pub fn modify_task(
+        task_id: &EntityId,
+        opts: ModifyTaskOpts,
+    ) -> Result<impl Request, ModifyTaskError>;
     pub fn move_task(task_id: &EntityId, slave_id: Option<&EntityId>) -> impl Request;
     pub fn start_task(task_id: &EntityId) -> impl Request;
     pub fn resume_task(task_id: &EntityId) -> impl Request;
@@ -364,7 +367,15 @@ pub struct CreateTaskOpts {
     pub comment: Option<String>,
     pub schedule_periods: Option<u32>,
     pub observers: Vec<String>,
+    pub observer_group_ids: Vec<EntityId>,
     pub preferences: HashMap<String, String>,
+}
+
+#[derive(Default)]
+pub struct ModifyTaskOpts {
+    // Other optional task fields omitted here.
+    pub observers: CollectionUpdate<String>,
+    pub observer_group_ids: CollectionUpdate<EntityId>,
 }
 
 #[derive(Default)]
@@ -377,6 +388,10 @@ pub struct GetTasksOpts {
     pub ignore_pagination: Option<bool>,
 }
 ```
+
+`ModifyTaskOpts::observers` distinguishes omission, replacement, and clearing.
+Updating `observer_group_ids` requires `observers` to explicitly replace or
+clear the user list; a group-only update returns `ModifyTaskError`.
 
 #### Full GMP Command Coverage
 
