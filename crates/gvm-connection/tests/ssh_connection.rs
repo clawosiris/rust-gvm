@@ -43,6 +43,17 @@ fn test_custom_host_key_policies() {
         SshHostKeyPolicy::KnownHostsFile(PathBuf::from("/etc/gvm/known_hosts"))
     );
 
+    let tofu = SshConfig::default().with_host_key_policy(SshHostKeyPolicy::TrustOnFirstUse);
+    assert_eq!(tofu.host_key_policy, SshHostKeyPolicy::TrustOnFirstUse);
+
+    let tofu_file = SshConfig::default().with_host_key_policy(
+        SshHostKeyPolicy::TrustOnFirstUseFile(PathBuf::from("/etc/gvm/tofu_known_hosts")),
+    );
+    assert_eq!(
+        tofu_file.host_key_policy,
+        SshHostKeyPolicy::TrustOnFirstUseFile(PathBuf::from("/etc/gvm/tofu_known_hosts"))
+    );
+
     let fingerprint = SshConfig::default()
         .with_host_key_policy(SshHostKeyPolicy::Fingerprint("sha256".to_string()));
     assert_eq!(

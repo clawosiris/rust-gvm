@@ -733,6 +733,95 @@ async fn ssh_rejects_changed_key_in_known_hosts_file() {
 }
 
 #[tokio::test]
+async fn ssh_tofu_persists_unknown_host_and_accepts_repeat_connection() {
+    let server = start_mock().await;
+    let Some(server) = server else {
+        return;
+    };
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let path = directory.path().join("known_hosts");
+    let config = config_for(&server)
+        .with_host_key_policy(SshHostKeyPolicy::TrustOnFirstUseFile(path.clone()));
+
+    let mut first = SshConnection::new(config.clone());
+    first.connect().await.expect("first TOFU connection");
+    first.disconnect().await.expect("first disconnect");
+
+    let contents = std::fs::read_to_string(&path).expect("persisted known_hosts");
+    assert!(contents.starts_with(&format!(
+        "[127.0.0.1]:{} ",
+        server.ssh_port().expect("ssh port")
+    )));
+    assert!(contents.contains(server.ssh_host_public_key().expect("SSH host public key")));
+
+    let mut repeat = SshConnection::new(config);
+    repeat.connect().await.expect("repeat TOFU connection");
+    repeat.disconnect().await.expect("repeat disconnect");
+    assert_eq!(
+        std::fs::read_to_string(path)
+            .expect("persisted known_hosts")
+            .lines()
+            .count(),
+        1
+    );
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn ssh_tofu_rejects_changed_key() {
+    let trusted_server = start_mock().await;
+    let Some(trusted_server) = trusted_server else {
+        return;
+    };
+    let server = start_mock().await;
+    let Some(server) = server else {
+        trusted_server.shutdown().await;
+        return;
+    };
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let path = directory.path().join("known_hosts");
+    std::fs::write(
+        &path,
+        format!(
+            "[127.0.0.1]:{} {}\n",
+            server.ssh_port().expect("ssh port"),
+            trusted_server
+                .ssh_host_public_key()
+                .expect("trusted SSH host public key")
+        ),
+    )
+    .expect("write known_hosts");
+    let config =
+        config_for(&server).with_host_key_policy(SshHostKeyPolicy::TrustOnFirstUseFile(path));
+    let mut connection = SshConnection::new(config);
+
+    let error = connection.connect().await.expect_err("connect should fail");
+    assert!(matches!(error, ConnectionError::ConnectFailed(_)));
+    assert!(error.to_string().to_ascii_lowercase().contains("changed"));
+    server.shutdown().await;
+    trusted_server.shutdown().await;
+}
+
+#[tokio::test]
+async fn ssh_tofu_returns_known_hosts_update_failure() {
+    let server = start_mock().await;
+    let Some(server) = server else {
+        return;
+    };
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let non_directory = directory.path().join("not-a-directory");
+    std::fs::write(&non_directory, "blocker").expect("write blocker");
+    let config = config_for(&server).with_host_key_policy(SshHostKeyPolicy::TrustOnFirstUseFile(
+        non_directory.join("known_hosts"),
+    ));
+    let mut connection = SshConnection::new(config);
+
+    let error = connection.connect().await.expect_err("connect should fail");
+    assert!(matches!(error, ConnectionError::ConnectFailed(_)));
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn ssh_connect_with_explicit_accept_all() {
     let server = start_mock().await;
     let Some(server) = server else {

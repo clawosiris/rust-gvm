@@ -3,7 +3,10 @@
 
 //! SSH transport for gvmd over a remote Unix socket.
 
-use std::path::PathBuf;
+use std::fs::{File, OpenOptions};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -160,6 +163,17 @@ pub enum SshHostKeyPolicy {
     KnownHosts,
     /// Require the server key to match a specific OpenSSH `known_hosts` file.
     KnownHostsFile(PathBuf),
+    /// Trust and persist an unknown key in the user's `~/.ssh/known_hosts` file.
+    ///
+    /// This is trust on first use (TOFU), not an accept-all policy. The first connection can be
+    /// intercepted by a man-in-the-middle attacker. After the key is persisted, later connections
+    /// require the same key and reject a changed key.
+    TrustOnFirstUse,
+    /// Trust and persist an unknown key in a specific OpenSSH `known_hosts` file.
+    ///
+    /// This has the same first-connection man-in-the-middle risk as [`Self::TrustOnFirstUse`].
+    /// Persistence uses an inter-process lock and an atomic file replacement.
+    TrustOnFirstUseFile(PathBuf),
     /// Accept any server key.
     ///
     /// This is insecure and vulnerable to man-in-the-middle attacks. Use only in tests or when
@@ -200,12 +214,148 @@ impl SshServerKeyVerifier {
             SshHostKeyPolicy::KnownHostsFile(path) => {
                 keys::check_known_hosts_path(&self.hostname, self.port, server_public_key, path)?
             }
+            SshHostKeyPolicy::TrustOnFirstUse => trust_on_first_use_path(
+                &self.hostname,
+                self.port,
+                server_public_key,
+                &default_known_hosts_path()?,
+            )?,
+            SshHostKeyPolicy::TrustOnFirstUseFile(path) => {
+                trust_on_first_use_path(&self.hostname, self.port, server_public_key, path)?
+            }
             SshHostKeyPolicy::AcceptAll => true,
             SshHostKeyPolicy::Fingerprint(expected) => {
                 host_key_fingerprint(server_public_key) == normalize_fingerprint(expected)
             }
         })
     }
+}
+
+fn default_known_hosts_path() -> std::result::Result<PathBuf, keys::Error> {
+    #[allow(deprecated)]
+    std::env::home_dir()
+        .map(|directory| directory.join(".ssh").join("known_hosts"))
+        .ok_or(keys::Error::NoHomeDir)
+}
+
+static TOFU_PROCESS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn trust_on_first_use_path(
+    hostname: &str,
+    port: u16,
+    server_public_key: &PublicKey,
+    path: &Path,
+) -> std::result::Result<bool, keys::Error> {
+    let parent = path
+        .parent()
+        .filter(|directory| !directory.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent)?;
+    let _process_lock = TOFU_PROCESS_LOCK
+        .lock()
+        .map_err(|_| std::io::Error::other("TOFU known_hosts lock is poisoned"))?;
+
+    let mut lock_name = path.as_os_str().to_os_string();
+    lock_name.push(".lock");
+    let lock = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(PathBuf::from(lock_name))?;
+    lock_known_hosts_file(&lock)?;
+
+    let known_keys = keys::known_hosts::known_host_keys_path(hostname, port, path)?;
+    if known_keys
+        .iter()
+        .any(|(_, known_key)| known_key == server_public_key)
+    {
+        return Ok(true);
+    }
+    if let Some((line, _)) = known_keys.first() {
+        return Err(keys::Error::KeyChanged { line: *line });
+    }
+
+    let (mut contents, permissions) = match std::fs::read(path) {
+        Ok(contents) => (contents, Some(std::fs::metadata(path)?.permissions())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (Vec::new(), None),
+        Err(error) => return Err(error.into()),
+    };
+    if !contents.is_empty() && !contents.ends_with(b"\n") {
+        contents.push(b'\n');
+    }
+    let host = if port == 22 {
+        hostname.to_string()
+    } else {
+        format!("[{hostname}]:{port}")
+    };
+    writeln!(contents, "{host} {}", server_public_key.to_openssh()?)?;
+    atomic_replace(path, parent, &contents, permissions.as_ref())?;
+    Ok(true)
+}
+
+#[cfg(unix)]
+fn lock_known_hosts_file(lock: &File) -> std::io::Result<()> {
+    rustix::fs::fcntl_lock(lock, rustix::fs::FlockOperation::LockExclusive).map_err(Into::into)
+}
+
+#[cfg(not(unix))]
+fn lock_known_hosts_file(_lock: &File) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "TOFU known_hosts locking is not supported on this platform",
+    ))
+}
+
+static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+fn atomic_replace(
+    destination: &Path,
+    parent: &Path,
+    contents: &[u8],
+    permissions: Option<&std::fs::Permissions>,
+) -> std::io::Result<()> {
+    let file_name = destination
+        .file_name()
+        .ok_or_else(|| std::io::Error::other("known_hosts path has no file name"))?;
+    let (temporary_path, mut temporary_file) = loop {
+        let sequence = TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let temporary_name = format!(
+            ".{}.tmp-{}-{sequence}",
+            file_name.to_string_lossy(),
+            std::process::id()
+        );
+        let temporary_path = parent.join(temporary_name);
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        match options.open(&temporary_path) {
+            Ok(file) => break (temporary_path, file),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error),
+        }
+    };
+
+    let result = (|| {
+        if let Some(permissions) = permissions {
+            temporary_file.set_permissions(permissions.clone())?;
+        }
+        temporary_file.write_all(contents)?;
+        temporary_file.sync_all()?;
+        drop(temporary_file);
+        std::fs::rename(&temporary_path, destination)?;
+        #[cfg(unix)]
+        File::open(parent)?.sync_all()?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary_path);
+    }
+    result
 }
 
 impl client::Handler for SshServerKeyVerifier {
@@ -771,5 +921,172 @@ mod tests {
 
         assert!(accepted);
         assert!(!rejected);
+    }
+
+    #[test]
+    fn test_tofu_persists_reuses_and_rejects_changed_key() {
+        let mut rng = UnwrapErr(SystemRng);
+        let trusted_key = keys::PrivateKey::random(&mut rng, keys::Algorithm::Ed25519)
+            .expect("trusted host key")
+            .public_key()
+            .clone();
+        let changed_key = keys::PrivateKey::random(&mut rng, keys::Algorithm::Ed25519)
+            .expect("changed host key")
+            .public_key()
+            .clone();
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("known_hosts");
+
+        assert!(
+            trust_on_first_use_path("scanner.example", 2222, &trusted_key, &path)
+                .expect("first use should persist")
+        );
+        assert!(
+            trust_on_first_use_path("scanner.example", 2222, &trusted_key, &path)
+                .expect("same key should be accepted")
+        );
+        let error = trust_on_first_use_path("scanner.example", 2222, &changed_key, &path)
+            .expect_err("changed key should be rejected");
+        assert!(matches!(error, keys::Error::KeyChanged { .. }));
+
+        let contents = std::fs::read_to_string(path).expect("persisted known_hosts");
+        assert_eq!(contents.lines().count(), 1);
+        assert!(contents.starts_with("[scanner.example]:2222 ssh-ed25519 "));
+        assert!(contents.contains(&trusted_key.to_openssh().expect("OpenSSH trusted key")));
+        assert!(!contents.contains(&changed_key.to_openssh().expect("OpenSSH changed key")));
+    }
+
+    #[test]
+    fn test_tofu_uses_default_and_non_default_port_conventions() {
+        let mut rng = UnwrapErr(SystemRng);
+        let default_key = keys::PrivateKey::random(&mut rng, keys::Algorithm::Ed25519)
+            .expect("default-port host key")
+            .public_key()
+            .clone();
+        let alternate_key = keys::PrivateKey::random(&mut rng, keys::Algorithm::Ed25519)
+            .expect("alternate-port host key")
+            .public_key()
+            .clone();
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("known_hosts");
+
+        trust_on_first_use_path("scanner.example", 22, &default_key, &path)
+            .expect("persist default port");
+        trust_on_first_use_path("scanner.example", 2222, &alternate_key, &path)
+            .expect("persist alternate port");
+
+        let contents = std::fs::read_to_string(path).expect("persisted known_hosts");
+        assert!(contents
+            .lines()
+            .any(|line| line.starts_with("scanner.example ")));
+        assert!(contents
+            .lines()
+            .any(|line| line.starts_with("[scanner.example]:2222 ")));
+    }
+
+    #[test]
+    fn test_tofu_serializes_concurrent_updates_without_losing_entries() {
+        let mut rng = UnwrapErr(SystemRng);
+        let entries = (0..8)
+            .map(|index| {
+                let key = keys::PrivateKey::random(&mut rng, keys::Algorithm::Ed25519)
+                    .expect("host key")
+                    .public_key()
+                    .clone();
+                (format!("scanner-{index}.example"), key)
+            })
+            .collect::<Vec<_>>();
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("known_hosts");
+        let barrier = Arc::new(std::sync::Barrier::new(entries.len()));
+        let handles = entries
+            .iter()
+            .cloned()
+            .map(|(hostname, key)| {
+                let path = path.clone();
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    trust_on_first_use_path(&hostname, 22, &key, &path)
+                })
+            })
+            .collect::<Vec<_>>();
+        for handle in handles {
+            assert!(handle
+                .join()
+                .expect("TOFU writer thread")
+                .expect("persist key"));
+        }
+
+        let contents = std::fs::read_to_string(&path).expect("persisted known_hosts");
+        assert_eq!(contents.lines().count(), entries.len());
+        for (hostname, key) in entries {
+            assert!(keys::check_known_hosts_path(&hostname, 22, &key, &path)
+                .expect("strict verification after concurrent persistence"));
+        }
+    }
+
+    #[test]
+    fn test_tofu_concurrent_first_keys_have_exactly_one_winner() {
+        let mut rng = UnwrapErr(SystemRng);
+        let keys = (0..2)
+            .map(|_| {
+                keys::PrivateKey::random(&mut rng, keys::Algorithm::Ed25519)
+                    .expect("host key")
+                    .public_key()
+                    .clone()
+            })
+            .collect::<Vec<_>>();
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("known_hosts");
+        let barrier = Arc::new(std::sync::Barrier::new(keys.len()));
+        let results = keys
+            .iter()
+            .cloned()
+            .map(|key| {
+                let path = path.clone();
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    trust_on_first_use_path("scanner.example", 22, &key, &path)
+                })
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|handle| handle.join().expect("TOFU writer thread"))
+            .collect::<Vec<_>>();
+
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+        assert_eq!(
+            results
+                .iter()
+                .filter(|result| matches!(result, Err(keys::Error::KeyChanged { .. })))
+                .count(),
+            1
+        );
+        assert_eq!(
+            std::fs::read_to_string(path)
+                .expect("persisted known_hosts")
+                .lines()
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn test_tofu_returns_file_update_failures() {
+        let mut rng = UnwrapErr(SystemRng);
+        let key = keys::PrivateKey::random(&mut rng, keys::Algorithm::Ed25519)
+            .expect("host key")
+            .public_key()
+            .clone();
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let non_directory = directory.path().join("not-a-directory");
+        std::fs::write(&non_directory, "blocker").expect("write blocker");
+        let path = non_directory.join("known_hosts");
+
+        let error = trust_on_first_use_path("scanner.example", 22, &key, &path)
+            .expect_err("unsafe update must fail");
+        assert!(matches!(error, keys::Error::IO(_)));
     }
 }
