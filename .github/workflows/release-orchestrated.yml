@@ -35,7 +35,7 @@ jobs:
     name: "Release v${{ inputs.version }}"
     runs-on: ubuntu-latest
     steps:
-      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
+      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -46,7 +46,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
 
       - name: Set up Python and pontos
-        uses: greenbone/actions/setup-pontos@41ce222ededcb84b9ee4f4b532083c69de062a01 # v3.36.13
+        uses: greenbone/actions/setup-pontos@cdaf49a9913e2944bfb5ebc1e333acadaeb3d16d # v3.36.15
 
       - name: Configure git
         run: |
@@ -91,7 +91,7 @@ jobs:
           fi
 
       - name: Trigger release.yml and wait for completion
-        uses: greenbone/actions/trigger-workflow@41ce222ededcb84b9ee4f4b532083c69de062a01 # v3.36.13
+        uses: greenbone/actions/trigger-workflow@cdaf49a9913e2944bfb5ebc1e333acadaeb3d16d # v3.36.15
         with:
           token: ${{ secrets.RELEASE_TOKEN }}
           repository: ${{ github.repository }}
