@@ -7,6 +7,12 @@ criteria = "safe-to-deploy"
 delta = "0.1.91 -> 0.1.92"
 notes = "Reviewed full crate delta: removes a redundant generated must_use attribute and updates metadata/tests; no unsafe or capability changes."
 
+[[audits.base64]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "0.22.1 -> 0.23.1"
+notes = "Reviewed the full 0.22.1 -> 0.23.1 delta, including AVX2 and NEON unsafe kernels. Pointer loads and stores are guarded by explicit length bounds; safe runtime dispatch checks CPU support; unchecked AVX2 constructors document their caller precondition; no new ambient capabilities were introduced. Upstream all-features, alloc-only, and std-only test matrices passed, including exhaustive scalar and SIMD cases."
+
 [[audits.clap]]
 who = "Thoth"
 criteria = "safe-to-deploy"

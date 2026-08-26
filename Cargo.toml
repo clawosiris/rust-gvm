@@ -35,7 +35,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-base64 = "0.22"
+base64 = "0.23"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
 # UUID
