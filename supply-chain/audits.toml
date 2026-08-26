@@ -67,6 +67,12 @@ criteria = "safe-to-deploy"
 delta = "0.62.4 -> 0.62.7"
 notes = "Reviewed full source delta: channel-ID validation security fix, bounded-flow ordering/backpressure corrections, decompression and auth-attempt hardening, and opt-in GSSAPI via caller-supplied trait; no new unsafe blocks or library ambient capabilities."
 
+[[audits.russh]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "0.62.7 -> 0.63.1"
+notes = "Reviewed the complete 0.62.7 -> 0.63.1 delta: host-certificate negotiation and verification, strict-KEX enforcement, channel-ID validation, MAC negotiation, packet-length bounds, Curve25519 low-order point rejection, constant-time agent unlock, and malformed PKCS#8 handling. No new executable unsafe blocks or ambient filesystem/process/network capabilities were introduced. With rust-gvm's exact no-RSA feature set, 186 upstream tests passed; the two RSA-only tests are not feature-gated upstream and fail as expected when RSA support is disabled. rust-gvm gvm-connection all-feature tests and Clippy pass after adapting the host-key callback."
+
 [[audits.rustls]]
 who = "Thoth"
 criteria = "safe-to-deploy"
