@@ -2,10 +2,7 @@
 # See: https://embarkstudios.github.io/cargo-deny/
 
 [advisories]
-ignore = [
-    # rsa crate Marvin Attack — transitive via russh; no fix available yet in russh dependency tree
-    "RUSTSEC-2023-0071",
-]
+ignore = []
 
 [licenses]
 allow = [

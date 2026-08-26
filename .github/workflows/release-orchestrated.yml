@@ -24,8 +24,7 @@ on:
         default: "patch"
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
