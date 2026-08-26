@@ -1,8 +1,5 @@
 # rust-gvm
 
-> **⚠️ Prototype / Experimental**
-> This project is purely a prototype to experiment with the concepts of GVM + Rust and agentic engineering. It is **not** production-ready, **not** endorsed by Greenbone, and **not** intended as a replacement for [python-gvm](https://github.com/greenbone/python-gvm). APIs, architecture, and scope may change without notice.
-
 Rust client and protocol ecosystem for the [Greenbone Management Protocol (GMP)](https://docs.greenbone.net/API/GMP/gmp-22.5.html) and [Greenbone Vulnerability Manager (gvmd)](https://github.com/greenbone/gvmd), with type safety, async-first design, version-aware command builders, and a programmable mock server for testing.
 
 [![CI](https://github.com/clawosiris/rust-gvm/actions/workflows/ci.yml/badge.svg)](https://github.com/clawosiris/rust-gvm/actions/workflows/ci.yml)
