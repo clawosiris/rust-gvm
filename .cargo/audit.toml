@@ -1,10 +1,5 @@
 # cargo-audit configuration
-# Ignore known advisories that are already tracked in deny.toml
+# Keep any accepted advisory exceptions synchronized with deny.toml.
 
 [advisories]
-ignore = [
-    # rsa: Marvin Attack (PKCS#1 v1.5 timing side-channel)
-    # Transitive via russh → rsa. No direct exposure; SSH transport
-    # doesn't use raw RSA PKCS#1. Tracked upstream.
-    "RUSTSEC-2023-0071",
-]
+ignore = []

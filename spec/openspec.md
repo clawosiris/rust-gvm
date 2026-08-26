@@ -653,9 +653,10 @@ Generated in release and nightly workflows using `cargo-cyclonedx`:
 - **Dependabot** (`.github/dependabot.yml`):
   - Cargo: weekly, Monday, grouped minor/patch
   - GitHub Actions: weekly, grouped
-  - pip: monthly
-- **cargo-deny** (`deny.toml`): license allowlist, advisory database, v2 schema
-  - Ignored advisory: RUSTSEC-2023-0071 (rsa Marvin Attack, transitive via russh)
+  - pip: weekly, grouped
+  - Docker: weekly, grouped
+- **cargo-deny** (`deny.toml`): license allowlist, advisory database, v2 schema;
+  no RustSec advisories are currently ignored
 
 ### Makefile
 

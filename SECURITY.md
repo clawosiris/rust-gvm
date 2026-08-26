@@ -50,22 +50,20 @@ Alternatively, contact the maintainers directly at: **[maintainer email / Signal
 
 - **[cargo-audit](https://github.com/rustsec/rustsec)** runs in CI on every push and weekly via the [Security workflow](.github/workflows/security.yml), checking against the [RustSec Advisory Database](https://rustsec.org/)
 - **[cargo-deny](https://github.com/EmbarkStudios/cargo-deny)** enforces license compliance, bans, and source restrictions (see [`deny.toml`](deny.toml))
-- **[Dependabot](https://docs.github.com/en/code-security/dependabot)** monitors Cargo, pip, and GitHub Actions dependencies with weekly update PRs ([`.github/dependabot.yml`](.github/dependabot.yml))
+- **[Dependabot](https://docs.github.com/en/code-security/dependabot)** monitors Cargo, pip, Docker, and GitHub Actions dependencies with weekly update PRs ([`.github/dependabot.yml`](.github/dependabot.yml))
 - **[cargo-machete](https://github.com/bnjbvr/cargo-machete)** checks for unused dependencies in CI
 
 ### Known Advisory Exceptions
 
-Accepted advisories are documented in [`deny.toml`](deny.toml) with rationale:
-
-| Advisory | Crate | Reason |
-|----------|-------|--------|
-| RUSTSEC-2023-0071 | `rsa` | Transitive via `russh`; Marvin attack requires RSA key exchange — mitigated by preferring Ed25519/ECDSA keys |
+There are currently no accepted RustSec advisory exceptions. The SSH dependency
+is built without russh's optional RSA support, removing the vulnerable `rsa`
+crate from the resolved graph while retaining compression and AWS-LC.
 
 ### Supply Chain
 
 - All dependencies sourced exclusively from [crates.io](https://crates.io)
 - Git dependencies denied by default (`[sources] unknown-git = "deny"`)
-- GitHub Actions pinned to major version tags; Dependabot keeps them current
+- GitHub Actions pinned to immutable commit SHAs; Dependabot keeps them current
 - SBOM (CycloneDX) generated on every release and nightly build
 
 ### Code Quality

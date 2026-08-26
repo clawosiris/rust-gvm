@@ -50,8 +50,9 @@ x509-cert = { version = "0.3", features = ["builder"] }
 p256 = "=0.14.0"
 sha2 = { version = "0.11", features = ["oid"] }
 
-# SSH (feature-gated)
-russh = "0.62"
+# SSH (feature-gated). Keep compression and the AWS-LC backend without
+# enabling russh's optional RSA support (RUSTSEC-2023-0071).
+russh = { version = "0.62", default-features = false, features = ["flate2", "aws-lc-rs"] }
 rustix = { version = "1", features = ["fs"] }
 getrandom = "0.4"
 

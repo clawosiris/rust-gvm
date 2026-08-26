@@ -15,6 +15,9 @@ on:
     # require the aggregate `CI` status check without waiting forever.
     branches: [main, devel]
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -134,7 +137,8 @@ jobs:
             --output-path rust-coverage-summary.json
       - name: Measure Python policy helper coverage
         run: |
-          python -m pip install coverage==7.15.1
+          python -m pip install --require-hashes --only-binary=:all: \
+            -r .github/requirements/coverage.txt
           python -m coverage run --branch \
             --include='scripts/sbom_postprocess.py,scripts/check_sbom_quality.py' \
             -m unittest tests.test_sbom_postprocess tests.test_sbom_quality
@@ -173,7 +177,10 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: pip install python-gvm cryptography
+      - name: Install pinned Python integration dependencies
+        run: >-
+          python -m pip install --require-hashes --only-binary=:all:
+          -r .github/requirements/integration.txt
       - run: make test-integration
 
   msrv:
