@@ -1,11 +1,29 @@
 
 # cargo-vet audits file
 
+[[audits.async-trait]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "0.1.91 -> 0.1.92"
+notes = "Reviewed full crate delta: removes a redundant generated must_use attribute and updates metadata/tests; no unsafe or capability changes."
+
 [[audits.clap]]
 who = "Thoth"
 criteria = "safe-to-deploy"
 delta = "4.6.0 -> 4.6.1"
 notes = "Reviewed local diff: version metadata updates and clap_derive pin refresh only."
+
+[[audits.clap]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "4.6.4 -> 4.6.6"
+notes = "Reviewed full crate delta: library changes are documentation-only; remaining changes are examples, snapshots, and dependency metadata."
+
+[[audits.clap_builder]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "4.6.2 -> 4.6.6"
+notes = "Reviewed full source delta: internal conflict-field rename, corrected optional-value usage rendering, a read-only usage getter, and docs/tests; no unsafe or ambient capability additions."
 
 [[audits.clap_derive]]
 who = "Thoth"
@@ -31,11 +49,35 @@ criteria = "safe-to-deploy"
 delta = "0.40.1 -> 0.41.0"
 notes = "Reviewed 0.40.1 to 0.41.0 security release diff for RUSTSEC-2026-0194 and RUSTSEC-2026-0195; changes bound duplicate-attribute and namespace-declaration DoS paths."
 
+[[audits.russh]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "0.62.4 -> 0.62.7"
+notes = "Reviewed full source delta: channel-ID validation security fix, bounded-flow ordering/backpressure corrections, decompression and auth-attempt hardening, and opt-in GSSAPI via caller-supplied trait; no new unsafe blocks or library ambient capabilities."
+
 [[audits.rustls]]
 who = "Thoth"
 criteria = "safe-to-deploy"
 delta = "0.23.37 -> 0.23.40"
 notes = "Reviewed local diff: ALPN/EMS configuration fixes and provider-FIPS alignment; no suspicious capability expansion."
+
+[[audits.rustls]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "0.23.42 -> 0.23.43"
+notes = "Reviewed full source delta: tightens protocol/cipher-suite selection and hardens ticket, binder, and session-age arithmetic; no new unsafe blocks or ambient capabilities."
+
+[[audits.thiserror]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "2.0.19 -> 2.0.20"
+notes = "Reviewed full crate delta: version/docs and compiler-diagnostic fixture updates only; runtime source is unchanged."
+
+[[audits.thiserror-impl]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "2.0.19 -> 2.0.20"
+notes = "Reviewed full crate delta: adds a Clippy allowance to generated From implementations; emitted behavior and capability surface are unchanged."
 
 [[audits.tokio]]
 who = "Thoth"
@@ -55,8 +97,20 @@ criteria = "safe-to-deploy"
 delta = "2.6.1 -> 2.7.0"
 notes = "Reviewed local diff: macro docs/runtime-name support and local-runtime stabilization path; proc-macro surface remains expected."
 
+[[audits.tokio-stream]]
+who = "Thoth"
+criteria = "safe-to-run"
+delta = "0.1.18 -> 0.1.19"
+notes = "Reviewed full source delta: cooperative scheduling, FusedStream implementations, collection support, size-hint hardening, and a JoinSet wrapper; no unsafe or ambient capability additions."
+
 [[audits.uuid]]
 who = "Thoth"
 criteria = "safe-to-deploy"
 delta = "1.23.0 -> 1.23.1"
 notes = "Reviewed local diff: wasm dependency metadata cleanup and version bump only."
+
+[[audits.uuid]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "1.24.0 -> 1.25.0"
+notes = "Reviewed full source delta: corrects non-ASCII parse diagnostics and adds a Serde byte-string adapter over the fixed 16-byte UUID representation; no unsafe or ambient capability changes."
