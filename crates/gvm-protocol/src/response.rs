@@ -142,25 +142,20 @@ impl Response {
             match reader.read_event() {
                 Ok(Event::Start(ref e) | Event::Empty(ref e)) => {
                     let mut header = ParsedHeader {
-                        root_element: std::str::from_utf8(e.name().as_ref())
-                            .ok()
-                            .map(String::from),
+                        root_element: Some(e.name().as_ref().to_string()),
                         ..ParsedHeader::default()
                     };
 
                     for attr in e.attributes().flatten() {
                         match attr.key.as_ref() {
-                            b"status" => {
-                                header.status_code = std::str::from_utf8(&attr.value)
-                                    .ok()
-                                    .and_then(|value| value.parse::<u16>().ok());
+                            "status" => {
+                                header.status_code = attr.value.parse::<u16>().ok();
                             }
-                            b"status_text" => {
-                                header.status_text =
-                                    std::str::from_utf8(&attr.value).ok().map(String::from);
+                            "status_text" => {
+                                header.status_text = Some(attr.value.into_owned());
                             }
-                            b"id" => {
-                                header.id = std::str::from_utf8(&attr.value).ok().map(String::from);
+                            "id" => {
+                                header.id = Some(attr.value.into_owned());
                             }
                             _ => {}
                         }
@@ -198,9 +193,7 @@ impl Response {
 
                     if root_depth == 2 {
                         let qname = e.name();
-                        let Ok(name) = std::str::from_utf8(qname.as_ref()) else {
-                            return HashMap::new();
-                        };
+                        let name = qname.as_ref();
                         current_child_name = Some(name.to_string());
                         current_child_depth = 1;
                         current_text.clear();
@@ -208,21 +201,15 @@ impl Response {
                 }
                 Ok(Event::Empty(ref e)) if root_depth == 1 => {
                     let qname = e.name();
-                    let Ok(name) = std::str::from_utf8(qname.as_ref()) else {
-                        return HashMap::new();
-                    };
+                    let name = qname.as_ref();
                     child_texts.entry(name.to_string()).or_default();
                 }
                 Ok(Event::Text(ref text)) if current_child_name.is_some() => {
-                    let Ok(unescaped) = text.xml_content(XmlVersion::Implicit1_0) else {
-                        return HashMap::new();
-                    };
+                    let unescaped = text.xml_content(XmlVersion::Implicit1_0);
                     current_text.push_str(&unescaped);
                 }
                 Ok(Event::CData(ref text)) if current_child_name.is_some() => {
-                    let Ok(unescaped) = text.xml_content(XmlVersion::Implicit1_0) else {
-                        return HashMap::new();
-                    };
+                    let unescaped = text.xml_content(XmlVersion::Implicit1_0);
                     current_text.push_str(&unescaped);
                 }
                 Ok(Event::End(_)) => {

@@ -237,17 +237,13 @@ mod tests {
 
         loop {
             match reader.read_event() {
-                Ok(Event::Start(ref e)) if e.name().as_ref() == b"description" => {
+                Ok(Event::Start(ref e)) if e.name().as_ref() == "description" => {
                     in_description = true;
                 }
                 Ok(Event::Text(text)) if in_description => {
-                    descriptions.push(
-                        text.xml_content(XmlVersion::Implicit1_0)
-                            .expect("description text should decode")
-                            .into_owned(),
-                    );
+                    descriptions.push(text.xml_content(XmlVersion::Implicit1_0).into_owned());
                 }
-                Ok(Event::End(ref e)) if e.name().as_ref() == b"description" => {
+                Ok(Event::End(ref e)) if e.name().as_ref() == "description" => {
                     in_description = false;
                 }
                 Ok(Event::Eof) => break,

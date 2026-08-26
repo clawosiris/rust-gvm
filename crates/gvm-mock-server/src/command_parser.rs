@@ -72,12 +72,12 @@ pub fn parse_command(xml: &[u8]) -> Option<ParsedCommand> {
     let (name, attributes) = loop {
         match reader.read_event() {
             Ok(Event::Start(ref e)) => {
-                let name = std::str::from_utf8(e.name().as_ref()).ok()?.to_string();
+                let name = e.name().as_ref().to_string();
                 let attributes = extract_attributes(e)?;
                 break (name, attributes);
             }
             Ok(Event::Empty(ref e)) => {
-                let name = std::str::from_utf8(e.name().as_ref()).ok()?.to_string();
+                let name = e.name().as_ref().to_string();
                 let attributes = extract_attributes(e)?;
                 return Some(ParsedCommand {
                     name,
@@ -111,7 +111,7 @@ fn parse_children(reader: &mut Reader<&[u8]>) -> Option<(Vec<ParsedElement>, Opt
         match reader.read_event() {
             Ok(Event::Start(ref e)) => {
                 let qn = e.name();
-                let child_name = std::str::from_utf8(qn.as_ref()).unwrap_or("").to_string();
+                let child_name = qn.as_ref().to_string();
                 let attrs = extract_attributes(e)?;
                 let (grandchildren, child_text) = parse_children(reader)?;
                 children.push(ParsedElement {
@@ -123,7 +123,7 @@ fn parse_children(reader: &mut Reader<&[u8]>) -> Option<(Vec<ParsedElement>, Opt
             }
             Ok(Event::Empty(ref e)) => {
                 let qn = e.name();
-                let child_name = std::str::from_utf8(qn.as_ref()).unwrap_or("").to_string();
+                let child_name = qn.as_ref().to_string();
                 let attrs = extract_attributes(e)?;
                 children.push(ParsedElement {
                     name: child_name,
@@ -133,9 +133,7 @@ fn parse_children(reader: &mut Reader<&[u8]>) -> Option<(Vec<ParsedElement>, Opt
                 });
             }
             Ok(Event::Text(ref t)) => {
-                if let Ok(unescaped) = t.xml_content(XmlVersion::Implicit1_0) {
-                    current_text.push_str(&unescaped);
-                }
+                current_text.push_str(&t.xml_content(XmlVersion::Implicit1_0));
             }
             Ok(Event::GeneralRef(ref reference)) => {
                 current_text.push_str(&resolve_reference(reference)?);
@@ -168,23 +166,21 @@ pub fn parse_element_text(xml: &[u8], element_name: &str) -> Option<String> {
         match reader.read_event() {
             Ok(Event::Start(ref e)) => {
                 let qn = e.name();
-                let name = std::str::from_utf8(qn.as_ref()).ok()?;
+                let name = qn.as_ref();
                 if name == element_name {
                     inside = true;
                     result.clear();
                 }
             }
             Ok(Event::Text(ref t)) if inside => {
-                if let Ok(unescaped) = t.xml_content(XmlVersion::Implicit1_0) {
-                    result.push_str(&unescaped);
-                }
+                result.push_str(&t.xml_content(XmlVersion::Implicit1_0));
             }
             Ok(Event::GeneralRef(ref reference)) if inside => {
                 result.push_str(&resolve_reference(reference)?);
             }
             Ok(Event::End(ref e)) if inside => {
                 let qn = e.name();
-                let name = std::str::from_utf8(qn.as_ref()).ok()?;
+                let name = qn.as_ref();
                 if name == element_name {
                     return Some(result.trim().to_string());
                 }
@@ -200,15 +196,14 @@ fn resolve_reference(reference: &BytesRef<'_>) -> Option<String> {
     if let Some(character) = reference.resolve_char_ref().ok()? {
         return Some(character.to_string());
     }
-    let entity = reference.decode().ok()?;
-    quick_xml::escape::resolve_xml_entity(&entity).map(ToString::to_string)
+    quick_xml::escape::resolve_xml_entity(reference.as_ref()).map(ToString::to_string)
 }
 
 fn extract_attributes(e: &quick_xml::events::BytesStart<'_>) -> Option<HashMap<String, String>> {
     let mut map = HashMap::new();
     for attr in e.attributes() {
         let attr = attr.ok()?;
-        let key = std::str::from_utf8(attr.key.as_ref()).ok()?;
+        let key = attr.key.as_ref();
         let value = attr
             .normalized_value(XmlVersion::Implicit1_0)
             .ok()?

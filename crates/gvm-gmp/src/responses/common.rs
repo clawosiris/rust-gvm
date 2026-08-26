@@ -165,7 +165,7 @@ pub(crate) fn parse_document(data: &[u8]) -> Result<XmlNode, ParseError> {
         match reader.read_event()? {
             Event::Start(event) => {
                 stack.push(XmlNode {
-                    name: str::from_utf8(event.name().as_ref())?.to_string(),
+                    name: event.name().as_ref().to_string(),
                     attributes: collect_attributes(&event)?,
                     text: String::new(),
                     raw_text: None,
@@ -174,7 +174,7 @@ pub(crate) fn parse_document(data: &[u8]) -> Result<XmlNode, ParseError> {
             }
             Event::Empty(event) => {
                 let node = XmlNode {
-                    name: str::from_utf8(event.name().as_ref())?.to_string(),
+                    name: event.name().as_ref().to_string(),
                     attributes: collect_attributes(&event)?,
                     text: String::new(),
                     raw_text: None,
@@ -188,8 +188,7 @@ pub(crate) fn parse_document(data: &[u8]) -> Result<XmlNode, ParseError> {
             }
             Event::Text(event) => {
                 if let Some(node) = stack.last_mut() {
-                    let text = str::from_utf8(event.as_ref())?;
-                    let text = quick_xml::escape::unescape(text)
+                    let text = quick_xml::escape::unescape(event.as_ref())
                         .map_err(quick_xml::Error::from)?
                         .into_owned();
                     node.text.push_str(&text);
@@ -197,7 +196,7 @@ pub(crate) fn parse_document(data: &[u8]) -> Result<XmlNode, ParseError> {
             }
             Event::CData(event) => {
                 if let Some(node) = stack.last_mut() {
-                    node.text.push_str(str::from_utf8(event.as_ref())?);
+                    node.text.push_str(event.as_ref());
                 }
             }
             Event::GeneralRef(event) => {
@@ -207,11 +206,11 @@ pub(crate) fn parse_document(data: &[u8]) -> Result<XmlNode, ParseError> {
                 if let Some(character) = event.resolve_char_ref()? {
                     node.text.push(character);
                 } else {
-                    let entity = event.decode().map_err(quick_xml::Error::from)?;
-                    let Some(value) = quick_xml::escape::resolve_xml_entity(&entity) else {
+                    let entity = event.as_ref();
+                    let Some(value) = quick_xml::escape::resolve_xml_entity(entity) else {
                         return Err(ParseError::InvalidValue {
                             field: "entity reference".to_string(),
-                            value: entity.into_owned(),
+                            value: entity.to_string(),
                         });
                     };
                     node.text.push_str(value);
@@ -248,9 +247,9 @@ fn collect_attributes(
     for attribute in event.attributes() {
         let attribute = attribute.map_err(quick_xml::Error::from)?;
         attributes.insert(
-            str::from_utf8(attribute.key.as_ref())?.to_string(),
+            attribute.key.as_ref().to_string(),
             attribute
-                .decoded_and_normalized_value(XmlVersion::Implicit1_0, event.decoder())?
+                .normalized_value(XmlVersion::Implicit1_0)?
                 .into_owned(),
         );
     }
