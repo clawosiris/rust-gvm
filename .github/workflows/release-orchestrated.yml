@@ -1,8 +1,9 @@
 # Orchestrated Release — dispatch with an explicit version and release type.
 #
 # This workflow:
-# 1. Creates the release via pontos (changelog, tag, GitHub release)
-# 2. Waits for release.yml (triggered by tag push) to build and upload artifacts
+# 1. Validates the version already merged through the protected branch
+# 2. Creates the release via pontos (changelog, tag, GitHub release)
+# 3. Waits for release.yml (triggered by tag push) to build and upload artifacts
 #
 # The orchestrator waits for this workflow to complete before proceeding to
 # downstream repos (rust-gvm-api, gvm-rools, etc.).
@@ -51,13 +52,23 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Relax main branch protection for release push
+      - name: Verify workspace release version
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RELEASE_VERSION: ${{ inputs.version }}
         run: |
-          gh api repos/${{ github.repository }}/branches/main/protection > "$RUNNER_TEMP/main-protection.json"
-          gh api --method DELETE repos/${{ github.repository }}/branches/main/protection/required_status_checks || true
-          gh api --method DELETE repos/${{ github.repository }}/branches/main/protection/required_pull_request_reviews || true
+          CURRENT_VERSION="$(awk '
+            $0 == "[workspace.package]" { in_workspace = 1; next }
+            /^\[/ { in_workspace = 0 }
+            in_workspace && $1 == "version" {
+              gsub(/"/, "", $3)
+              print $3
+              exit
+            }
+          ' Cargo.toml)"
+          if [[ "$CURRENT_VERSION" != "$RELEASE_VERSION" ]]; then
+            echo "Expected workspace version $RELEASE_VERSION, found $CURRENT_VERSION" >&2
+            exit 1
+          fi
 
       - name: Create release with pontos
         env:
@@ -69,24 +80,13 @@ jobs:
           ARGS="$ARGS --project-types cargo"
           ARGS="$ARGS --git-tag-prefix v"
           ARGS="$ARGS --no-next-version"
+          ARGS="$ARGS --no-update-project"
 
           if [[ "${{ inputs.version }}" == *"-"* ]]; then
             ARGS="$ARGS --github-pre-release"
           fi
 
           pontos-release create $ARGS --repository ${{ github.repository }}
-
-      - name: Regenerate Cargo.lock
-        run: |
-          cargo generate-lockfile
-          if ! git diff --quiet Cargo.lock 2>/dev/null; then
-            git add Cargo.lock
-            git commit --amend --no-edit
-            git push --force-with-lease
-            TAG="v${{ inputs.version }}"
-            git tag -f "$TAG"
-            git push origin "$TAG" --force
-          fi
 
       - name: Trigger release.yml and wait for completion
         uses: greenbone/actions/trigger-workflow@cdaf49a9913e2944bfb5ebc1e333acadaeb3d16d # v3.36.15
@@ -97,14 +97,3 @@ jobs:
           ref: v${{ inputs.version }}
           wait-for-completion-timeout: "1800"
           wait-for-completion-interval: "30"
-
-      - name: Restore main branch protection
-        if: ${{ always() }}
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-        run: |
-          gh api \
-            --method PUT \
-            -H 'Accept: application/vnd.github+json' \
-            repos/${{ github.repository }}/branches/main/protection \
-            --input "$RUNNER_TEMP/main-protection.json"
