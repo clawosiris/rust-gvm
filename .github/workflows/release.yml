@@ -65,13 +65,13 @@ jobs:
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ghcr.io/clawosiris/gvm-mock-server
+          images: ghcr.io/${{ github.repository_owner }}/gvm-mock-server
           tags: |
             type=raw,value=${{ github.ref_name }}
           labels: |
             org.opencontainers.image.title=gvm-mock-server
             org.opencontainers.image.description=Programmable mock GMP server for testing
-            org.opencontainers.image.vendor=clawosiris
+            org.opencontainers.image.vendor=${{ github.repository_owner }}
             org.opencontainers.image.version=${{ github.ref_name }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -177,6 +177,10 @@ jobs:
     name: Generate SBOM
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
@@ -242,6 +246,11 @@ jobs:
           cd ..
           sha256sum rust-gvm-sbom.tar.gz > rust-gvm-sbom.tar.gz.sha256
 
+      - name: Generate SBOM provenance attestation
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: rust-gvm-sbom.tar.gz
+
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -254,7 +263,7 @@ jobs:
   # Upload artifacts to the GitHub Release created by pontos
   upload-assets:
     name: Upload release assets
-    needs: [build, sbom, container]
+    needs: [build, sbom]
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -287,5 +296,5 @@ jobs:
           gh release upload "${{ github.ref_name }}" \
             --repo "${{ github.repository }}" \
             --clobber \
-            artifacts/*.tar.gz artifacts/*.sha256
+            artifacts/*.tar.gz artifacts/*.sha256 artifacts/sbomqs-results.json
           echo "✅ Assets uploaded to release ${{ github.ref_name }}"

@@ -1,13 +1,14 @@
 # Releasing rust-gvm
 
-All releases are managed via [clawosiris/release-orchestrator](https://github.com/clawosiris/release-orchestrator).
+Releases are managed via the repository's
+[Orchestrated Release workflow](https://github.com/greenbone-hive/rust-gvm/actions/workflows/release-orchestrated.yml).
 
 ## How It Works
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                        release-orchestrator                              │
-│  (workflow_dispatch)                                                     │
+│                  rust-gvm Orchestrated Release                           │
+│  (workflow_dispatch with an explicit version)                            │
 └─────────────────────┬───────────────────────────────────────────────────┘
                       │ triggers via greenbone/actions/trigger-workflow
                       ▼
@@ -41,7 +42,7 @@ All releases are managed via [clawosiris/release-orchestrator](https://github.co
 
 ## Do NOT
 
-- **Do NOT** trigger `release-orchestrated.yml` manually — it's designed for orchestrator use
+- Trigger `release-orchestrated.yml` with the intended version and release type
 - **Do NOT** push version tags manually — let pontos handle it
 - **Do NOT** create GitHub releases manually — pontos + release.yml handle everything
 
@@ -50,12 +51,12 @@ All releases are managed via [clawosiris/release-orchestrator](https://github.co
 Each release includes:
 
 - **Binaries**: `gvm-mock-server` for Linux (amd64, arm64, musl), macOS (amd64, arm64)
-- **Docker image**: `ghcr.io/clawosiris/gvm-mock-server:<version>`
+- **Docker image**: `ghcr.io/greenbone-hive/gvm-mock-server:<version>`
 - **SBOM**: CycloneDX JSON/XML with quality scoring
 - **Attestations**: Sigstore build provenance for all artifacts
 
 ## Verifying Artifacts
 
 ```bash
-gh attestation verify gvm-mock-server-linux-amd64.tar.gz --owner clawosiris
+gh attestation verify gvm-mock-server-linux-amd64.tar.gz --owner greenbone-hive
 ```

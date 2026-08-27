@@ -1,5 +1,4 @@
-# Orchestrated Release — triggered by clawosiris/release-orchestrator
-# Do NOT trigger manually — use the orchestrator instead.
+# Orchestrated Release — dispatch with an explicit version and release type.
 #
 # This workflow:
 # 1. Creates the release via pontos (changelog, tag, GitHub release)
