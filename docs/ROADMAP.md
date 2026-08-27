@@ -50,6 +50,22 @@ A GMP feature is considered covered when the relevant pieces are aligned:
 - Tests cover serialization, parsing, client flow, and relevant mock-server behavior.
 - Docs identify any known limitations or migration differences.
 
+## Deliberate Scope Limits
+
+GMP ticket support is frozen at the currently shipped surface. Existing ticket
+command builders, response models, typed-client integration, and mock behavior
+remain supported and may receive correctness, security, compatibility,
+documentation, and test maintenance. New ticket-specific commands, fields,
+helpers, mock behavior, or conformance work are intentionally out of scope.
+
+This is a product-scope decision, not a claim that gvmd lacks additional ticket
+behavior. Coverage and schema-drift audits must record newly observed ticket
+functionality as an intentional exclusion rather than automatically turning it
+into roadmap work. See the canonical
+[GMP ticket surface decision](https://github.com/greenbone-hive/rust-gvm-api/blob/main/docs/ticket-surface-scope.md),
+recorded from
+[`rust-gvm-api` PR #417](https://github.com/greenbone-hive/rust-gvm-api/pull/417).
+
 ## Current Tracking
 
 Existing issues:
