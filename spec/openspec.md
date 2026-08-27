@@ -625,7 +625,7 @@ Dev dependencies: `tokio-test`, `pretty_assertions`, `rstest`
 
 | Workflow | Trigger | Jobs |
 |----------|---------|------|
-| `ci.yml` | Push/PR to main | Format, Clippy, Test (stable + MSRV 1.85), Test (all features), Documentation, Cargo Deny, Coverage, python-gvm integration |
+| `ci.yml` | Push/PR to main | Format, Clippy, Test (stable + MSRV 1.86), Test (all features), Documentation, Cargo Deny, Coverage, python-gvm integration |
 | `nightly.yml` | Daily 04:00 UTC + manual | Full CI + 5-target cross-platform binary builds |
 | `release.yml` | `v*` tag push | Test → 5-target builds → SBOM generation → GitHub Release with checksums |
 

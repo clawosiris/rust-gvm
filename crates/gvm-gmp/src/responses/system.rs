@@ -278,13 +278,13 @@ fn extract_wizard_response_xml(data: &[u8]) -> Result<Option<Vec<u8>>, ParseErro
         let event = reader.read_event()?;
         match event {
             Event::Start(event)
-                if capture_depth.is_none() && event.name().as_ref() == b"response" =>
+                if capture_depth.is_none() && event.name().as_ref() == "response" =>
             {
                 capture_depth = Some(0usize);
                 capture_start = reader.buffer_position() as usize;
             }
             Event::Empty(event)
-                if capture_depth.is_none() && event.name().as_ref() == b"response" =>
+                if capture_depth.is_none() && event.name().as_ref() == "response" =>
             {
                 return Ok(Some(Vec::new()));
             }
@@ -292,7 +292,7 @@ fn extract_wizard_response_xml(data: &[u8]) -> Result<Option<Vec<u8>>, ParseErro
                 capture_depth = capture_depth.map(|depth| depth + 1);
             }
             Event::End(event)
-                if capture_depth == Some(0) && event.name().as_ref() == b"response" =>
+                if capture_depth == Some(0) && event.name().as_ref() == "response" =>
             {
                 return Ok(Some(data[capture_start..event_start].to_vec()));
             }
