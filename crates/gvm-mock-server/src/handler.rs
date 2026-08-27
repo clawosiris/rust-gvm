@@ -45,6 +45,7 @@ pub struct SessionHandler {
     store: Option<ResourceStore>,
     scenario_engine: Option<Mutex<ScenarioEngine>>,
     large_report: Option<LargeReportConfig>,
+    scan_report_exports: Mutex<BTreeMap<String, Uuid>>,
     fault_engine: FaultEngine,
     command_count: AtomicUsize,
 }
@@ -319,6 +320,7 @@ impl SessionHandler {
             scenario_engine: scenario_config
                 .map(|(mode, steps)| Mutex::new(ScenarioEngine::new(mode, steps))),
             large_report,
+            scan_report_exports: Mutex::new(BTreeMap::new()),
             fault_engine,
             command_count: AtomicUsize::new(0),
         }
@@ -491,11 +493,68 @@ impl SessionHandler {
             }
             "restore" => self.handle_restore(cmd, store),
             // Help
-            "help" => render_help_response(cmd),
+            "help" => render_help_response(cmd, self.version),
+            "export_scan_report" => self.handle_export_scan_report(cmd, store),
             "sync_agents" => b"<sync_agents_response status=\"200\" status_text=\"OK\"/>".to_vec(),
             // Everything else
             _ => echo_response(&cmd.name, self.version.as_str()),
         }
+    }
+
+    fn handle_export_scan_report(&self, cmd: &ParsedCommand, store: &ResourceStore) -> Vec<u8> {
+        let Some(report_id) = cmd.attr("report_id") else {
+            return error_response(&cmd.name, 400, "Missing or invalid report_id");
+        };
+        let Ok(report_uuid) = Uuid::parse_str(report_id) else {
+            return error_response(&cmd.name, 400, "Missing or invalid report_id");
+        };
+        let Some(report) = store.get_typed(&report_uuid, "report") else {
+            return error_response(&cmd.name, 404, "Failed to find report");
+        };
+        if report.attr("usage_type") == Some("audit") || report.attr("delta") == Some("1") {
+            return error_response(&cmd.name, 400, "Report is not a scan report");
+        }
+
+        const XML_REPORT_FORMAT_ID: &str = "a994b278-1f62-11e1-96ac-406186ea4fc5";
+        let format_id = cmd.attr("format_id").unwrap_or(XML_REPORT_FORMAT_ID);
+        if Uuid::parse_str(format_id).is_err() {
+            return error_response(&cmd.name, 400, "Invalid format_id");
+        }
+        if let Some(config_id) = cmd.attr("config_id").filter(|value| !value.is_empty()) {
+            if Uuid::parse_str(config_id).is_err() {
+                return error_response(&cmd.name, 400, "Invalid config_id");
+            }
+        }
+
+        let key = [
+            report_id,
+            format_id,
+            cmd.attr("config_id").unwrap_or_default(),
+            cmd.attr("filter").unwrap_or_default(),
+            cmd.attr("ignore_pagination").unwrap_or("0"),
+            cmd.attr("lean").unwrap_or("0"),
+            cmd.attr("notes_details").unwrap_or("0"),
+            cmd.attr("overrides_details").unwrap_or("0"),
+            cmd.attr("result_tags").unwrap_or("0"),
+        ]
+        .join("\u{1f}");
+
+        let Ok(mut exports) = self.scan_report_exports.lock() else {
+            return error_response(&cmd.name, 500, "Report export state lock poisoned");
+        };
+        if let Some(export_id) = exports.get(&key) {
+            return format!(
+                "<export_scan_report_response status=\"200\" status_text=\"OK\" id=\"{export_id}\" export_status=\"pending\"/>"
+            )
+            .into_bytes();
+        }
+
+        let export_id = Uuid::new_v4();
+        exports.insert(key, export_id);
+        format!(
+            "<export_scan_report_response status=\"201\" status_text=\"OK, resource created\" id=\"{export_id}\"/>"
+        )
+        .into_bytes()
     }
 
     fn handle_authenticate(
@@ -3792,8 +3851,12 @@ fn store_error_response(command_name: &str, error: StoreError) -> Vec<u8> {
     }
 }
 
-fn render_help_response(cmd: &ParsedCommand) -> Vec<u8> {
-    const COMMANDS: [(&str, &str); 6] = [
+fn render_help_response(cmd: &ParsedCommand, version: GmpVersion) -> Vec<u8> {
+    const COMMANDS: [(&str, &str); 7] = [
+        (
+            "export_scan_report",
+            "Create an asynchronous scan report export",
+        ),
         ("get_configs", "Get scan configurations"),
         ("get_feeds", "Get feed information"),
         ("get_info", "Get security information"),
@@ -3813,7 +3876,10 @@ fn render_help_response(cmd: &ParsedCommand) -> Vec<u8> {
 
     if format.as_deref().is_none_or(|value| value == "text") {
         let mut body = String::new();
-        for (name, summary) in COMMANDS {
+        for (name, summary) in COMMANDS
+            .into_iter()
+            .filter(|(name, _)| command_available(name, version))
+        {
             body.push_str(name);
             body.push_str(" - ");
             body.push_str(summary);
@@ -3825,7 +3891,10 @@ fn render_help_response(cmd: &ParsedCommand) -> Vec<u8> {
 
     if help_type == "brief" {
         let mut body = String::new();
-        for (name, summary) in COMMANDS {
+        for (name, summary) in COMMANDS
+            .into_iter()
+            .filter(|(name, _)| command_available(name, version))
+        {
             body.push_str("<command><name>");
             body.push_str(name);
             body.push_str("</name><summary>");
@@ -3841,7 +3910,10 @@ fn render_help_response(cmd: &ParsedCommand) -> Vec<u8> {
     match format.as_deref().unwrap_or_default() {
         "xml" => {
             let mut commands = String::new();
-            for (name, summary) in COMMANDS {
+            for (name, summary) in COMMANDS
+                .into_iter()
+                .filter(|(name, _)| command_available(name, version))
+            {
                 commands.push_str("<command><name>");
                 commands.push_str(name);
                 commands.push_str("</name><summary>");

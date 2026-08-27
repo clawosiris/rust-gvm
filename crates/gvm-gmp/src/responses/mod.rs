@@ -131,13 +131,13 @@ pub use port_list::{
     CreatePortListResponse, GetPortListsResponse, ModifyPortListResponse, PortList,
 };
 pub use report::{
-    CreateReportResponse, DeleteReportResponse, GetReportApplicationsResponse,
-    GetReportClosedCvesResponse, GetReportCvesResponse, GetReportErrorsResponse,
-    GetReportHostsResponse, GetReportOperatingSystemsResponse, GetReportPortsResponse,
-    GetReportTlsCertificatesResponse, GetReportVulnsResponse, GetReportsResponse, Report,
-    ReportApplicationSummary, ReportClosedCve, ReportCveSummary, ReportError, ReportExport,
-    ReportHostSummary, ReportOperatingSystemSummary, ReportPortSummary, ReportTlsCertificate,
-    ReportVulnerability, ResultCount, Severity,
+    CreateReportResponse, DeleteReportResponse, ExportScanReportResponse,
+    GetReportApplicationsResponse, GetReportClosedCvesResponse, GetReportCvesResponse,
+    GetReportErrorsResponse, GetReportHostsResponse, GetReportOperatingSystemsResponse,
+    GetReportPortsResponse, GetReportTlsCertificatesResponse, GetReportVulnsResponse,
+    GetReportsResponse, Report, ReportApplicationSummary, ReportClosedCve, ReportCveSummary,
+    ReportError, ReportExport, ReportHostSummary, ReportOperatingSystemSummary, ReportPortSummary,
+    ReportTlsCertificate, ReportVulnerability, ResultCount, Severity,
 };
 pub use report_config::{
     CreateReportConfigResponse, DeleteReportConfigResponse, GetReportConfigsResponse,

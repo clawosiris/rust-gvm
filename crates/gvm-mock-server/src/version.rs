@@ -42,7 +42,7 @@ impl std::fmt::Display for GmpVersion {
 #[must_use]
 pub fn command_available(command_name: &str, version: GmpVersion) -> bool {
     gvm_gmp::capabilities::command_capability(command_name)
-        .is_some_and(|capability| capability.available_in(version.into()))
+        .is_some_and(|capability| capability.permitted_in(version.into()))
 }
 
 impl From<GmpVersion> for gvm_gmp::GmpVersion {
@@ -244,5 +244,16 @@ mod tests {
             assert!(command_available(command, GmpVersion::V22_7));
             assert!(command_available(command, GmpVersion::V22_8));
         }
+    }
+
+    #[test]
+    fn help_discovered_export_has_a_version_floor_without_version_proof() {
+        assert!(!command_available("export_scan_report", GmpVersion::V22_6));
+        assert!(command_available("export_scan_report", GmpVersion::V22_7));
+        let capability =
+            gvm_gmp::capabilities::command_capability("export_scan_report").expect("known command");
+        assert!(capability.requires_help_discovery);
+        assert!(!capability.available_in(gvm_gmp::GmpVersion(22, 7)));
+        assert!(!capability.available_in(gvm_gmp::GmpVersion(22, 8)));
     }
 }

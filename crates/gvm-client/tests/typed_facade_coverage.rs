@@ -4,7 +4,9 @@
 #![allow(missing_docs)]
 #![cfg(feature = "unix-socket-tests")]
 
-use gvm_client::{GetOciImageTargetsOpts, GetReportExportOpts, GetWebApplicationTargetsOpts};
+use gvm_client::{
+    ExportScanReportOpts, GetOciImageTargetsOpts, GetReportExportOpts, GetWebApplicationTargetsOpts,
+};
 use gvm_client::{GmpClient, GvmError};
 use gvm_connection::UnixSocketConnection;
 use gvm_gmp::commands::alerts::{AlertOpts, GetAlertsOpts};
@@ -614,6 +616,86 @@ async fn report_export_simple_and_options_paths_preserve_distinct_xml() {
     assert!(requests[1].contains(r#"filter="severity&gt;5""#));
     assert!(requests[1].contains(r#"ignore_pagination="0""#));
 
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn asynchronous_scan_report_export_uses_positive_help_discovery() {
+    let Some(server) = fixture_server(
+        MockVersion::V22_8,
+        &[
+            (
+                "help",
+                r#"<help_response status="200" status_text="OK"><schema format="XML"><command><name>export_scan_report</name></command></schema></help_response>"#,
+            ),
+            (
+                "export_scan_report",
+                r#"<export_scan_report_response status="201" status_text="OK, resource created" id="11111111-1111-1111-1111-111111111111"/>"#,
+            ),
+        ],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+    assert_eq!(client.supports_command("export_scan_report"), None);
+    client
+        .discover_commands()
+        .await
+        .expect("help discovery should parse");
+
+    let response = client
+        .export_scan_report(
+            &id("22222222-2222-2222-2222-222222222222"),
+            ExportScanReportOpts::default(),
+        )
+        .await
+        .expect("asynchronous export should parse");
+
+    assert_eq!(response.status, 201);
+    assert_eq!(response.export_status, None);
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn asynchronous_scan_report_export_rejects_negative_help_discovery_on_22_8() {
+    let Some(server) = fixture_server(
+        MockVersion::V22_8,
+        &[(
+            "help",
+            r#"<help_response status="200" status_text="OK"><schema format="XML"><command><name>get_tasks</name></command></schema></help_response>"#,
+        )],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+    client
+        .discover_commands()
+        .await
+        .expect("negative help discovery should still parse");
+    assert_eq!(client.supports_command("export_scan_report"), Some(false));
+    server.clear_history();
+
+    let error = client
+        .export_scan_report(
+            &id("22222222-2222-2222-2222-222222222222"),
+            ExportScanReportOpts::default(),
+        )
+        .await
+        .expect_err("22.8 alone must not unlock the command");
+
+    assert!(matches!(
+        error,
+        GvmError::UnsupportedCommand {
+            command,
+            version: GmpVersion(22, 8),
+            required: "positive XML help discovery",
+        } if command == "export_scan_report"
+    ));
+    assert!(server.command_history().is_empty());
     server.shutdown().await;
 }
 

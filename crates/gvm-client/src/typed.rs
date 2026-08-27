@@ -72,12 +72,12 @@ use gvm_gmp::commands::report_formats::{
     GetReportFormatsOpts, ReportFormatOpts,
 };
 use gvm_gmp::commands::reports::{
-    get_audit_report, get_audit_report_hosts, get_report_applications, get_report_closed_cves,
-    get_report_cves, get_report_errors, get_report_export, get_report_export_with_opts,
-    get_report_hosts, get_report_operating_systems, get_report_ports, get_report_tls_certificates,
-    get_report_vulnerabilities, get_report_vulns, get_reports, import_report,
-    GetAuditReportHostsOpts, GetAuditReportOpts, GetReportDetailsOpts, GetReportExportOpts,
-    GetReportsOpts, ImportReportOpts,
+    export_scan_report, get_audit_report, get_audit_report_hosts, get_report_applications,
+    get_report_closed_cves, get_report_cves, get_report_errors, get_report_export,
+    get_report_export_with_opts, get_report_hosts, get_report_operating_systems, get_report_ports,
+    get_report_tls_certificates, get_report_vulnerabilities, get_report_vulns, get_reports,
+    import_report, ExportScanReportOpts, GetAuditReportHostsOpts, GetAuditReportOpts,
+    GetReportDetailsOpts, GetReportExportOpts, GetReportsOpts, ImportReportOpts,
 };
 use gvm_gmp::commands::results::{get_results, GetResultsOpts};
 use gvm_gmp::commands::roles::{create_role, get_roles, GetRolesOpts, RoleOpts};
@@ -142,12 +142,12 @@ use gvm_gmp::responses::{
     DeleteCredentialResponse, DeleteOciImageTargetResponse, DeleteScanConfigResponse,
     DeleteScannerResponse, DeleteScheduleResponse, DeleteTargetResponse, DeleteTaskResponse,
     DeleteWebApplicationTargetResponse, DescribeAuthResponse, EmptyTrashcanResponse,
-    GetAggregatesResponse, GetAlertsResponse, GetAssetsResponse, GetAuditReportHostsResponse,
-    GetAuditReportResponse, GetCertBundAdvisoriesResponse, GetConfigsResponse, GetCpesResponse,
-    GetCredentialStoresResponse, GetCredentialsResponse, GetCvesResponse,
-    GetDfnCertAdvisoriesResponse, GetFeaturesResponse, GetFeedsResponse, GetFiltersResponse,
-    GetGroupsResponse, GetHostsResponse, GetIntegrationConfigsResponse, GetNotesResponse,
-    GetNvtFamiliesResponse, GetNvtsResponse, GetOciImageTargetsResponse,
+    ExportScanReportResponse, GetAggregatesResponse, GetAlertsResponse, GetAssetsResponse,
+    GetAuditReportHostsResponse, GetAuditReportResponse, GetCertBundAdvisoriesResponse,
+    GetConfigsResponse, GetCpesResponse, GetCredentialStoresResponse, GetCredentialsResponse,
+    GetCvesResponse, GetDfnCertAdvisoriesResponse, GetFeaturesResponse, GetFeedsResponse,
+    GetFiltersResponse, GetGroupsResponse, GetHostsResponse, GetIntegrationConfigsResponse,
+    GetNotesResponse, GetNvtFamiliesResponse, GetNvtsResponse, GetOciImageTargetsResponse,
     GetOperatingSystemAssetsResponse, GetOverridesResponse, GetPermissionsResponse,
     GetPortListsResponse, GetReportApplicationsResponse, GetReportClosedCvesResponse,
     GetReportConfigsResponse, GetReportCvesResponse, GetReportErrorsResponse,
@@ -971,6 +971,24 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ) -> Result<GetReportsResponse, GvmError> {
         let response = self.send(get_reports(opts)).await?;
         GetReportsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Queue or reuse an asynchronous scan-report export and return its typed
+    /// identifier and optional processing status.
+    ///
+    /// Call [`GmpClient::discover_commands`] first. The negotiated GMP version
+    /// does not prove that the server implements this command.
+    ///
+    /// # Errors
+    /// Returns an error if positive help discovery is missing, the command is
+    /// unavailable, the request fails, or response parsing fails.
+    pub async fn export_scan_report(
+        &mut self,
+        report_id: &EntityId,
+        opts: ExportScanReportOpts,
+    ) -> Result<ExportScanReportResponse, GvmError> {
+        let response = self.send(export_scan_report(report_id, opts)).await?;
+        ExportScanReportResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     /// Send a `get_report_vulns` request and return a typed [`GetReportVulnsResponse`].

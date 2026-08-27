@@ -92,6 +92,28 @@ pub struct GetReportExportOpts {
     pub ignore_pagination: Option<bool>,
 }
 
+/// Options for asynchronous `export_scan_report` requests.
+#[derive(Debug, Clone, Default)]
+pub struct ExportScanReportOpts {
+    /// Optional report format identifier. gvmd defaults to the XML report
+    /// format when this is omitted.
+    pub format_id: Option<EntityId>,
+    /// Optional report configuration identifier.
+    pub config_id: Option<EntityId>,
+    /// Optional inline result filter expression.
+    pub filter_string: Option<String>,
+    /// Whether pagination settings in the filter are ignored.
+    pub ignore_pagination: Option<bool>,
+    /// Whether lean report data is generated.
+    pub lean: Option<bool>,
+    /// Whether note details are included.
+    pub notes_details: Option<bool>,
+    /// Whether override details are included.
+    pub overrides_details: Option<bool>,
+    /// Whether result tags are included.
+    pub result_tags: Option<bool>,
+}
+
 impl GetReportExportOpts {
     /// Create export options for a report format.
     #[must_use]
@@ -283,6 +305,31 @@ pub fn get_report_export_with_opts(
         opts.filter_id.as_ref(),
     );
     ReportExportCommand(cmd)
+}
+
+/// Build an asynchronous `export_scan_report` request.
+///
+/// The command was added without a distinct GMP version. Callers using the
+/// high-level client must first confirm it through the server's XML `help`
+/// command listing.
+#[must_use]
+pub fn export_scan_report(report_id: &EntityId, opts: ExportScanReportOpts) -> impl Request {
+    let mut cmd = XmlCommand::new("export_scan_report").attribute("report_id", report_id.as_str());
+    if let Some(format_id) = opts.format_id {
+        cmd.set_attribute("format_id", format_id.as_str());
+    }
+    if let Some(config_id) = opts.config_id {
+        cmd.set_attribute("config_id", config_id.as_str());
+    }
+    if let Some(filter_string) = opts.filter_string {
+        cmd.set_attribute("filter", &filter_string);
+    }
+    set_optional_bool_attr(&mut cmd, "ignore_pagination", opts.ignore_pagination);
+    set_optional_bool_attr(&mut cmd, "lean", opts.lean);
+    set_optional_bool_attr(&mut cmd, "notes_details", opts.notes_details);
+    set_optional_bool_attr(&mut cmd, "overrides_details", opts.overrides_details);
+    set_optional_bool_attr(&mut cmd, "result_tags", opts.result_tags);
+    cmd
 }
 
 /// Build a `delete_report` request.

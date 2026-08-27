@@ -205,6 +205,20 @@ impl HelpResponse {
             schema,
         })
     }
+
+    /// Return whether an XML command listing advertises `command_name`.
+    ///
+    /// `None` means the response did not include a structured command listing,
+    /// so absence cannot be established from this response.
+    #[must_use]
+    pub fn supports_command(&self, command_name: &str) -> Option<bool> {
+        self.schema.as_ref().map(|schema| {
+            schema
+                .commands
+                .iter()
+                .any(|command| command.name == command_name)
+        })
+    }
 }
 
 fn collect_help_commands(
@@ -379,6 +393,7 @@ mod tests {
             "Available commands: get_tasks, get_alerts"
         );
         assert!(parsed.schema.is_none());
+        assert_eq!(parsed.supports_command("get_tasks"), None);
     }
 
     #[test]
@@ -393,7 +408,7 @@ mod tests {
         );
 
         let parsed = HelpResponse::from_response(&response).expect("brief XML help parse");
-        let schema = parsed.schema.expect("schema");
+        let schema = parsed.schema.as_ref().expect("schema");
 
         assert!(parsed.help_text.is_empty());
         assert_eq!(schema.format.as_deref(), Some("XML"));
@@ -402,6 +417,8 @@ mod tests {
         assert_eq!(schema.commands.len(), 2);
         assert_eq!(schema.commands[0].name, "get_tasks");
         assert_eq!(schema.commands[0].summary.as_deref(), Some("Get tasks"));
+        assert_eq!(parsed.supports_command("get_tasks"), Some(true));
+        assert_eq!(parsed.supports_command("export_scan_report"), Some(false));
     }
 
     #[test]

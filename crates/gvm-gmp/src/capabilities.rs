@@ -39,18 +39,39 @@ pub struct CommandCapability {
     pub min_version: Option<GmpVersion>,
     /// Public evidence qualification for current gvmd support.
     pub gvmd_evidence: GvmdEvidence,
+    /// Whether callers must confirm availability from the server's `help`
+    /// command listing instead of inferring it from the negotiated GMP version.
+    pub requires_help_discovery: bool,
 }
 
 impl CommandCapability {
     /// Return whether this command is available in the negotiated GMP version.
     #[must_use]
     pub fn available_in(self, version: GmpVersion) -> bool {
+        !self.requires_help_discovery && self.min_version.is_none_or(|minimum| version >= minimum)
+    }
+
+    /// Return whether the negotiated version permits attempting this command.
+    ///
+    /// A `true` result is not proof of availability when
+    /// [`Self::requires_help_discovery`] is set.
+    #[must_use]
+    pub fn permitted_in(self, version: GmpVersion) -> bool {
         self.min_version.is_none_or(|minimum| version >= minimum)
     }
 }
 
+macro_rules! requires_help_discovery {
+    () => {
+        false
+    };
+    (Help) => {
+        true
+    };
+}
+
 macro_rules! command_capabilities {
-    ($(($name:literal, $support:ident, $min_version:expr, $evidence:ident),)+) => {
+    ($(($name:literal, $support:ident, $min_version:expr, $evidence:ident $(, $discovery:ident)?),)+) => {
         /// Authoritative, name-sorted command capability registry.
         pub static COMMAND_CAPABILITIES: &[CommandCapability] = &[
             $(CommandCapability {
@@ -58,6 +79,7 @@ macro_rules! command_capabilities {
                 support: MockSupport::$support,
                 min_version: $min_version,
                 gvmd_evidence: GvmdEvidence::$evidence,
+                requires_help_discovery: requires_help_discovery!($($discovery)?),
             },)+
         ];
 
@@ -123,6 +145,7 @@ command_capabilities! {
     ("delete_web_application_target", Stateful, Some(GmpVersion(22, 8)), PinnedSchema),
     ("describe_auth", EchoOnly, None, PinnedSchema),
     ("empty_trashcan", Stateful, None, PinnedSchema),
+    ("export_scan_report", Stateful, Some(GmpVersion(22, 7)), PinnedSchema, Help),
     ("get_agent_groups", Stateful, Some(GmpVersion(22, 8)), PinnedSchema),
     ("get_agent_installer_instruction", Fixture, Some(GmpVersion(22, 8)), PinnedSchema),
     ("get_agent_support_bundle", Fixture, Some(GmpVersion(22, 8)), PinnedSchema),
@@ -254,6 +277,13 @@ pub fn minimum_version_for_command(name: &str) -> Option<GmpVersion> {
     }
 }
 
+/// Return whether a command needs positive availability confirmation from a
+/// parsed XML `help` command listing.
+#[must_use]
+pub fn command_requires_help_discovery(name: &str) -> bool {
+    command_capability(name).is_some_and(|capability| capability.requires_help_discovery)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,6 +304,12 @@ mod tests {
 
         let reports = command_capability("get_reports").expect("known command");
         assert!(reports.available_in(GmpVersion(22, 4)));
+        let export = command_capability("export_scan_report").expect("known discoverable command");
+        assert!(!export.permitted_in(GmpVersion(22, 6)));
+        assert!(export.permitted_in(GmpVersion(22, 7)));
+        assert!(!export.available_in(GmpVersion(22, 7)));
+        assert!(!export.available_in(GmpVersion(22, 8)));
+        assert!(export.requires_help_discovery);
         let audit_report =
             command_capability("get_audit_report").expect("known structured audit command");
         assert!(!audit_report.available_in(GmpVersion(22, 6)));

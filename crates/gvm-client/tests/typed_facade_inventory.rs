@@ -76,6 +76,7 @@ const INTEGRATION_COVERED: &[&str] = &[
     "get_report_closed_cves",
     "get_report_export",
     "get_report_export_with_opts",
+    "export_scan_report",
     "get_results",
     "get_feeds",
     "get_feed",

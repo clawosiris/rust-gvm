@@ -219,6 +219,37 @@ fn test_report_export_with_combined_options() {
 }
 
 #[test]
+fn test_export_scan_report_with_all_current_attributes_and_escaping() {
+    assert_eq!(
+        xml(export_scan_report(
+            &id("11111111-1111-1111-1111-111111111111"),
+            ExportScanReportOpts {
+                format_id: Some(id("22222222-2222-2222-2222-222222222222")),
+                config_id: Some(id("33333333-3333-3333-3333-333333333333")),
+                filter_string: Some("severity>5 & name='quoted'".into()),
+                ignore_pagination: Some(true),
+                lean: Some(false),
+                notes_details: Some(true),
+                overrides_details: Some(false),
+                result_tags: Some(true),
+            },
+        )),
+        "<export_scan_report config_id=\"33333333-3333-3333-3333-333333333333\" filter=\"severity&gt;5 &amp; name=&apos;quoted&apos;\" format_id=\"22222222-2222-2222-2222-222222222222\" ignore_pagination=\"1\" lean=\"0\" notes_details=\"1\" overrides_details=\"0\" report_id=\"11111111-1111-1111-1111-111111111111\" result_tags=\"1\"/>"
+    );
+}
+
+#[test]
+fn test_export_scan_report_allows_source_default_format() {
+    assert_eq!(
+        xml(export_scan_report(
+            &id("11111111-1111-1111-1111-111111111111"),
+            ExportScanReportOpts::default(),
+        )),
+        "<export_scan_report report_id=\"11111111-1111-1111-1111-111111111111\"/>"
+    );
+}
+
+#[test]
 fn test_report_helper_commands() {
     assert_eq!(
         xml(get_report_hosts(
