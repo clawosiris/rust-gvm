@@ -15,7 +15,7 @@ use crate::error::{ConnectionError, Result};
 use russh::client;
 use russh::keys::agent::client::AgentClient;
 use russh::keys::ssh_key::{HashAlg, PublicKey};
-use russh::keys::{self, PrivateKeyWithHashAlg};
+use russh::keys::{self, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use russh::{AgentAuthError, Channel, ChannelMsg, Disconnect};
 
 /// Configuration for SSH tunnel connections.
@@ -363,9 +363,10 @@ impl client::Handler for SshServerKeyVerifier {
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &PublicKey,
+        server_public_key: &PublicKeyOrCertificate,
     ) -> std::result::Result<bool, Self::Error> {
-        self.check_server_key_with(server_public_key, keys::check_known_hosts)
+        let server_public_key = server_public_key.public_key();
+        self.check_server_key_with(&server_public_key, keys::check_known_hosts)
     }
 }
 
@@ -828,7 +829,8 @@ mod tests {
         let mut verifier =
             SshServerKeyVerifier::new("scanner.example", 22, SshHostKeyPolicy::AcceptAll);
 
-        let accepted = tokio_test::block_on(verifier.check_server_key(&public_key)).expect("ok");
+        let server_key = public_key.clone().into();
+        let accepted = tokio_test::block_on(verifier.check_server_key(&server_key)).expect("ok");
 
         assert!(accepted);
     }
@@ -868,14 +870,15 @@ mod tests {
             SshHostKeyPolicy::Fingerprint(fingerprint.clone()),
         );
 
-        let accepted = tokio_test::block_on(verifier.check_server_key(&public_key)).expect("ok");
+        let server_key = public_key.clone().into();
+        let accepted = tokio_test::block_on(verifier.check_server_key(&server_key)).expect("ok");
         let rejected = tokio_test::block_on(
             SshServerKeyVerifier::new(
                 "scanner.example",
                 22,
                 SshHostKeyPolicy::Fingerprint("invalid".into()),
             )
-            .check_server_key(&public_key),
+            .check_server_key(&server_key),
         )
         .expect("ok");
 
@@ -909,14 +912,15 @@ mod tests {
             2222,
             SshHostKeyPolicy::KnownHostsFile(path.clone()),
         );
+        let server_key = public_key.clone().into();
         let accepted =
-            tokio_test::block_on(matching.check_server_key(&public_key)).expect("known host check");
+            tokio_test::block_on(matching.check_server_key(&server_key)).expect("known host check");
         let mut unknown = SshServerKeyVerifier::new(
             "other.example",
             2222,
             SshHostKeyPolicy::KnownHostsFile(path),
         );
-        let rejected = tokio_test::block_on(unknown.check_server_key(&public_key))
+        let rejected = tokio_test::block_on(unknown.check_server_key(&server_key))
             .expect("unknown host check");
 
         assert!(accepted);
