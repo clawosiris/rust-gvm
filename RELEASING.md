@@ -5,6 +5,11 @@ Releases are managed via the repository's
 
 ## How It Works
 
+First, update `[workspace.package].version` and `Cargo.lock` in a normal pull
+request. Merge that pull request through the protected `main` branch after all
+required review and checks pass. Then dispatch the release workflow with that
+exact version.
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                  rust-gvm Orchestrated Release                           │
@@ -14,8 +19,8 @@ Releases are managed via the repository's
                       ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                    release-orchestrated.yml                              │
-│  1. Creates release via pontos (changelog, version bump, GitHub release) │
-│  2. Pushes tag v<version>                                                │
+│  1. Validates the version already merged through protected main          │
+│  2. Creates the changelog, tag, and GitHub release via pontos            │
 │  3. Waits for release.yml to complete                                    │
 └─────────────────────┬───────────────────────────────────────────────────┘
                       │ tag push triggers
