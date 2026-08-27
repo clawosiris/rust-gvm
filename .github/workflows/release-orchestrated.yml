@@ -1,4 +1,4 @@
-# Orchestrated Release — dispatch with an explicit version and release type.
+# Orchestrated Release — dispatch with an explicit version.
 #
 # This workflow:
 # 1. Validates the version already merged through the protected branch
@@ -17,11 +17,6 @@ on:
         description: "Release version (without 'v' prefix)"
         required: true
         type: string
-      release-type:
-        description: "Release type (alpha, beta, release-candidate, patch, minor, major)"
-        required: false
-        type: string
-        default: "patch"
 
 permissions:
   contents: read
@@ -72,7 +67,7 @@ jobs:
 
       - name: Create release with pontos
         env:
-          GITHUB_USER: ${{ vars.RELEASE_USER || 'clawosiris' }}
+          GITHUB_USER: ${{ vars.RELEASE_USER || github.actor }}
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           ARGS="--release-version ${{ inputs.version }}"
@@ -88,12 +83,35 @@ jobs:
 
           pontos-release create $ARGS --repository ${{ github.repository }}
 
-      - name: Trigger release.yml and wait for completion
-        uses: greenbone/actions/trigger-workflow@cdaf49a9913e2944bfb5ebc1e333acadaeb3d16d # v3.36.15
-        with:
-          token: ${{ secrets.RELEASE_TOKEN }}
-          repository: ${{ github.repository }}
-          workflow: release.yml
-          ref: v${{ inputs.version }}
-          wait-for-completion-timeout: "1800"
-          wait-for-completion-interval: "30"
+      - name: Wait for release.yml triggered by tag push
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          RUN_ID=""
+          for attempt in $(seq 1 30); do
+            RUN_ID="$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow release.yml \
+              --event push \
+              --branch "v${RELEASE_VERSION}" \
+              --limit 20 \
+              --json databaseId,headSha \
+              --jq '.[] | select(.headSha == env.RELEASE_SHA) | .databaseId' \
+              | head -n 1)"
+            if [[ -n "$RUN_ID" ]]; then
+              break
+            fi
+            sleep 10
+          done
+
+          if [[ -z "$RUN_ID" ]]; then
+            echo "release.yml did not start for v${RELEASE_VERSION} at ${RELEASE_SHA}" >&2
+            exit 1
+          fi
+
+          gh run watch "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --interval 30 \
+            --exit-status

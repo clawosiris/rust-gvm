@@ -12,10 +12,10 @@ exact version.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                  rust-gvm Orchestrated Release                           │
-│  (workflow_dispatch with an explicit version)                            │
+│                        Protected main                                    │
+│  Version and Cargo.lock update merged through a reviewed pull request    │
 └─────────────────────┬───────────────────────────────────────────────────┘
-                      │ triggers via greenbone/actions/trigger-workflow
+                      │ workflow_dispatch with the exact merged version
                       ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                    release-orchestrated.yml                              │
@@ -35,19 +35,15 @@ exact version.
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Release Types
+## Versioning
 
-| Type | Command | Example Version |
-|------|---------|-----------------|
-| Patch | `patch` | `0.4.1` |
-| Minor | `minor` | `0.5.0` |
-| Major | `major` | `1.0.0` |
-| Alpha | `alpha: true` | `0.5.0-alpha.1` |
-| Release Candidate | `release-candidate: true` | `0.5.0-rc.1` |
+The workflow accepts the exact semantic version already merged to `main`.
+Versions containing a pre-release suffix, such as `0.6.0-alpha.1` or
+`0.6.0-rc.1`, are published as GitHub pre-releases automatically.
 
 ## Do NOT
 
-- Trigger `release-orchestrated.yml` with the intended version and release type
+- **Do NOT** dispatch a version that is not already merged to `main`
 - **Do NOT** push version tags manually — let pontos handle it
 - **Do NOT** create GitHub releases manually — pontos + release.yml handle everything
 
