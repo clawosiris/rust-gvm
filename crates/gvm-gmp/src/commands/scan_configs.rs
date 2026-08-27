@@ -444,9 +444,7 @@ fn validate_policy_import_xml(xml: &str) -> Result<(), ParseError> {
                     completed_root = true;
                 }
             }
-            Event::Text(event)
-                if depth == 0 && !std::str::from_utf8(event.as_ref())?.trim().is_empty() =>
-            {
+            Event::Text(event) if depth == 0 && !event.as_ref().trim().is_empty() => {
                 return invalid_policy_xml(if completed_root {
                     "text after root element"
                 } else {
@@ -479,8 +477,7 @@ fn strip_leading_xml_declaration(xml: &str) -> &str {
         .unwrap_or(xml)
 }
 
-fn validate_policy_import_root(root: &[u8]) -> Result<(), ParseError> {
-    let root = std::str::from_utf8(root)?;
+fn validate_policy_import_root(root: &str) -> Result<(), ParseError> {
     if root == "get_configs_response" {
         Ok(())
     } else {
@@ -532,9 +529,7 @@ fn validate_scan_config_import_xml(xml: &str) -> Result<(), ParseError> {
                     completed_root = true;
                 }
             }
-            Event::Text(event)
-                if depth == 0 && !std::str::from_utf8(event.as_ref())?.trim().is_empty() =>
-            {
+            Event::Text(event) if depth == 0 && !event.as_ref().trim().is_empty() => {
                 return invalid_scan_config_xml(if completed_root {
                     "text after root element"
                 } else {
@@ -559,8 +554,7 @@ fn validate_scan_config_import_xml(xml: &str) -> Result<(), ParseError> {
     }
 }
 
-fn validate_scan_config_import_root(root: &[u8]) -> Result<(), ParseError> {
-    let root = std::str::from_utf8(root)?;
+fn validate_scan_config_import_root(root: &str) -> Result<(), ParseError> {
     if root == "get_configs_response" {
         Ok(())
     } else {

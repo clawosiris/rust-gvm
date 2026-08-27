@@ -138,7 +138,7 @@ struct FrameProgress<'a> {
     declaration_allowed: &'a mut bool,
     resume_offset: &'a mut usize,
     frame_end: &'a mut Option<usize>,
-    element_names: &'a mut Vec<Vec<u8>>,
+    element_names: &'a mut Vec<String>,
     trailing_text_brackets: &'a mut u8,
     pending_token: &'a mut Option<PendingToken>,
 }
@@ -218,12 +218,12 @@ impl FrameProgress<'_> {
         accept_declaration(declaration, *self.seen_start, self.declaration_allowed)
     }
 
-    fn accept_comment(&mut self, comment: &[u8]) -> Result<(), ProtocolError> {
+    fn accept_comment(&mut self, comment: &str) -> Result<(), ProtocolError> {
         *self.trailing_text_brackets = 0;
         validate_misc(comment, *self.seen_start, self.declaration_allowed)
     }
 
-    fn accept_processing_instruction(&mut self, instruction: &[u8]) -> Result<(), ProtocolError> {
+    fn accept_processing_instruction(&mut self, instruction: &str) -> Result<(), ProtocolError> {
         *self.trailing_text_brackets = 0;
         validate_processing_instruction(instruction, *self.seen_start, self.declaration_allowed)
     }
@@ -283,7 +283,7 @@ pub struct XmlReader {
     declaration_allowed: bool,
     resume_offset: usize,
     frame_end: Option<usize>,
-    element_names: Vec<Vec<u8>>,
+    element_names: Vec<String>,
     trailing_text_brackets: u8,
     pending_token: Option<PendingToken>,
 }
@@ -526,7 +526,12 @@ impl XmlReader {
         let unparsed = &buffer[*progress.resume_offset..];
         let bom_len = usize::from(*progress.resume_offset == 0 && unparsed.starts_with(UTF8_BOM))
             * UTF8_BOM.len();
-        let mut reader = configured_reader(unparsed);
+        let parseable_len = match std::str::from_utf8(unparsed) {
+            Ok(_) => unparsed.len(),
+            Err(error) if error.error_len().is_none() => error.valid_up_to(),
+            Err(error) => return Err(xml_parse_error(error)),
+        };
+        let mut reader = configured_reader(&unparsed[..parseable_len]);
         let (mut event_buf, mut parsed_len) = (Vec::new(), 0_usize);
 
         loop {
@@ -601,11 +606,11 @@ fn configured_reader(input: &[u8]) -> Reader<&[u8]> {
 }
 
 fn validate_misc(
-    data: &[u8],
+    data: &str,
     seen_start: bool,
     declaration_allowed: &mut bool,
 ) -> Result<(), ProtocolError> {
-    validate_xml_bytes(data)?;
+    validate_xml_chars(data)?;
     if !seen_start {
         *declaration_allowed = false;
     }
@@ -613,18 +618,15 @@ fn validate_misc(
 }
 
 fn validate_processing_instruction(
-    data: &[u8],
+    data: &str,
     seen_start: bool,
     declaration_allowed: &mut bool,
 ) -> Result<(), ProtocolError> {
     validate_misc(data, seen_start, declaration_allowed)?;
-    let target_end = data
-        .iter()
-        .position(|byte| matches!(byte, b' ' | b'\t' | b'\r' | b'\n'))
-        .unwrap_or(data.len());
+    let target_end = data.find([' ', '\t', '\r', '\n']).unwrap_or(data.len());
     let target = &data[..target_end];
     validate_name(target)?;
-    if target.eq_ignore_ascii_case(b"xml") {
+    if target.eq_ignore_ascii_case("xml") {
         return Err(xml_parse_error(
             "processing instruction target 'xml' is reserved",
         ));
@@ -647,22 +649,22 @@ fn accept_declaration(
     Ok(())
 }
 
-fn validate_cdata(data: &[u8], seen_start: bool) -> Result<(), ProtocolError> {
+fn validate_cdata(data: &str, seen_start: bool) -> Result<(), ProtocolError> {
     if !seen_start {
         return Err(xml_parse_error("CDATA before root element"));
     }
-    validate_xml_bytes(data)
+    validate_xml_chars(data)
 }
 
 fn open_element(
     element: &BytesStart<'_>,
     seen_start: &mut bool,
-    element_names: &mut Vec<Vec<u8>>,
+    element_names: &mut Vec<String>,
     max_depth: usize,
 ) -> Result<(), ProtocolError> {
     validate_start(element)?;
     *seen_start = true;
-    element_names.push(element.name().as_ref().to_vec());
+    element_names.push(element.name().as_ref().to_string());
     if element_names.len() > max_depth {
         return Err(xml_parse_error(format!(
             "XML nesting exceeds configured limit of {max_depth}"
@@ -673,12 +675,12 @@ fn open_element(
 
 fn close_element(
     element: &BytesEnd<'_>,
-    element_names: &mut Vec<Vec<u8>>,
+    element_names: &mut Vec<String>,
 ) -> Result<bool, ProtocolError> {
     let Some(expected) = element_names.pop() else {
         return Err(xml_parse_error("unmatched closing tag"));
     };
-    if expected.as_slice() != element.name().as_ref() {
+    if expected != element.name().as_ref() {
         return Err(xml_parse_error("mismatched closing tag"));
     }
     Ok(element_names.is_empty())
@@ -686,7 +688,7 @@ fn close_element(
 
 fn closing_frame_end(
     element: &BytesEnd<'_>,
-    element_names: &mut Vec<Vec<u8>>,
+    element_names: &mut Vec<String>,
     buffer: &[u8],
     resume_offset: usize,
     parsed_len: usize,
@@ -731,23 +733,7 @@ fn validate_text(
     declaration_allowed: &mut bool,
     trailing_brackets: &mut u8,
 ) -> Result<bool, ProtocolError> {
-    let decoded = match std::str::from_utf8(text.as_ref()) {
-        Ok(text) => text,
-        Err(error) if error.error_len().is_none() => {
-            let prefix = std::str::from_utf8(&text.as_ref()[..error.valid_up_to()])
-                .map_err(xml_parse_error)?;
-            validate_xml_chars(prefix)?;
-            validate_character_data(prefix.as_bytes(), trailing_brackets)?;
-            if !seen_start && !prefix.chars().all(is_xml_whitespace) {
-                return Err(xml_parse_error("non-whitespace text before root element"));
-            }
-            if !seen_start && !prefix.is_empty() {
-                *declaration_allowed = false;
-            }
-            return Ok(true);
-        }
-        Err(error) => return Err(xml_parse_error(error)),
-    };
+    let decoded = text.as_ref();
 
     validate_xml_chars(decoded)?;
     validate_character_data(decoded.as_bytes(), trailing_brackets)?;
@@ -762,11 +748,11 @@ fn validate_text(
 
 fn validate_start(element: &BytesStart<'_>) -> Result<(), ProtocolError> {
     validate_name(element.name().as_ref())?;
-    validate_xml_bytes(element.as_ref())?;
+    validate_xml_chars(element.as_ref())?;
     for attribute in element.attributes() {
         let attribute = attribute.map_err(xml_parse_error)?;
         validate_name(attribute.key.as_ref())?;
-        if attribute.value.contains(&b'<') {
+        if attribute.value.contains('<') {
             return Err(xml_parse_error(
                 "attribute values cannot contain a literal '<'",
             ));
@@ -780,23 +766,23 @@ fn validate_start(element: &BytesStart<'_>) -> Result<(), ProtocolError> {
 }
 
 fn validate_declaration(declaration: &BytesDecl<'_>) -> Result<(), ProtocolError> {
-    validate_xml_bytes(declaration.as_ref())?;
-    let content = std::str::from_utf8(declaration.as_ref()).map_err(xml_parse_error)?;
+    validate_xml_chars(declaration.as_ref())?;
+    let content = declaration.as_ref();
     let start = BytesStart::from_content(content, b"xml".len());
     let mut fields = 0_usize;
     let mut saw_encoding = false;
 
     for attribute in start.attributes() {
         let attribute = attribute.map_err(xml_parse_error)?;
-        if attribute.value.contains(&b'<') {
+        if attribute.value.contains('<') {
             return Err(xml_parse_error(
                 "XML declaration values cannot contain a literal '<'",
             ));
         }
 
         match (fields, attribute.key.as_ref()) {
-            (0, b"version") if attribute.value.as_ref() == b"1.0" => {}
-            (0, b"version") => {
+            (0, "version") if attribute.value.as_ref() == "1.0" => {}
+            (0, "version") => {
                 return Err(xml_parse_error("only XML version 1.0 is supported"));
             }
             (0, _) => {
@@ -804,26 +790,26 @@ fn validate_declaration(declaration: &BytesDecl<'_>) -> Result<(), ProtocolError
                     "version must be the first XML declaration attribute",
                 ));
             }
-            (1, b"encoding") if attribute.value.eq_ignore_ascii_case(b"utf-8") => {
+            (1, "encoding") if attribute.value.eq_ignore_ascii_case("utf-8") => {
                 saw_encoding = true;
             }
-            (1, b"encoding") => {
+            (1, "encoding") => {
                 return Err(xml_parse_error("only UTF-8 XML declarations are supported"));
             }
-            (1, b"standalone") if matches!(attribute.value.as_ref(), b"yes" | b"no") => {}
-            (2, b"standalone")
-                if saw_encoding && matches!(attribute.value.as_ref(), b"yes" | b"no") => {}
-            (_, b"standalone") => {
+            (1, "standalone") if matches!(attribute.value.as_ref(), "yes" | "no") => {}
+            (2, "standalone")
+                if saw_encoding && matches!(attribute.value.as_ref(), "yes" | "no") => {}
+            (_, "standalone") => {
                 return Err(xml_parse_error(
                     "standalone must follow version and optional encoding and be 'yes' or 'no'",
                 ));
             }
-            (_, b"encoding") => {
+            (_, "encoding") => {
                 return Err(xml_parse_error(
                     "encoding must follow version and precede standalone",
                 ));
             }
-            (_, b"version") => {
+            (_, "version") => {
                 return Err(xml_parse_error("version may appear only once"));
             }
             _ => return Err(xml_parse_error("unknown XML declaration attribute")),
@@ -854,8 +840,7 @@ fn validate_reference(reference: &BytesRef<'_>) -> Result<(), ProtocolError> {
     if let Some(character) = reference.resolve_char_ref().map_err(xml_parse_error)? {
         return validate_xml_chars(&character.to_string());
     }
-    let reference = reference.decode().map_err(xml_parse_error)?;
-    if resolve_xml_entity(&reference).is_none() {
+    if resolve_xml_entity(reference.as_ref()).is_none() {
         return Err(xml_parse_error("unknown entity reference"));
     }
     Ok(())
@@ -888,8 +873,7 @@ fn validate_xml_chars(data: &str) -> Result<(), ProtocolError> {
     }
 }
 
-fn validate_name(name: &[u8]) -> Result<(), ProtocolError> {
-    let name = std::str::from_utf8(name).map_err(xml_parse_error)?;
+fn validate_name(name: &str) -> Result<(), ProtocolError> {
     let mut characters = name.chars();
     if !characters.next().is_some_and(is_xml_name_start) || !characters.all(is_xml_name_character) {
         return Err(xml_parse_error("invalid XML name"));

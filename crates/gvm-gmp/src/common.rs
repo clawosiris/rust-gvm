@@ -124,7 +124,7 @@ pub(crate) fn validate_single_xml_document(
                 }
             }
             Event::Text(event) => {
-                if depth == 0 && !std::str::from_utf8(event.as_ref())?.trim().is_empty() {
+                if depth == 0 && !event.as_ref().trim().is_empty() {
                     return Err(ParseError::InvalidValue {
                         field: field.to_string(),
                         value: if completed_root {
@@ -161,14 +161,13 @@ pub(crate) fn validate_single_xml_document(
 }
 
 fn validate_root_name(
-    actual: &[u8],
+    actual: &str,
     field: &str,
     expected_root: Option<&str>,
 ) -> Result<(), ParseError> {
     let Some(expected_root) = expected_root else {
         return Ok(());
     };
-    let actual = std::str::from_utf8(actual)?;
     if actual == expected_root {
         return Ok(());
     }

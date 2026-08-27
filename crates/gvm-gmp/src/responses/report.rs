@@ -656,13 +656,13 @@ impl ReportExport {
 
         loop {
             match reader.read_event()? {
-                Event::Start(event) if event.name().as_ref() == b"get_reports_response" => {
+                Event::Start(event) if event.name().as_ref() == "get_reports_response" => {
                     ensure_success_response(&event)?;
                 }
-                Event::Empty(event) if event.name().as_ref() == b"get_reports_response" => {
+                Event::Empty(event) if event.name().as_ref() == "get_reports_response" => {
                     ensure_success_response(&event)?;
                 }
-                Event::Start(event) if event.name().as_ref() == b"report" && !saw_report => {
+                Event::Start(event) if event.name().as_ref() == "report" && !saw_report => {
                     saw_report = true;
                     content_type = parse_string_attr(&event, "content_type");
                     extension = parse_string_attr(&event, "extension");
@@ -671,7 +671,7 @@ impl ReportExport {
                     if xml_depth > 0 {
                         xml_depth += 1;
                         serialize_event(&mut nested_xml, Event::Start(event.into_owned()))?;
-                    } else if envelope_depth == 0 && event.name().as_ref() == b"report" {
+                    } else if envelope_depth == 0 && event.name().as_ref() == "report" {
                         xml_depth = 1;
                         serialize_event(&mut nested_xml, Event::Start(event.into_owned()))?;
                     } else {
@@ -681,12 +681,12 @@ impl ReportExport {
                 Event::Empty(event)
                     if saw_report
                         && (xml_depth > 0
-                            || (envelope_depth == 0 && event.name().as_ref() == b"report")) =>
+                            || (envelope_depth == 0 && event.name().as_ref() == "report")) =>
                 {
                     serialize_event(&mut nested_xml, Event::Empty(event.into_owned()))?;
                 }
                 Event::End(event) if saw_report => {
-                    if event.name().as_ref() == b"report" && envelope_depth == 0 && xml_depth == 0 {
+                    if event.name().as_ref() == "report" && envelope_depth == 0 && xml_depth == 0 {
                         break;
                     }
                     if xml_depth > 0 {
@@ -700,9 +700,9 @@ impl ReportExport {
                     if xml_depth > 0 {
                         serialize_event(&mut nested_xml, Event::Text(event.into_owned()))?;
                     } else if envelope_depth == 0 {
-                        let chunk = event.decode().map_err(quick_xml::Error::from)?;
+                        let chunk = event.as_ref();
                         if !chunk.trim().is_empty() {
-                            base64_body.push_str(&chunk);
+                            base64_body.push_str(chunk);
                         }
                     }
                 }
@@ -710,9 +710,9 @@ impl ReportExport {
                     if xml_depth > 0 {
                         serialize_event(&mut nested_xml, Event::CData(event.into_owned()))?;
                     } else if envelope_depth == 0 {
-                        let chunk = String::from_utf8_lossy(event.as_ref());
+                        let chunk = event.as_ref();
                         if !chunk.trim().is_empty() {
-                            base64_body.push_str(&chunk);
+                            base64_body.push_str(chunk);
                         }
                     }
                 }
@@ -782,8 +782,8 @@ fn parse_string_attr(event: &quick_xml::events::BytesStart<'_>, name: &str) -> O
     event
         .attributes()
         .flatten()
-        .find(|attribute| attribute.key.as_ref() == name.as_bytes())
-        .map(|attribute| String::from_utf8_lossy(attribute.value.as_ref()).into_owned())
+        .find(|attribute| attribute.key.as_ref() == name)
+        .map(|attribute| attribute.value.into_owned())
 }
 
 fn serialize_event(buffer: &mut Vec<u8>, event: Event<'_>) -> Result<(), ParseError> {

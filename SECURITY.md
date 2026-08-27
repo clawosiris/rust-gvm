@@ -70,7 +70,7 @@ crate from the resolved graph while retaining compression and AWS-LC.
 
 - `cargo clippy` with `-D warnings` in CI
 - `#[deny(unsafe_code)]` — no unsafe blocks in any crate
-- MSRV tested (currently Rust 1.85.0)
+- MSRV tested (currently Rust 1.86.0)
 - All XML parsing uses `quick-xml` with default limits (no unbounded expansion)
 
 ## Security-Relevant Architecture

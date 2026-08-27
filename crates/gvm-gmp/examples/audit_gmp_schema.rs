@@ -36,21 +36,21 @@ fn schema_commands(path: &Path) -> Result<BTreeSet<String>, Box<dyn Error>> {
     loop {
         match reader.read_event_into(&mut buffer)? {
             Event::Start(element) => {
-                if depth == 1 && element.name().as_ref() == b"command" {
+                if depth == 1 && element.name().as_ref() == "command" {
                     in_top_level_command = true;
-                } else if in_top_level_command && depth == 2 && element.name().as_ref() == b"name" {
+                } else if in_top_level_command && depth == 2 && element.name().as_ref() == "name" {
                     capture_name = true;
                 }
                 depth += 1;
             }
             Event::Text(text) if capture_name => {
-                commands.insert(text.decode()?.into_owned());
+                commands.insert(text.as_ref().to_owned());
             }
             Event::End(element) => {
                 depth = depth.saturating_sub(1);
-                if element.name().as_ref() == b"name" {
+                if element.name().as_ref() == "name" {
                     capture_name = false;
-                } else if depth == 1 && element.name().as_ref() == b"command" {
+                } else if depth == 1 && element.name().as_ref() == "command" {
                     in_top_level_command = false;
                 }
             }

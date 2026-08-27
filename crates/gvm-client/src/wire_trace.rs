@@ -8,7 +8,7 @@ use quick_xml::{Reader, Writer};
 
 const NON_UTF8_REDACTED: &[u8] = b"<non-utf8-redacted/>";
 const MALFORMED_XML_REDACTED: &[u8] = b"<malformed-xml-redacted/>";
-const REDACTED: &[u8] = b"redacted";
+const REDACTED: &str = "redacted";
 
 pub(super) fn redact_wire_bytes(bytes: &[u8]) -> Vec<u8> {
     let Ok(text) = std::str::from_utf8(bytes) else {
@@ -83,7 +83,7 @@ fn redact_xml(xml: &str) -> Option<Vec<u8>> {
                 }
             }
             Event::Text(text) => {
-                if stack.is_empty() && !text.as_ref().iter().all(u8::is_ascii_whitespace) {
+                if stack.is_empty() && !is_xml_whitespace(text.as_ref()) {
                     return None;
                 }
                 if sensitive_depth == 0 {
@@ -121,6 +121,11 @@ fn redact_xml(xml: &str) -> Option<Vec<u8>> {
     }
 }
 
+fn is_xml_whitespace(text: &str) -> bool {
+    text.chars()
+        .all(|character| character.is_ascii_whitespace())
+}
+
 fn write_general_reference(
     writer: &mut Writer<Vec<u8>>,
     reference: BytesRef<'_>,
@@ -142,10 +147,7 @@ fn valid_general_reference(reference: &BytesRef<'_>) -> bool {
             character,
             '\u{9}' | '\u{A}' | '\u{D}' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..='\u{10FFFF}'
         ),
-        Ok(None) => matches!(
-            reference.as_ref(),
-            b"lt" | b"gt" | b"amp" | b"apos" | b"quot"
-        ),
+        Ok(None) => matches!(reference.as_ref(), "lt" | "gt" | "amp" | "apos" | "quot"),
         Err(_) => false,
     }
 }
@@ -166,14 +168,11 @@ fn redact_attributes(
         let sensitive = is_sensitive_name(&key_name)
             || (key_name == "value"
                 && (credential_store_preference || is_sensitive_name(element_name)));
-        redacted.push_attribute((
-            key,
-            if sensitive {
-                REDACTED
-            } else {
-                attribute.value.as_ref()
-            },
-        ));
+        if sensitive {
+            redacted.push_attribute((key, REDACTED));
+        } else {
+            redacted.push_attribute(attribute);
+        }
     }
     Some(redacted)
 }
@@ -221,8 +220,8 @@ fn is_sensitive_name(name: &str) -> bool {
     )
 }
 
-fn local_name(name: &[u8]) -> Option<String> {
-    std::str::from_utf8(name).ok().map(str::to_ascii_lowercase)
+fn local_name(name: &str) -> Option<String> {
+    Some(name.to_ascii_lowercase())
 }
 
 #[cfg(test)]

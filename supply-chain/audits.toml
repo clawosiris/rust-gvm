@@ -55,6 +55,12 @@ criteria = "safe-to-deploy"
 delta = "0.40.1 -> 0.41.0"
 notes = "Reviewed 0.40.1 to 0.41.0 security release diff for RUSTSEC-2026-0194 and RUSTSEC-2026-0195; changes bound duplicate-attribute and namespace-declaration DoS paths."
 
+[[audits.quick-xml]]
+who = "Thoth"
+criteria = "safe-to-deploy"
+delta = "0.41.0 -> 0.42.0"
+notes = "Reviewed the complete 0.41.0 -> 0.42.0 delta: the release converts parser/event internals from byte buffers to UTF-8 strings, adds eager UTF-8 validation, and updates Serde/parser/writer APIs. There are no executable unsafe blocks, no new ambient network/process capabilities, and file access remains caller-directed reader construction. Upstream all-feature tests passed (1,614 passed, 12 ignored), and rust-gvm streaming, framing, parsing, and full-workspace all-feature tests pass after the API migration."
+
 [[audits.russh]]
 who = "Thoth"
 criteria = "safe-to-deploy"
