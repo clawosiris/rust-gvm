@@ -22,6 +22,14 @@ deliberately permits unknown raw commands for forward compatibility; standard
 mock responses reject commands absent from the registry. Explicit fixture and
 scenario configuration remains programmable by design.
 
+`export_scan_report` is the exception to pure version routing. It requires at
+least GMP 22.7, but it was added without a new GMP version: servers with and
+without the command can advertise 22.7 or 22.8. Call
+`GmpClient::discover_commands` (or the equivalent method on `GmpVersioned`) to
+parse and cache the XML `help` command listing before using its raw, versioned,
+or typed helper. The command is therefore represented in the registry and
+current-schema count but not in any version-only count above.
+
 `get_audit_report` and `get_audit_report_hosts` are gated at 22.7 and exposed
 through `Gmp227Commands` on both `Gmp227` and `GmpNext`. The placement follows
 the reviewed gvmd build contract rather than commit dates: default builds set
@@ -42,14 +50,14 @@ server advertises 22.8.
 
 ## Command and mock qualification
 
-The registry contains 157 wire command names:
+The registry contains 158 wire command names:
 
 | Qualification | Count | Meaning |
 |---|---:|---|
-| Stateful mock behavior | 141 | Bespoke behavior or deterministic generic CRUD |
+| Stateful mock behavior | 142 | Bespoke behavior or deterministic generic CRUD |
 | Fixture mock behavior | 10 | Deterministic built-in fixture response |
 | Echo-only mock behavior | 6 | Intentionally limited to a generic success response |
-| Current pinned `GMP.xml.in` | 154 | Present in the public schema snapshot |
+| Current pinned `GMP.xml.in` | 155 | Present in the public schema snapshot |
 | Public gvmd source only | 2 | Implemented publicly but omitted from that schema |
 | Legacy compatibility | 1 | Retained for public legacy-client compatibility |
 
@@ -73,19 +81,22 @@ The three commands outside the pinned schema are explicitly qualified:
 ## Pinned public evidence and drift audit
 
 The deterministic snapshot is extracted from Greenbone's public gvmd commit
-[`7ac172654b703d9f202481f7a53453964061de2f`](https://github.com/greenbone/gvmd/commit/7ac172654b703d9f202481f7a53453964061de2f),
+[`55e5d4c657c48ce52ee340c2439680418bfe1a4d`](https://github.com/greenbone/gvmd/commit/55e5d4c657c48ce52ee340c2439680418bfe1a4d),
 file
-[`src/schema_formats/XML/GMP.xml.in`](https://github.com/greenbone/gvmd/blob/7ac172654b703d9f202481f7a53453964061de2f/src/schema_formats/XML/GMP.xml.in).
+[`src/schema_formats/XML/GMP.xml.in`](https://github.com/greenbone/gvmd/blob/55e5d4c657c48ce52ee340c2439680418bfe1a4d/src/schema_formats/XML/GMP.xml.in).
 The snapshot records SHA-256
-`d0f8314fcd0bc15e2e07881a336cef3e5cfa8cc2a9b263abb510fe6aad124b7b`
-and its 154 unique top-level commands. The structured audit contracts are
+`ee7054ffffbdce859f90086b28cdc876eebb8225a2a53ad0f7e8100084e1e0b0`
+and its 155 unique top-level commands. The asynchronous export contract is
 backed by the same commit's
-[`get_audit_report`](https://github.com/greenbone/gvmd/blob/7ac172654b703d9f202481f7a53453964061de2f/src/gmp_audit_report.c),
-[`get_audit_report_hosts`](https://github.com/greenbone/gvmd/blob/7ac172654b703d9f202481f7a53453964061de2f/src/gmp_audit_report_hosts.c),
+[`export_scan_report`](https://github.com/greenbone/gvmd/blob/55e5d4c657c48ce52ee340c2439680418bfe1a4d/src/gmp_scan_report_exports.c).
+The structured audit contracts are
+backed by the same commit's
+[`get_audit_report`](https://github.com/greenbone/gvmd/blob/55e5d4c657c48ce52ee340c2439680418bfe1a4d/src/gmp_audit_report.c),
+[`get_audit_report_hosts`](https://github.com/greenbone/gvmd/blob/55e5d4c657c48ce52ee340c2439680418bfe1a4d/src/gmp_audit_report_hosts.c),
 and
-[`GMP_VERSION` selection](https://github.com/greenbone/gvmd/blob/7ac172654b703d9f202481f7a53453964061de2f/CMakeLists.txt).
+[`GMP_VERSION` selection](https://github.com/greenbone/gvmd/blob/55e5d4c657c48ce52ee340c2439680418bfe1a4d/CMakeLists.txt).
 The source-only qualification is backed by the same commit's
-[credential-store implementation](https://github.com/greenbone/gvmd/blob/7ac172654b703d9f202481f7a53453964061de2f/src/gmp_credential_stores.c).
+[credential-store implementation](https://github.com/greenbone/gvmd/blob/55e5d4c657c48ce52ee340c2439680418bfe1a4d/src/gmp_credential_stores.c).
 The legacy qualification is backed by public python-gvm commit
 [`2bb100fd03f02e598f046e2032e12550b5b14751`](https://github.com/greenbone/python-gvm/blob/2bb100fd03f02e598f046e2032e12550b5b14751/gvm/protocols/gmp/requests/v224/_tls_certificates.py).
 

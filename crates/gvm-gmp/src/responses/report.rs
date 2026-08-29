@@ -76,6 +76,19 @@ pub struct CreateReportResponse {
     pub id: crate::EntityId,
 }
 
+/// Response from an asynchronous `export_scan_report` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ExportScanReportResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub id: crate::EntityId,
+    /// Current processing status for a reused export. Newly created exports
+    /// omit this attribute in current gvmd responses.
+    pub export_status: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -376,6 +389,24 @@ impl CreateReportResponse {
             status,
             status_text,
             id,
+        })
+    }
+}
+
+impl ExportScanReportResponse {
+    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+        let (status, status_text) = status_from_response(response)?;
+        let root = parse_document(response.data())?;
+        let id = parse_entity_id(
+            root.attr("id")
+                .ok_or_else(|| ParseError::MissingElement("id".to_string()))?,
+            "id",
+        )?;
+        Ok(Self {
+            status,
+            status_text,
+            id,
+            export_status: root.attr("export_status").map(ToString::to_string),
         })
     }
 }
@@ -1278,6 +1309,46 @@ mod tests {
         assert_eq!(export.bytes, b"Hello PDF");
         assert_eq!(export.content_type.as_deref(), Some("application/pdf"));
         assert_eq!(export.extension.as_deref(), Some("pdf"));
+    }
+
+    #[test]
+    fn parses_created_asynchronous_scan_report_export_without_status() {
+        let response = Response::from(
+            r#"<export_scan_report_response status="201" status_text="OK, resource created" id="e6e2f6e1-daa9-411d-aa5a-1321c9894ab9"/>"#,
+        );
+
+        let parsed = ExportScanReportResponse::from_response(&response).expect("created parse");
+
+        assert_eq!(parsed.status, 201);
+        assert_eq!(parsed.id.as_str(), "e6e2f6e1-daa9-411d-aa5a-1321c9894ab9");
+        assert_eq!(parsed.export_status, None);
+    }
+
+    #[test]
+    fn parses_reused_asynchronous_scan_report_export_with_status() {
+        let response = Response::from(
+            r#"<export_scan_report_response status="200" status_text="OK" id="e6e2f6e1-daa9-411d-aa5a-1321c9894ab9" export_status="pending"/>"#,
+        );
+
+        let parsed = ExportScanReportResponse::from_response(&response).expect("reused parse");
+
+        assert_eq!(parsed.status, 200);
+        assert_eq!(parsed.export_status.as_deref(), Some("pending"));
+    }
+
+    #[test]
+    fn rejects_asynchronous_scan_report_export_error_response() {
+        let response = Response::from(
+            r#"<export_scan_report_response status="400" status_text="Missing or invalid report_id"/>"#,
+        );
+
+        let error = ExportScanReportResponse::from_response(&response).expect_err("server error");
+
+        assert!(matches!(
+            error,
+            ParseError::ServerError { status: 400, message }
+                if message == "Missing or invalid report_id"
+        ));
     }
 
     #[test]

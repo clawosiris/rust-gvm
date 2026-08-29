@@ -13,10 +13,18 @@ pub fn minimum_version_for_command(command_name: &str) -> Option<GmpVersion> {
     gvm_gmp::capabilities::minimum_version_for_command(command_name)
 }
 
-/// Return whether a command is supported by the negotiated version.
+/// Return whether the negotiated version alone proves command support.
+///
+/// This returns `false` for commands that require positive XML `help`
+/// discovery even when their version floor is satisfied. Use
+/// [`crate::GmpClient::supports_command`] after discovery for the client's
+/// complete current knowledge.
 #[must_use]
 pub fn command_supported(command_name: &str, version: GmpVersion) -> bool {
-    minimum_version_for_command(command_name).is_none_or(|minimum| version >= minimum)
+    gvm_gmp::capabilities::command_capability(command_name).map_or_else(
+        || minimum_version_for_command(command_name).is_none_or(|minimum| version >= minimum),
+        |capability| capability.available_in(version),
+    )
 }
 
 /// Human-readable minimum version label for a version-gated command.
@@ -255,6 +263,16 @@ mod tests {
             minimum_version_for_command("create_web_application_target"),
             Some(GmpVersion(22, 8))
         );
+    }
+
+    #[test]
+    fn help_discovered_command_is_not_proven_by_version() {
+        assert_eq!(
+            minimum_version_for_command("export_scan_report"),
+            Some(GmpVersion(22, 7))
+        );
+        assert!(!command_supported("export_scan_report", GmpVersion(22, 7)));
+        assert!(!command_supported("export_scan_report", GmpVersion(22, 8)));
     }
 
     #[test]

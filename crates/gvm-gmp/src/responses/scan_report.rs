@@ -161,7 +161,7 @@ mod tests {
     #[test]
     fn parses_current_gvmd_scan_report_example() {
         // Copied from greenbone/gvmd GMP.xml.in at
-        // 7ac172654b703d9f202481f7a53453964061de2f.
+        // 55e5d4c657c48ce52ee340c2439680418bfe1a4d.
         let parsed = GetScanReportResponse::from_response(&Response::from(include_str!(
             "../../tests/data/get_scan_report.xml"
         )))

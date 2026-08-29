@@ -1,8 +1,8 @@
 # Extracted top-level GMP commands from public gvmd source.
 # Repository: https://github.com/greenbone/gvmd
-# Commit: 7ac172654b703d9f202481f7a53453964061de2f
+# Commit: 55e5d4c657c48ce52ee340c2439680418bfe1a4d
 # Path: src/schema_formats/XML/GMP.xml.in
-# GMP.xml.in SHA-256: d0f8314fcd0bc15e2e07881a336cef3e5cfa8cc2a9b263abb510fe6aad124b7b
+# GMP.xml.in SHA-256: ee7054ffffbdce859f90086b28cdc876eebb8225a2a53ad0f7e8100084e1e0b0
 authenticate
 create_agent_group
 create_alert
@@ -58,6 +58,7 @@ delete_user
 delete_web_application_target
 describe_auth
 empty_trashcan
+export_scan_report
 get_agent_groups
 get_agent_installer_instruction
 get_agent_support_bundle

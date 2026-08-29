@@ -8,9 +8,10 @@ use gvm_client::{
     AgentInstallerLanguage, CreateAgentGroupOpts, CreateAgentGroupTaskOpts,
     CreateOciImageTargetOpts, CreateOciImageTargetTaskOpts, CreateWebApplicationTargetOpts,
     CreateWebApplicationTaskOpts, CredentialStoreCredentialOpts, CredentialStoreCredentialType,
-    GetAgentsOpts, GetCredentialStoresOpts, Gmp226Commands, GmpNextCommands, GmpVersioned,
-    GvmError, ModifyAgentControlScanConfigOpts, ModifyAgentGroupOpts, ModifyAgentOpts,
-    ModifyCredentialStoreCredentialOpts, ModifyOciImageTargetOpts, ModifyWebApplicationTargetOpts,
+    ExportScanReportOpts, GetAgentsOpts, GetCredentialStoresOpts, Gmp226Commands, GmpNextCommands,
+    GmpVersioned, GvmError, ModifyAgentControlScanConfigOpts, ModifyAgentGroupOpts,
+    ModifyAgentOpts, ModifyCredentialStoreCredentialOpts, ModifyOciImageTargetOpts,
+    ModifyWebApplicationTargetOpts,
 };
 use gvm_client::{GmpClient, GmpNext};
 use gvm_connection::{GvmConnection, UnixSocketConnection};
@@ -729,6 +730,47 @@ async fn versioned_client_rejects_get_scan_report_before_next() {
             required: "22.8",
         } if command == "get_scan_report"
     ));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn versioned_scan_report_export_requires_then_uses_help_discovery() {
+    let Some(server) = stateful_server(MockVersion::V22_7).await else {
+        return;
+    };
+    let mut client = GmpVersioned::connect(unix_connection(&server))
+        .await
+        .expect("client should connect");
+    client
+        .call(gvm_gmp::commands::authentication::authenticate(
+            "admin", "admin",
+        ))
+        .await
+        .expect("authenticate should succeed");
+    let report_id = EntityId::new("11111111-1111-1111-1111-111111111111").expect("valid report ID");
+
+    let error = client
+        .export_scan_report(&report_id, ExportScanReportOpts::default())
+        .await
+        .expect_err("undiscovered export should fail");
+    assert!(matches!(
+        error,
+        GvmError::UnsupportedCommand {
+            command,
+            required: "positive XML help discovery",
+            ..
+        } if command == "export_scan_report"
+    ));
+
+    let help = client.discover_commands().await.expect("help discovery");
+    assert_eq!(help.supports_command("export_scan_report"), Some(true));
+    assert_eq!(client.supports_command("export_scan_report"), Some(true));
+    let error = client
+        .export_scan_report(&report_id, ExportScanReportOpts::default())
+        .await
+        .expect_err("missing report should reach the mock");
+    assert!(matches!(error, GvmError::Server { status: 404, .. }));
 
     server.shutdown().await;
 }
