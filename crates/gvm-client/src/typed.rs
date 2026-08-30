@@ -44,7 +44,8 @@ use gvm_gmp::commands::integration_configs::{
 };
 use gvm_gmp::commands::notes::{create_note, get_notes, GetNotesOpts, NoteOpts};
 use gvm_gmp::commands::nvts::{
-    get_nvt_families, get_nvts, get_scan_config_nvt, get_scan_config_nvts, GetNvtsOpts,
+    get_nvt_families, get_nvt_preference, get_nvt_preferences, get_nvts, get_scan_config_nvt,
+    get_scan_config_nvts, GetNvtPreferencesOpts, GetNvtsOpts,
 };
 use gvm_gmp::commands::oci_image_targets::{
     clone_oci_image_target, create_oci_image_target, delete_oci_image_target, get_oci_image_target,
@@ -83,9 +84,10 @@ use gvm_gmp::commands::results::{get_results, GetResultsOpts};
 use gvm_gmp::commands::roles::{create_role, get_roles, GetRolesOpts, RoleOpts};
 use gvm_gmp::commands::scan_configs::{
     clone_scan_config, create_scan_config, delete_scan_config, get_policies, get_policy,
-    get_scan_config, get_scan_configs, import_policy, modify_policy_set_comment,
-    modify_policy_set_name, modify_scan_config, modify_scan_config_set_comment,
-    modify_scan_config_set_name, sync_config, ConfigOpts, GetPolicyOpts, GetScanConfigsOpts,
+    get_scan_config, get_scan_config_preference, get_scan_config_preferences, get_scan_configs,
+    import_policy, modify_policy_set_comment, modify_policy_set_name, modify_scan_config,
+    modify_scan_config_set_comment, modify_scan_config_set_name, sync_config, ConfigOpts,
+    GetPolicyOpts, GetScanConfigPreferencesOpts, GetScanConfigsOpts,
 };
 use gvm_gmp::commands::scanners::{
     clone_scanner, create_scanner, delete_scanner, get_scanner, get_scanners, modify_scanner,
@@ -149,15 +151,15 @@ use gvm_gmp::responses::{
     GetFiltersResponse, GetGroupsResponse, GetHostsResponse, GetIntegrationConfigsResponse,
     GetNotesResponse, GetNvtFamiliesResponse, GetNvtsResponse, GetOciImageTargetsResponse,
     GetOperatingSystemAssetsResponse, GetOverridesResponse, GetPermissionsResponse,
-    GetPortListsResponse, GetReportApplicationsResponse, GetReportClosedCvesResponse,
-    GetReportConfigsResponse, GetReportCvesResponse, GetReportErrorsResponse,
-    GetReportFormatsResponse, GetReportHostsResponse, GetReportOperatingSystemsResponse,
-    GetReportPortsResponse, GetReportTlsCertificatesResponse, GetReportVulnsResponse,
-    GetReportsResponse, GetResultsResponse, GetRolesResponse, GetScanConfigsResponse,
-    GetScannersResponse, GetSchedulesResponse, GetSettingsResponse, GetSystemReportsResponse,
-    GetTagsResponse, GetTargetsResponse, GetTasksResponse, GetTicketsResponse,
-    GetTimezonesResponse, GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse,
-    GetVulnerabilitiesResponse, GetWebApplicationTargetsResponse, HelpResponse,
+    GetPortListsResponse, GetPreferencesResponse, GetReportApplicationsResponse,
+    GetReportClosedCvesResponse, GetReportConfigsResponse, GetReportCvesResponse,
+    GetReportErrorsResponse, GetReportFormatsResponse, GetReportHostsResponse,
+    GetReportOperatingSystemsResponse, GetReportPortsResponse, GetReportTlsCertificatesResponse,
+    GetReportVulnsResponse, GetReportsResponse, GetResultsResponse, GetRolesResponse,
+    GetScanConfigsResponse, GetScannersResponse, GetSchedulesResponse, GetSettingsResponse,
+    GetSystemReportsResponse, GetTagsResponse, GetTargetsResponse, GetTasksResponse,
+    GetTicketsResponse, GetTimezonesResponse, GetTlsCertificatesResponse, GetUsersResponse,
+    GetVersionResponse, GetVulnerabilitiesResponse, GetWebApplicationTargetsResponse, HelpResponse,
     ModifyAlertResponse, ModifyAssetResponse, ModifyAuthResponse, ModifyConfigResponse,
     ModifyCredentialResponse, ModifyIntegrationConfigResponse, ModifyLicenseResponse,
     ModifyOciImageTargetResponse, ModifyPortListResponse, ModifyScanConfigResponse,
@@ -509,6 +511,31 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ) -> Result<GetScanConfigsResponse, GvmError> {
         let response = self.send(get_scan_config(config_id)).await?;
         GetScanConfigsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a scan-config scoped `get_preferences` request and return a typed response.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_scan_config_preferences(
+        &mut self,
+        opts: GetScanConfigPreferencesOpts,
+    ) -> Result<GetPreferencesResponse, GvmError> {
+        let response = self.send(get_scan_config_preferences(opts)).await?;
+        GetPreferencesResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send a scan-config scoped `get_preferences` request for one preference.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_scan_config_preference(
+        &mut self,
+        name: &str,
+        opts: GetScanConfigPreferencesOpts,
+    ) -> Result<GetPreferencesResponse, GvmError> {
+        let response = self.send(get_scan_config_preference(name, opts)).await?;
+        GetPreferencesResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     /// Send a policy-scoped `get_configs` request and return a typed
@@ -1307,6 +1334,31 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     ) -> Result<GetNvtsResponse, GvmError> {
         let response = self.send(get_scan_config_nvt(nvt_oid)).await?;
         GetNvtsResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send an NVT-scoped `get_preferences` request and return a typed response.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_nvt_preferences(
+        &mut self,
+        opts: GetNvtPreferencesOpts,
+    ) -> Result<GetPreferencesResponse, GvmError> {
+        let response = self.send(get_nvt_preferences(opts)).await?;
+        GetPreferencesResponse::from_response(&response).map_err(GvmError::Parse)
+    }
+
+    /// Send an NVT-scoped `get_preferences` request for one preference.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_nvt_preference(
+        &mut self,
+        name: &str,
+        opts: GetNvtPreferencesOpts,
+    ) -> Result<GetPreferencesResponse, GvmError> {
+        let response = self.send(get_nvt_preference(name, opts)).await?;
+        GetPreferencesResponse::from_response(&response).map_err(GvmError::Parse)
     }
 
     /// Send a `get_nvt_families` request and return a typed [`GetNvtFamiliesResponse`].

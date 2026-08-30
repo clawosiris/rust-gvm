@@ -28,6 +28,7 @@ pub mod oci_image_target;
 pub mod override_;
 pub mod permission;
 pub mod port_list;
+pub mod preference;
 pub mod report;
 pub mod report_config;
 pub mod report_format;
@@ -130,6 +131,7 @@ pub use permission::{
 pub use port_list::{
     CreatePortListResponse, GetPortListsResponse, ModifyPortListResponse, PortList,
 };
+pub use preference::{GetPreferencesResponse, Preference, PreferenceNvt};
 pub use report::{
     CreateReportResponse, DeleteReportResponse, ExportScanReportResponse,
     GetReportApplicationsResponse, GetReportClosedCvesResponse, GetReportCvesResponse,
