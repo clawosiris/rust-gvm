@@ -40,7 +40,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
 
       - name: Set up Python and pontos
-        uses: greenbone/actions/setup-pontos@cdaf49a9913e2944bfb5ebc1e333acadaeb3d16d # v3.36.15
+        uses: greenbone/actions/setup-pontos@1e7f352e793c3815c54aebe8f9da50d7a80e6f41 # v3.36.18
 
       - name: Configure git
         run: |
