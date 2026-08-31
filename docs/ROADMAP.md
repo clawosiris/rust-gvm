@@ -70,6 +70,9 @@ recorded from
 
 Existing issues:
 
+- [#523](https://github.com/greenbone-hive/rust-gvm/issues/523) tracks the
+  additive typed request/associated-response execution architecture and its
+  family-by-family migration on the [`next`](NEXT_BRANCH.md) development lane.
 - [#172](https://github.com/clawosiris/rust-gvm/issues/172) tracks remaining rust-gvm vs gvmd GMP coverage gaps.
 - [#247](https://github.com/clawosiris/rust-gvm/issues/247) tracks report option drift where rust-gvm exposes an attribute gvmd ignores.
 - [#251](https://github.com/clawosiris/rust-gvm/issues/251) tracks response model drift around user host access and similar XML shape mismatches.
@@ -83,7 +86,8 @@ Follow-up issues or milestones should cover:
 
 ## Near-Term Implementation Order
 
-1. Finish the remaining high-value GMP coverage gaps from #172.
-2. Fix known protocol drift in command options and response models.
-3. Add real gvmd conformance coverage.
-4. Expand migration documentation for python-gvm users.
+1. Prove the typed request/associated-response contract from #523 on `next`.
+2. Finish the remaining high-value GMP coverage gaps from #172.
+3. Fix known protocol drift in command options and response models.
+4. Add real gvmd conformance coverage.
+5. Expand migration documentation for python-gvm users.
