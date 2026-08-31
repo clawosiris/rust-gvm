@@ -33,9 +33,7 @@ use gvm_gmp::commands::credentials::{
     ModifyCredentialStoreOpts,
 };
 use gvm_gmp::commands::help::HelpMode;
-use gvm_gmp::commands::nvts::{
-    get_nvt_preference, get_nvt_preferences, GetNvtPreferencesOpts, GetNvtsOpts,
-};
+use gvm_gmp::commands::nvts::{GetNvtPreferencesOpts, GetNvtsOpts};
 use gvm_gmp::commands::operating_systems::{get_operating_systems, GetOperatingSystemsOpts};
 use gvm_gmp::commands::permissions::{modify_permission, GetPermissionsOpts, PermissionOpts};
 use gvm_gmp::commands::port_lists::{GetPortListsOpts, ModifyPortListOpts, PortListOpts};
@@ -44,8 +42,8 @@ use gvm_gmp::commands::reports::{
 };
 use gvm_gmp::commands::roles::RoleOpts;
 use gvm_gmp::commands::scan_configs::{
-    create_policy, get_policies, get_scan_config_preference, get_scan_config_preferences,
-    ConfigOpts, GetPolicyOpts, GetScanConfigPreferencesOpts, GetScanConfigsOpts,
+    create_policy, get_policies, ConfigOpts, GetPolicyOpts, GetScanConfigPreferencesOpts,
+    GetScanConfigsOpts,
 };
 use gvm_gmp::commands::scanners::ScannerOpts;
 use gvm_gmp::commands::schedules::{GetSchedulesOpts, ScheduleOpts};
@@ -3058,41 +3056,39 @@ async fn preference_getters_send_expected_mock_server_commands() {
 
     let responses = [
         client
-            .call(get_scan_config_preferences(GetScanConfigPreferencesOpts {
+            .get_scan_config_preferences(GetScanConfigPreferencesOpts {
                 nvt_oid: Some("1.3.6.1".into()),
                 config_id: Some(EntityId::new("config-1").expect("valid id")),
-            }))
+            })
             .await
             .expect("scan-config preferences request should succeed"),
         client
-            .call(get_scan_config_preference(
+            .get_scan_config_preference(
                 "timeout",
                 GetScanConfigPreferencesOpts {
                     nvt_oid: Some("1.3.6.1".into()),
                     config_id: Some(EntityId::new("config-1").expect("valid id")),
                 },
-            ))
+            )
             .await
             .expect("scan-config preference request should succeed"),
         client
-            .call(get_nvt_preferences(GetNvtPreferencesOpts {
+            .get_nvt_preferences(GetNvtPreferencesOpts {
                 nvt_oid: Some("1.3.6.1".into()),
-            }))
+            })
             .await
             .expect("nvt preferences request should succeed"),
         client
-            .call(get_nvt_preference(
+            .get_nvt_preference(
                 "timeout",
                 GetNvtPreferencesOpts {
                     nvt_oid: Some("1.3.6.1".into()),
                 },
-            ))
+            )
             .await
             .expect("nvt preference request should succeed"),
     ];
-    assert!(responses
-        .iter()
-        .all(|response| response.status_code() == Some(200)));
+    assert!(responses.iter().all(|response| response.status == 200));
 
     let history = server.command_history();
     assert_eq!(history.len(), 4);
