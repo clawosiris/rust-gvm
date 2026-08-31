@@ -120,7 +120,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - uses: taiki-e/install-action@6cd13508893c0e7eab5f273c2575d3859bd7229a # v2
+      - uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d # v2
         with:
           tool: cargo-llvm-cov
       - name: Verify the controlled coverage threshold regression
@@ -243,7 +243,7 @@ jobs:
       - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
           egress-policy: audit
-      - uses: greenbone/actions/trigger-workflow@cdaf49a9913e2944bfb5ebc1e333acadaeb3d16d # v3.36.15
+      - uses: greenbone/actions/trigger-workflow@1e7f352e793c3815c54aebe8f9da50d7a80e6f41 # v3.36.18
         with:
           token: ${{ secrets.RELEASE_TOKEN }}
           repository: clawosiris/rust-gvm-e2e-tests
