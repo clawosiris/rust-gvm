@@ -12,6 +12,8 @@ pub mod commands;
 mod common;
 /// GMP enums and wire-format helpers.
 pub mod enums;
+/// Statically associated semantic request and response contracts.
+pub mod execution;
 /// Shared gvmd filter composition helpers.
 pub mod filtering;
 /// Typed GMP response models.
@@ -25,6 +27,8 @@ pub mod types;
 
 /// Re-exported GMP enums.
 pub use enums::*;
+/// Re-exported typed execution contracts.
+pub use execution::{GmpRequest, GmpResponse};
 /// Re-exported gvmd filter helpers.
 pub use filtering::{FilterFragment, FilterFragmentError, PaginatedFilter, Pagination};
 /// Re-exported typed schedule values.

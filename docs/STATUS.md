@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-08-10
+Last updated: 2026-08-31
 
 ## Support Direction
 
@@ -9,6 +9,15 @@ rust-gvm is intended to track current GMP/GVMD behavior directly. python-gvm com
 See [ROADMAP.md](ROADMAP.md) for the version support stance, compatibility policy, known coverage gaps, and follow-up work.
 
 ## Crate Status
+
+The `next` Technology Preview lane now includes the first statically associated
+typed-execution slice. `GmpRequest` binds a semantic request to one
+`GmpResponse`, and `GmpClient::execute` preserves existing command gates,
+redacted tracing, parsing, and compatibility APIs. Version/authentication,
+target list/get/create/modify/delete, and asynchronous report export prove the
+contract before family-by-family migration. See
+[ADR 0001](adr/0001-typed-request-response-execution.md) and the
+[typed-execution guide](typed-execution.md).
 
 | Crate | Status | Lines | Tests | Description |
 |-------|--------|-------|-------|-------------|

@@ -13,6 +13,7 @@ use crate::responses::common::{
     parse_named_entity, status_from_response, ActionResponse, CountInfo, EntityMeta, NamedEntity,
     ParseError,
 };
+use crate::{GmpResponse, GmpVersion};
 
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -408,6 +409,12 @@ impl ExportScanReportResponse {
             id,
             export_status: root.attr("export_status").map(ToString::to_string),
         })
+    }
+}
+
+impl GmpResponse for ExportScanReportResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 

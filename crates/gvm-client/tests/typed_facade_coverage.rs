@@ -29,7 +29,7 @@ use gvm_gmp::commands::scanners::GetScannersOpts;
 use gvm_gmp::commands::schedules::{GetSchedulesOpts, ScheduleOpts};
 use gvm_gmp::commands::secinfo::GetSecInfoOpts;
 use gvm_gmp::commands::tags::{GetTagsOpts, TagOpts};
-use gvm_gmp::commands::targets::{GetTargetsOpts, ModifyTargetOpts};
+use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest, ModifyTargetOpts};
 use gvm_gmp::commands::tasks::{GetTasksOpts, ModifyTaskOpts};
 use gvm_gmp::commands::tickets::{CreateTicketOpts, GetTicketsOpts, TicketOpenNote};
 use gvm_gmp::commands::tls_certificates::{GetTlsCertificatesOpts, TlsCertificateOpts};
@@ -104,6 +104,30 @@ macro_rules! create_response {
             r#" status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111"/>"#
         )
     };
+}
+
+#[tokio::test]
+async fn generic_execute_decodes_the_requests_associated_response() {
+    let Some(server) = fixture_server(
+        MockVersion::V22_7,
+        &[(
+            "get_targets",
+            r#"<get_targets_response status="200" status_text="OK"/>"#,
+        )],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+
+    let response = client
+        .execute(GetTargetsRequest::new(GetTargetsOpts::default()))
+        .await
+        .expect("associated response should decode");
+
+    assert_eq!(response.status, 200);
+    assert!(response.items.is_empty());
 }
 
 const MUTATION_SUCCESS_OVERRIDES: &[(&str, &str)] = &[

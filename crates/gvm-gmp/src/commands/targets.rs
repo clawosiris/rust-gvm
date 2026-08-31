@@ -10,8 +10,12 @@ use crate::common::{
     set_optional_bool_attr,
 };
 use crate::enums::AliveTest;
+use crate::responses::{
+    CreateTargetResponse, DeleteTargetResponse, GetTargetsResponse, ModifyTargetResponse,
+};
 use crate::target::{TargetHost, TargetHosts, TargetPortSelection};
 use crate::types::{EntityId, ScalarUpdate, ServicePort};
+use crate::GmpRequest;
 
 /// Required and optional fields for `create_target` requests.
 #[derive(Debug, Clone)]
@@ -167,6 +171,141 @@ pub enum ModifyTargetError {
     SmbAndKrb5Credentials,
 }
 
+/// Semantic request for listing targets.
+#[derive(Debug, Clone, Default)]
+pub struct GetTargetsRequest {
+    opts: GetTargetsOpts,
+}
+
+impl GetTargetsRequest {
+    /// Create a target-list request.
+    #[must_use]
+    pub fn new(opts: GetTargetsOpts) -> Self {
+        Self { opts }
+    }
+}
+
+impl Request for GetTargetsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_targets(self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetTargetsRequest {
+    type Response = GetTargetsResponse;
+}
+
+/// Semantic request for one detailed target.
+#[derive(Debug, Clone)]
+pub struct GetTargetRequest {
+    target_id: EntityId,
+}
+
+impl GetTargetRequest {
+    /// Create a detailed single-target request.
+    #[must_use]
+    pub fn new(target_id: EntityId) -> Self {
+        Self { target_id }
+    }
+}
+
+impl Request for GetTargetRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_target(&self.target_id).to_bytes()
+    }
+}
+
+impl GmpRequest for GetTargetRequest {
+    type Response = GetTargetsResponse;
+}
+
+/// Semantic request for creating a target.
+#[derive(Debug, Clone)]
+pub struct CreateTargetRequest {
+    name: String,
+    opts: CreateTargetOpts,
+}
+
+impl CreateTargetRequest {
+    /// Validate and create a target-creation request.
+    ///
+    /// # Errors
+    /// Returns the same construction errors as [`create_target`].
+    pub fn new(name: impl Into<String>, opts: CreateTargetOpts) -> Result<Self, CreateTargetError> {
+        validate_create_target_opts(&opts)?;
+        Ok(Self {
+            name: name.into(),
+            opts,
+        })
+    }
+}
+
+impl Request for CreateTargetRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_target_command(&self.name, &self.opts).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateTargetRequest {
+    type Response = CreateTargetResponse;
+}
+
+/// Semantic request for modifying a target.
+#[derive(Debug, Clone)]
+pub struct ModifyTargetRequest {
+    target_id: EntityId,
+    opts: ModifyTargetOpts,
+}
+
+impl ModifyTargetRequest {
+    /// Validate and create a target-modification request.
+    ///
+    /// # Errors
+    /// Returns the same construction errors as [`modify_target`].
+    pub fn new(target_id: EntityId, opts: ModifyTargetOpts) -> Result<Self, ModifyTargetError> {
+        validate_modify_target_opts(&opts)?;
+        Ok(Self { target_id, opts })
+    }
+}
+
+impl Request for ModifyTargetRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_target_command(&self.target_id, &self.opts).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyTargetRequest {
+    type Response = ModifyTargetResponse;
+}
+
+/// Semantic request for deleting a target.
+#[derive(Debug, Clone)]
+pub struct DeleteTargetRequest {
+    target_id: EntityId,
+    ultimate: bool,
+}
+
+impl DeleteTargetRequest {
+    /// Create a target-deletion request.
+    #[must_use]
+    pub fn new(target_id: EntityId, ultimate: bool) -> Self {
+        Self {
+            target_id,
+            ultimate,
+        }
+    }
+}
+
+impl Request for DeleteTargetRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_target(&self.target_id, self.ultimate).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteTargetRequest {
+    type Response = DeleteTargetResponse;
+}
+
 /// Build a clone request for an existing target.
 #[must_use]
 pub fn clone_target(target_id: &EntityId) -> impl Request {
@@ -182,6 +321,11 @@ pub fn create_target(
     name: &str,
     opts: CreateTargetOpts,
 ) -> Result<impl Request, CreateTargetError> {
+    validate_create_target_opts(&opts)?;
+    Ok(create_target_command(name, &opts))
+}
+
+fn validate_create_target_opts(opts: &CreateTargetOpts) -> Result<(), CreateTargetError> {
     if opts.ssh_credential_port.is_some() && opts.ssh_credential_id.is_none() {
         return Err(CreateTargetError::SshPortWithoutCredential);
     }
@@ -198,6 +342,10 @@ pub fn create_target(
     if opts.smb_credential_id.is_some() && opts.krb5_credential_id.is_some() {
         return Err(CreateTargetError::SmbAndKrb5Credentials);
     }
+    Ok(())
+}
+
+fn create_target_command(name: &str, opts: &CreateTargetOpts) -> XmlCommand {
     let mut cmd = XmlCommand::new("create_target");
     cmd.add_element_with_text("name", name);
     add_text_element(&mut cmd, "comment", opts.comment.as_deref());
@@ -214,7 +362,7 @@ pub fn create_target(
             cmd.add_element_with_text("port_range", port_range.as_str());
         }
     }
-    add_create_target_credentials(&mut cmd, &opts);
+    add_create_target_credentials(&mut cmd, opts);
     if let Some(value) = opts.reverse_lookup_only {
         cmd.add_element_with_text("reverse_lookup_only", bool_str(value));
     }
@@ -224,7 +372,7 @@ pub fn create_target(
     if let Some(value) = opts.allow_simultaneous_ips {
         cmd.add_element_with_text("allow_simultaneous_ips", bool_str(value));
     }
-    Ok(cmd)
+    cmd
 }
 
 /// Build a `get_targets` request.
@@ -259,6 +407,11 @@ pub fn modify_target(
     target_id: &EntityId,
     opts: ModifyTargetOpts,
 ) -> Result<impl Request, ModifyTargetError> {
+    validate_modify_target_opts(&opts)?;
+    Ok(modify_target_command(target_id, &opts))
+}
+
+fn validate_modify_target_opts(opts: &ModifyTargetOpts) -> Result<(), ModifyTargetError> {
     if matches!(opts.port_list_id, ScalarUpdate::Clear) {
         return Err(ModifyTargetError::UnsupportedPortListClear);
     }
@@ -288,6 +441,10 @@ pub fn modify_target(
     {
         return Err(ModifyTargetError::SmbAndKrb5Credentials);
     }
+    Ok(())
+}
+
+fn modify_target_command(target_id: &EntityId, opts: &ModifyTargetOpts) -> XmlCommand {
     let mut cmd = XmlCommand::new("modify_target").attribute("target_id", target_id.as_str());
     add_text_element(&mut cmd, "name", opts.name.as_deref());
     add_text_element(&mut cmd, "comment", opts.comment.as_deref());
@@ -301,7 +458,7 @@ pub fn modify_target(
     if let ScalarUpdate::Set(port_list_id) = &opts.port_list_id {
         add_optional_id_element(&mut cmd, "port_list", Some(port_list_id));
     }
-    add_modify_target_credentials(&mut cmd, &opts);
+    add_modify_target_credentials(&mut cmd, opts);
     if let Some(value) = opts.reverse_lookup_only {
         cmd.add_element_with_text("reverse_lookup_only", bool_str(value));
     }
@@ -311,7 +468,7 @@ pub fn modify_target(
     if let Some(value) = opts.allow_simultaneous_ips {
         cmd.add_element_with_text("allow_simultaneous_ips", bool_str(value));
     }
-    Ok(cmd)
+    cmd
 }
 
 /// Build a `delete_target` request.
@@ -506,6 +663,55 @@ mod tests {
         assert_eq!(
             xml(delete_target(&id("t1"), false)),
             "<delete_target target_id=\"t1\" ultimate=\"0\"/>"
+        );
+    }
+
+    #[test]
+    fn semantic_target_requests_match_legacy_builder_bytes() {
+        let list_opts = GetTargetsOpts {
+            filter_string: Some("name=production".into()),
+            details: Some(true),
+            ..Default::default()
+        };
+        assert_eq!(
+            GetTargetsRequest::new(list_opts.clone()).to_bytes(),
+            get_targets(list_opts).to_bytes()
+        );
+
+        let target_id = id("target-1");
+        assert_eq!(
+            GetTargetRequest::new(target_id.clone()).to_bytes(),
+            get_target(&target_id).to_bytes()
+        );
+
+        let create_opts =
+            CreateTargetOpts::new(hosts(&["192.0.2.1"], &["192.0.2.2"]), direct_ports());
+        assert_eq!(
+            CreateTargetRequest::new("production", create_opts.clone())
+                .expect("valid semantic create request")
+                .to_bytes(),
+            create_target("production", create_opts)
+                .expect("valid legacy create request")
+                .to_bytes()
+        );
+
+        let modify_opts = ModifyTargetOpts {
+            name: Some("renamed".into()),
+            allow_simultaneous_ips: Some(false),
+            ..Default::default()
+        };
+        assert_eq!(
+            ModifyTargetRequest::new(target_id.clone(), modify_opts.clone())
+                .expect("valid semantic modify request")
+                .to_bytes(),
+            modify_target(&target_id, modify_opts)
+                .expect("valid legacy modify request")
+                .to_bytes()
+        );
+
+        assert_eq!(
+            DeleteTargetRequest::new(target_id.clone(), true).to_bytes(),
+            delete_target(&target_id, true).to_bytes()
         );
     }
 

@@ -10,8 +10,9 @@ use crate::common::{
     add_filter_attrs, add_optional_id_element, bool_str, set_optional_bool_attr,
     validate_single_xml_document,
 };
-use crate::responses::ParseError;
+use crate::responses::{ExportScanReportResponse, ParseError};
 use crate::types::EntityId;
+use crate::GmpRequest;
 
 /// Optional fields for `create_report` requests.
 #[derive(Debug, Clone, Default)]
@@ -112,6 +113,31 @@ pub struct ExportScanReportOpts {
     pub overrides_details: Option<bool>,
     /// Whether result tags are included.
     pub result_tags: Option<bool>,
+}
+
+/// Semantic request for queuing or reusing an asynchronous report export.
+#[derive(Debug, Clone)]
+pub struct ExportScanReportRequest {
+    report_id: EntityId,
+    opts: ExportScanReportOpts,
+}
+
+impl ExportScanReportRequest {
+    /// Create an asynchronous scan-report export request.
+    #[must_use]
+    pub fn new(report_id: EntityId, opts: ExportScanReportOpts) -> Self {
+        Self { report_id, opts }
+    }
+}
+
+impl Request for ExportScanReportRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        export_scan_report(&self.report_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ExportScanReportRequest {
+    type Response = ExportScanReportResponse;
 }
 
 impl GetReportExportOpts {
@@ -488,6 +514,30 @@ mod tests {
         assert_eq!(
             xml(delete_report(&id("r1"), false)),
             "<delete_report report_id=\"r1\" ultimate=\"0\"/>"
+        );
+    }
+
+    #[test]
+    fn semantic_scan_report_export_matches_legacy_builder_bytes() {
+        let report_id = id("report-1");
+        let opts = ExportScanReportOpts {
+            format_id: Some(id("format-1")),
+            config_id: Some(id("config-1")),
+            filter_string: Some("severity>5".into()),
+            ignore_pagination: Some(true),
+            lean: Some(false),
+            notes_details: Some(true),
+            overrides_details: Some(false),
+            result_tags: Some(true),
+        };
+
+        let semantic = ExportScanReportRequest::new(report_id.clone(), opts.clone());
+        let legacy = export_scan_report(&report_id, opts);
+
+        assert_eq!(semantic.to_bytes(), legacy.to_bytes());
+        assert_eq!(
+            semantic.to_bytes(),
+            br#"<export_scan_report config_id="config-1" filter="severity&gt;5" format_id="format-1" ignore_pagination="1" lean="0" notes_details="1" overrides_details="0" report_id="report-1" result_tags="1"/>"#
         );
     }
 

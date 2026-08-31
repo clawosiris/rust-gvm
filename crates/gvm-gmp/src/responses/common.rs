@@ -10,7 +10,7 @@ use gvm_protocol::Response;
 use quick_xml::events::Event;
 use quick_xml::{Reader, XmlVersion};
 
-use crate::EntityId;
+use crate::{EntityId, GmpResponse, GmpVersion};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
@@ -75,6 +75,12 @@ impl ActionResponse {
             status,
             status_text,
         })
+    }
+}
+
+impl GmpResponse for ActionResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 

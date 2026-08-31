@@ -19,6 +19,7 @@ use gvm_gmp::commands::agents::get_agents;
 use gvm_gmp::commands::credentials::{create_credential, verify_credential_store, CredentialOpts};
 use gvm_gmp::commands::oci_image_targets::get_oci_image_targets;
 use gvm_gmp::commands::reports::{get_scan_report, GetScanReportOpts};
+use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest};
 use gvm_gmp::{EntityId, GmpVersion};
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 
@@ -772,6 +773,31 @@ async fn versioned_scan_report_export_requires_then_uses_help_discovery() {
         .expect_err("missing report should reach the mock");
     assert!(matches!(error, GvmError::Server { status: 404, .. }));
 
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn versioned_execute_forwards_and_decodes_the_associated_response() {
+    let Some(server) = stateful_server(MockVersion::V22_7).await else {
+        return;
+    };
+    let mut client = GmpVersioned::connect(unix_connection(&server))
+        .await
+        .expect("client should connect");
+
+    client
+        .call(gvm_gmp::commands::authentication::authenticate(
+            "admin", "admin",
+        ))
+        .await
+        .expect("authenticate should succeed");
+    let response = client
+        .execute(GetTargetsRequest::new(GetTargetsOpts::default()))
+        .await
+        .expect("versioned execute should decode targets");
+
+    assert_eq!(response.status, 200);
+    assert!(response.items.is_empty());
     server.shutdown().await;
 }
 
