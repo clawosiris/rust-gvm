@@ -18,7 +18,7 @@ use gvm_gmp::commands::assets::{
     create_asset, delete_asset, get_assets, modify_asset, AssetType, CreateAssetOpts,
     DeleteAssetOpts, GetAssetsOpts, ModifyAssetOpts,
 };
-use gvm_gmp::commands::authentication::authenticate;
+use gvm_gmp::commands::authentication::AuthenticateRequest;
 use gvm_gmp::commands::configs::{
     clone_config as clone_config_cmd, create_config as create_config_cmd,
     delete_config as delete_config_cmd, get_config as get_config_cmd, get_configs,
@@ -72,12 +72,12 @@ use gvm_gmp::commands::report_formats::{
     GetReportFormatsOpts, ReportFormatOpts,
 };
 use gvm_gmp::commands::reports::{
-    export_scan_report, get_audit_report, get_audit_report_hosts, get_report_applications,
-    get_report_closed_cves, get_report_cves, get_report_errors, get_report_export,
-    get_report_export_with_opts, get_report_hosts, get_report_operating_systems, get_report_ports,
-    get_report_tls_certificates, get_report_vulnerabilities, get_report_vulns, get_reports,
-    import_report, ExportScanReportOpts, GetAuditReportHostsOpts, GetAuditReportOpts,
-    GetReportDetailsOpts, GetReportExportOpts, GetReportsOpts, ImportReportOpts,
+    get_audit_report, get_audit_report_hosts, get_report_applications, get_report_closed_cves,
+    get_report_cves, get_report_errors, get_report_export, get_report_export_with_opts,
+    get_report_hosts, get_report_operating_systems, get_report_ports, get_report_tls_certificates,
+    get_report_vulnerabilities, get_report_vulns, get_reports, import_report, ExportScanReportOpts,
+    ExportScanReportRequest, GetAuditReportHostsOpts, GetAuditReportOpts, GetReportDetailsOpts,
+    GetReportExportOpts, GetReportsOpts, ImportReportOpts,
 };
 use gvm_gmp::commands::results::{get_results, GetResultsOpts};
 use gvm_gmp::commands::roles::{create_role, get_roles, GetRolesOpts, RoleOpts};
@@ -107,8 +107,8 @@ use gvm_gmp::commands::system::{
 use gvm_gmp::commands::system_reports::{get_system_reports, GetSystemReportsOpts};
 use gvm_gmp::commands::tags::{create_tag, get_tags, GetTagsOpts, TagOpts};
 use gvm_gmp::commands::targets::{
-    create_target, delete_target, get_target as get_target_cmd, get_targets, modify_target,
-    CreateTargetOpts, GetTargetsOpts, ModifyTargetOpts,
+    CreateTargetOpts, CreateTargetRequest, DeleteTargetRequest, GetTargetRequest, GetTargetsOpts,
+    GetTargetsRequest, ModifyTargetOpts, ModifyTargetRequest,
 };
 use gvm_gmp::commands::tasks::{
     create_import_task, create_task, delete_task, get_tasks, modify_task, resume_task, start_task,
@@ -124,7 +124,7 @@ use gvm_gmp::commands::trashcan::{empty_trashcan, restore_from_trashcan};
 use gvm_gmp::commands::users::{
     create_user, get_users, modify_user, GetUsersOpts, ModifyUserOpts, UserOpts,
 };
-use gvm_gmp::commands::version::get_version;
+use gvm_gmp::commands::version::GetVersionRequest;
 use gvm_gmp::commands::web_application_targets::{
     clone_web_application_target, create_web_application_target, delete_web_application_target,
     get_web_application_target, get_web_application_targets, modify_web_application_target,
@@ -179,8 +179,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_version(&mut self) -> Result<GetVersionResponse, GvmError> {
-        let response = self.send(get_version()).await?;
-        GetVersionResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetVersionRequest::new()).await
     }
 
     /// Send an `authenticate` request and return a typed [`AuthenticateResponse`].
@@ -192,8 +191,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         username: &str,
         password: &str,
     ) -> Result<AuthenticateResponse, GvmError> {
-        let response = self.send(authenticate(username, password)).await?;
-        AuthenticateResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(AuthenticateRequest::new(username, password))
+            .await
     }
 
     // ── Targets ───────────────────────────────────────────────────────────────
@@ -206,8 +205,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         opts: GetTargetsOpts,
     ) -> Result<GetTargetsResponse, GvmError> {
-        let response = self.send(get_targets(opts)).await?;
-        GetTargetsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetTargetsRequest::new(opts)).await
     }
 
     /// Send a detailed `get_targets` request for one target and return a typed
@@ -219,8 +217,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         target_id: &EntityId,
     ) -> Result<GetTargetsResponse, GvmError> {
-        let response = self.send(get_target_cmd(target_id)).await?;
-        GetTargetsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetTargetRequest::new(target_id.clone())).await
     }
 
     /// Send a `create_target` request and return a typed [`CreateTargetResponse`].
@@ -232,9 +229,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         name: &str,
         opts: CreateTargetOpts,
     ) -> Result<CreateTargetResponse, GvmError> {
-        let request = create_target(name, opts)?;
-        let response = self.send(request).await?;
-        CreateTargetResponse::from_response(&response).map_err(GvmError::Parse)
+        let request = CreateTargetRequest::new(name, opts)?;
+        self.execute(request).await
     }
 
     /// Send a `modify_target` request and return a typed [`ModifyTargetResponse`].
@@ -246,9 +242,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         target_id: &EntityId,
         opts: ModifyTargetOpts,
     ) -> Result<ModifyTargetResponse, GvmError> {
-        let request = modify_target(target_id, opts)?;
-        let response = self.send(request).await?;
-        ModifyTargetResponse::from_response(&response).map_err(GvmError::Parse)
+        let request = ModifyTargetRequest::new(target_id.clone(), opts)?;
+        self.execute(request).await
     }
 
     /// Send a `delete_target` request and return a typed [`DeleteTargetResponse`].
@@ -260,8 +255,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         target_id: &EntityId,
         ultimate: bool,
     ) -> Result<DeleteTargetResponse, GvmError> {
-        let response = self.send(delete_target(target_id, ultimate)).await?;
-        DeleteTargetResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(DeleteTargetRequest::new(target_id.clone(), ultimate))
+            .await
     }
 
     /// Send a `create_oci_image_target` request and return a typed
@@ -987,8 +982,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         report_id: &EntityId,
         opts: ExportScanReportOpts,
     ) -> Result<ExportScanReportResponse, GvmError> {
-        let response = self.send(export_scan_report(report_id, opts)).await?;
-        ExportScanReportResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ExportScanReportRequest::new(report_id.clone(), opts))
+            .await
     }
 
     /// Send a `get_report_vulns` request and return a typed [`GetReportVulnsResponse`].

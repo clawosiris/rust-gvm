@@ -201,6 +201,26 @@ let response = client.call(targets::get_targets(Default::default())).await?;
 println!("Raw XML: {} bytes", response.data().len());
 ```
 
+#### Statically associated typed execution
+
+The `next` Technology Preview lane also exposes semantic request values whose
+response type is selected at compile time. The first representative slice covers
+version negotiation, authentication, target CRUD, and asynchronous scan-report
+export:
+
+```rust
+use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest};
+
+let targets = client
+    .execute(GetTargetsRequest::new(GetTargetsOpts::default()))
+    .await?;
+```
+
+Existing convenience methods, builders, `send`, and `call` remain supported
+while command families migrate incrementally. See
+[Typed request/response execution](docs/typed-execution.md) for the compatibility
+contract, raw escape hatch, and command-authoring guidance.
+
 #### Version-aware client
 
 Use `GmpVersioned` when you need to branch on the server's GMP version:

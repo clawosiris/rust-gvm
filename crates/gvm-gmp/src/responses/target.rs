@@ -10,7 +10,7 @@ use crate::responses::common::{
     parse_named_entity, parse_u16, status_from_response, ActionResponse, CountInfo, EntityMeta,
     NamedEntity, ParseError,
 };
-use crate::ServicePort;
+use crate::{GmpResponse, GmpVersion, ServicePort};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -136,6 +136,12 @@ impl GetTargetsResponse {
     }
 }
 
+impl GmpResponse for GetTargetsResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 impl CreateTargetResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
@@ -150,6 +156,12 @@ impl CreateTargetResponse {
             status_text,
             id,
         })
+    }
+}
+
+impl GmpResponse for CreateTargetResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 

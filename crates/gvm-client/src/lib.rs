@@ -57,7 +57,7 @@ use gvm_gmp::commands::system::get_timezones;
 use gvm_gmp::commands::tasks::create_agent_group_task;
 use gvm_gmp::commands::tasks::create_oci_image_target_task as build_oci_image_target_task;
 use gvm_gmp::commands::tasks::create_web_application_task;
-use gvm_gmp::commands::version::get_version;
+use gvm_gmp::commands::version::GetVersionRequest;
 use gvm_gmp::commands::web_application_targets::{
     clone_web_application_target, create_web_application_target, delete_web_application_target,
     get_web_application_target, get_web_application_targets, modify_web_application_target,
@@ -109,6 +109,7 @@ pub use gvm_gmp::commands::web_application_targets::{
     CreateWebApplicationTargetOpts, GetWebApplicationTargetsOpts, ModifyWebApplicationTargetOpts,
 };
 pub use gvm_gmp::enums::{CredentialStoreCredentialType, FeedType};
+pub use gvm_gmp::{GmpRequest, GmpResponse};
 pub use version::{
     command_supported, map_supported_version, minimum_version_for_command, parse_version_text,
     required_version_label,
@@ -207,7 +208,12 @@ impl<C: GvmConnection> GmpClient<C> {
     ) -> Result<Self, GvmError> {
         connection.connect().await?;
 
-        let response = Self::send_on(&mut connection, get_version(), wire_trace.as_deref()).await?;
+        let response = Self::send_on(
+            &mut connection,
+            GetVersionRequest::new(),
+            wire_trace.as_deref(),
+        )
+        .await?;
         let response = Self::raise_for_status(response)?;
         let version_text = response.child_text("version").ok_or_else(|| {
             GvmError::XmlParse("missing <version> in get_version response".to_string())
@@ -304,6 +310,37 @@ impl<C: GvmConnection> GmpClient<C> {
             self.wire_trace.as_deref(),
         )
         .await
+    }
+
+    /// Execute a semantic request and decode its statically associated response.
+    ///
+    /// This uses [`Self::send`] so command/version/help-discovery checks,
+    /// redacted wire tracing, transport behavior, and typed response errors are
+    /// identical to the compatibility convenience methods.
+    ///
+    /// The request's associated response type is enforced at compile time:
+    ///
+    /// ```compile_fail
+    /// use gvm_client::{GmpClient, GvmError};
+    /// use gvm_connection::GvmConnection;
+    /// use gvm_gmp::commands::version::GetVersionRequest;
+    /// use gvm_gmp::responses::AuthenticateResponse;
+    ///
+    /// async fn mismatched_response<C: GvmConnection>(
+    ///     client: &mut GmpClient<C>,
+    /// ) -> Result<(), GvmError> {
+    ///     let _: AuthenticateResponse = client.execute(GetVersionRequest::new()).await?;
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    /// Returns an error if request transmission, command support checks, or
+    /// typed response decoding fails.
+    pub async fn execute<R: GmpRequest>(&mut self, request: R) -> Result<R::Response, GvmError> {
+        let version = self.version;
+        let response = self.send(request).await?;
+        R::Response::decode(&response, version).map_err(GvmError::Parse)
     }
 
     /// Send a request and raise a server error on non-2xx responses.
@@ -1583,6 +1620,15 @@ impl<C: GvmConnection> GmpVersioned<C> {
         self.inner_mut()
             .export_scan_report_raw(report_id, opts)
             .await
+    }
+
+    /// Execute a semantic request and decode its statically associated response.
+    ///
+    /// # Errors
+    /// Returns an error if request transmission, command support checks, or
+    /// typed response decoding fails.
+    pub async fn execute<R: GmpRequest>(&mut self, request: R) -> Result<R::Response, GvmError> {
+        self.inner_mut().execute(request).await
     }
 
     /// Send a request and return the raw parsed response.
