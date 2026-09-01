@@ -26,6 +26,15 @@ lifecycle to the same typed execution contract. It intentionally leaves import,
 agent-group, OCI/container-image, web-application, move, and audit task shapes
 for later focused batches.
 
+The credential-focused Phase 2 batch, tracked by
+[`#544`](https://github.com/greenbone-hive/rust-gvm/issues/544), migrates the
+core credential list/get/create/clone/modify/delete lifecycle. Existing
+builders remain the single byte-compatible encoders, and the existing core
+credential convenience methods remain source-compatible wrappers over generic
+typed execution. Credential-store operations stay separate because their
+vault, preference, semantic-alias, and version-policy shapes require a focused
+follow-up.
+
 | Crate | Status | Lines | Tests | Description |
 |-------|--------|-------|-------|-------------|
 | `gvm-protocol` | ✅ Implemented | ~2,330 | 67 | XML command builder, response parser, streaming reader |
