@@ -34,11 +34,29 @@ use gvm_gmp::commands::tasks::{GetTasksOpts, ModifyTaskOpts};
 use gvm_gmp::commands::tickets::{CreateTicketOpts, GetTicketsOpts, TicketOpenNote};
 use gvm_gmp::commands::tls_certificates::{GetTlsCertificatesOpts, TlsCertificateOpts};
 use gvm_gmp::commands::users::{GetUsersOpts, UserOpts};
-use gvm_gmp::responses::ParseError;
+use gvm_gmp::responses::{ActionResponse, ParseError};
 use gvm_gmp::types::{EntityId, GmpVersion, ScalarUpdate};
+use gvm_gmp::GmpRequest;
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
+use gvm_protocol::Request;
 
 const CREATED_ID: &str = "11111111-1111-1111-1111-111111111111";
+
+struct SemanticAliasRequest;
+
+impl Request for SemanticAliasRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        b"<get_reports/>".to_vec()
+    }
+
+    fn semantic_command_name(&self) -> Option<&'static str> {
+        Some("get_report_export")
+    }
+}
+
+impl GmpRequest for SemanticAliasRequest {
+    type Response = ActionResponse;
+}
 
 fn id(value: &str) -> EntityId {
     EntityId::new(value).expect("test entity id")
@@ -128,6 +146,31 @@ async fn generic_execute_decodes_the_requests_associated_response() {
 
     assert_eq!(response.status, 200);
     assert!(response.items.is_empty());
+}
+
+#[tokio::test]
+async fn generic_execute_preserves_semantic_alias_version_checks() {
+    let Some(server) = fixture_server(MockVersion::V22_7, &[]).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+
+    let error = client
+        .execute(SemanticAliasRequest)
+        .await
+        .expect_err("semantic alias should be checked before sending the wire command");
+
+    assert!(matches!(
+        error,
+        GvmError::UnsupportedCommand {
+            command,
+            version: GmpVersion(22, 7),
+            required: "22.8",
+        } if command == "get_report_export"
+    ));
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
 }
 
 const MUTATION_SUCCESS_OVERRIDES: &[(&str, &str)] = &[
@@ -724,7 +767,7 @@ async fn asynchronous_scan_report_export_rejects_negative_help_discovery_on_22_8
 }
 
 #[tokio::test]
-async fn typed_facade_maps_server_status_and_malformed_payload_errors() {
+async fn generic_execute_preserves_server_status_and_parse_error_context() {
     let Some(status_server) = fixture_server(
         MockVersion::V22_8,
         &[(
@@ -738,7 +781,7 @@ async fn typed_facade_maps_server_status_and_malformed_payload_errors() {
     };
     let mut status_client = client(&status_server).await;
     let status_error = status_client
-        .get_targets(GetTargetsOpts::default())
+        .execute(GetTargetsRequest::new(GetTargetsOpts::default()))
         .await
         .expect_err("server status should fail");
     assert!(matches!(
@@ -763,7 +806,7 @@ async fn typed_facade_maps_server_status_and_malformed_payload_errors() {
     };
     let mut malformed_client = client(&malformed_server).await;
     let malformed_error = malformed_client
-        .get_targets(GetTargetsOpts::default())
+        .execute(GetTargetsRequest::new(GetTargetsOpts::default()))
         .await
         .expect_err("malformed typed payload should fail");
     assert!(matches!(

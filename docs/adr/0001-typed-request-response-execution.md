@@ -1,6 +1,6 @@
 # ADR 0001: Typed request/response execution
 
-- Status: Accepted for the `next` Technology Preview lane
+- Status: Accepted; Phase 1 names and ownership stabilized for the `next` lane
 - Date: 2026-08-31
 - Tracking issue: [#523](https://github.com/greenbone-hive/rust-gvm/issues/523)
 
@@ -88,8 +88,9 @@ duplication between semantic request structs and builder function signatures,
 but no duplicated XML encoder.
 
 This ADR does not authorize a repository-wide conversion or removal of old
-APIs. Trait naming and details remain Technology Preview until more standard and
-version-irregular families have exercised the contract.
+APIs. Phase 1 stabilizes the public `GmpRequest`, `GmpResponse`, and
+`GmpClient::execute` names and the ownership boundaries above. The set of
+migrated command families remains intentionally incomplete until later phases.
 
 ## Validation
 

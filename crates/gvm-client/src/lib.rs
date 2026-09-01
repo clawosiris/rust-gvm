@@ -2284,7 +2284,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn connect_with_wire_trace_emits_redacted_typed_helper_events() {
+    async fn execute_redacts_wire_bytes_before_trace_observation() {
         let connection =
             ScriptedConnection::new([version_response("22.7"), auth_response().to_string()]);
         let sent = connection.sent();
@@ -2298,7 +2298,10 @@ mod tests {
         .expect("client connects");
 
         client
-            .authenticate("admin", "secret-password")
+            .execute(gvm_gmp::commands::authentication::AuthenticateRequest::new(
+                "admin",
+                "secret-password",
+            ))
             .await
             .expect("authenticate succeeds");
 
