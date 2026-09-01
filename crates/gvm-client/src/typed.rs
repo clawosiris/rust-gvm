@@ -111,8 +111,9 @@ use gvm_gmp::commands::targets::{
     GetTargetsRequest, ModifyTargetOpts, ModifyTargetRequest,
 };
 use gvm_gmp::commands::tasks::{
-    create_import_task, create_task, delete_task, get_tasks, modify_task, resume_task, start_task,
-    stop_task, CreateTaskOpts, GetTasksOpts, ModifyTaskOpts,
+    create_import_task, CloneTaskRequest, CreateTaskOpts, CreateTaskRequest, DeleteTaskRequest,
+    GetTaskRequest, GetTasksOpts, GetTasksRequest, ModifyTaskOpts, ModifyTaskRequest,
+    ResumeTaskRequest, StartTaskRequest, StopTaskRequest,
 };
 use gvm_gmp::commands::tickets::{
     create_ticket, get_tickets, modify_ticket, CreateTicketOpts, GetTicketsOpts, ModifyTicketOpts,
@@ -815,8 +816,16 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_tasks(&mut self, opts: GetTasksOpts) -> Result<GetTasksResponse, GvmError> {
-        let response = self.send(get_tasks(opts)).await?;
-        GetTasksResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetTasksRequest::new(opts)).await
+    }
+
+    /// Send a detailed single-task `get_tasks` request and return a typed
+    /// [`GetTasksResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_task(&mut self, task_id: &EntityId) -> Result<GetTasksResponse, GvmError> {
+        self.execute(GetTaskRequest::new(task_id.clone())).await
     }
 
     /// Send a `create_task` request and return a typed [`CreateTaskResponse`].
@@ -831,10 +840,23 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         scanner_id: &EntityId,
         opts: CreateTaskOpts,
     ) -> Result<CreateTaskResponse, GvmError> {
-        let response = self
-            .send(create_task(name, config_id, target_id, scanner_id, opts))
-            .await?;
-        CreateTaskResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CreateTaskRequest::new(
+            name,
+            config_id.clone(),
+            target_id.clone(),
+            scanner_id.clone(),
+            opts,
+        ))
+        .await
+    }
+
+    /// Send a task-copy `create_task` request and return a typed
+    /// [`CreateTaskResponse`].
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn clone_task(&mut self, task_id: &EntityId) -> Result<CreateTaskResponse, GvmError> {
+        self.execute(CloneTaskRequest::new(task_id.clone())).await
     }
 
     /// Send a `create_task` import-task request and return a typed [`CreateTaskResponse`].
@@ -855,8 +877,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn start_task(&mut self, task_id: &EntityId) -> Result<StartTaskResponse, GvmError> {
-        let response = self.send(start_task(task_id)).await?;
-        StartTaskResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(StartTaskRequest::new(task_id.clone())).await
     }
 
     /// Send a `resume_task` request and return a typed [`ResumeTaskResponse`].
@@ -867,8 +888,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         task_id: &EntityId,
     ) -> Result<ResumeTaskResponse, GvmError> {
-        let response = self.send(resume_task(task_id)).await?;
-        ResumeTaskResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ResumeTaskRequest::new(task_id.clone())).await
     }
 
     /// Send a `modify_task` request and return a typed [`ModifyTaskResponse`].
@@ -880,9 +900,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         task_id: &EntityId,
         opts: ModifyTaskOpts,
     ) -> Result<ModifyTaskResponse, GvmError> {
-        let request = modify_task(task_id, opts)?;
-        let response = self.send(request).await?;
-        ModifyTaskResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyTaskRequest::new(task_id.clone(), opts)?)
+            .await
     }
 
     /// Send a `stop_task` request and return a typed [`StopTaskResponse`].
@@ -890,8 +909,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn stop_task(&mut self, task_id: &EntityId) -> Result<StopTaskResponse, GvmError> {
-        let response = self.send(stop_task(task_id)).await?;
-        StopTaskResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(StopTaskRequest::new(task_id.clone())).await
     }
 
     /// Send a `delete_task` request and return a typed [`DeleteTaskResponse`].
@@ -903,8 +921,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         task_id: &EntityId,
         ultimate: bool,
     ) -> Result<DeleteTaskResponse, GvmError> {
-        let response = self.send(delete_task(task_id, ultimate)).await?;
-        DeleteTaskResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(DeleteTaskRequest::new(task_id.clone(), ultimate))
+            .await
     }
 
     /// Send an `empty_trashcan` request and return a typed [`EmptyTrashcanResponse`].

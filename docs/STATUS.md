@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-08-31
+Last updated: 2026-09-01
 
 ## Support Direction
 
@@ -18,6 +18,13 @@ target list/get/create/modify/delete, and asynchronous report export prove the
 contract before family-by-family migration. See
 [ADR 0001](adr/0001-typed-request-response-execution.md) and the
 [typed-execution guide](typed-execution.md).
+
+The first focused Phase 2 batch, tracked by
+[`#539`](https://github.com/greenbone-hive/rust-gvm/issues/539), migrates the
+standard scan-task list/get/create/clone/modify/delete/start/stop/resume
+lifecycle to the same typed execution contract. It intentionally leaves import,
+agent-group, OCI/container-image, web-application, move, and audit task shapes
+for later focused batches.
 
 | Crate | Status | Lines | Tests | Description |
 |-------|--------|-------|-------|-------------|

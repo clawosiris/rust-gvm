@@ -30,7 +30,11 @@ use gvm_gmp::commands::schedules::{GetSchedulesOpts, ScheduleOpts};
 use gvm_gmp::commands::secinfo::GetSecInfoOpts;
 use gvm_gmp::commands::tags::{GetTagsOpts, TagOpts};
 use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest, ModifyTargetOpts};
-use gvm_gmp::commands::tasks::{GetTasksOpts, ModifyTaskOpts};
+use gvm_gmp::commands::tasks::{
+    CloneTaskRequest, CreateTaskOpts, CreateTaskRequest, DeleteTaskRequest, GetTaskRequest,
+    GetTasksOpts, GetTasksRequest, ModifyTaskOpts, ModifyTaskRequest, ResumeTaskRequest,
+    StartTaskRequest, StopTaskRequest,
+};
 use gvm_gmp::commands::tickets::{CreateTicketOpts, GetTicketsOpts, TicketOpenNote};
 use gvm_gmp::commands::tls_certificates::{GetTlsCertificatesOpts, TlsCertificateOpts};
 use gvm_gmp::commands::users::{GetUsersOpts, UserOpts};
@@ -41,6 +45,36 @@ use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 use gvm_protocol::Request;
 
 const CREATED_ID: &str = "11111111-1111-1111-1111-111111111111";
+const TASK_LIFECYCLE_OVERRIDES: &[(&str, &str)] = &[
+    (
+        "get_tasks",
+        r#"<get_tasks_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "create_task",
+        r#"<create_task_response status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111"/>"#,
+    ),
+    (
+        "modify_task",
+        r#"<modify_task_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "delete_task",
+        r#"<delete_task_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "start_task",
+        r#"<start_task_response status="202" status_text="OK"><report_id>22222222-2222-2222-2222-222222222222</report_id></start_task_response>"#,
+    ),
+    (
+        "stop_task",
+        r#"<stop_task_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "resume_task",
+        r#"<resume_task_response status="202" status_text="OK"><report_id>33333333-3333-3333-3333-333333333333</report_id></resume_task_response>"#,
+    ),
+];
 
 struct SemanticAliasRequest;
 
@@ -146,6 +180,141 @@ async fn generic_execute_decodes_the_requests_associated_response() {
 
     assert_eq!(response.status, 200);
     assert!(response.items.is_empty());
+}
+
+#[tokio::test]
+async fn standard_task_requests_execute_on_the_oldest_supported_version() {
+    let Some(server) = fixture_server(MockVersion::V22_4, TASK_LIFECYCLE_OVERRIDES).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let task_id = id("task-1");
+
+    let listed = client
+        .execute(GetTasksRequest::default())
+        .await
+        .expect("task listing should be supported");
+    assert_eq!(listed.status, 200);
+    let detailed = client
+        .execute(GetTaskRequest::new(task_id.clone()))
+        .await
+        .expect("detailed task get should be supported");
+    assert_eq!(detailed.status, 200);
+
+    let created = client
+        .execute(CreateTaskRequest::new(
+            "scan",
+            id("config-1"),
+            id("target-1"),
+            id("scanner-1"),
+            CreateTaskOpts::default(),
+        ))
+        .await
+        .expect("standard task creation should be supported");
+    assert_eq!(created.status, 201);
+    let cloned = client
+        .execute(CloneTaskRequest::new(task_id.clone()))
+        .await
+        .expect("task cloning should be supported");
+    assert_eq!(cloned.status, 201);
+
+    let modified = client
+        .execute(
+            ModifyTaskRequest::new(task_id.clone(), ModifyTaskOpts::default())
+                .expect("valid task modification"),
+        )
+        .await
+        .expect("task modification should be supported");
+    assert_eq!(modified.status, 200);
+    let deleted = client
+        .execute(DeleteTaskRequest::new(task_id.clone(), false))
+        .await
+        .expect("task deletion should be supported");
+    assert_eq!(deleted.status, 200);
+
+    let started = client
+        .execute(StartTaskRequest::new(task_id.clone()))
+        .await
+        .expect("task start should be supported");
+    assert_eq!(started.status, 202);
+    assert_eq!(
+        started.report_id.as_ref().map(EntityId::as_str),
+        Some("22222222-2222-2222-2222-222222222222")
+    );
+    let stopped = client
+        .execute(StopTaskRequest::new(task_id.clone()))
+        .await
+        .expect("task stop should be supported");
+    assert_eq!(stopped.status, 200);
+    let resumed = client
+        .execute(ResumeTaskRequest::new(task_id))
+        .await
+        .expect("task resume should be supported");
+    assert_eq!(resumed.status, 202);
+
+    let commands = server
+        .command_history()
+        .iter()
+        .map(|record| record.command_name().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        commands,
+        [
+            "get_tasks",
+            "get_tasks",
+            "create_task",
+            "create_task",
+            "modify_task",
+            "delete_task",
+            "start_task",
+            "stop_task",
+            "resume_task",
+        ]
+    );
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn standard_task_execute_preserves_status_and_parse_context() {
+    let Some(server) = fixture_server(
+        MockVersion::V22_4,
+        &[
+            (
+                "get_tasks",
+                r#"<get_tasks_response status="409" status_text="task conflict"/>"#,
+            ),
+            (
+                "create_task",
+                r#"<create_task_response status="201" status_text="OK"/>"#,
+            ),
+        ],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+
+    let status_error = client
+        .execute(GetTaskRequest::new(id("task-1")))
+        .await
+        .expect_err("non-success task response should fail");
+    assert!(matches!(
+        status_error,
+        GvmError::Parse(ParseError::ServerError { status: 409, message })
+            if message == "task conflict"
+    ));
+
+    let parse_error = client
+        .execute(CloneTaskRequest::new(id("task-1")))
+        .await
+        .expect_err("missing clone id should fail");
+    assert!(matches!(
+        parse_error,
+        GvmError::Parse(ParseError::MissingElement(field)) if field == "id"
+    ));
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -379,6 +548,7 @@ async fn discovery_and_administration_families_parse_through_real_client() {
     assert_typed_success!(client.get_scanners(GetScannersOpts::default()));
     assert_typed_success!(client.get_port_lists(GetPortListsOpts::default()));
     assert_typed_success!(client.get_tasks(GetTasksOpts::default()));
+    assert_typed_success!(client.get_task(&id("11111111-1111-1111-1111-111111111111")));
     assert_typed_success!(client.get_reports(GetReportsOpts::default()));
     assert_typed_success!(client.get_results(GetResultsOpts::default()));
     assert_typed_success!(client.get_nvts(GetNvtsOpts::default()));
@@ -466,6 +636,7 @@ async fn create_families_parse_typed_ids_from_table_driven_fixture_responses() {
             "create_report_format",
             create_response!("create_report_format_response"),
         ),
+        ("create_task", create_response!("create_task_response")),
     ];
     let Some(server) = fixture_server(MockVersion::V22_8, &overrides).await else {
         return;
@@ -506,6 +677,14 @@ async fn create_families_parse_typed_ids_from_table_driven_fixture_responses() {
         client.create_tls_certificate("certificate", TlsCertificateOpts::default())
     );
     assert_create_success!(client.create_report_format("format", ReportFormatOpts::default()));
+    assert_create_success!(client.create_task(
+        "scan",
+        &related_id,
+        &related_id,
+        &related_id,
+        CreateTaskOpts::default()
+    ));
+    assert_create_success!(client.clone_task(&related_id));
 
     let history = server.command_history();
     for (command, child) in [
