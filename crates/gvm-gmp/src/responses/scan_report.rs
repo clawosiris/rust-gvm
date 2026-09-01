@@ -14,6 +14,7 @@ use crate::responses::common::{
     CountInfo, EntityMeta, ParseError, XmlNode,
 };
 use crate::responses::report::{Severity, SeverityCount};
+use crate::{GmpResponse, GmpVersion};
 
 /// Full and filtered result counts from a structured vulnerability report.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -80,6 +81,12 @@ impl GetScanReportResponse {
             page: parse_page(&root, "scan_report")?,
             counts: count_info(&root, "scan_report_count")?,
         })
+    }
+}
+
+impl GmpResponse for GetScanReportResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 

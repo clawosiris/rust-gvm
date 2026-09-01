@@ -418,6 +418,32 @@ impl GmpResponse for ExportScanReportResponse {
     }
 }
 
+macro_rules! impl_report_gmp_response {
+    ($($response:ty),+ $(,)?) => {
+        $(
+            impl GmpResponse for $response {
+                fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+                    Self::from_response(response)
+                }
+            }
+        )+
+    };
+}
+
+impl_report_gmp_response!(
+    GetReportsResponse,
+    GetReportVulnsResponse,
+    GetReportTlsCertificatesResponse,
+    GetReportErrorsResponse,
+    GetReportClosedCvesResponse,
+    GetReportHostsResponse,
+    GetReportPortsResponse,
+    GetReportApplicationsResponse,
+    GetReportOperatingSystemsResponse,
+    GetReportCvesResponse,
+    ReportExport,
+);
+
 impl ReportVulnerability {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
         let nvt = node.child("nvt");
@@ -902,6 +928,28 @@ mod tests {
     }
 
     #[test]
+    fn associated_decoder_handles_large_repeated_report_response() {
+        const REPORTS: usize = 10_000;
+        let mut xml = String::from(r#"<get_reports_response status="200" status_text="OK">"#);
+        for index in 0..REPORTS {
+            xml.push_str(&format!(
+                r#"<report id="report-{index}"><name>Report {index}</name><report><scan_start>2026-09-01T00:00:00Z</scan_start><result_count><full>1</full><filtered>1</filtered></result_count></report></report>"#
+            ));
+        }
+        xml.push_str(&format!(
+            "<report_count>{REPORTS}<filtered>{REPORTS}</filtered></report_count></get_reports_response>"
+        ));
+
+        let response = Response::new(xml.into_bytes());
+        let parsed = <GetReportsResponse as GmpResponse>::decode(&response, GmpVersion(22, 8))
+            .expect("large associated response decodes");
+
+        assert_eq!(parsed.items.len(), REPORTS);
+        assert_eq!(parsed.counts.total, Some(REPORTS as u32));
+        assert_eq!(parsed.items[REPORTS - 1].meta.id.as_str(), "report-9999");
+    }
+
+    #[test]
     fn parses_empty_reports() {
         let response = Response::from(
             r#"<get_reports_response status="200" status_text="OK"><report_count>0<filtered>0</filtered></report_count></get_reports_response>"#,
@@ -1316,6 +1364,36 @@ mod tests {
         assert_eq!(export.bytes, b"Hello PDF");
         assert_eq!(export.content_type.as_deref(), Some("application/pdf"));
         assert_eq!(export.extension.as_deref(), Some("pdf"));
+    }
+
+    #[test]
+    fn associated_decoder_preserves_arbitrary_binary_export_bytes() {
+        let response = Response::from(
+            r#"<get_reports_response status="200" status_text="OK"><report extension="bin" content_type="application/octet-stream">AP8B/g==</report></get_reports_response>"#,
+        );
+
+        let export = <ReportExport as GmpResponse>::decode(&response, GmpVersion(22, 8))
+            .expect("binary export decodes");
+
+        assert_eq!(export.bytes, [0, 255, 1, 254]);
+        assert_eq!(
+            export.content_type.as_deref(),
+            Some("application/octet-stream")
+        );
+    }
+
+    #[test]
+    fn associated_decoder_accepts_mixed_repeated_vulnerability_elements() {
+        let response = Response::from(
+            r#"<get_report_vulns_response status="200" status_text="OK"><vulns><vuln id="one"><name>First</name></vuln><vulnerability id="two"><name>Second</name></vulnerability><vuln id="three"><name>Third</name></vuln></vulns><report_vuln_count>3<filtered>3</filtered></report_vuln_count></get_report_vulns_response>"#,
+        );
+
+        let parsed = <GetReportVulnsResponse as GmpResponse>::decode(&response, GmpVersion(22, 8))
+            .expect("mixed repeated vulnerability elements decode");
+
+        assert_eq!(parsed.items.len(), 3);
+        assert_eq!(parsed.items[1].id.as_deref(), Some("three"));
+        assert_eq!(parsed.items[2].name.as_deref(), Some("Second"));
     }
 
     #[test]

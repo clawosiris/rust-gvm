@@ -10,7 +10,13 @@ use crate::common::{
     add_filter_attrs, add_optional_id_element, bool_str, set_optional_bool_attr,
     validate_single_xml_document,
 };
-use crate::responses::{ExportScanReportResponse, ParseError};
+use crate::responses::{
+    ExportScanReportResponse, GetAuditReportHostsResponse, GetAuditReportResponse,
+    GetReportApplicationsResponse, GetReportClosedCvesResponse, GetReportCvesResponse,
+    GetReportErrorsResponse, GetReportHostsResponse, GetReportOperatingSystemsResponse,
+    GetReportPortsResponse, GetReportTlsCertificatesResponse, GetReportVulnsResponse,
+    GetReportsResponse, GetScanReportResponse, ParseError, ReportExport,
+};
 use crate::types::EntityId;
 use crate::GmpRequest;
 
@@ -114,6 +120,272 @@ pub struct ExportScanReportOpts {
     /// Whether result tags are included.
     pub result_tags: Option<bool>,
 }
+
+/// Semantic request for listing reports.
+#[derive(Debug, Clone, Default)]
+pub struct GetReportsRequest {
+    opts: GetReportsOpts,
+}
+
+impl GetReportsRequest {
+    /// Create a report-list request.
+    #[must_use]
+    pub fn new(opts: GetReportsOpts) -> Self {
+        Self { opts }
+    }
+}
+
+impl Request for GetReportsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_reports(self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetReportsRequest {
+    type Response = GetReportsResponse;
+}
+
+/// Semantic request for one detailed report.
+#[derive(Debug, Clone)]
+pub struct GetReportRequest {
+    report_id: EntityId,
+}
+
+impl GetReportRequest {
+    /// Create a detailed single-report request.
+    #[must_use]
+    pub fn new(report_id: EntityId) -> Self {
+        Self { report_id }
+    }
+}
+
+impl Request for GetReportRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_report(&self.report_id).to_bytes()
+    }
+}
+
+impl GmpRequest for GetReportRequest {
+    type Response = GetReportsResponse;
+}
+
+/// Semantic request for listing audit reports.
+#[derive(Debug, Clone, Default)]
+pub struct GetAuditReportsRequest {
+    opts: GetReportsOpts,
+}
+
+impl GetAuditReportsRequest {
+    /// Create an audit-report list request.
+    #[must_use]
+    pub fn new(opts: GetReportsOpts) -> Self {
+        Self { opts }
+    }
+}
+
+impl Request for GetAuditReportsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_audit_reports(self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetAuditReportsRequest {
+    type Response = GetReportsResponse;
+}
+
+/// Semantic request for one structured vulnerability report.
+#[derive(Debug, Clone)]
+pub struct GetScanReportRequest {
+    scan_report_id: EntityId,
+    opts: GetScanReportOpts,
+}
+
+impl GetScanReportRequest {
+    /// Create a structured vulnerability-report request.
+    #[must_use]
+    pub fn new(scan_report_id: EntityId, opts: GetScanReportOpts) -> Self {
+        Self {
+            scan_report_id,
+            opts,
+        }
+    }
+}
+
+impl Request for GetScanReportRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_scan_report(&self.scan_report_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetScanReportRequest {
+    type Response = GetScanReportResponse;
+}
+
+/// Semantic request for one structured audit report.
+#[derive(Debug, Clone)]
+pub struct GetAuditReportRequest {
+    audit_report_id: EntityId,
+    opts: GetAuditReportOpts,
+}
+
+impl GetAuditReportRequest {
+    /// Create a structured audit-report request.
+    #[must_use]
+    pub fn new(audit_report_id: EntityId, opts: GetAuditReportOpts) -> Self {
+        Self {
+            audit_report_id,
+            opts,
+        }
+    }
+}
+
+impl Request for GetAuditReportRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_audit_report(&self.audit_report_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetAuditReportRequest {
+    type Response = GetAuditReportResponse;
+}
+
+/// Semantic request for structured audit-report host summaries.
+#[derive(Debug, Clone)]
+pub struct GetAuditReportHostsRequest {
+    report_id: EntityId,
+    opts: GetAuditReportHostsOpts,
+}
+
+impl GetAuditReportHostsRequest {
+    /// Create an audit-report host request.
+    #[must_use]
+    pub fn new(report_id: EntityId, opts: GetAuditReportHostsOpts) -> Self {
+        Self { report_id, opts }
+    }
+}
+
+impl Request for GetAuditReportHostsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_audit_report_hosts(&self.report_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetAuditReportHostsRequest {
+    type Response = GetAuditReportHostsResponse;
+}
+
+/// Semantic request for a synchronous report-format export.
+#[derive(Debug, Clone)]
+pub struct GetReportExportRequest {
+    report_id: EntityId,
+    opts: GetReportExportOpts,
+}
+
+impl GetReportExportRequest {
+    /// Create a synchronous report-format export request.
+    #[must_use]
+    pub fn new(report_id: EntityId, opts: GetReportExportOpts) -> Self {
+        Self { report_id, opts }
+    }
+}
+
+impl Request for GetReportExportRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_report_export_with_opts(&self.report_id, self.opts.clone()).to_bytes()
+    }
+
+    fn semantic_command_name(&self) -> Option<&'static str> {
+        Some("get_report_export")
+    }
+}
+
+impl GmpRequest for GetReportExportRequest {
+    type Response = ReportExport;
+}
+
+macro_rules! report_detail_request {
+    ($request:ident, $response:ty, $builder:ident, $doc:literal) => {
+        #[doc = $doc]
+        #[derive(Debug, Clone)]
+        pub struct $request {
+            report_id: EntityId,
+            opts: GetReportDetailsOpts,
+        }
+
+        impl $request {
+            /// Create the structured report-subresource request.
+            #[must_use]
+            pub fn new(report_id: EntityId, opts: GetReportDetailsOpts) -> Self {
+                Self { report_id, opts }
+            }
+        }
+
+        impl Request for $request {
+            fn to_bytes(&self) -> Vec<u8> {
+                $builder(&self.report_id, self.opts.clone()).to_bytes()
+            }
+        }
+
+        impl GmpRequest for $request {
+            type Response = $response;
+        }
+    };
+}
+
+report_detail_request!(
+    GetReportHostsRequest,
+    GetReportHostsResponse,
+    get_report_hosts,
+    "Semantic request for report host summaries."
+);
+report_detail_request!(
+    GetReportPortsRequest,
+    GetReportPortsResponse,
+    get_report_ports,
+    "Semantic request for report port summaries."
+);
+report_detail_request!(
+    GetReportApplicationsRequest,
+    GetReportApplicationsResponse,
+    get_report_applications,
+    "Semantic request for report application summaries."
+);
+report_detail_request!(
+    GetReportOperatingSystemsRequest,
+    GetReportOperatingSystemsResponse,
+    get_report_operating_systems,
+    "Semantic request for report operating-system summaries."
+);
+report_detail_request!(
+    GetReportCvesRequest,
+    GetReportCvesResponse,
+    get_report_cves,
+    "Semantic request for report CVE summaries."
+);
+report_detail_request!(
+    GetReportVulnsRequest,
+    GetReportVulnsResponse,
+    get_report_vulns,
+    "Semantic request for report vulnerability summaries."
+);
+report_detail_request!(
+    GetReportTlsCertificatesRequest,
+    GetReportTlsCertificatesResponse,
+    get_report_tls_certificates,
+    "Semantic request for report TLS-certificate summaries."
+);
+report_detail_request!(
+    GetReportErrorsRequest,
+    GetReportErrorsResponse,
+    get_report_errors,
+    "Semantic request for report errors."
+);
+report_detail_request!(
+    GetReportClosedCvesRequest,
+    GetReportClosedCvesResponse,
+    get_report_closed_cves,
+    "Semantic request for report closed-CVE summaries."
+);
 
 /// Semantic request for queuing or reusing an asynchronous report export.
 #[derive(Debug, Clone)]
@@ -467,6 +739,7 @@ pub fn get_report_closed_cves(report_id: &EntityId, opts: GetReportDetailsOpts) 
 mod tests {
     use super::*;
     use crate::common::xml;
+    use crate::GmpResponse;
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
@@ -539,6 +812,126 @@ mod tests {
             semantic.to_bytes(),
             br#"<export_scan_report config_id="config-1" filter="severity&gt;5" format_id="format-1" ignore_pagination="1" lean="0" notes_details="1" overrides_details="0" report_id="report-1" result_tags="1"/>"#
         );
+    }
+
+    fn assert_associated_response<R, T>()
+    where
+        R: GmpRequest<Response = T>,
+        T: GmpResponse,
+    {
+    }
+
+    #[test]
+    fn semantic_report_requests_have_fixed_response_types() {
+        assert_associated_response::<GetReportsRequest, GetReportsResponse>();
+        assert_associated_response::<GetReportRequest, GetReportsResponse>();
+        assert_associated_response::<GetAuditReportsRequest, GetReportsResponse>();
+        assert_associated_response::<GetScanReportRequest, GetScanReportResponse>();
+        assert_associated_response::<GetAuditReportRequest, GetAuditReportResponse>();
+        assert_associated_response::<GetAuditReportHostsRequest, GetAuditReportHostsResponse>();
+        assert_associated_response::<GetReportExportRequest, ReportExport>();
+        assert_associated_response::<GetReportHostsRequest, GetReportHostsResponse>();
+        assert_associated_response::<GetReportPortsRequest, GetReportPortsResponse>();
+        assert_associated_response::<GetReportApplicationsRequest, GetReportApplicationsResponse>();
+        assert_associated_response::<
+            GetReportOperatingSystemsRequest,
+            GetReportOperatingSystemsResponse,
+        >();
+        assert_associated_response::<GetReportCvesRequest, GetReportCvesResponse>();
+        assert_associated_response::<GetReportVulnsRequest, GetReportVulnsResponse>();
+        assert_associated_response::<
+            GetReportTlsCertificatesRequest,
+            GetReportTlsCertificatesResponse,
+        >();
+        assert_associated_response::<GetReportErrorsRequest, GetReportErrorsResponse>();
+        assert_associated_response::<GetReportClosedCvesRequest, GetReportClosedCvesResponse>();
+        assert_associated_response::<ExportScanReportRequest, ExportScanReportResponse>();
+    }
+
+    #[test]
+    fn semantic_report_requests_match_legacy_builder_bytes() {
+        let report_id = id("report-1");
+        let list_opts = GetReportsOpts {
+            filter_string: Some("severity>5".into()),
+            details: Some(true),
+            ..Default::default()
+        };
+        assert_eq!(
+            GetReportsRequest::new(list_opts.clone()).to_bytes(),
+            get_reports(list_opts.clone()).to_bytes()
+        );
+        assert_eq!(
+            GetReportRequest::new(report_id.clone()).to_bytes(),
+            get_report(&report_id).to_bytes()
+        );
+        assert_eq!(
+            GetAuditReportsRequest::new(list_opts.clone()).to_bytes(),
+            get_audit_reports(list_opts).to_bytes()
+        );
+
+        let scan_opts = GetScanReportOpts {
+            filter_string: Some("levels=chml".into()),
+            filter_id: Some(id("filter-1")),
+        };
+        assert_eq!(
+            GetScanReportRequest::new(report_id.clone(), scan_opts.clone()).to_bytes(),
+            get_scan_report(&report_id, scan_opts).to_bytes()
+        );
+        let audit_opts = GetAuditReportOpts {
+            filter_string: Some("compliance_levels=yniu".into()),
+            filter_id: Some(id("filter-2")),
+        };
+        assert_eq!(
+            GetAuditReportRequest::new(report_id.clone(), audit_opts.clone()).to_bytes(),
+            get_audit_report(&report_id, audit_opts).to_bytes()
+        );
+        let audit_hosts_opts = GetAuditReportHostsOpts {
+            filter_string: Some("rows=25".into()),
+            filter_id: None,
+            lean: Some(true),
+            details: Some(false),
+        };
+        assert_eq!(
+            GetAuditReportHostsRequest::new(report_id.clone(), audit_hosts_opts.clone()).to_bytes(),
+            get_audit_report_hosts(&report_id, audit_hosts_opts).to_bytes()
+        );
+
+        let mut export_opts = GetReportExportOpts::new(id("format-1"));
+        export_opts.report_config_id = Some(id("config-1"));
+        export_opts.ignore_pagination = Some(false);
+        let export = GetReportExportRequest::new(report_id.clone(), export_opts.clone());
+        assert_eq!(
+            export.to_bytes(),
+            get_report_export_with_opts(&report_id, export_opts).to_bytes()
+        );
+        assert_eq!(export.semantic_command_name(), Some("get_report_export"));
+
+        let detail_opts = GetReportDetailsOpts {
+            filter_string: Some("rows=10".into()),
+            filter_id: Some(id("filter-3")),
+            ignore_pagination: Some(true),
+            details: Some(false),
+        };
+        macro_rules! assert_detail_bytes {
+            ($request:ident, $builder:ident) => {
+                assert_eq!(
+                    $request::new(report_id.clone(), detail_opts.clone()).to_bytes(),
+                    $builder(&report_id, detail_opts.clone()).to_bytes()
+                );
+            };
+        }
+        assert_detail_bytes!(GetReportHostsRequest, get_report_hosts);
+        assert_detail_bytes!(GetReportPortsRequest, get_report_ports);
+        assert_detail_bytes!(GetReportApplicationsRequest, get_report_applications);
+        assert_detail_bytes!(
+            GetReportOperatingSystemsRequest,
+            get_report_operating_systems
+        );
+        assert_detail_bytes!(GetReportCvesRequest, get_report_cves);
+        assert_detail_bytes!(GetReportVulnsRequest, get_report_vulns);
+        assert_detail_bytes!(GetReportTlsCertificatesRequest, get_report_tls_certificates);
+        assert_detail_bytes!(GetReportErrorsRequest, get_report_errors);
+        assert_detail_bytes!(GetReportClosedCvesRequest, get_report_closed_cves);
     }
 
     #[test]

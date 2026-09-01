@@ -123,5 +123,50 @@ not need Serde derives. A request whose encoding genuinely differs by GMP
 version must make that distinction explicit in the GMP layer; transport code is
 not the place for command-specific branching.
 
+## Irregular report codecs and version policy
+
+The Phase 3 report family demonstrates that `GmpResponse` is a codec contract,
+not a Serde constraint. Report list/detail responses, structured scan and audit
+reports, report drill-downs, and both export styles all use `execute` while
+retaining their existing explicit parsers:
+
+```rust
+use gvm_gmp::commands::reports::{
+    GetReportExportOpts, GetReportExportRequest, GetReportVulnsRequest,
+};
+
+let export = client
+    .execute(GetReportExportRequest::new(
+        report_id.clone(),
+        GetReportExportOpts::new(report_format_id),
+    ))
+    .await?;
+
+let vulnerabilities = client
+    .execute(GetReportVulnsRequest::new(report_id, Default::default()))
+    .await?;
+```
+
+`ReportExport` accepts base64-encoded arbitrary bytes and the nested XML export
+shape. Structured report parsers retain mixed/repeated element handling and
+large responses remain subject to the same bounded transport frame limit as raw
+execution. No report parser requires `DeserializeOwned`, and the entire response
+is still returned as the request's associated type.
+
+Report command availability is intentionally not inferred from the XML root
+alone:
+
+- structured audit reports and audit-report hosts require GMP 22.7;
+- structured scan reports, report drill-downs, and synchronous report-format
+  export require GMP 22.8;
+- synchronous export uses `<get_reports ...>` on the wire but declares the
+  semantic capability `get_report_export`;
+- asynchronous `export_scan_report` was added without a distinct GMP version
+  and therefore continues to require positive XML-help discovery.
+
+These checks run before transmission through the same `send` path used by raw
+and ordinary typed requests. The retained raw builders and helpers remain
+available when callers need unmodeled report details.
+
 See [ADR 0001](adr/0001-typed-request-response-execution.md) for ownership,
 compatibility, error, and security decisions.

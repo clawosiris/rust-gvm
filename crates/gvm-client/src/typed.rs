@@ -73,12 +73,13 @@ use gvm_gmp::commands::report_formats::{
     GetReportFormatsOpts, ReportFormatOpts,
 };
 use gvm_gmp::commands::reports::{
-    get_audit_report, get_audit_report_hosts, get_report_applications, get_report_closed_cves,
-    get_report_cves, get_report_errors, get_report_export, get_report_export_with_opts,
-    get_report_hosts, get_report_operating_systems, get_report_ports, get_report_tls_certificates,
-    get_report_vulnerabilities, get_report_vulns, get_reports, import_report, ExportScanReportOpts,
-    ExportScanReportRequest, GetAuditReportHostsOpts, GetAuditReportOpts, GetReportDetailsOpts,
-    GetReportExportOpts, GetReportsOpts, ImportReportOpts,
+    import_report, ExportScanReportOpts, ExportScanReportRequest, GetAuditReportHostsOpts,
+    GetAuditReportHostsRequest, GetAuditReportOpts, GetAuditReportRequest,
+    GetReportApplicationsRequest, GetReportClosedCvesRequest, GetReportCvesRequest,
+    GetReportDetailsOpts, GetReportErrorsRequest, GetReportExportOpts, GetReportExportRequest,
+    GetReportHostsRequest, GetReportOperatingSystemsRequest, GetReportPortsRequest,
+    GetReportTlsCertificatesRequest, GetReportVulnsRequest, GetReportsOpts, GetReportsRequest,
+    ImportReportOpts,
 };
 use gvm_gmp::commands::results::{get_results, GetResultsOpts};
 use gvm_gmp::commands::roles::{create_role, get_roles, GetRolesOpts, RoleOpts};
@@ -956,8 +957,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         audit_report_id: &EntityId,
         opts: GetAuditReportOpts,
     ) -> Result<GetAuditReportResponse, GvmError> {
-        let response = self.send(get_audit_report(audit_report_id, opts)).await?;
-        GetAuditReportResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetAuditReportRequest::new(audit_report_id.clone(), opts))
+            .await
     }
 
     /// Send a `get_audit_report_hosts` request and return typed host summaries.
@@ -969,8 +970,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         report_id: &EntityId,
         opts: GetAuditReportHostsOpts,
     ) -> Result<GetAuditReportHostsResponse, GvmError> {
-        let response = self.send(get_audit_report_hosts(report_id, opts)).await?;
-        GetAuditReportHostsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetAuditReportHostsRequest::new(report_id.clone(), opts))
+            .await
     }
 
     /// Send a `get_reports` request and return a typed [`GetReportsResponse`].
@@ -981,8 +982,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         opts: GetReportsOpts,
     ) -> Result<GetReportsResponse, GvmError> {
-        let response = self.send(get_reports(opts)).await?;
-        GetReportsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetReportsRequest::new(opts)).await
     }
 
     /// Queue or reuse an asynchronous scan-report export and return its typed
@@ -1012,8 +1012,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         report_id: &EntityId,
         opts: GetReportDetailsOpts,
     ) -> Result<GetReportVulnsResponse, GvmError> {
-        let response = self.send(get_report_vulns(report_id, opts)).await?;
-        GetReportVulnsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetReportVulnsRequest::new(report_id.clone(), opts))
+            .await
     }
 
     /// Send a `get_report_vulns` request using python-gvm's descriptive helper
@@ -1026,10 +1026,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         report_id: &EntityId,
         opts: GetReportDetailsOpts,
     ) -> Result<GetReportVulnsResponse, GvmError> {
-        let response = self
-            .send(get_report_vulnerabilities(report_id, opts))
-            .await?;
-        GetReportVulnsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetReportVulnsRequest::new(report_id.clone(), opts))
+            .await
     }
 
     /// Send a `get_report_tls_certificates` request and return a typed [`GetReportTlsCertificatesResponse`].
@@ -1041,10 +1039,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         report_id: &EntityId,
         opts: GetReportDetailsOpts,
     ) -> Result<GetReportTlsCertificatesResponse, GvmError> {
-        let response = self
-            .send(get_report_tls_certificates(report_id, opts))
-            .await?;
-        GetReportTlsCertificatesResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetReportTlsCertificatesRequest::new(
+            report_id.clone(),
+            opts,
+        ))
+        .await
     }
 
     /// Send a `get_report_hosts` request and return a typed
@@ -1060,8 +1059,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         report_id: &EntityId,
         opts: GetReportDetailsOpts,
     ) -> Result<GetReportHostsResponse, GvmError> {
-        let response = self.send(get_report_hosts(report_id, opts)).await?;
-        GetReportHostsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetReportHostsRequest::new(report_id.clone(), opts))
+            .await
     }
 
     /// Send a `get_report_ports` request and return a typed
@@ -1077,8 +1076,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         report_id: &EntityId,
         opts: GetReportDetailsOpts,
     ) -> Result<GetReportPortsResponse, GvmError> {
-        let response = self.send(get_report_ports(report_id, opts)).await?;
-        GetReportPortsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetReportPortsRequest::new(report_id.clone(), opts))
+            .await
     }
 
     /// Send a `get_report_applications` request and return a typed
@@ -1094,8 +1093,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         report_id: &EntityId,
         opts: GetReportDetailsOpts,
     ) -> Result<GetReportApplicationsResponse, GvmError> {
-        let response = self.send(get_report_applications(report_id, opts)).await?;
-        GetReportApplicationsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetReportApplicationsRequest::new(report_id.clone(), opts))
+            .await
     }
 
     /// Send a `get_report_operating_systems` request and return a typed
@@ -1111,10 +1110,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         report_id: &EntityId,
         opts: GetReportDetailsOpts,
     ) -> Result<GetReportOperatingSystemsResponse, GvmError> {
-        let response = self
-            .send(get_report_operating_systems(report_id, opts))
-            .await?;
-        GetReportOperatingSystemsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetReportOperatingSystemsRequest::new(
+            report_id.clone(),
+            opts,
+        ))
+        .await
     }
 
     /// Send a `get_report_cves` request and return a typed
@@ -1130,8 +1130,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         report_id: &EntityId,
         opts: GetReportDetailsOpts,
     ) -> Result<GetReportCvesResponse, GvmError> {
-        let response = self.send(get_report_cves(report_id, opts)).await?;
-        GetReportCvesResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetReportCvesRequest::new(report_id.clone(), opts))
+            .await
     }
 
     /// Send a `get_report_errors` request and return a typed [`GetReportErrorsResponse`].
@@ -1143,8 +1143,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         report_id: &EntityId,
         opts: GetReportDetailsOpts,
     ) -> Result<GetReportErrorsResponse, GvmError> {
-        let response = self.send(get_report_errors(report_id, opts)).await?;
-        GetReportErrorsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetReportErrorsRequest::new(report_id.clone(), opts))
+            .await
     }
 
     /// Send a `get_report_closed_cves` request and return a typed [`GetReportClosedCvesResponse`].
@@ -1156,8 +1156,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         report_id: &EntityId,
         opts: GetReportDetailsOpts,
     ) -> Result<GetReportClosedCvesResponse, GvmError> {
-        let response = self.send(get_report_closed_cves(report_id, opts)).await?;
-        GetReportClosedCvesResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetReportClosedCvesRequest::new(report_id.clone(), opts))
+            .await
     }
 
     /// Send a `get_reports` export request and return a typed [`ReportExport`].
@@ -1169,10 +1169,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         report_id: &EntityId,
         report_format_id: &EntityId,
     ) -> Result<ReportExport, GvmError> {
-        let response = self
-            .send(get_report_export(report_id, report_format_id))
-            .await?;
-        ReportExport::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetReportExportRequest::new(
+            report_id.clone(),
+            GetReportExportOpts::new(report_format_id.clone()),
+        ))
+        .await
     }
 
     /// Send a `get_reports` export request with export options and return a typed [`ReportExport`].
@@ -1184,10 +1185,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         report_id: &EntityId,
         opts: GetReportExportOpts,
     ) -> Result<ReportExport, GvmError> {
-        let response = self
-            .send(get_report_export_with_opts(report_id, opts))
-            .await?;
-        ReportExport::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetReportExportRequest::new(report_id.clone(), opts))
+            .await
     }
 
     // ── Results ───────────────────────────────────────────────────────────────

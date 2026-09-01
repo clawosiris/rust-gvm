@@ -43,6 +43,17 @@ methods remain additive wrappers over generic typed execution. Scan
 configurations remain a separate later batch because they include larger and
 more specialized command surfaces.
 
+The irregular-report Phase 3 batch, tracked by
+[`#546`](https://github.com/greenbone-hive/rust-gvm/issues/546), migrates report
+list/detail, structured scan and audit reports, audit hosts, nine structured
+report drill-downs, and synchronous report-format export. Existing explicit
+parsers remain authoritative for binary/base64 exports, nested XML exports,
+mixed/repeated response elements, and large bounded responses. Existing typed
+helpers delegate to generic execution, while raw builders and versioned/raw
+helpers remain supported. Version policy stays explicit: audit operations are
+22.7+, scan/drill-down/synchronous-export operations are 22.8+, and
+`export_scan_report` still requires positive help discovery.
+
 | Crate | Status | Lines | Tests | Description |
 |-------|--------|-------|-------|-------------|
 | `gvm-protocol` | ✅ Implemented | ~2,330 | 67 | XML command builder, response parser, streaming reader |
