@@ -29,7 +29,10 @@ use gvm_gmp::commands::reports::GetReportsOpts;
 use gvm_gmp::commands::results::GetResultsOpts;
 use gvm_gmp::commands::roles::{GetRolesOpts, RoleOpts};
 use gvm_gmp::commands::scan_configs::GetScanConfigsOpts;
-use gvm_gmp::commands::scanners::GetScannersOpts;
+use gvm_gmp::commands::scanners::{
+    CloneScannerRequest, CreateScannerRequest, DeleteScannerRequest, GetScannerRequest,
+    GetScannersOpts, GetScannersRequest, ModifyScannerRequest, ScannerOpts, VerifyScannerRequest,
+};
 use gvm_gmp::commands::schedules::{GetSchedulesOpts, ScheduleOpts};
 use gvm_gmp::commands::secinfo::GetSecInfoOpts;
 use gvm_gmp::commands::tags::{GetTagsOpts, TagOpts};
@@ -96,6 +99,29 @@ const CREDENTIAL_LIFECYCLE_OVERRIDES: &[(&str, &str)] = &[
     (
         "delete_credential",
         r#"<delete_credential_response status="200" status_text="OK"/>"#,
+    ),
+];
+
+const SCANNER_LIFECYCLE_OVERRIDES: &[(&str, &str)] = &[
+    (
+        "get_scanners",
+        r#"<get_scanners_response status="200" status_text="OK"><scanner_count>0<filtered>0</filtered></scanner_count></get_scanners_response>"#,
+    ),
+    (
+        "create_scanner",
+        r#"<create_scanner_response status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111"/>"#,
+    ),
+    (
+        "modify_scanner",
+        r#"<modify_scanner_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "delete_scanner",
+        r#"<delete_scanner_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "verify_scanner",
+        r#"<verify_scanner_response status="200" status_text="OK"/>"#,
     ),
 ];
 
@@ -441,6 +467,118 @@ async fn standard_credential_execute_preserves_status_and_parse_context() {
 
     let parse_error = client
         .execute(CloneCredentialRequest::new(id("credential-1")))
+        .await
+        .expect_err("missing clone id should fail");
+    assert!(matches!(
+        parse_error,
+        GvmError::Parse(ParseError::MissingElement(field)) if field == "id"
+    ));
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn scanner_requests_execute_on_the_oldest_supported_version() {
+    let Some(server) = fixture_server(MockVersion::V22_4, SCANNER_LIFECYCLE_OVERRIDES).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let scanner_id = id("scanner-1");
+
+    let listed = client
+        .execute(GetScannersRequest::default())
+        .await
+        .expect("scanner listing should be supported");
+    assert_eq!(listed.status, 200);
+    let detailed = client
+        .execute(GetScannerRequest::new(scanner_id.clone()))
+        .await
+        .expect("detailed scanner get should be supported");
+    assert_eq!(detailed.status, 200);
+
+    let created = client
+        .execute(CreateScannerRequest::new("scanner", ScannerOpts::default()))
+        .await
+        .expect("scanner creation should be supported");
+    assert_eq!(created.status, 201);
+    let cloned = client
+        .execute(CloneScannerRequest::new(scanner_id.clone()))
+        .await
+        .expect("scanner cloning should be supported");
+    assert_eq!(cloned.status, 201);
+
+    let modified = client
+        .execute(ModifyScannerRequest::new(
+            scanner_id.clone(),
+            ScannerOpts::default(),
+        ))
+        .await
+        .expect("scanner modification should be supported");
+    assert_eq!(modified.status, 200);
+    let deleted = client
+        .execute(DeleteScannerRequest::new(scanner_id.clone(), false))
+        .await
+        .expect("scanner deletion should be supported");
+    assert_eq!(deleted.status, 200);
+    let verified = client
+        .execute(VerifyScannerRequest::new(scanner_id))
+        .await
+        .expect("scanner verification should be supported");
+    assert_eq!(verified.status, 200);
+
+    let commands = server
+        .command_history()
+        .iter()
+        .map(|record| record.command_name().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        commands,
+        [
+            "get_scanners",
+            "get_scanners",
+            "create_scanner",
+            "create_scanner",
+            "modify_scanner",
+            "delete_scanner",
+            "verify_scanner",
+        ]
+    );
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn scanner_execute_preserves_status_and_parse_context() {
+    let Some(server) = fixture_server(
+        MockVersion::V22_4,
+        &[
+            (
+                "get_scanners",
+                r#"<get_scanners_response status="409" status_text="scanner conflict"/>"#,
+            ),
+            (
+                "create_scanner",
+                r#"<create_scanner_response status="201" status_text="OK"/>"#,
+            ),
+        ],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+
+    let status_error = client
+        .execute(GetScannerRequest::new(id("scanner-1")))
+        .await
+        .expect_err("non-success scanner response should fail");
+    assert!(matches!(
+        status_error,
+        GvmError::Parse(ParseError::ServerError { status: 409, message })
+            if message == "scanner conflict"
+    ));
+
+    let parse_error = client
+        .execute(CloneScannerRequest::new(id("scanner-1")))
         .await
         .expect_err("missing clone id should fail");
     assert!(matches!(

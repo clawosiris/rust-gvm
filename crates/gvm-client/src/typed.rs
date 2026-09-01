@@ -89,8 +89,8 @@ use gvm_gmp::commands::scan_configs::{
     modify_scan_config_set_name, sync_config, ConfigOpts, GetPolicyOpts, GetScanConfigsOpts,
 };
 use gvm_gmp::commands::scanners::{
-    clone_scanner, create_scanner, delete_scanner, get_scanner, get_scanners, modify_scanner,
-    verify_scanner, GetScannersOpts, ScannerOpts,
+    CloneScannerRequest, CreateScannerRequest, DeleteScannerRequest, GetScannerRequest,
+    GetScannersOpts, GetScannersRequest, ModifyScannerRequest, ScannerOpts, VerifyScannerRequest,
 };
 use gvm_gmp::commands::schedules::{
     create_schedule, create_typed_schedule, delete_schedule, get_schedules, modify_schedule,
@@ -687,8 +687,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         opts: GetScannersOpts,
     ) -> Result<GetScannersResponse, GvmError> {
-        let response = self.send(get_scanners(opts)).await?;
-        GetScannersResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetScannersRequest::new(opts)).await
     }
 
     /// Send a `create_scanner` request and return a typed [`CreateScannerResponse`].
@@ -700,8 +699,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         name: &str,
         opts: ScannerOpts,
     ) -> Result<CreateScannerResponse, GvmError> {
-        let response = self.send(create_scanner(name, opts)).await?;
-        CreateScannerResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CreateScannerRequest::new(name, opts)).await
     }
 
     /// Send a `get_scanner` request and return a typed [`GetScannersResponse`].
@@ -712,8 +710,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         scanner_id: &EntityId,
     ) -> Result<GetScannersResponse, GvmError> {
-        let response = self.send(get_scanner(scanner_id)).await?;
-        GetScannersResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetScannerRequest::new(scanner_id.clone()))
+            .await
     }
 
     /// Send a `modify_scanner` request and return a typed [`ModifyScannerResponse`].
@@ -725,8 +723,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         scanner_id: &EntityId,
         opts: ScannerOpts,
     ) -> Result<ModifyScannerResponse, GvmError> {
-        let response = self.send(modify_scanner(scanner_id, opts)).await?;
-        ModifyScannerResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyScannerRequest::new(scanner_id.clone(), opts))
+            .await
     }
 
     /// Send a `delete_scanner` request and return a typed [`DeleteScannerResponse`].
@@ -738,8 +736,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         scanner_id: &EntityId,
         ultimate: bool,
     ) -> Result<DeleteScannerResponse, GvmError> {
-        let response = self.send(delete_scanner(scanner_id, ultimate)).await?;
-        DeleteScannerResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(DeleteScannerRequest::new(scanner_id.clone(), ultimate))
+            .await
     }
 
     /// Send a `verify_scanner` request and return a typed [`VerifyScannerResponse`].
@@ -750,8 +748,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         scanner_id: &EntityId,
     ) -> Result<VerifyScannerResponse, GvmError> {
-        let response = self.send(verify_scanner(scanner_id)).await?;
-        VerifyScannerResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(VerifyScannerRequest::new(scanner_id.clone()))
+            .await
     }
 
     /// Send a `clone_scanner` request and return a typed [`CreateScannerResponse`].
@@ -762,8 +760,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         scanner_id: &EntityId,
     ) -> Result<CreateScannerResponse, GvmError> {
-        let response = self.send(clone_scanner(scanner_id)).await?;
-        CreateScannerResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CloneScannerRequest::new(scanner_id.clone()))
+            .await
     }
 
     // ── Port Lists ────────────────────────────────────────────────────────────

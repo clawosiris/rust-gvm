@@ -5,10 +5,13 @@
 
 use gvm_protocol::Response;
 
-use crate::responses::common::{
-    count_info, optional_u16, parse_document, parse_entity_id, parse_entity_meta,
-    parse_named_entity, status_from_response, ActionResponse, CountInfo, EntityMeta, NamedEntity,
-    ParseError,
+use crate::{
+    responses::common::{
+        count_info, optional_u16, parse_document, parse_entity_id, parse_entity_meta,
+        parse_named_entity, status_from_response, ActionResponse, CountInfo, EntityMeta,
+        NamedEntity, ParseError,
+    },
+    GmpResponse, GmpVersion,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,6 +75,12 @@ impl GetScannersResponse {
     }
 }
 
+impl GmpResponse for GetScannersResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 impl CreateScannerResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
@@ -86,6 +95,12 @@ impl CreateScannerResponse {
             status_text,
             id,
         })
+    }
+}
+
+impl GmpResponse for CreateScannerResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 

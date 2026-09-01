@@ -7,7 +7,12 @@ use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
 use crate::enums::ScannerType;
+use crate::responses::{
+    CreateScannerResponse, DeleteScannerResponse, GetScannersResponse, ModifyScannerResponse,
+    VerifyScannerResponse,
+};
 use crate::types::EntityId;
+use crate::GmpRequest;
 
 /// Optional fields shared by scanner create and modify requests.
 ///
@@ -42,6 +47,194 @@ pub struct GetScannersOpts {
     pub trash: Option<bool>,
     /// Whether to request detailed output.
     pub details: Option<bool>,
+}
+
+/// Semantic request for listing scanners.
+///
+/// The associated response is fixed at compile time:
+///
+/// ```compile_fail
+/// use gvm_gmp::commands::scanners::{GetScannersOpts, GetScannersRequest};
+/// use gvm_gmp::responses::CreateScannerResponse;
+/// use gvm_gmp::GmpRequest;
+///
+/// fn require_create<R: GmpRequest<Response = CreateScannerResponse>>(_: R) {}
+/// require_create(GetScannersRequest::new(GetScannersOpts::default()));
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct GetScannersRequest {
+    opts: GetScannersOpts,
+}
+
+impl GetScannersRequest {
+    /// Create a scanner list request.
+    #[must_use]
+    pub fn new(opts: GetScannersOpts) -> Self {
+        Self { opts }
+    }
+}
+
+impl Request for GetScannersRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_scanners(self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetScannersRequest {
+    type Response = GetScannersResponse;
+}
+
+/// Semantic request for one detailed scanner.
+#[derive(Debug, Clone)]
+pub struct GetScannerRequest {
+    scanner_id: EntityId,
+}
+
+impl GetScannerRequest {
+    /// Create a detailed single-scanner request.
+    #[must_use]
+    pub fn new(scanner_id: EntityId) -> Self {
+        Self { scanner_id }
+    }
+}
+
+impl Request for GetScannerRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_scanner(&self.scanner_id).to_bytes()
+    }
+}
+
+impl GmpRequest for GetScannerRequest {
+    type Response = GetScannersResponse;
+}
+
+/// Semantic request for creating a scanner.
+#[derive(Debug, Clone)]
+pub struct CreateScannerRequest {
+    name: String,
+    opts: ScannerOpts,
+}
+
+impl CreateScannerRequest {
+    /// Create a scanner creation request.
+    #[must_use]
+    pub fn new(name: impl Into<String>, opts: ScannerOpts) -> Self {
+        Self {
+            name: name.into(),
+            opts,
+        }
+    }
+}
+
+impl Request for CreateScannerRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_scanner(&self.name, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateScannerRequest {
+    type Response = CreateScannerResponse;
+}
+
+/// Semantic request for cloning a scanner.
+#[derive(Debug, Clone)]
+pub struct CloneScannerRequest {
+    scanner_id: EntityId,
+}
+
+impl CloneScannerRequest {
+    /// Create a scanner clone request.
+    #[must_use]
+    pub fn new(scanner_id: EntityId) -> Self {
+        Self { scanner_id }
+    }
+}
+
+impl Request for CloneScannerRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        clone_scanner(&self.scanner_id).to_bytes()
+    }
+}
+
+impl GmpRequest for CloneScannerRequest {
+    type Response = CreateScannerResponse;
+}
+
+/// Semantic request for modifying a scanner.
+#[derive(Debug, Clone)]
+pub struct ModifyScannerRequest {
+    scanner_id: EntityId,
+    opts: ScannerOpts,
+}
+
+impl ModifyScannerRequest {
+    /// Create a scanner modification request.
+    #[must_use]
+    pub fn new(scanner_id: EntityId, opts: ScannerOpts) -> Self {
+        Self { scanner_id, opts }
+    }
+}
+
+impl Request for ModifyScannerRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_scanner(&self.scanner_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyScannerRequest {
+    type Response = ModifyScannerResponse;
+}
+
+/// Semantic request for deleting a scanner.
+#[derive(Debug, Clone)]
+pub struct DeleteScannerRequest {
+    scanner_id: EntityId,
+    ultimate: bool,
+}
+
+impl DeleteScannerRequest {
+    /// Create a scanner deletion request.
+    #[must_use]
+    pub fn new(scanner_id: EntityId, ultimate: bool) -> Self {
+        Self {
+            scanner_id,
+            ultimate,
+        }
+    }
+}
+
+impl Request for DeleteScannerRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_scanner(&self.scanner_id, self.ultimate).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteScannerRequest {
+    type Response = DeleteScannerResponse;
+}
+
+/// Semantic request for verifying a scanner.
+#[derive(Debug, Clone)]
+pub struct VerifyScannerRequest {
+    scanner_id: EntityId,
+}
+
+impl VerifyScannerRequest {
+    /// Create a scanner verification request.
+    #[must_use]
+    pub fn new(scanner_id: EntityId) -> Self {
+        Self { scanner_id }
+    }
+}
+
+impl Request for VerifyScannerRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        verify_scanner(&self.scanner_id).to_bytes()
+    }
+}
+
+impl GmpRequest for VerifyScannerRequest {
+    type Response = VerifyScannerResponse;
 }
 
 /// Build a clone request for an existing scanner.
@@ -199,5 +392,82 @@ mod tests {
             xml(verify_scanner(&id("s1"))),
             "<verify_scanner scanner_id=\"s1\"/>"
         );
+    }
+
+    #[test]
+    fn semantic_scanner_requests_match_existing_builders() {
+        let scanner_id = id("s1");
+        let get_opts = GetScannersOpts {
+            filter_string: Some("name=scanner".into()),
+            filter_id: Some(id("filter-1")),
+            trash: Some(false),
+            details: Some(true),
+        };
+        let scanner_opts = ScannerOpts {
+            name: Some("renamed".into()),
+            comment: Some("updated".into()),
+            host: Some("scanner.example".into()),
+            port: Some(9390),
+            scanner_type: Some(ScannerType::OpenVasScanner),
+            ca_pub: Some("CA certificate".into()),
+            credential_id: Some(id("cred-1")),
+        };
+
+        assert_eq!(
+            GetScannersRequest::new(get_opts.clone()).to_bytes(),
+            get_scanners(get_opts).to_bytes()
+        );
+        assert_eq!(
+            GetScannerRequest::new(scanner_id.clone()).to_bytes(),
+            get_scanner(&scanner_id).to_bytes()
+        );
+        assert_eq!(
+            CreateScannerRequest::new("scanner", scanner_opts.clone()).to_bytes(),
+            create_scanner("scanner", scanner_opts.clone()).to_bytes()
+        );
+        assert_eq!(
+            CloneScannerRequest::new(scanner_id.clone()).to_bytes(),
+            clone_scanner(&scanner_id).to_bytes()
+        );
+        assert_eq!(
+            ModifyScannerRequest::new(scanner_id.clone(), scanner_opts.clone()).to_bytes(),
+            modify_scanner(&scanner_id, scanner_opts).to_bytes()
+        );
+        assert_eq!(
+            DeleteScannerRequest::new(scanner_id.clone(), true).to_bytes(),
+            delete_scanner(&scanner_id, true).to_bytes()
+        );
+        assert_eq!(
+            VerifyScannerRequest::new(scanner_id.clone()).to_bytes(),
+            verify_scanner(&scanner_id).to_bytes()
+        );
+    }
+
+    #[test]
+    fn semantic_scanner_requests_have_the_expected_response_associations() {
+        fn assert_response<R, T>(_: &R)
+        where
+            R: GmpRequest<Response = T>,
+            T: crate::GmpResponse,
+        {
+        }
+
+        let scanner_id = id("scanner-1");
+        assert_response::<_, GetScannersResponse>(&GetScannersRequest::default());
+        assert_response::<_, GetScannersResponse>(&GetScannerRequest::new(scanner_id.clone()));
+        assert_response::<_, CreateScannerResponse>(&CreateScannerRequest::new(
+            "scanner",
+            ScannerOpts::default(),
+        ));
+        assert_response::<_, CreateScannerResponse>(&CloneScannerRequest::new(scanner_id.clone()));
+        assert_response::<_, ModifyScannerResponse>(&ModifyScannerRequest::new(
+            scanner_id.clone(),
+            ScannerOpts::default(),
+        ));
+        assert_response::<_, DeleteScannerResponse>(&DeleteScannerRequest::new(
+            scanner_id.clone(),
+            false,
+        ));
+        assert_response::<_, VerifyScannerResponse>(&VerifyScannerRequest::new(scanner_id));
     }
 }

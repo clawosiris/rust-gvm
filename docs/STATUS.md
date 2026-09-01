@@ -20,7 +20,7 @@ contract before family-by-family migration. See
 [typed-execution guide](typed-execution.md).
 
 The first focused Phase 2 batch, tracked by
-[`#539`](https://github.com/greenbone-hive/rust-gvm/issues/539), migrates the
+[`#539`](https://github.com/greenbone-hive/rust-gvm/issues/539), migrated the
 standard scan-task list/get/create/clone/modify/delete/start/stop/resume
 lifecycle to the same typed execution contract. It intentionally leaves import,
 agent-group, OCI/container-image, web-application, move, and audit task shapes
@@ -34,6 +34,14 @@ credential convenience methods remain source-compatible wrappers over generic
 typed execution. Credential-store operations stay separate because their
 vault, preference, semantic-alias, and version-policy shapes require a focused
 follow-up.
+
+The scanner-focused Phase 2 batch, tracked by
+[`#542`](https://github.com/greenbone-hive/rust-gvm/issues/542), migrates the
+scanner list/get/create/clone/modify/delete/verify lifecycle. Scanner builders
+remain the single byte-compatible encoders, and the existing convenience
+methods remain additive wrappers over generic typed execution. Scan
+configurations remain a separate later batch because they include larger and
+more specialized command surfaces.
 
 | Crate | Status | Lines | Tests | Description |
 |-------|--------|-------|-------|-------------|
