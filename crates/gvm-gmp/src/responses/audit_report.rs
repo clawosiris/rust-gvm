@@ -9,7 +9,7 @@ use crate::responses::common::{
     count_info, optional_u32, parse_bool, parse_document, parse_entity_id, parse_entity_meta,
     parse_i32, parse_u32, status_from_response, CountInfo, EntityMeta, ParseError, XmlNode,
 };
-use crate::EntityId;
+use crate::{EntityId, GmpResponse, GmpVersion};
 
 /// An open compliance value used by audit reports and host summaries.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -262,6 +262,12 @@ impl GetAuditReportResponse {
     }
 }
 
+impl GmpResponse for GetAuditReportResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 impl AuditReport {
     fn from_node(node: &XmlNode) -> Result<Self, ParseError> {
         Ok(Self {
@@ -314,6 +320,12 @@ impl GetAuditReportHostsResponse {
             page: parse_page(&root, "audit_report_hosts")?,
             counts: count_info(&root, "audit_report_host_count")?,
         })
+    }
+}
+
+impl GmpResponse for GetAuditReportHostsResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 

@@ -51,7 +51,7 @@ use gvm_gmp::commands::report_configs::{
 use gvm_gmp::commands::reports::{
     export_scan_report, get_report_applications, get_report_closed_cves, get_report_cves,
     get_report_errors, get_report_hosts, get_report_operating_systems, get_report_ports,
-    get_report_tls_certificates, get_report_vulns, get_scan_report,
+    get_report_tls_certificates, get_report_vulns, get_scan_report, GetScanReportRequest,
 };
 use gvm_gmp::commands::system::get_timezones;
 use gvm_gmp::commands::tasks::create_agent_group_task;
@@ -893,8 +893,8 @@ impl<C: GvmConnection> GmpClient<C> {
         scan_report_id: &EntityId,
         opts: GetScanReportOpts,
     ) -> Result<GetScanReportResponse, GvmError> {
-        let response = self.send(get_scan_report(scan_report_id, opts)).await?;
-        GetScanReportResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetScanReportRequest::new(scan_report_id.clone(), opts))
+            .await
     }
 
     /// Get one structured vulnerability report without typed response parsing.

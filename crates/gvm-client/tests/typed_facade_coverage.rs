@@ -25,7 +25,10 @@ use gvm_gmp::commands::permissions::{GetPermissionsOpts, PermissionOpts};
 use gvm_gmp::commands::port_lists::{GetPortListsOpts, PortListOpts};
 use gvm_gmp::commands::report_configs::GetReportConfigsOpts;
 use gvm_gmp::commands::report_formats::{GetReportFormatsOpts, ReportFormatOpts};
-use gvm_gmp::commands::reports::GetReportsOpts;
+use gvm_gmp::commands::reports::{
+    GetReportDetailsOpts, GetReportExportRequest, GetReportVulnsRequest, GetReportsOpts,
+    GetReportsRequest,
+};
 use gvm_gmp::commands::results::GetResultsOpts;
 use gvm_gmp::commands::roles::{GetRolesOpts, RoleOpts};
 use gvm_gmp::commands::scan_configs::GetScanConfigsOpts;
@@ -229,6 +232,87 @@ async fn generic_execute_decodes_the_requests_associated_response() {
 
     assert_eq!(response.status, 200);
     assert!(response.items.is_empty());
+}
+
+#[tokio::test]
+async fn semantic_report_export_executes_binary_and_nested_xml_codecs() {
+    let cases = [
+        (
+            r#"<get_reports_response status="200" status_text="OK"><report extension="bin" content_type="application/octet-stream">AP8B/g==</report></get_reports_response>"#,
+            vec![0, 255, 1, 254],
+        ),
+        (
+            r#"<get_reports_response status="200" status_text="OK"><report extension="xml" content_type="text/xml"><report id="report-1"><results><result id="one"/><result id="two"/></results></report></report></get_reports_response>"#,
+            br#"<report id="report-1"><results><result id="one"/><result id="two"/></results></report>"#.to_vec(),
+        ),
+    ];
+
+    for (fixture, expected) in cases {
+        let Some(server) = fixture_server(MockVersion::V22_8, &[("get_reports", fixture)]).await
+        else {
+            return;
+        };
+        let mut client = client(&server).await;
+        server.clear_history();
+
+        let export = client
+            .execute(GetReportExportRequest::new(
+                id("report-1"),
+                GetReportExportOpts::new(id("format-1")),
+            ))
+            .await
+            .expect("associated irregular export response decodes");
+
+        assert_eq!(export.bytes, expected);
+        assert_eq!(server.command_history().len(), 1);
+        server.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn semantic_report_requests_execute_large_and_mixed_repeated_responses() {
+    const REPORTS: usize = 2_000;
+    let mut large_fixture = String::from(r#"<get_reports_response status="200" status_text="OK">"#);
+    for index in 0..REPORTS {
+        large_fixture.push_str(&format!(
+            r#"<report id="report-{index}"><name>Report {index}</name></report>"#
+        ));
+    }
+    large_fixture.push_str(&format!(
+        "<report_count>{REPORTS}<filtered>{REPORTS}</filtered></report_count></get_reports_response>"
+    ));
+    let overrides = [("get_reports", large_fixture.as_str())];
+    let Some(server) = fixture_server(MockVersion::V22_8, &overrides).await else {
+        return;
+    };
+    let mut large_client = client(&server).await;
+
+    let reports = large_client
+        .execute(GetReportsRequest::default())
+        .await
+        .expect("large associated report response decodes");
+    assert_eq!(reports.items.len(), REPORTS);
+    server.shutdown().await;
+
+    let mixed_fixture = r#"<get_report_vulns_response status="200" status_text="OK"><vulns><vuln id="one"><name>First</name></vuln><vulnerability id="two"><name>Second</name></vulnerability><vuln id="three"><name>Third</name></vuln></vulns><report_vuln_count>3<filtered>3</filtered></report_vuln_count></get_report_vulns_response>"#;
+    let Some(server) =
+        fixture_server(MockVersion::V22_8, &[("get_report_vulns", mixed_fixture)]).await
+    else {
+        return;
+    };
+    let mut mixed_client = client(&server).await;
+
+    let vulnerabilities = mixed_client
+        .execute(GetReportVulnsRequest::new(
+            id("report-1"),
+            GetReportDetailsOpts::default(),
+        ))
+        .await
+        .expect("mixed repeated response decodes");
+    assert_eq!(vulnerabilities.items.len(), 3);
+    assert_eq!(vulnerabilities.items[1].id.as_deref(), Some("three"));
+    assert_eq!(vulnerabilities.items[2].id.as_deref(), Some("two"));
+    server.shutdown().await;
 }
 
 #[tokio::test]
