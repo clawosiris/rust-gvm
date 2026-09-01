@@ -12,7 +12,12 @@ use crate::enums::{
     CredentialFormat, CredentialStoreCredentialType, CredentialType, SnmpAuthAlgorithm,
     SnmpPrivacyAlgorithm,
 };
+use crate::responses::{
+    CreateCredentialResponse, DeleteCredentialResponse, GetCredentialsResponse,
+    ModifyCredentialResponse,
+};
 use crate::types::EntityId;
+use crate::GmpRequest;
 
 /// Optional fields for credential create requests.
 #[derive(Clone, Default)]
@@ -198,6 +203,173 @@ pub struct GetCredentialsOpts {
     pub trash: Option<bool>,
     /// Whether to request detailed output.
     pub details: Option<bool>,
+}
+
+/// Semantic request for listing credentials.
+///
+/// The associated response is fixed at compile time:
+///
+/// ```compile_fail
+/// use gvm_gmp::commands::credentials::{GetCredentialsOpts, GetCredentialsRequest};
+/// use gvm_gmp::responses::CreateCredentialResponse;
+/// use gvm_gmp::GmpRequest;
+///
+/// fn require_create<R: GmpRequest<Response = CreateCredentialResponse>>(_: R) {}
+/// require_create(GetCredentialsRequest::new(GetCredentialsOpts::default()));
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct GetCredentialsRequest {
+    opts: GetCredentialsOpts,
+}
+
+impl GetCredentialsRequest {
+    /// Create a credential list request.
+    #[must_use]
+    pub fn new(opts: GetCredentialsOpts) -> Self {
+        Self { opts }
+    }
+}
+
+impl Request for GetCredentialsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_credentials(self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetCredentialsRequest {
+    type Response = GetCredentialsResponse;
+}
+
+/// Semantic request for one detailed credential.
+#[derive(Debug, Clone)]
+pub struct GetCredentialRequest {
+    credential_id: EntityId,
+}
+
+impl GetCredentialRequest {
+    /// Create a detailed single-credential request.
+    #[must_use]
+    pub fn new(credential_id: EntityId) -> Self {
+        Self { credential_id }
+    }
+}
+
+impl Request for GetCredentialRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_credential(&self.credential_id).to_bytes()
+    }
+}
+
+impl GmpRequest for GetCredentialRequest {
+    type Response = GetCredentialsResponse;
+}
+
+/// Semantic request for creating a credential.
+#[derive(Debug, Clone)]
+pub struct CreateCredentialRequest {
+    name: String,
+    opts: CredentialOpts,
+}
+
+impl CreateCredentialRequest {
+    /// Create a credential creation request.
+    #[must_use]
+    pub fn new(name: impl Into<String>, opts: CredentialOpts) -> Self {
+        Self {
+            name: name.into(),
+            opts,
+        }
+    }
+}
+
+impl Request for CreateCredentialRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_credential(&self.name, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateCredentialRequest {
+    type Response = CreateCredentialResponse;
+}
+
+/// Semantic request for cloning a credential.
+#[derive(Debug, Clone)]
+pub struct CloneCredentialRequest {
+    credential_id: EntityId,
+}
+
+impl CloneCredentialRequest {
+    /// Create a credential clone request.
+    #[must_use]
+    pub fn new(credential_id: EntityId) -> Self {
+        Self { credential_id }
+    }
+}
+
+impl Request for CloneCredentialRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        clone_credential(&self.credential_id).to_bytes()
+    }
+}
+
+impl GmpRequest for CloneCredentialRequest {
+    type Response = CreateCredentialResponse;
+}
+
+/// Semantic request for modifying a credential.
+#[derive(Debug, Clone)]
+pub struct ModifyCredentialRequest {
+    credential_id: EntityId,
+    opts: ModifyCredentialOpts,
+}
+
+impl ModifyCredentialRequest {
+    /// Create a credential modification request.
+    #[must_use]
+    pub fn new(credential_id: EntityId, opts: impl Into<ModifyCredentialOpts>) -> Self {
+        Self {
+            credential_id,
+            opts: opts.into(),
+        }
+    }
+}
+
+impl Request for ModifyCredentialRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_credential(&self.credential_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyCredentialRequest {
+    type Response = ModifyCredentialResponse;
+}
+
+/// Semantic request for deleting a credential.
+#[derive(Debug, Clone)]
+pub struct DeleteCredentialRequest {
+    credential_id: EntityId,
+    ultimate: bool,
+}
+
+impl DeleteCredentialRequest {
+    /// Create a credential deletion request.
+    #[must_use]
+    pub fn new(credential_id: EntityId, ultimate: bool) -> Self {
+        Self {
+            credential_id,
+            ultimate,
+        }
+    }
+}
+
+impl Request for DeleteCredentialRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_credential(&self.credential_id, self.ultimate).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteCredentialRequest {
+    type Response = DeleteCredentialResponse;
 }
 
 /// Options for `get_credential_stores` requests.
@@ -665,6 +837,88 @@ mod tests {
     }
 
     #[test]
+    fn semantic_credential_requests_match_existing_builders() {
+        let credential_id = id("c1");
+        let get_opts = GetCredentialsOpts {
+            filter_string: Some("name=credential".into()),
+            filter_id: Some(id("filter-1")),
+            trash: Some(false),
+            details: Some(true),
+        };
+        let create_opts = CredentialOpts {
+            comment: Some("created through typed execution".into()),
+            credential_type: Some(CredentialType::UsernamePassword),
+            login: Some("alice".into()),
+            password: Some("create-secret".into()),
+            allow_insecure: Some(false),
+            ..Default::default()
+        };
+        let modify_opts = ModifyCredentialOpts {
+            name: Some("renamed".into()),
+            comment: Some("updated through typed execution".into()),
+            login: Some("bob".into()),
+            password: Some("modify-secret".into()),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            GetCredentialsRequest::new(get_opts.clone()).to_bytes(),
+            get_credentials(get_opts).to_bytes()
+        );
+        assert_eq!(
+            GetCredentialRequest::new(credential_id.clone()).to_bytes(),
+            get_credential(&credential_id).to_bytes()
+        );
+        assert_eq!(
+            CreateCredentialRequest::new("credential", create_opts.clone()).to_bytes(),
+            create_credential("credential", create_opts).to_bytes()
+        );
+        assert_eq!(
+            CloneCredentialRequest::new(credential_id.clone()).to_bytes(),
+            clone_credential(&credential_id).to_bytes()
+        );
+        assert_eq!(
+            ModifyCredentialRequest::new(credential_id.clone(), modify_opts.clone()).to_bytes(),
+            modify_credential(&credential_id, modify_opts).to_bytes()
+        );
+        assert_eq!(
+            DeleteCredentialRequest::new(credential_id.clone(), true).to_bytes(),
+            delete_credential(&credential_id, true).to_bytes()
+        );
+    }
+
+    #[test]
+    fn semantic_credential_requests_have_the_expected_response_associations() {
+        fn assert_response<R, T>(_: &R)
+        where
+            R: GmpRequest<Response = T>,
+            T: crate::GmpResponse,
+        {
+        }
+
+        let credential_id = id("credential-1");
+        assert_response::<_, GetCredentialsResponse>(&GetCredentialsRequest::default());
+        assert_response::<_, GetCredentialsResponse>(&GetCredentialRequest::new(
+            credential_id.clone(),
+        ));
+        assert_response::<_, CreateCredentialResponse>(&CreateCredentialRequest::new(
+            "credential",
+            CredentialOpts::default(),
+        ));
+        assert_response::<_, CreateCredentialResponse>(&CloneCredentialRequest::new(
+            credential_id.clone(),
+        ));
+        assert_response::<_, ModifyCredentialResponse>(&ModifyCredentialRequest::new(
+            credential_id.clone(),
+            ModifyCredentialOpts::default(),
+        ));
+        assert_response::<_, DeleteCredentialResponse>(&DeleteCredentialRequest::new(
+            credential_id,
+            false,
+        ));
+    }
+
+    #[test]
     fn credential_value_variants_match_current_gvmd_shape() {
         assert_eq!(
             xml(create_credential(
@@ -791,21 +1045,23 @@ mod tests {
     #[test]
     #[allow(deprecated)]
     fn modify_credential_accepts_legacy_create_options() {
-        let rendered = xml(modify_credential(
-            &id("c1"),
-            CredentialOpts {
-                comment: Some("legacy".into()),
-                login: Some("alice".into()),
-                password: Some("secret".into()),
-                credential_type: Some(CredentialType::UsernamePassword),
-                format: Some(CredentialFormat::Pem),
-                ..Default::default()
-            },
-        ));
+        let opts = CredentialOpts {
+            comment: Some("legacy".into()),
+            login: Some("alice".into()),
+            password: Some("secret".into()),
+            credential_type: Some(CredentialType::UsernamePassword),
+            format: Some(CredentialFormat::Pem),
+            ..Default::default()
+        };
+        let rendered = xml(modify_credential(&id("c1"), opts.clone()));
 
         assert_eq!(
             rendered,
             "<modify_credential credential_id=\"c1\"><comment>legacy</comment><login>alice</login><password>secret</password></modify_credential>"
+        );
+        assert_eq!(
+            ModifyCredentialRequest::new(id("c1"), opts).to_bytes(),
+            rendered.into_bytes()
         );
     }
 
@@ -819,7 +1075,19 @@ mod tests {
             privacy_password: Some("privacy-secret".into()),
             ..Default::default()
         };
-        let debug = format!("{opts:?}");
+        let request = CreateCredentialRequest::new("credential", opts.clone());
+        let modify_request = ModifyCredentialRequest::new(
+            id("c1"),
+            ModifyCredentialOpts {
+                password: Some("modify-password-secret".into()),
+                private_key: Some("modify-private-secret".into()),
+                key_phrase: Some("modify-phrase-secret".into()),
+                community: Some("modify-community-secret".into()),
+                privacy_password: Some("modify-privacy-secret".into()),
+                ..Default::default()
+            },
+        );
+        let debug = format!("{opts:?} {request:?} {modify_request:?}");
 
         for secret in [
             "password-secret",
@@ -827,6 +1095,11 @@ mod tests {
             "phrase-secret",
             "community-secret",
             "privacy-secret",
+            "modify-password-secret",
+            "modify-private-secret",
+            "modify-phrase-secret",
+            "modify-community-secret",
+            "modify-privacy-secret",
         ] {
             assert!(!debug.contains(secret));
         }

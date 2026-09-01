@@ -7,9 +7,10 @@
 //! response parser, eliminating the need for callers to import response types
 //! and call `from_response()` manually.
 //!
-//! All methods use [`GmpClient::send`] internally so that
-//! [`gvm_gmp::responses::ParseError`] owns all response validation (including
-//! non-2xx status detection), which is then converted to [`GvmError::Parse`].
+//! Migrated command families delegate to [`GmpClient::execute`], while
+//! not-yet-migrated helpers continue to use [`GmpClient::send`] directly. Both
+//! paths preserve [`gvm_gmp::responses::ParseError`] ownership of response
+//! validation, including non-2xx status detection.
 
 use gvm_connection::GvmConnection;
 use gvm_gmp::commands::aggregates::{get_aggregates_request, GetAggregatesRequestOpts};
@@ -26,11 +27,11 @@ use gvm_gmp::commands::configs::{
     GetConfigOpts, GetConfigsOpts, ModifyConfigOpts,
 };
 use gvm_gmp::commands::credentials::{
-    create_credential, create_credential_store_credential, delete_credential, get_credential_store,
-    get_credential_stores, get_credential_stores_with_opts, get_credentials, modify_credential,
-    modify_credential_store_credential, verify_credential_store, CredentialOpts,
-    CredentialStoreCredentialOpts, GetCredentialStoresOpts, GetCredentialsOpts,
-    ModifyCredentialOpts, ModifyCredentialStoreCredentialOpts,
+    create_credential_store_credential, get_credential_store, get_credential_stores,
+    get_credential_stores_with_opts, modify_credential_store_credential, verify_credential_store,
+    CreateCredentialRequest, CredentialOpts, CredentialStoreCredentialOpts,
+    DeleteCredentialRequest, GetCredentialStoresOpts, GetCredentialsOpts, GetCredentialsRequest,
+    ModifyCredentialOpts, ModifyCredentialRequest, ModifyCredentialStoreCredentialOpts,
 };
 use gvm_gmp::commands::features::get_features;
 use gvm_gmp::commands::feed::{get_feed, get_feeds};
@@ -1496,8 +1497,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         opts: GetCredentialsOpts,
     ) -> Result<GetCredentialsResponse, GvmError> {
-        let response = self.send(get_credentials(opts)).await?;
-        GetCredentialsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetCredentialsRequest::new(opts)).await
     }
 
     /// Send a `create_credential` request and return a typed [`CreateCredentialResponse`].
@@ -1509,8 +1509,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         name: &str,
         opts: CredentialOpts,
     ) -> Result<CreateCredentialResponse, GvmError> {
-        let response = self.send(create_credential(name, opts)).await?;
-        CreateCredentialResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CreateCredentialRequest::new(name, opts)).await
     }
 
     /// Send a `modify_credential` request and return a typed
@@ -1523,8 +1522,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         credential_id: &EntityId,
         opts: ModifyCredentialOpts,
     ) -> Result<ModifyCredentialResponse, GvmError> {
-        let response = self.send(modify_credential(credential_id, opts)).await?;
-        ModifyCredentialResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyCredentialRequest::new(credential_id.clone(), opts))
+            .await
     }
 
     /// Send a `delete_credential` request and return a typed
@@ -1537,10 +1536,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         credential_id: &EntityId,
         ultimate: bool,
     ) -> Result<DeleteCredentialResponse, GvmError> {
-        let response = self
-            .send(delete_credential(credential_id, ultimate))
-            .await?;
-        DeleteCredentialResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(DeleteCredentialRequest::new(
+            credential_id.clone(),
+            ultimate,
+        ))
+        .await
     }
 
     /// Send a credential-store-backed `create_credential` request and return a

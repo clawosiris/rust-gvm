@@ -10,7 +10,11 @@ use gvm_client::{
 use gvm_client::{GmpClient, GvmError};
 use gvm_connection::UnixSocketConnection;
 use gvm_gmp::commands::alerts::{AlertOpts, GetAlertsOpts};
-use gvm_gmp::commands::credentials::GetCredentialsOpts;
+use gvm_gmp::commands::credentials::{
+    CloneCredentialRequest, CreateCredentialRequest, CredentialOpts, DeleteCredentialRequest,
+    GetCredentialRequest, GetCredentialsOpts, GetCredentialsRequest, ModifyCredentialOpts,
+    ModifyCredentialRequest,
+};
 use gvm_gmp::commands::filters::{FilterOpts, GetFiltersOpts};
 use gvm_gmp::commands::groups::{GetGroupsOpts, GroupOpts};
 use gvm_gmp::commands::hosts::{GetHostsOpts, HostOpts};
@@ -73,6 +77,25 @@ const TASK_LIFECYCLE_OVERRIDES: &[(&str, &str)] = &[
     (
         "resume_task",
         r#"<resume_task_response status="202" status_text="OK"><report_id>33333333-3333-3333-3333-333333333333</report_id></resume_task_response>"#,
+    ),
+];
+
+const CREDENTIAL_LIFECYCLE_OVERRIDES: &[(&str, &str)] = &[
+    (
+        "get_credentials",
+        r#"<get_credentials_response status="200" status_text="OK"><credential_count>0<filtered>0</filtered></credential_count></get_credentials_response>"#,
+    ),
+    (
+        "create_credential",
+        r#"<create_credential_response status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111"/>"#,
+    ),
+    (
+        "modify_credential",
+        r#"<modify_credential_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "delete_credential",
+        r#"<delete_credential_response status="200" status_text="OK"/>"#,
     ),
 ];
 
@@ -308,6 +331,116 @@ async fn standard_task_execute_preserves_status_and_parse_context() {
 
     let parse_error = client
         .execute(CloneTaskRequest::new(id("task-1")))
+        .await
+        .expect_err("missing clone id should fail");
+    assert!(matches!(
+        parse_error,
+        GvmError::Parse(ParseError::MissingElement(field)) if field == "id"
+    ));
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn standard_credential_requests_execute_on_the_oldest_supported_version() {
+    let Some(server) = fixture_server(MockVersion::V22_4, CREDENTIAL_LIFECYCLE_OVERRIDES).await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let credential_id = id("credential-1");
+
+    let listed = client
+        .execute(GetCredentialsRequest::new(GetCredentialsOpts::default()))
+        .await
+        .expect("credential listing should be supported");
+    assert_eq!(listed.status, 200);
+    let detailed = client
+        .execute(GetCredentialRequest::new(credential_id.clone()))
+        .await
+        .expect("detailed credential get should be supported");
+    assert_eq!(detailed.status, 200);
+
+    let created = client
+        .execute(CreateCredentialRequest::new(
+            "credential",
+            CredentialOpts::default(),
+        ))
+        .await
+        .expect("credential creation should be supported");
+    assert_eq!(created.status, 201);
+    let cloned = client
+        .execute(CloneCredentialRequest::new(credential_id.clone()))
+        .await
+        .expect("credential cloning should be supported");
+    assert_eq!(cloned.status, 201);
+
+    let modified = client
+        .execute(ModifyCredentialRequest::new(
+            credential_id.clone(),
+            ModifyCredentialOpts::default(),
+        ))
+        .await
+        .expect("credential modification should be supported");
+    assert_eq!(modified.status, 200);
+    let deleted = client
+        .execute(DeleteCredentialRequest::new(credential_id, false))
+        .await
+        .expect("credential deletion should be supported");
+    assert_eq!(deleted.status, 200);
+
+    let commands = server
+        .command_history()
+        .iter()
+        .map(|record| record.command_name().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        commands,
+        [
+            "get_credentials",
+            "get_credentials",
+            "create_credential",
+            "create_credential",
+            "modify_credential",
+            "delete_credential",
+        ]
+    );
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn standard_credential_execute_preserves_status_and_parse_context() {
+    let Some(server) = fixture_server(
+        MockVersion::V22_4,
+        &[
+            (
+                "get_credentials",
+                r#"<get_credentials_response status="409" status_text="credential conflict"/>"#,
+            ),
+            (
+                "create_credential",
+                r#"<create_credential_response status="201" status_text="OK"/>"#,
+            ),
+        ],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+
+    let status_error = client
+        .execute(GetCredentialRequest::new(id("credential-1")))
+        .await
+        .expect_err("non-success credential response should fail");
+    assert!(matches!(
+        status_error,
+        GvmError::Parse(ParseError::ServerError { status: 409, message })
+            if message == "credential conflict"
+    ));
+
+    let parse_error = client
+        .execute(CloneCredentialRequest::new(id("credential-1")))
         .await
         .expect_err("missing clone id should fail");
     assert!(matches!(
