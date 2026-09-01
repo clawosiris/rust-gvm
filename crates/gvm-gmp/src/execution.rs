@@ -11,6 +11,55 @@ use crate::{responses::ParseError, GmpVersion};
 ///
 /// Encoding remains the responsibility of [`Request`], so typed execution and
 /// the raw/custom request escape hatch share the same XML command machinery.
+/// Implementations may delegate to a public builder or provide an explicit
+/// codec for irregular/custom XML. [`Request::semantic_command_name`] remains
+/// authoritative when the wire root and capability name differ.
+///
+/// A downstream custom codec uses the same public contracts:
+///
+/// ```
+/// use gvm_gmp::responses::ParseError;
+/// use gvm_gmp::{GmpRequest, GmpResponse, GmpVersion};
+/// use gvm_protocol::{Request, Response};
+///
+/// struct CustomRequest;
+///
+/// impl Request for CustomRequest {
+///     fn to_bytes(&self) -> Vec<u8> {
+///         b"<custom_command/>".to_vec()
+///     }
+/// }
+///
+/// #[derive(Debug, PartialEq, Eq)]
+/// struct CustomResponse(u16);
+///
+/// impl GmpResponse for CustomResponse {
+///     fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+///         let status = response
+///             .status_code()
+///             .ok_or_else(|| ParseError::MissingElement("status".into()))?;
+///         let message = response
+///             .status_text()
+///             .ok_or_else(|| ParseError::MissingElement("status_text".into()))?;
+///         if !(200..300).contains(&status) {
+///             return Err(ParseError::ServerError { status, message });
+///         }
+///         Ok(Self(status))
+///     }
+/// }
+///
+/// impl GmpRequest for CustomRequest {
+///     type Response = CustomResponse;
+/// }
+///
+/// fn require_custom_response<R: GmpRequest<Response = CustomResponse>>(_: R) {}
+/// require_custom_response(CustomRequest);
+/// let raw = Response::new(
+///     br#"<custom_command_response status="200" status_text="OK"/>"#.to_vec(),
+/// );
+/// assert_eq!(CustomResponse::decode(&raw, GmpVersion(22, 8))?, CustomResponse(200));
+/// # Ok::<(), ParseError>(())
+/// ```
 ///
 /// A request cannot be associated with an unrelated response type:
 ///
@@ -28,6 +77,11 @@ pub trait GmpRequest: Request {
 }
 
 /// A typed GMP response that can decode the protocol response envelope.
+///
+/// Implementations must preserve the typed response contract: non-2xx GMP
+/// statuses are returned as [`ParseError::ServerError`], and structural parse
+/// errors retain enough field context to identify the malformed value. This is
+/// the extension point for irregular or application-owned response codecs.
 pub trait GmpResponse: Sized {
     /// Decode a typed value from a raw GMP response.
     ///
