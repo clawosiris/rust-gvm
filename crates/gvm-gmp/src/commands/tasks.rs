@@ -11,7 +11,12 @@ use crate::common::{
     add_scalar_id_update, add_text_element, bool_str, set_optional_bool_attr,
 };
 use crate::enums::HostsOrdering;
+use crate::responses::{
+    CreateTaskResponse, DeleteTaskResponse, GetTasksResponse, ModifyTaskResponse,
+    ResumeTaskResponse, StartTaskResponse, StopTaskResponse,
+};
 use crate::types::{CollectionUpdate, EntityId, ScalarUpdate};
+use crate::GmpRequest;
 
 /// Optional fields for `create_task` requests.
 #[derive(Debug, Clone, Default)]
@@ -165,6 +170,236 @@ pub enum ModifyTaskError {
     )]
     ObserverGroupsWithoutUserUpdate,
 }
+
+/// Semantic request for listing standard scan tasks.
+///
+/// The associated response is fixed at compile time:
+///
+/// ```compile_fail
+/// use gvm_gmp::commands::tasks::{GetTasksOpts, GetTasksRequest};
+/// use gvm_gmp::responses::CreateTaskResponse;
+/// use gvm_gmp::GmpRequest;
+///
+/// fn require_create<R: GmpRequest<Response = CreateTaskResponse>>(_: R) {}
+/// require_create(GetTasksRequest::new(GetTasksOpts::default()));
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct GetTasksRequest {
+    opts: GetTasksOpts,
+}
+
+impl GetTasksRequest {
+    /// Create a standard scan-task list request.
+    #[must_use]
+    pub fn new(opts: GetTasksOpts) -> Self {
+        Self { opts }
+    }
+}
+
+impl Request for GetTasksRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_tasks(self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetTasksRequest {
+    type Response = GetTasksResponse;
+}
+
+/// Semantic request for one detailed standard scan task.
+#[derive(Debug, Clone)]
+pub struct GetTaskRequest {
+    task_id: EntityId,
+}
+
+impl GetTaskRequest {
+    /// Create a detailed single-task request.
+    #[must_use]
+    pub fn new(task_id: EntityId) -> Self {
+        Self { task_id }
+    }
+}
+
+impl Request for GetTaskRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_task(&self.task_id).to_bytes()
+    }
+}
+
+impl GmpRequest for GetTaskRequest {
+    type Response = GetTasksResponse;
+}
+
+/// Semantic request for creating a standard scan task.
+#[derive(Debug, Clone)]
+pub struct CreateTaskRequest {
+    name: String,
+    config_id: EntityId,
+    target_id: EntityId,
+    scanner_id: EntityId,
+    opts: CreateTaskOpts,
+}
+
+impl CreateTaskRequest {
+    /// Create a standard scan-task creation request.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        config_id: EntityId,
+        target_id: EntityId,
+        scanner_id: EntityId,
+        opts: CreateTaskOpts,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            config_id,
+            target_id,
+            scanner_id,
+            opts,
+        }
+    }
+}
+
+impl Request for CreateTaskRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_task(
+            &self.name,
+            &self.config_id,
+            &self.target_id,
+            &self.scanner_id,
+            self.opts.clone(),
+        )
+        .to_bytes()
+    }
+}
+
+impl GmpRequest for CreateTaskRequest {
+    type Response = CreateTaskResponse;
+}
+
+/// Semantic request for cloning a standard scan task.
+#[derive(Debug, Clone)]
+pub struct CloneTaskRequest {
+    task_id: EntityId,
+}
+
+impl CloneTaskRequest {
+    /// Create a task-clone request.
+    #[must_use]
+    pub fn new(task_id: EntityId) -> Self {
+        Self { task_id }
+    }
+}
+
+impl Request for CloneTaskRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        clone_task(&self.task_id).to_bytes()
+    }
+}
+
+impl GmpRequest for CloneTaskRequest {
+    type Response = CreateTaskResponse;
+}
+
+/// Semantic request for modifying a standard scan task.
+#[derive(Debug, Clone)]
+pub struct ModifyTaskRequest {
+    task_id: EntityId,
+    opts: ModifyTaskOpts,
+}
+
+impl ModifyTaskRequest {
+    /// Validate and create a task-modification request.
+    ///
+    /// # Errors
+    /// Returns the same construction errors as [`modify_task`].
+    pub fn new(task_id: EntityId, opts: ModifyTaskOpts) -> Result<Self, ModifyTaskError> {
+        validate_modify_task_opts(&opts)?;
+        Ok(Self { task_id, opts })
+    }
+}
+
+impl Request for ModifyTaskRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_task_with_usage(&self.task_id, self.opts.clone(), None).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyTaskRequest {
+    type Response = ModifyTaskResponse;
+}
+
+/// Semantic request for deleting a standard scan task.
+#[derive(Debug, Clone)]
+pub struct DeleteTaskRequest {
+    task_id: EntityId,
+    ultimate: bool,
+}
+
+impl DeleteTaskRequest {
+    /// Create a task-deletion request.
+    #[must_use]
+    pub fn new(task_id: EntityId, ultimate: bool) -> Self {
+        Self { task_id, ultimate }
+    }
+}
+
+impl Request for DeleteTaskRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_task(&self.task_id, self.ultimate).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteTaskRequest {
+    type Response = DeleteTaskResponse;
+}
+
+macro_rules! task_action_request {
+    ($request:ident, $response:ty, $builder:ident, $doc:literal) => {
+        #[doc = $doc]
+        #[derive(Debug, Clone)]
+        pub struct $request {
+            task_id: EntityId,
+        }
+
+        impl $request {
+            /// Create the task-action request.
+            #[must_use]
+            pub fn new(task_id: EntityId) -> Self {
+                Self { task_id }
+            }
+        }
+
+        impl Request for $request {
+            fn to_bytes(&self) -> Vec<u8> {
+                $builder(&self.task_id).to_bytes()
+            }
+        }
+
+        impl GmpRequest for $request {
+            type Response = $response;
+        }
+    };
+}
+
+task_action_request!(
+    StartTaskRequest,
+    StartTaskResponse,
+    start_task,
+    "Semantic request for starting a standard scan task."
+);
+task_action_request!(
+    StopTaskRequest,
+    StopTaskResponse,
+    stop_task,
+    "Semantic request for stopping a standard scan task."
+);
+task_action_request!(
+    ResumeTaskRequest,
+    ResumeTaskResponse,
+    resume_task,
+    "Semantic request for resuming a standard scan task."
+);
 
 /// Build a clone request for an existing task.
 #[must_use]
@@ -399,14 +634,24 @@ pub fn modify_task(
     task_id: &EntityId,
     opts: ModifyTaskOpts,
 ) -> Result<impl Request, ModifyTaskError> {
-    modify_task_with_usage(task_id, opts, None)
+    validate_modify_task_opts(&opts)?;
+    Ok(modify_task_with_usage(task_id, opts, None))
+}
+
+fn validate_modify_task_opts(opts: &ModifyTaskOpts) -> Result<(), ModifyTaskError> {
+    if !matches!(opts.observer_group_ids, CollectionUpdate::Omitted)
+        && matches!(opts.observers, CollectionUpdate::Omitted)
+    {
+        return Err(ModifyTaskError::ObserverGroupsWithoutUserUpdate);
+    }
+    Ok(())
 }
 
 fn modify_task_with_usage(
     task_id: &EntityId,
     opts: ModifyTaskOpts,
     usage_type: Option<UsageType>,
-) -> Result<XmlCommand, ModifyTaskError> {
+) -> XmlCommand {
     let mut cmd = XmlCommand::new("modify_task").attribute("task_id", task_id.as_str());
     add_text_element(&mut cmd, "name", opts.name.as_deref());
     add_text_element(&mut cmd, "comment", opts.comment.as_deref());
@@ -435,9 +680,9 @@ fn modify_task_with_usage(
             }
         }
     }
-    add_task_observer_update(&mut cmd, &opts.observers, &opts.observer_group_ids)?;
+    add_task_observer_update(&mut cmd, &opts.observers, &opts.observer_group_ids);
     add_preferences(&mut cmd, &opts.preferences);
-    Ok(cmd)
+    cmd
 }
 
 fn add_task_observers(cmd: &mut XmlCommand, observers: &[String], observer_group_ids: &[EntityId]) {
@@ -459,16 +704,16 @@ fn add_task_observer_update(
     cmd: &mut XmlCommand,
     observers: &CollectionUpdate<String>,
     observer_group_ids: &CollectionUpdate<EntityId>,
-) -> Result<(), ModifyTaskError> {
-    if !matches!(observer_group_ids, CollectionUpdate::Omitted)
-        && matches!(observers, CollectionUpdate::Omitted)
-    {
-        return Err(ModifyTaskError::ObserverGroupsWithoutUserUpdate);
-    }
+) {
+    debug_assert!(
+        matches!(observer_group_ids, CollectionUpdate::Omitted)
+            || !matches!(observers, CollectionUpdate::Omitted),
+        "task observer-group updates must be validated before encoding"
+    );
     if matches!(observers, CollectionUpdate::Omitted)
         && matches!(observer_group_ids, CollectionUpdate::Omitted)
     {
-        return Ok(());
+        return;
     }
 
     let element = cmd.add_element("observers");
@@ -490,7 +735,6 @@ fn add_task_observer_update(
             element.add_child("group").set_attribute("id", "0");
         }
     }
-    Ok(())
 }
 
 /// Build a `move_task` request.
@@ -588,7 +832,12 @@ pub fn modify_audit(
     task_id: &EntityId,
     opts: ModifyTaskOpts,
 ) -> Result<impl Request, ModifyTaskError> {
-    modify_task_with_usage(task_id, opts, Some(UsageType::Audit))
+    validate_modify_task_opts(&opts)?;
+    Ok(modify_task_with_usage(
+        task_id,
+        opts,
+        Some(UsageType::Audit),
+    ))
 }
 
 /// Build a `delete_task` request for an audit.
@@ -613,6 +862,140 @@ mod tests {
             xml(clone_task(&id("a1"))),
             "<create_task><copy>a1</copy></create_task>"
         );
+    }
+
+    #[test]
+    fn semantic_task_requests_match_legacy_builder_bytes() {
+        let list_opts = GetTasksOpts {
+            filter_string: Some("name=production".into()),
+            details: Some(true),
+            schedules_only: Some(false),
+            ..Default::default()
+        };
+        assert_eq!(
+            GetTasksRequest::new(list_opts.clone()).to_bytes(),
+            get_tasks(list_opts).to_bytes()
+        );
+
+        let task_id = id("task-1");
+        assert_eq!(
+            GetTaskRequest::new(task_id.clone()).to_bytes(),
+            get_task(&task_id).to_bytes()
+        );
+
+        let create_opts = CreateTaskOpts {
+            alterable: Some(true),
+            hosts_ordering: Some(HostsOrdering::Random),
+            schedule_id: Some(id("schedule-1")),
+            alert_ids: vec![id("alert-1")],
+            comment: Some("production scan".into()),
+            schedule_periods: Some(3),
+            observers: vec!["alice".into()],
+            observer_group_ids: vec![id("group-1")],
+            preferences: vec![("max_hosts".into(), "10".into())],
+        };
+        assert_eq!(
+            CreateTaskRequest::new(
+                "production",
+                id("config-1"),
+                id("target-1"),
+                id("scanner-1"),
+                create_opts.clone(),
+            )
+            .to_bytes(),
+            create_task(
+                "production",
+                &id("config-1"),
+                &id("target-1"),
+                &id("scanner-1"),
+                create_opts,
+            )
+            .to_bytes()
+        );
+
+        assert_eq!(
+            CloneTaskRequest::new(task_id.clone()).to_bytes(),
+            clone_task(&task_id).to_bytes()
+        );
+
+        let modify_opts = ModifyTaskOpts {
+            name: Some("renamed".into()),
+            schedule_id: ScalarUpdate::set(id("schedule-2")),
+            observers: CollectionUpdate::replace(["bob".into()]),
+            observer_group_ids: CollectionUpdate::replace([id("group-2")]),
+            ..Default::default()
+        };
+        assert_eq!(
+            ModifyTaskRequest::new(task_id.clone(), modify_opts.clone())
+                .expect("valid semantic modify request")
+                .to_bytes(),
+            modify_task(&task_id, modify_opts)
+                .expect("valid legacy modify request")
+                .to_bytes()
+        );
+
+        assert_eq!(
+            DeleteTaskRequest::new(task_id.clone(), true).to_bytes(),
+            delete_task(&task_id, true).to_bytes()
+        );
+        assert_eq!(
+            StartTaskRequest::new(task_id.clone()).to_bytes(),
+            start_task(&task_id).to_bytes()
+        );
+        assert_eq!(
+            StopTaskRequest::new(task_id.clone()).to_bytes(),
+            stop_task(&task_id).to_bytes()
+        );
+        assert_eq!(
+            ResumeTaskRequest::new(task_id.clone()).to_bytes(),
+            resume_task(&task_id).to_bytes()
+        );
+    }
+
+    #[test]
+    fn semantic_modify_task_preserves_builder_validation() {
+        let opts = ModifyTaskOpts {
+            observer_group_ids: CollectionUpdate::replace([id("group-1")]),
+            ..Default::default()
+        };
+        assert_eq!(
+            ModifyTaskRequest::new(id("task-1"), opts.clone()).err(),
+            Some(ModifyTaskError::ObserverGroupsWithoutUserUpdate)
+        );
+        assert_eq!(
+            modify_task(&id("task-1"), opts).err(),
+            Some(ModifyTaskError::ObserverGroupsWithoutUserUpdate)
+        );
+    }
+
+    #[test]
+    fn semantic_task_requests_have_the_expected_response_associations() {
+        fn assert_response<R, T>(_: &R)
+        where
+            R: GmpRequest<Response = T>,
+            T: crate::GmpResponse,
+        {
+        }
+
+        let task_id = id("task-1");
+        assert_response::<_, GetTasksResponse>(&GetTasksRequest::default());
+        assert_response::<_, GetTasksResponse>(&GetTaskRequest::new(task_id.clone()));
+        assert_response::<_, CreateTaskResponse>(&CreateTaskRequest::new(
+            "scan",
+            id("config-1"),
+            id("target-1"),
+            id("scanner-1"),
+            CreateTaskOpts::default(),
+        ));
+        assert_response::<_, CreateTaskResponse>(&CloneTaskRequest::new(task_id.clone()));
+        assert_response::<_, ModifyTaskResponse>(
+            &ModifyTaskRequest::new(task_id.clone(), ModifyTaskOpts::default())
+                .expect("valid modify request"),
+        );
+        assert_response::<_, DeleteTaskResponse>(&DeleteTaskRequest::new(task_id.clone(), false));
+        assert_response::<_, StartTaskResponse>(&StartTaskRequest::new(task_id.clone()));
+        assert_response::<_, StopTaskResponse>(&StopTaskRequest::new(task_id.clone()));
+        assert_response::<_, ResumeTaskResponse>(&ResumeTaskRequest::new(task_id));
     }
 
     #[test]

@@ -11,7 +11,7 @@ use crate::{
         parse_named_entity, status_from_response, ActionResponse, CountInfo, EntityMeta,
         NamedEntity, ParseError, XmlNode,
     },
-    EntityId,
+    EntityId, GmpResponse, GmpVersion,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -289,6 +289,12 @@ impl GetTasksResponse {
     }
 }
 
+impl GmpResponse for GetTasksResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 impl CreateTaskResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
@@ -306,6 +312,12 @@ impl CreateTaskResponse {
     }
 }
 
+impl GmpResponse for CreateTaskResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 impl StartTaskResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text, report_id) = parse_task_action_response(response)?;
@@ -317,6 +329,12 @@ impl StartTaskResponse {
     }
 }
 
+impl GmpResponse for StartTaskResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 impl ResumeTaskResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text, report_id) = parse_task_action_response(response)?;
@@ -325,6 +343,12 @@ impl ResumeTaskResponse {
             status_text,
             report_id,
         })
+    }
+}
+
+impl GmpResponse for ResumeTaskResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 
