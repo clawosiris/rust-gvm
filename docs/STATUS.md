@@ -89,6 +89,14 @@ encoders, both restore builder names retain byte-identical behavior through
 distinct semantic request values, and all facade helpers delegate to generic
 typed execution without changing response or version policy.
 
+The note-and-override Phase 2 batch, tracked by
+[`#559`](https://github.com/greenbone-hive/rust-gvm/issues/559), migrates both
+complete list/detail/create/clone/modify/delete lifecycles. The list/detail and
+create/clone pairs remain distinct semantic request types despite sharing wire
+roots and response models. Existing builders remain the sole XML encoders,
+including optional relationship fields, omit/replace/clear host updates, and
+ultimate-delete behavior; all facade helpers delegate to generic execution.
+
 The irregular-report Phase 3 batch, tracked by
 [`#546`](https://github.com/greenbone-hive/rust-gvm/issues/546), migrates report
 list/detail, structured scan and audit reports, audit hosts, nine structured

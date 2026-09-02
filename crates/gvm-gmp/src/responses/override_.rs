@@ -10,6 +10,7 @@ use crate::responses::common::{
     parse_entity_meta_optional_name, parse_entity_ref, parse_nvt_reference, status_from_response,
     ActionResponse, CountInfo, EntityMeta, NamedEntity, NvtReference, ParseError,
 };
+use crate::{GmpResponse, GmpVersion};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -92,6 +93,12 @@ impl GetOverridesResponse {
     }
 }
 
+impl GmpResponse for GetOverridesResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 impl CreateOverrideResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
@@ -106,6 +113,12 @@ impl CreateOverrideResponse {
             status_text,
             id,
         })
+    }
+}
+
+impl GmpResponse for CreateOverrideResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 

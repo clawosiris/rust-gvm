@@ -18,9 +18,9 @@ use gvm_gmp::commands::credentials::{
 use gvm_gmp::commands::filters::{FilterOpts, GetFiltersOpts};
 use gvm_gmp::commands::groups::{GetGroupsOpts, GroupOpts};
 use gvm_gmp::commands::hosts::{GetHostsOpts, HostOpts};
-use gvm_gmp::commands::notes::{GetNotesOpts, NoteOpts};
+use gvm_gmp::commands::notes::{GetNotesOpts, ModifyNoteOpts, NoteOpts};
 use gvm_gmp::commands::nvts::GetNvtsOpts;
-use gvm_gmp::commands::overrides::{GetOverridesOpts, OverrideOpts};
+use gvm_gmp::commands::overrides::{GetOverridesOpts, ModifyOverrideOpts, OverrideOpts};
 use gvm_gmp::commands::permissions::{GetPermissionsOpts, PermissionOpts};
 use gvm_gmp::commands::port_lists::{GetPortListsOpts, PortListOpts};
 use gvm_gmp::commands::report_configs::GetReportConfigsOpts;
@@ -51,7 +51,7 @@ use gvm_gmp::commands::tickets::{CreateTicketOpts, GetTicketsOpts, TicketOpenNot
 use gvm_gmp::commands::tls_certificates::{GetTlsCertificatesOpts, TlsCertificateOpts};
 use gvm_gmp::commands::users::{GetUsersOpts, UserOpts};
 use gvm_gmp::responses::{ActionResponse, ParseError};
-use gvm_gmp::types::{EntityId, GmpVersion, ScalarUpdate};
+use gvm_gmp::types::{CollectionUpdate, EntityId, GmpVersion, ScalarUpdate};
 use gvm_gmp::{
     GmpRequest, ScheduleDefinition, ScheduleInput, ScheduleRecurrence, ScheduleTimestamp,
     ScheduleTimezone,
@@ -1667,6 +1667,190 @@ async fn filters_tags_and_trashcan_preserve_status_and_parse_context() {
         trashcan_error,
         GvmError::Parse(ParseError::ServerError { status: 409, message })
             if message == "trashcan conflict"
+    ));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn notes_execute_through_typed_facade() {
+    let overrides = [
+        (
+            "get_notes",
+            r#"<get_notes_response status="200" status_text="OK"><note_count>0<filtered>0</filtered></note_count></get_notes_response>"#,
+        ),
+        ("create_note", create_response!("create_note_response")),
+        (
+            "modify_note",
+            r#"<modify_note_response status="200" status_text="OK"/>"#,
+        ),
+        (
+            "delete_note",
+            r#"<delete_note_response status="200" status_text="OK"/>"#,
+        ),
+    ];
+    let Some(server) = fixture_server(MockVersion::V22_4, &overrides).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let resource_id = id("resource-1");
+
+    assert_typed_success!(client.get_notes(GetNotesOpts::default()));
+    assert_typed_success!(client.get_note(&resource_id));
+    assert_create_success!(client.create_note(
+        "1.3.6.1.4.1.25623.1.0.1",
+        NoteOpts {
+            hosts: vec!["192.0.2.1".into()],
+            ..Default::default()
+        }
+    ));
+    assert_create_success!(client.clone_note(&resource_id));
+    assert_typed_success!(client.modify_note(
+        &resource_id,
+        ModifyNoteOpts {
+            hosts: CollectionUpdate::Clear,
+            ..Default::default()
+        }
+    ));
+    assert_typed_success!(client.delete_note(&resource_id, true));
+
+    let history = server.command_history();
+    let commands = history
+        .iter()
+        .map(|record| record.command_name().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        commands,
+        [
+            "get_notes",
+            "get_notes",
+            "create_note",
+            "create_note",
+            "modify_note",
+            "delete_note",
+        ]
+    );
+    let modify_note = history
+        .iter()
+        .find(|record| record.command_name() == "modify_note")
+        .expect("modify_note history");
+    assert!(std::str::from_utf8(modify_note.raw_xml())
+        .expect("request XML")
+        .contains("<hosts></hosts>"));
+    let delete_note = history
+        .iter()
+        .find(|record| record.command_name() == "delete_note")
+        .expect("delete_note history");
+    assert!(std::str::from_utf8(delete_note.raw_xml())
+        .expect("request XML")
+        .contains(r#"ultimate="1""#));
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn overrides_execute_through_typed_facade() {
+    let overrides = [
+        (
+            "get_overrides",
+            r#"<get_overrides_response status="200" status_text="OK"><override_count>0<filtered>0</filtered></override_count></get_overrides_response>"#,
+        ),
+        (
+            "create_override",
+            create_response!("create_override_response"),
+        ),
+        (
+            "modify_override",
+            r#"<modify_override_response status="200" status_text="OK"/>"#,
+        ),
+        (
+            "delete_override",
+            r#"<delete_override_response status="200" status_text="OK"/>"#,
+        ),
+    ];
+    let Some(server) = fixture_server(MockVersion::V22_4, &overrides).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let resource_id = id("resource-1");
+
+    assert_typed_success!(client.get_overrides(GetOverridesOpts::default()));
+    assert_typed_success!(client.get_override(&resource_id));
+    assert_create_success!(client.create_override(
+        "1.3.6.1.4.1.25623.1.0.1",
+        OverrideOpts {
+            new_severity: Some("3.0".into()),
+            ..Default::default()
+        }
+    ));
+    assert_create_success!(client.clone_override(&resource_id));
+    assert_typed_success!(client.modify_override(
+        &resource_id,
+        ModifyOverrideOpts {
+            hosts: CollectionUpdate::replace(["192.0.2.2".into()]),
+            ..Default::default()
+        }
+    ));
+    assert_typed_success!(client.delete_override(&resource_id, false));
+
+    let commands = server
+        .command_history()
+        .iter()
+        .map(|record| record.command_name().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        commands,
+        [
+            "get_overrides",
+            "get_overrides",
+            "create_override",
+            "create_override",
+            "modify_override",
+            "delete_override",
+        ]
+    );
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn notes_and_overrides_preserve_status_and_parse_context() {
+    let Some(server) = fixture_server(
+        MockVersion::V22_4,
+        &[
+            (
+                "get_notes",
+                r#"<get_notes_response status="409" status_text="note conflict"/>"#,
+            ),
+            (
+                "create_override",
+                r#"<create_override_response status="201" status_text="OK"/>"#,
+            ),
+        ],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+
+    let note_error = client
+        .get_note(&id("note-1"))
+        .await
+        .expect_err("non-success note response should fail");
+    assert!(matches!(
+        note_error,
+        GvmError::Parse(ParseError::ServerError { status: 409, message })
+            if message == "note conflict"
+    ));
+
+    let override_error = client
+        .clone_override(&id("override-1"))
+        .await
+        .expect_err("missing cloned override id should fail");
+    assert!(matches!(
+        override_error,
+        GvmError::Parse(ParseError::MissingElement(field)) if field == "id"
     ));
 
     server.shutdown().await;

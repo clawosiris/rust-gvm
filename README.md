@@ -207,8 +207,8 @@ The `next` Technology Preview lane also exposes semantic request values whose
 response type is selected at compile time. Migrated families cover version
 negotiation, authentication, standard and specialized task variants,
 target/credential/scanner lifecycles, scan-config, policy, and credential-store
-operations, alerts and schedules, filters, tags, trashcan recovery, and
-irregular report retrieval, drill-down, and export operations:
+operations, alerts and schedules, filters, tags, notes, overrides, trashcan
+recovery, and irregular report retrieval, drill-down, and export operations:
 
 ```rust
 use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest};
