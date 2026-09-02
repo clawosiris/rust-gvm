@@ -7,7 +7,9 @@ use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
 use crate::enums::{EntityType, SeverityLevel};
+use crate::responses::{CreateTagResponse, DeleteTagResponse, GetTagsResponse, ModifyTagResponse};
 use crate::types::EntityId;
+use crate::GmpRequest;
 
 /// Optional fields for tag create and modify requests.
 #[derive(Debug, Clone, Default)]
@@ -37,6 +39,135 @@ pub struct GetTagsOpts {
     pub trash: Option<bool>,
     /// Whether to request detailed output.
     pub details: Option<bool>,
+}
+
+/// Semantic request for listing tags.
+#[derive(Debug, Clone, Default)]
+pub struct GetTagsRequest(GetTagsOpts);
+
+impl GetTagsRequest {
+    /// Create a tag-list request.
+    #[must_use]
+    pub fn new(opts: GetTagsOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetTagsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_tags(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetTagsRequest {
+    type Response = GetTagsResponse;
+}
+
+macro_rules! tag_id_request {
+    ($name:ident, $response:ty, $builder:ident) => {
+        #[doc = concat!("Semantic request backed by [`", stringify!($builder), "`].")]
+        #[derive(Debug, Clone)]
+        pub struct $name(EntityId);
+
+        impl $name {
+            /// Create the semantic request.
+            #[must_use]
+            pub fn new(tag_id: EntityId) -> Self {
+                Self(tag_id)
+            }
+        }
+
+        impl Request for $name {
+            fn to_bytes(&self) -> Vec<u8> {
+                $builder(&self.0).to_bytes()
+            }
+        }
+
+        impl GmpRequest for $name {
+            type Response = $response;
+        }
+    };
+}
+
+tag_id_request!(GetTagRequest, GetTagsResponse, get_tag);
+tag_id_request!(CloneTagRequest, CreateTagResponse, clone_tag);
+
+/// Semantic request for creating a tag.
+#[derive(Debug, Clone)]
+pub struct CreateTagRequest {
+    name: String,
+    opts: TagOpts,
+}
+
+impl CreateTagRequest {
+    /// Create a tag-creation request.
+    #[must_use]
+    pub fn new(name: impl Into<String>, opts: TagOpts) -> Self {
+        Self {
+            name: name.into(),
+            opts,
+        }
+    }
+}
+
+impl Request for CreateTagRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_tag(&self.name, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateTagRequest {
+    type Response = CreateTagResponse;
+}
+
+/// Semantic request for modifying a tag.
+#[derive(Debug, Clone)]
+pub struct ModifyTagRequest {
+    tag_id: EntityId,
+    opts: TagOpts,
+}
+
+impl ModifyTagRequest {
+    /// Create a tag-modification request.
+    #[must_use]
+    pub fn new(tag_id: EntityId, opts: TagOpts) -> Self {
+        Self { tag_id, opts }
+    }
+}
+
+impl Request for ModifyTagRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_tag(&self.tag_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyTagRequest {
+    type Response = ModifyTagResponse;
+}
+
+/// Semantic request for deleting a tag.
+#[derive(Debug, Clone)]
+pub struct DeleteTagRequest {
+    tag_id: EntityId,
+    ultimate: bool,
+}
+
+impl DeleteTagRequest {
+    /// Create a tag-deletion request.
+    #[must_use]
+    pub fn new(tag_id: EntityId, ultimate: bool) -> Self {
+        Self { tag_id, ultimate }
+    }
+}
+
+impl Request for DeleteTagRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_tag(&self.tag_id, self.ultimate).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteTagRequest {
+    type Response = DeleteTagResponse;
 }
 
 /// Build a clone request for an existing tag.
@@ -132,6 +263,46 @@ mod tests {
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
+    }
+
+    #[test]
+    fn semantic_tag_requests_match_builder_bytes_and_responses() {
+        fn associated<R, T>(_: &R)
+        where
+            R: GmpRequest<Response = T>,
+            T: crate::GmpResponse,
+        {
+        }
+        let tag_id = id("tag-1");
+        let get_opts = GetTagsOpts {
+            details: Some(true),
+            ..Default::default()
+        };
+        let opts = TagOpts {
+            value: Some("value".into()),
+            ..Default::default()
+        };
+        let list = GetTagsRequest::new(get_opts.clone());
+        assert_eq!(list.to_bytes(), get_tags(get_opts).to_bytes());
+        associated::<_, GetTagsResponse>(&list);
+        let get = GetTagRequest::new(tag_id.clone());
+        assert_eq!(get.to_bytes(), get_tag(&tag_id).to_bytes());
+        associated::<_, GetTagsResponse>(&get);
+        let create = CreateTagRequest::new("tag", opts.clone());
+        assert_eq!(
+            create.to_bytes(),
+            create_tag("tag", opts.clone()).to_bytes()
+        );
+        associated::<_, CreateTagResponse>(&create);
+        let clone = CloneTagRequest::new(tag_id.clone());
+        assert_eq!(clone.to_bytes(), clone_tag(&tag_id).to_bytes());
+        associated::<_, CreateTagResponse>(&clone);
+        let modify = ModifyTagRequest::new(tag_id.clone(), opts.clone());
+        assert_eq!(modify.to_bytes(), modify_tag(&tag_id, opts).to_bytes());
+        associated::<_, ModifyTagResponse>(&modify);
+        let delete = DeleteTagRequest::new(tag_id.clone(), true);
+        assert_eq!(delete.to_bytes(), delete_tag(&tag_id, true).to_bytes());
+        associated::<_, DeleteTagResponse>(&delete);
     }
 
     #[test]

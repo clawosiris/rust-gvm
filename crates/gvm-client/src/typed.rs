@@ -39,7 +39,10 @@ use gvm_gmp::commands::credentials::{
 };
 use gvm_gmp::commands::features::get_features;
 use gvm_gmp::commands::feed::{get_feed, get_feeds};
-use gvm_gmp::commands::filters::{create_filter, get_filters, FilterOpts, GetFiltersOpts};
+use gvm_gmp::commands::filters::{
+    CloneFilterRequest, CreateFilterRequest, DeleteFilterRequest, FilterOpts, GetFilterRequest,
+    GetFiltersOpts, GetFiltersRequest, ModifyFilterRequest,
+};
 use gvm_gmp::commands::groups::{create_group, get_groups, GetGroupsOpts, GroupOpts};
 use gvm_gmp::commands::help::{help, help_with_mode, HelpMode};
 use gvm_gmp::commands::hosts::{create_host, get_hosts, GetHostsOpts, HostOpts};
@@ -113,7 +116,10 @@ use gvm_gmp::commands::system::{
     ModifyLicenseOpts, RunWizardOpts,
 };
 use gvm_gmp::commands::system_reports::{get_system_reports, GetSystemReportsOpts};
-use gvm_gmp::commands::tags::{create_tag, get_tags, GetTagsOpts, TagOpts};
+use gvm_gmp::commands::tags::{
+    CloneTagRequest, CreateTagRequest, DeleteTagRequest, GetTagRequest, GetTagsOpts,
+    GetTagsRequest, ModifyTagRequest, TagOpts,
+};
 use gvm_gmp::commands::targets::{
     CreateTargetOpts, CreateTargetRequest, DeleteTargetRequest, GetTargetRequest, GetTargetsOpts,
     GetTargetsRequest, ModifyTargetOpts, ModifyTargetRequest,
@@ -134,7 +140,9 @@ use gvm_gmp::commands::tickets::{
 use gvm_gmp::commands::tls_certificates::{
     create_tls_certificate, get_tls_certificates, GetTlsCertificatesOpts, TlsCertificateOpts,
 };
-use gvm_gmp::commands::trashcan::{empty_trashcan, restore_from_trashcan};
+use gvm_gmp::commands::trashcan::{
+    EmptyTrashcanRequest, RestoreFromTrashcanRequest, RestoreRequest,
+};
 use gvm_gmp::commands::users::{
     create_user, get_users, modify_user, GetUsersOpts, ModifyUserOpts, UserOpts,
 };
@@ -153,16 +161,16 @@ use gvm_gmp::responses::{
     CreateScannerResponse, CreateScheduleResponse, CreateTagResponse, CreateTargetResponse,
     CreateTaskResponse, CreateTicketResponse, CreateTlsCertificateResponse, CreateUserResponse,
     CreateWebApplicationTargetResponse, DeleteAlertResponse, DeleteAssetResponse,
-    DeleteConfigResponse, DeleteCredentialResponse, DeleteOciImageTargetResponse,
-    DeleteScanConfigResponse, DeleteScannerResponse, DeleteScheduleResponse, DeleteTargetResponse,
-    DeleteTaskResponse, DeleteWebApplicationTargetResponse, DescribeAuthResponse,
-    EmptyTrashcanResponse, ExportScanReportResponse, GetAggregatesResponse, GetAlertsResponse,
-    GetAssetsResponse, GetAuditReportHostsResponse, GetAuditReportResponse,
-    GetCertBundAdvisoriesResponse, GetConfigsResponse, GetCpesResponse,
-    GetCredentialStoresResponse, GetCredentialsResponse, GetCvesResponse,
-    GetDfnCertAdvisoriesResponse, GetFeaturesResponse, GetFeedsResponse, GetFiltersResponse,
-    GetGroupsResponse, GetHostsResponse, GetIntegrationConfigsResponse, GetNotesResponse,
-    GetNvtFamiliesResponse, GetNvtsResponse, GetOciImageTargetsResponse,
+    DeleteConfigResponse, DeleteCredentialResponse, DeleteFilterResponse,
+    DeleteOciImageTargetResponse, DeleteScanConfigResponse, DeleteScannerResponse,
+    DeleteScheduleResponse, DeleteTagResponse, DeleteTargetResponse, DeleteTaskResponse,
+    DeleteWebApplicationTargetResponse, DescribeAuthResponse, EmptyTrashcanResponse,
+    ExportScanReportResponse, GetAggregatesResponse, GetAlertsResponse, GetAssetsResponse,
+    GetAuditReportHostsResponse, GetAuditReportResponse, GetCertBundAdvisoriesResponse,
+    GetConfigsResponse, GetCpesResponse, GetCredentialStoresResponse, GetCredentialsResponse,
+    GetCvesResponse, GetDfnCertAdvisoriesResponse, GetFeaturesResponse, GetFeedsResponse,
+    GetFiltersResponse, GetGroupsResponse, GetHostsResponse, GetIntegrationConfigsResponse,
+    GetNotesResponse, GetNvtFamiliesResponse, GetNvtsResponse, GetOciImageTargetsResponse,
     GetOperatingSystemAssetsResponse, GetOverridesResponse, GetPermissionsResponse,
     GetPortListsResponse, GetReportApplicationsResponse, GetReportClosedCvesResponse,
     GetReportConfigsResponse, GetReportCvesResponse, GetReportErrorsResponse,
@@ -174,12 +182,13 @@ use gvm_gmp::responses::{
     GetTimezonesResponse, GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse,
     GetVulnerabilitiesResponse, GetWebApplicationTargetsResponse, HelpResponse,
     ModifyAlertResponse, ModifyAssetResponse, ModifyAuthResponse, ModifyConfigResponse,
-    ModifyCredentialResponse, ModifyIntegrationConfigResponse, ModifyLicenseResponse,
-    ModifyOciImageTargetResponse, ModifyPortListResponse, ModifyScanConfigResponse,
-    ModifyScannerResponse, ModifyScheduleResponse, ModifyTargetResponse, ModifyTaskResponse,
-    ModifyTicketResponse, ModifyUserResponse, ModifyWebApplicationTargetResponse, MoveTaskResponse,
-    ReportExport, RestoreResponse, ResumeTaskResponse, RunWizardResponse, StartTaskResponse,
-    StopTaskResponse, SyncConfigResponse, VerifyCredentialStoreResponse, VerifyScannerResponse,
+    ModifyCredentialResponse, ModifyFilterResponse, ModifyIntegrationConfigResponse,
+    ModifyLicenseResponse, ModifyOciImageTargetResponse, ModifyPortListResponse,
+    ModifyScanConfigResponse, ModifyScannerResponse, ModifyScheduleResponse, ModifyTagResponse,
+    ModifyTargetResponse, ModifyTaskResponse, ModifyTicketResponse, ModifyUserResponse,
+    ModifyWebApplicationTargetResponse, MoveTaskResponse, ReportExport, RestoreResponse,
+    ResumeTaskResponse, RunWizardResponse, StartTaskResponse, StopTaskResponse, SyncConfigResponse,
+    VerifyCredentialStoreResponse, VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::{CredentialStoreCredentialType, FeedType, ScheduleInput};
@@ -1153,8 +1162,15 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn empty_trashcan(&mut self) -> Result<EmptyTrashcanResponse, GvmError> {
-        let response = self.send(empty_trashcan()).await?;
-        EmptyTrashcanResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(EmptyTrashcanRequest::new()).await
+    }
+
+    /// Send a `restore` request through its baseline helper name.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn restore(&mut self, resource_id: &EntityId) -> Result<RestoreResponse, GvmError> {
+        self.execute(RestoreRequest::new(resource_id.clone())).await
     }
 
     /// Send a `restore` request and return a typed [`RestoreResponse`].
@@ -1165,8 +1181,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         resource_id: &EntityId,
     ) -> Result<RestoreResponse, GvmError> {
-        let response = self.send(restore_from_trashcan(resource_id)).await?;
-        RestoreResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(RestoreFromTrashcanRequest::new(resource_id.clone()))
+            .await
     }
 
     // ── Reports ───────────────────────────────────────────────────────────────
@@ -1868,8 +1884,18 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         opts: GetFiltersOpts,
     ) -> Result<GetFiltersResponse, GvmError> {
-        let response = self.send(get_filters(opts)).await?;
-        GetFiltersResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetFiltersRequest::new(opts)).await
+    }
+
+    /// Send a detailed single-filter request.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_filter(
+        &mut self,
+        filter_id: &EntityId,
+    ) -> Result<GetFiltersResponse, GvmError> {
+        self.execute(GetFilterRequest::new(filter_id.clone())).await
     }
 
     /// Send a `create_filter` request and return a typed [`CreateFilterResponse`].
@@ -1881,8 +1907,45 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         name: &str,
         opts: FilterOpts,
     ) -> Result<CreateFilterResponse, GvmError> {
-        let response = self.send(create_filter(name, opts)).await?;
-        CreateFilterResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CreateFilterRequest::new(name, opts)).await
+    }
+
+    /// Clone a filter through `create_filter`.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn clone_filter(
+        &mut self,
+        filter_id: &EntityId,
+    ) -> Result<CreateFilterResponse, GvmError> {
+        self.execute(CloneFilterRequest::new(filter_id.clone()))
+            .await
+    }
+
+    /// Send a `modify_filter` request.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_filter(
+        &mut self,
+        filter_id: &EntityId,
+        opts: FilterOpts,
+    ) -> Result<ModifyFilterResponse, GvmError> {
+        self.execute(ModifyFilterRequest::new(filter_id.clone(), opts))
+            .await
+    }
+
+    /// Send a `delete_filter` request.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn delete_filter(
+        &mut self,
+        filter_id: &EntityId,
+        ultimate: bool,
+    ) -> Result<DeleteFilterResponse, GvmError> {
+        self.execute(DeleteFilterRequest::new(filter_id.clone(), ultimate))
+            .await
     }
 
     // ── Notes ─────────────────────────────────────────────────────────────────
@@ -2046,8 +2109,15 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_tags(&mut self, opts: GetTagsOpts) -> Result<GetTagsResponse, GvmError> {
-        let response = self.send(get_tags(opts)).await?;
-        GetTagsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetTagsRequest::new(opts)).await
+    }
+
+    /// Send a detailed single-tag request.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_tag(&mut self, tag_id: &EntityId) -> Result<GetTagsResponse, GvmError> {
+        self.execute(GetTagRequest::new(tag_id.clone())).await
     }
 
     /// Send a `create_tag` request and return a typed [`CreateTagResponse`].
@@ -2059,8 +2129,41 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         name: &str,
         opts: TagOpts,
     ) -> Result<CreateTagResponse, GvmError> {
-        let response = self.send(create_tag(name, opts)).await?;
-        CreateTagResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CreateTagRequest::new(name, opts)).await
+    }
+
+    /// Clone a tag through `create_tag`.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn clone_tag(&mut self, tag_id: &EntityId) -> Result<CreateTagResponse, GvmError> {
+        self.execute(CloneTagRequest::new(tag_id.clone())).await
+    }
+
+    /// Send a `modify_tag` request.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn modify_tag(
+        &mut self,
+        tag_id: &EntityId,
+        opts: TagOpts,
+    ) -> Result<ModifyTagResponse, GvmError> {
+        self.execute(ModifyTagRequest::new(tag_id.clone(), opts))
+            .await
+    }
+
+    /// Send a `delete_tag` request.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn delete_tag(
+        &mut self,
+        tag_id: &EntityId,
+        ultimate: bool,
+    ) -> Result<DeleteTagResponse, GvmError> {
+        self.execute(DeleteTagRequest::new(tag_id.clone(), ultimate))
+            .await
     }
 
     // ── Tickets ───────────────────────────────────────────────────────────────

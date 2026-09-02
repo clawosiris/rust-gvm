@@ -81,6 +81,14 @@ triggering. Schedule list, detail, create, clone, modify, and delete retain both
 raw compatibility options and typed recurrence input. Existing builders remain
 the sole wire encoders and all facade helpers delegate to generic execution.
 
+The supporting-resource Phase 2 batch, tracked by
+[`#557`](https://github.com/greenbone-hive/rust-gvm/issues/557), migrates the
+complete filter and tag list/detail/create/clone/modify/delete lifecycles plus
+trashcan empty and restore operations. Existing builders remain the sole wire
+encoders, both restore builder names retain byte-identical behavior through
+distinct semantic request values, and all facade helpers delegate to generic
+typed execution without changing response or version policy.
+
 The irregular-report Phase 3 batch, tracked by
 [`#546`](https://github.com/greenbone-hive/rust-gvm/issues/546), migrates report
 list/detail, structured scan and audit reports, audit hosts, nine structured

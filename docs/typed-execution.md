@@ -197,6 +197,22 @@ first-run and recurrence input and delegate to the existing typed builders.
 Typed convenience methods for both forms use `execute`, so status handling,
 parse context, version checks, and redacted tracing remain identical.
 
+## Filters, tags, and trashcan recovery
+
+Filters and tags each expose semantic list, detailed-get, create, clone,
+modify, and delete request values. The list/detail and create/clone pairs keep
+separate Rust types even where they share a wire command and response model,
+so call-site intent remains explicit while the established builders remain the
+single XML encoders.
+
+Trashcan operations follow the same rule. `EmptyTrashcanRequest` selects the
+existing empty-trashcan response, while `RestoreRequest` and
+`RestoreFromTrashcanRequest` preserve the two public builder names as distinct
+semantic values over the same byte-identical `<restore>` command and typed
+response. All of these baseline commands remain available on every supported
+GMP version, and retained facade helpers delegate through `execute` without
+changing raw `send` or `call` behavior.
+
 ## Irregular report codecs and version policy
 
 The Phase 3 report family demonstrates that `GmpResponse` is a codec contract,
