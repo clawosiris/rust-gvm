@@ -7,7 +7,11 @@ use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
 use crate::enums::{FilterType, SortOrder};
+use crate::responses::{
+    CreateFilterResponse, DeleteFilterResponse, GetFiltersResponse, ModifyFilterResponse,
+};
 use crate::types::EntityId;
+use crate::GmpRequest;
 
 /// Optional fields for filter create and modify requests.
 #[derive(Debug, Clone, Default)]
@@ -33,6 +37,138 @@ pub struct GetFiltersOpts {
     pub trash: Option<bool>,
     /// Whether to request detailed output.
     pub details: Option<bool>,
+}
+
+/// Semantic request for listing filters.
+#[derive(Debug, Clone, Default)]
+pub struct GetFiltersRequest(GetFiltersOpts);
+
+impl GetFiltersRequest {
+    /// Create a filter-list request.
+    #[must_use]
+    pub fn new(opts: GetFiltersOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetFiltersRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_filters(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetFiltersRequest {
+    type Response = GetFiltersResponse;
+}
+
+macro_rules! filter_id_request {
+    ($name:ident, $response:ty, $builder:ident) => {
+        #[doc = concat!("Semantic request backed by [`", stringify!($builder), "`].")]
+        #[derive(Debug, Clone)]
+        pub struct $name(EntityId);
+
+        impl $name {
+            /// Create the semantic request.
+            #[must_use]
+            pub fn new(filter_id: EntityId) -> Self {
+                Self(filter_id)
+            }
+        }
+
+        impl Request for $name {
+            fn to_bytes(&self) -> Vec<u8> {
+                $builder(&self.0).to_bytes()
+            }
+        }
+
+        impl GmpRequest for $name {
+            type Response = $response;
+        }
+    };
+}
+
+filter_id_request!(GetFilterRequest, GetFiltersResponse, get_filter);
+filter_id_request!(CloneFilterRequest, CreateFilterResponse, clone_filter);
+
+/// Semantic request for creating a filter.
+#[derive(Debug, Clone)]
+pub struct CreateFilterRequest {
+    name: String,
+    opts: FilterOpts,
+}
+
+impl CreateFilterRequest {
+    /// Create a filter-creation request.
+    #[must_use]
+    pub fn new(name: impl Into<String>, opts: FilterOpts) -> Self {
+        Self {
+            name: name.into(),
+            opts,
+        }
+    }
+}
+
+impl Request for CreateFilterRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_filter(&self.name, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateFilterRequest {
+    type Response = CreateFilterResponse;
+}
+
+/// Semantic request for modifying a filter.
+#[derive(Debug, Clone)]
+pub struct ModifyFilterRequest {
+    filter_id: EntityId,
+    opts: FilterOpts,
+}
+
+impl ModifyFilterRequest {
+    /// Create a filter-modification request.
+    #[must_use]
+    pub fn new(filter_id: EntityId, opts: FilterOpts) -> Self {
+        Self { filter_id, opts }
+    }
+}
+
+impl Request for ModifyFilterRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_filter(&self.filter_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyFilterRequest {
+    type Response = ModifyFilterResponse;
+}
+
+/// Semantic request for deleting a filter.
+#[derive(Debug, Clone)]
+pub struct DeleteFilterRequest {
+    filter_id: EntityId,
+    ultimate: bool,
+}
+
+impl DeleteFilterRequest {
+    /// Create a filter-deletion request.
+    #[must_use]
+    pub fn new(filter_id: EntityId, ultimate: bool) -> Self {
+        Self {
+            filter_id,
+            ultimate,
+        }
+    }
+}
+
+impl Request for DeleteFilterRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_filter(&self.filter_id, self.ultimate).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteFilterRequest {
+    type Response = DeleteFilterResponse;
 }
 
 /// Build a clone request for an existing filter.
@@ -106,6 +242,52 @@ mod tests {
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
+    }
+
+    #[test]
+    fn semantic_filter_requests_match_builder_bytes_and_responses() {
+        fn associated<R, T>(_: &R)
+        where
+            R: GmpRequest<Response = T>,
+            T: crate::GmpResponse,
+        {
+        }
+        let filter_id = id("filter-1");
+        let get_opts = GetFiltersOpts {
+            details: Some(true),
+            ..Default::default()
+        };
+        let opts = FilterOpts {
+            term: Some("rows=10".into()),
+            ..Default::default()
+        };
+        let list = GetFiltersRequest::new(get_opts.clone());
+        assert_eq!(list.to_bytes(), get_filters(get_opts).to_bytes());
+        associated::<_, GetFiltersResponse>(&list);
+        let get = GetFilterRequest::new(filter_id.clone());
+        assert_eq!(get.to_bytes(), get_filter(&filter_id).to_bytes());
+        associated::<_, GetFiltersResponse>(&get);
+        let create = CreateFilterRequest::new("filter", opts.clone());
+        assert_eq!(
+            create.to_bytes(),
+            create_filter("filter", opts.clone()).to_bytes()
+        );
+        associated::<_, CreateFilterResponse>(&create);
+        let clone = CloneFilterRequest::new(filter_id.clone());
+        assert_eq!(clone.to_bytes(), clone_filter(&filter_id).to_bytes());
+        associated::<_, CreateFilterResponse>(&clone);
+        let modify = ModifyFilterRequest::new(filter_id.clone(), opts.clone());
+        assert_eq!(
+            modify.to_bytes(),
+            modify_filter(&filter_id, opts).to_bytes()
+        );
+        associated::<_, ModifyFilterResponse>(&modify);
+        let delete = DeleteFilterRequest::new(filter_id.clone(), true);
+        assert_eq!(
+            delete.to_bytes(),
+            delete_filter(&filter_id, true).to_bytes()
+        );
+        associated::<_, DeleteFilterResponse>(&delete);
     }
 
     #[test]

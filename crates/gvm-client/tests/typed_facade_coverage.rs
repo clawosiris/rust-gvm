@@ -1525,6 +1525,154 @@ async fn create_families_parse_typed_ids_from_table_driven_fixture_responses() {
 }
 
 #[tokio::test]
+async fn filters_tags_and_trashcan_execute_through_typed_facade() {
+    let overrides = [
+        (
+            "get_filters",
+            r#"<get_filters_response status="200" status_text="OK"><filter_count>0<filtered>0</filtered></filter_count></get_filters_response>"#,
+        ),
+        ("create_filter", create_response!("create_filter_response")),
+        (
+            "modify_filter",
+            r#"<modify_filter_response status="200" status_text="OK"/>"#,
+        ),
+        (
+            "delete_filter",
+            r#"<delete_filter_response status="200" status_text="OK"/>"#,
+        ),
+        (
+            "get_tags",
+            r#"<get_tags_response status="200" status_text="OK"><tag_count>0<filtered>0</filtered></tag_count></get_tags_response>"#,
+        ),
+        ("create_tag", create_response!("create_tag_response")),
+        (
+            "modify_tag",
+            r#"<modify_tag_response status="200" status_text="OK"/>"#,
+        ),
+        (
+            "delete_tag",
+            r#"<delete_tag_response status="200" status_text="OK"/>"#,
+        ),
+        (
+            "empty_trashcan",
+            r#"<empty_trashcan_response status="200" status_text="OK"/>"#,
+        ),
+        (
+            "restore",
+            r#"<restore_response status="200" status_text="OK"/>"#,
+        ),
+    ];
+    let Some(server) = fixture_server(MockVersion::V22_4, &overrides).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let resource_id = id("resource-1");
+
+    assert_typed_success!(client.get_filters(GetFiltersOpts::default()));
+    assert_typed_success!(client.get_filter(&resource_id));
+    assert_create_success!(client.create_filter("filter", FilterOpts::default()));
+    assert_create_success!(client.clone_filter(&resource_id));
+    assert_typed_success!(client.modify_filter(&resource_id, FilterOpts::default()));
+    assert_typed_success!(client.delete_filter(&resource_id, false));
+
+    assert_typed_success!(client.get_tags(GetTagsOpts::default()));
+    assert_typed_success!(client.get_tag(&resource_id));
+    assert_create_success!(client.create_tag("tag", TagOpts::default()));
+    assert_create_success!(client.clone_tag(&resource_id));
+    assert_typed_success!(client.modify_tag(&resource_id, TagOpts::default()));
+    assert_typed_success!(client.delete_tag(&resource_id, true));
+
+    assert_typed_success!(client.empty_trashcan());
+    assert_typed_success!(client.restore(&resource_id));
+    assert_typed_success!(client.restore_from_trashcan(&resource_id));
+
+    let commands = server
+        .command_history()
+        .iter()
+        .map(|record| record.command_name().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        commands,
+        [
+            "get_filters",
+            "get_filters",
+            "create_filter",
+            "create_filter",
+            "modify_filter",
+            "delete_filter",
+            "get_tags",
+            "get_tags",
+            "create_tag",
+            "create_tag",
+            "modify_tag",
+            "delete_tag",
+            "empty_trashcan",
+            "restore",
+            "restore",
+        ]
+    );
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn filters_tags_and_trashcan_preserve_status_and_parse_context() {
+    let Some(server) = fixture_server(
+        MockVersion::V22_4,
+        &[
+            (
+                "get_filters",
+                r#"<get_filters_response status="409" status_text="filter conflict"/>"#,
+            ),
+            (
+                "create_tag",
+                r#"<create_tag_response status="201" status_text="OK"/>"#,
+            ),
+            (
+                "empty_trashcan",
+                r#"<empty_trashcan_response status="409" status_text="trashcan conflict"/>"#,
+            ),
+        ],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+
+    let filter_error = client
+        .get_filter(&id("filter-1"))
+        .await
+        .expect_err("non-success filter response should fail");
+    assert!(matches!(
+        filter_error,
+        GvmError::Parse(ParseError::ServerError { status: 409, message })
+            if message == "filter conflict"
+    ));
+
+    let tag_error = client
+        .clone_tag(&id("tag-1"))
+        .await
+        .expect_err("missing cloned tag id should fail");
+    assert!(matches!(
+        tag_error,
+        GvmError::Parse(ParseError::MissingElement(field)) if field == "id"
+    ));
+
+    let trashcan_error = client
+        .empty_trashcan()
+        .await
+        .expect_err("non-success empty-trashcan response should fail");
+    assert!(matches!(
+        trashcan_error,
+        GvmError::Parse(ParseError::ServerError { status: 409, message })
+            if message == "trashcan conflict"
+    ));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn remaining_mutation_families_use_typed_facade_and_scalar_relationship_updates() {
     let Some(server) = fixture_server(MockVersion::V22_8, MUTATION_SUCCESS_OVERRIDES).await else {
         return;
