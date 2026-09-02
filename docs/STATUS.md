@@ -35,6 +35,16 @@ typed execution. Credential-store operations stay separate because their
 vault, preference, semantic-alias, and version-policy shapes require a focused
 follow-up.
 
+The credential-store Phase 2 batch, tracked by
+[`#551`](https://github.com/greenbone-hive/rust-gvm/issues/551), migrates store
+list/filter/detail, verification and preference-bearing modification, plus
+store-backed credential creation and modification. Existing builders remain
+the byte-compatible encoders. The generic `create_credential` and
+`modify_credential` wire roots retain explicit credential-store semantic names,
+so their GMP 22.8 gates run before transmission; existing facade methods now
+delegate to generic execution. Preference values retain wire-trace redaction,
+and raw/custom execution remains supported.
+
 The scanner-focused Phase 2 batch, tracked by
 [`#542`](https://github.com/greenbone-hive/rust-gvm/issues/542), migrates the
 scanner list/get/create/clone/modify/delete/verify lifecycle. Scanner builders

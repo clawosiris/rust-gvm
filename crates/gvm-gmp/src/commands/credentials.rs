@@ -13,8 +13,9 @@ use crate::enums::{
     SnmpPrivacyAlgorithm,
 };
 use crate::responses::{
-    CreateCredentialResponse, DeleteCredentialResponse, GetCredentialsResponse,
-    ModifyCredentialResponse,
+    CreateCredentialResponse, DeleteCredentialResponse, GetCredentialStoresResponse,
+    GetCredentialsResponse, ModifyCredentialResponse, ModifyCredentialStoreResponse,
+    VerifyCredentialStoreResponse,
 };
 use crate::types::EntityId;
 use crate::GmpRequest;
@@ -422,6 +423,198 @@ pub struct ModifyCredentialStoreCredentialOpts {
     pub vault_id: Option<String>,
     /// Optional host identifier.
     pub host_identifier: Option<String>,
+}
+
+/// Semantic request for listing or filtering credential stores.
+#[derive(Debug, Clone, Default)]
+pub struct GetCredentialStoresRequest {
+    opts: GetCredentialStoresOpts,
+}
+
+impl GetCredentialStoresRequest {
+    /// Create a credential-store list request.
+    #[must_use]
+    pub fn new(opts: GetCredentialStoresOpts) -> Self {
+        Self { opts }
+    }
+}
+
+impl Request for GetCredentialStoresRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_credential_stores_with_opts(self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetCredentialStoresRequest {
+    type Response = GetCredentialStoresResponse;
+}
+
+/// Semantic request for one credential store.
+#[derive(Debug, Clone)]
+pub struct GetCredentialStoreRequest {
+    credential_store_id: EntityId,
+    details: Option<bool>,
+}
+
+impl GetCredentialStoreRequest {
+    /// Create a single credential-store request.
+    #[must_use]
+    pub fn new(credential_store_id: EntityId, details: Option<bool>) -> Self {
+        Self {
+            credential_store_id,
+            details,
+        }
+    }
+}
+
+impl Request for GetCredentialStoreRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_credential_store(&self.credential_store_id, self.details).to_bytes()
+    }
+}
+
+impl GmpRequest for GetCredentialStoreRequest {
+    type Response = GetCredentialStoresResponse;
+}
+
+/// Semantic request for verifying a credential store.
+#[derive(Debug, Clone)]
+pub struct VerifyCredentialStoreRequest {
+    credential_store_id: EntityId,
+}
+
+impl VerifyCredentialStoreRequest {
+    /// Create a credential-store verification request.
+    #[must_use]
+    pub fn new(credential_store_id: EntityId) -> Self {
+        Self {
+            credential_store_id,
+        }
+    }
+}
+
+impl Request for VerifyCredentialStoreRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        verify_credential_store(&self.credential_store_id).to_bytes()
+    }
+}
+
+impl GmpRequest for VerifyCredentialStoreRequest {
+    type Response = VerifyCredentialStoreResponse;
+}
+
+/// Semantic request for modifying a credential store.
+///
+/// This type intentionally omits `Debug`: preference values can contain
+/// secrets and must not gain a new formatting path through typed execution.
+#[derive(Clone)]
+pub struct ModifyCredentialStoreRequest {
+    credential_store_id: EntityId,
+    opts: ModifyCredentialStoreOpts,
+}
+
+impl ModifyCredentialStoreRequest {
+    /// Create a credential-store modification request.
+    #[must_use]
+    pub fn new(credential_store_id: EntityId, opts: ModifyCredentialStoreOpts) -> Self {
+        Self {
+            credential_store_id,
+            opts,
+        }
+    }
+}
+
+impl Request for ModifyCredentialStoreRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_credential_store(&self.credential_store_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyCredentialStoreRequest {
+    type Response = ModifyCredentialStoreResponse;
+}
+
+/// Semantic request for creating a credential-store-backed credential.
+#[derive(Debug, Clone)]
+pub struct CreateCredentialStoreCredentialRequest {
+    name: String,
+    credential_type: CredentialStoreCredentialType,
+    vault_id: String,
+    host_identifier: String,
+    opts: CredentialStoreCredentialOpts,
+}
+
+impl CreateCredentialStoreCredentialRequest {
+    /// Create a credential-store-backed credential request.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        credential_type: CredentialStoreCredentialType,
+        vault_id: impl Into<String>,
+        host_identifier: impl Into<String>,
+        opts: CredentialStoreCredentialOpts,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            credential_type,
+            vault_id: vault_id.into(),
+            host_identifier: host_identifier.into(),
+            opts,
+        }
+    }
+}
+
+impl Request for CreateCredentialStoreCredentialRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_credential_store_credential(
+            &self.name,
+            self.credential_type,
+            &self.vault_id,
+            &self.host_identifier,
+            self.opts.clone(),
+        )
+        .to_bytes()
+    }
+
+    fn semantic_command_name(&self) -> Option<&'static str> {
+        Some("create_credential_store_credential")
+    }
+}
+
+impl GmpRequest for CreateCredentialStoreCredentialRequest {
+    type Response = CreateCredentialResponse;
+}
+
+/// Semantic request for modifying a credential-store-backed credential.
+#[derive(Debug, Clone)]
+pub struct ModifyCredentialStoreCredentialRequest {
+    credential_id: EntityId,
+    opts: ModifyCredentialStoreCredentialOpts,
+}
+
+impl ModifyCredentialStoreCredentialRequest {
+    /// Create a credential-store-backed credential modification request.
+    #[must_use]
+    pub fn new(credential_id: EntityId, opts: ModifyCredentialStoreCredentialOpts) -> Self {
+        Self {
+            credential_id,
+            opts,
+        }
+    }
+}
+
+impl Request for ModifyCredentialStoreCredentialRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_credential_store_credential(&self.credential_id, self.opts.clone()).to_bytes()
+    }
+
+    fn semantic_command_name(&self) -> Option<&'static str> {
+        Some("modify_credential_store_credential")
+    }
+}
+
+impl GmpRequest for ModifyCredentialStoreCredentialRequest {
+    type Response = ModifyCredentialResponse;
 }
 
 struct SemanticCommand {
@@ -916,6 +1109,137 @@ mod tests {
             credential_id,
             false,
         ));
+    }
+
+    #[test]
+    fn semantic_credential_store_requests_match_existing_builders_and_aliases() {
+        let store_id = id("store-1");
+        let credential_id = id("credential-1");
+        let get_opts = GetCredentialStoresOpts {
+            filter_string: Some("name=store".into()),
+            filter_id: Some(id("filter-1")),
+            details: Some(true),
+        };
+        let modify_store_opts = ModifyCredentialStoreOpts {
+            active: Some(true),
+            host: Some("store.example".into()),
+            path: Some("/vault".into()),
+            port: Some(8200),
+            comment: Some("primary".into()),
+            preferences: vec![CredentialStorePreference {
+                name: "token".into(),
+                value: "secret".into(),
+            }],
+        };
+        let create_opts = CredentialStoreCredentialOpts {
+            comment: Some("stored credential".into()),
+            credential_store_id: Some(store_id.clone()),
+        };
+        let modify_credential_opts = ModifyCredentialStoreCredentialOpts {
+            name: Some("renamed".into()),
+            comment: Some("stored credential".into()),
+            credential_store_id: Some(store_id.clone()),
+            vault_id: Some("vault-2".into()),
+            host_identifier: Some("host-2".into()),
+        };
+
+        assert_eq!(
+            GetCredentialStoresRequest::default().to_bytes(),
+            get_credential_stores().to_bytes()
+        );
+        assert_eq!(
+            GetCredentialStoresRequest::new(get_opts.clone()).to_bytes(),
+            get_credential_stores_with_opts(get_opts).to_bytes()
+        );
+        assert_eq!(
+            GetCredentialStoreRequest::new(store_id.clone(), Some(true)).to_bytes(),
+            get_credential_store(&store_id, Some(true)).to_bytes()
+        );
+        assert_eq!(
+            VerifyCredentialStoreRequest::new(store_id.clone()).to_bytes(),
+            verify_credential_store(&store_id).to_bytes()
+        );
+        assert_eq!(
+            ModifyCredentialStoreRequest::new(store_id.clone(), modify_store_opts.clone())
+                .to_bytes(),
+            modify_credential_store(&store_id, modify_store_opts).to_bytes()
+        );
+
+        let create = CreateCredentialStoreCredentialRequest::new(
+            "credential",
+            CredentialStoreCredentialType::UsernamePassword,
+            "vault-1",
+            "host-1",
+            create_opts.clone(),
+        );
+        assert_eq!(
+            create.to_bytes(),
+            create_credential_store_credential(
+                "credential",
+                CredentialStoreCredentialType::UsernamePassword,
+                "vault-1",
+                "host-1",
+                create_opts,
+            )
+            .to_bytes()
+        );
+        assert_eq!(
+            create.semantic_command_name(),
+            Some("create_credential_store_credential")
+        );
+
+        let modify = ModifyCredentialStoreCredentialRequest::new(
+            credential_id.clone(),
+            modify_credential_opts.clone(),
+        );
+        assert_eq!(
+            modify.to_bytes(),
+            modify_credential_store_credential(&credential_id, modify_credential_opts).to_bytes()
+        );
+        assert_eq!(
+            modify.semantic_command_name(),
+            Some("modify_credential_store_credential")
+        );
+    }
+
+    #[test]
+    fn semantic_credential_store_requests_have_expected_response_associations() {
+        fn assert_response<R, T>(_: &R)
+        where
+            R: GmpRequest<Response = T>,
+            T: crate::GmpResponse,
+        {
+        }
+
+        let store_id = id("store-1");
+        let credential_id = id("credential-1");
+        assert_response::<_, GetCredentialStoresResponse>(&GetCredentialStoresRequest::default());
+        assert_response::<_, GetCredentialStoresResponse>(&GetCredentialStoreRequest::new(
+            store_id.clone(),
+            Some(true),
+        ));
+        assert_response::<_, VerifyCredentialStoreResponse>(&VerifyCredentialStoreRequest::new(
+            store_id.clone(),
+        ));
+        assert_response::<_, ModifyCredentialStoreResponse>(&ModifyCredentialStoreRequest::new(
+            store_id,
+            ModifyCredentialStoreOpts::default(),
+        ));
+        assert_response::<_, CreateCredentialResponse>(
+            &CreateCredentialStoreCredentialRequest::new(
+                "credential",
+                CredentialStoreCredentialType::UsernamePassword,
+                "vault-1",
+                "host-1",
+                CredentialStoreCredentialOpts::default(),
+            ),
+        );
+        assert_response::<_, ModifyCredentialResponse>(
+            &ModifyCredentialStoreCredentialRequest::new(
+                credential_id,
+                ModifyCredentialStoreCredentialOpts::default(),
+            ),
+        );
     }
 
     #[test]
