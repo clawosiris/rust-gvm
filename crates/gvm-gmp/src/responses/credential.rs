@@ -256,6 +256,12 @@ impl GetCredentialStoresResponse {
     }
 }
 
+impl GmpResponse for GetCredentialStoresResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 impl CreateCredentialResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
@@ -280,6 +286,8 @@ impl GmpResponse for CreateCredentialResponse {
 }
 
 pub type VerifyCredentialStoreResponse = ActionResponse;
+
+pub type ModifyCredentialStoreResponse = ActionResponse;
 
 pub type ModifyCredentialResponse = ActionResponse;
 pub type DeleteCredentialResponse = ActionResponse;

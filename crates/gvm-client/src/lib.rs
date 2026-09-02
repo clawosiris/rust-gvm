@@ -427,21 +427,6 @@ impl<C: GvmConnection> GmpClient<C> {
         })
     }
 
-    pub(crate) fn ensure_semantic_command_supported(
-        &self,
-        command_name: &str,
-    ) -> Result<(), GvmError> {
-        if self.command_supported_with_discovery(command_name) {
-            return Ok(());
-        }
-
-        Err(GvmError::UnsupportedCommand {
-            command: command_name.to_string(),
-            version: self.version,
-            required: self.command_requirement(command_name),
-        })
-    }
-
     fn command_supported_with_discovery(&self, command_name: &str) -> bool {
         let Some(capability) = gvm_gmp::capabilities::command_capability(command_name) else {
             return version::command_supported(command_name, self.version);
@@ -2514,10 +2499,6 @@ mod tests {
             GvmError::UnsupportedCommand { command, .. }
                 if command == "modify_credential_store_credential"
         ));
-        assert!(client
-            .ensure_semantic_command_supported("modify_credential_store_credential")
-            .is_err());
-
         let client = GmpClient {
             connection: ScriptedConnection::new(std::iter::empty::<&str>()),
             version: GmpVersion(22, 8),
@@ -2531,8 +2512,11 @@ mod tests {
             )
             .expect("credential-store modify is available in 22.8");
         client
-            .ensure_semantic_command_supported("modify_credential_store_credential")
-            .expect("semantic helper is available in 22.8");
+            .ensure_command_supported(
+                b"<modify_credential credential_id=\"credential-1\"/>",
+                Some("modify_credential_store_credential"),
+            )
+            .expect("semantic request metadata is available in 22.8");
     }
 
     #[tokio::test]

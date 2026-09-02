@@ -93,7 +93,7 @@ pub use config::{
 pub use credential::{
     CreateCredentialResponse, Credential, CredentialKind, CredentialStore,
     DeleteCredentialResponse, GetCredentialStoresResponse, GetCredentialsResponse,
-    ModifyCredentialResponse, VerifyCredentialStoreResponse,
+    ModifyCredentialResponse, ModifyCredentialStoreResponse, VerifyCredentialStoreResponse,
 };
 pub use features::{Feature, GetFeaturesResponse};
 pub use feed::{Feed, GetFeedsResponse};

@@ -27,11 +27,11 @@ use gvm_gmp::commands::configs::{
     GetConfigOpts, GetConfigsOpts, ModifyConfigOpts,
 };
 use gvm_gmp::commands::credentials::{
-    create_credential_store_credential, get_credential_store, get_credential_stores,
-    get_credential_stores_with_opts, modify_credential_store_credential, verify_credential_store,
-    CreateCredentialRequest, CredentialOpts, CredentialStoreCredentialOpts,
-    DeleteCredentialRequest, GetCredentialStoresOpts, GetCredentialsOpts, GetCredentialsRequest,
+    CreateCredentialRequest, CreateCredentialStoreCredentialRequest, CredentialOpts,
+    CredentialStoreCredentialOpts, DeleteCredentialRequest, GetCredentialStoreRequest,
+    GetCredentialStoresOpts, GetCredentialStoresRequest, GetCredentialsOpts, GetCredentialsRequest,
     ModifyCredentialOpts, ModifyCredentialRequest, ModifyCredentialStoreCredentialOpts,
+    ModifyCredentialStoreCredentialRequest, VerifyCredentialStoreRequest,
 };
 use gvm_gmp::commands::features::get_features;
 use gvm_gmp::commands::feed::{get_feed, get_feeds};
@@ -1232,8 +1232,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_credential_stores(&mut self) -> Result<GetCredentialStoresResponse, GvmError> {
-        let response = self.send(get_credential_stores()).await?;
-        GetCredentialStoresResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetCredentialStoresRequest::default()).await
     }
 
     /// Send a `verify_credential_store` request and return a typed
@@ -1245,10 +1244,10 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         credential_store_id: &EntityId,
     ) -> Result<VerifyCredentialStoreResponse, GvmError> {
-        let response = self
-            .send(verify_credential_store(credential_store_id))
-            .await?;
-        VerifyCredentialStoreResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(VerifyCredentialStoreRequest::new(
+            credential_store_id.clone(),
+        ))
+        .await
     }
 
     /// Send a filtered `get_credential_stores` request and return a typed
@@ -1260,8 +1259,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         opts: GetCredentialStoresOpts,
     ) -> Result<GetCredentialStoresResponse, GvmError> {
-        let response = self.send(get_credential_stores_with_opts(opts)).await?;
-        GetCredentialStoresResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetCredentialStoresRequest::new(opts)).await
     }
 
     /// Send a single-store `get_credential_stores` request and return a typed
@@ -1274,10 +1272,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         credential_store_id: &EntityId,
         details: Option<bool>,
     ) -> Result<GetCredentialStoresResponse, GvmError> {
-        let response = self
-            .send(get_credential_store(credential_store_id, details))
-            .await?;
-        GetCredentialStoresResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetCredentialStoreRequest::new(
+            credential_store_id.clone(),
+            details,
+        ))
+        .await
     }
 
     // ── NVTs ──────────────────────────────────────────────────────────────────
@@ -1548,16 +1547,14 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         host_identifier: &str,
         opts: CredentialStoreCredentialOpts,
     ) -> Result<CreateCredentialResponse, GvmError> {
-        let response = self
-            .send(create_credential_store_credential(
-                name,
-                credential_type,
-                vault_id,
-                host_identifier,
-                opts,
-            ))
-            .await?;
-        CreateCredentialResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CreateCredentialStoreCredentialRequest::new(
+            name,
+            credential_type,
+            vault_id,
+            host_identifier,
+            opts,
+        ))
+        .await
     }
 
     /// Send a credential-store-backed `modify_credential` request and return a
@@ -1570,11 +1567,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         credential_id: &EntityId,
         opts: ModifyCredentialStoreCredentialOpts,
     ) -> Result<ModifyCredentialResponse, GvmError> {
-        self.ensure_semantic_command_supported("modify_credential_store_credential")?;
-        let response = self
-            .send(modify_credential_store_credential(credential_id, opts))
-            .await?;
-        ModifyCredentialResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyCredentialStoreCredentialRequest::new(
+            credential_id.clone(),
+            opts,
+        ))
+        .await
     }
 
     // ── Filters ───────────────────────────────────────────────────────────────

@@ -123,6 +123,39 @@ not need Serde derives. A request whose encoding genuinely differs by GMP
 version must make that distinction explicit in the GMP layer; transport code is
 not the place for command-specific branching.
 
+## Credential stores and semantic aliases
+
+Credential stores are available from GMP 22.8. Their list, detail,
+verification, and preference-bearing modification requests use dedicated wire
+roots. Store-backed credentials instead reuse `create_credential` and
+`modify_credential`, so their semantic request values explicitly identify the
+newer operation before sending:
+
+```rust
+use gvm_gmp::commands::credentials::{
+    CreateCredentialStoreCredentialRequest, CredentialStoreCredentialOpts,
+};
+use gvm_gmp::CredentialStoreCredentialType;
+
+let credential = client
+    .execute(CreateCredentialStoreCredentialRequest::new(
+        "production vault credential",
+        CredentialStoreCredentialType::UsernamePassword,
+        "vault-entry-1",
+        "host-1",
+        CredentialStoreCredentialOpts::default(),
+    ))
+    .await?;
+```
+
+This preserves the `create_credential_store_credential` and
+`modify_credential_store_credential` capability gates even though those names
+do not appear as XML roots. A client negotiated below GMP 22.8 rejects them
+before transport. Existing builders remain authoritative for vault and host
+fields, store preferences keep the existing wire-trace redaction, and the
+preference-bearing semantic request deliberately provides no `Debug`
+representation that could expose its values.
+
 ## Irregular report codecs and version policy
 
 The Phase 3 report family demonstrates that `GmpResponse` is a codec contract,
