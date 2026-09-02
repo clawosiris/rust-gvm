@@ -49,7 +49,7 @@ use gvm_gmp::commands::tasks::{
 };
 use gvm_gmp::commands::tickets::{CreateTicketOpts, GetTicketsOpts, TicketOpenNote};
 use gvm_gmp::commands::tls_certificates::{GetTlsCertificatesOpts, TlsCertificateOpts};
-use gvm_gmp::commands::users::{GetUsersOpts, UserOpts};
+use gvm_gmp::commands::users::{GetUsersOpts, ModifyUserOpts, UserOpts};
 use gvm_gmp::responses::{ActionResponse, ParseError};
 use gvm_gmp::types::{CollectionUpdate, EntityId, GmpVersion, ScalarUpdate};
 use gvm_gmp::{
@@ -211,6 +211,73 @@ const ALERT_SCHEDULE_OVERRIDES: &[(&str, &str)] = &[
     ),
 ];
 
+const IDENTITY_PERMISSION_OVERRIDES: &[(&str, &str)] = &[
+    (
+        "get_users",
+        r#"<get_users_response status="200" status_text="OK"><user_count>0<filtered>0</filtered></user_count></get_users_response>"#,
+    ),
+    (
+        "create_user",
+        r#"<create_user_response status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111"/>"#,
+    ),
+    (
+        "modify_user",
+        r#"<modify_user_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "delete_user",
+        r#"<delete_user_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "get_groups",
+        r#"<get_groups_response status="200" status_text="OK"><group_count>0<filtered>0</filtered></group_count></get_groups_response>"#,
+    ),
+    (
+        "create_group",
+        r#"<create_group_response status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111"/>"#,
+    ),
+    (
+        "modify_group",
+        r#"<modify_group_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "delete_group",
+        r#"<delete_group_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "get_roles",
+        r#"<get_roles_response status="200" status_text="OK"><role_count>0<filtered>0</filtered></role_count></get_roles_response>"#,
+    ),
+    (
+        "create_role",
+        r#"<create_role_response status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111"/>"#,
+    ),
+    (
+        "modify_role",
+        r#"<modify_role_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "delete_role",
+        r#"<delete_role_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "get_permissions",
+        r#"<get_permissions_response status="200" status_text="OK"><permission_count>0<filtered>0</filtered></permission_count></get_permissions_response>"#,
+    ),
+    (
+        "create_permission",
+        r#"<create_permission_response status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111"/>"#,
+    ),
+    (
+        "modify_permission",
+        r#"<modify_permission_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "delete_permission",
+        r#"<delete_permission_response status="200" status_text="OK"/>"#,
+    ),
+];
+
 struct SemanticAliasRequest;
 
 impl Request for SemanticAliasRequest {
@@ -307,6 +374,116 @@ macro_rules! create_response {
             r#" status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111"/>"#
         )
     };
+}
+
+#[tokio::test]
+async fn user_lifecycle_executes_through_typed_facade() {
+    let Some(server) = fixture_server(MockVersion::V22_8, IDENTITY_PERMISSION_OVERRIDES).await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+    let entity_id = id(CREATED_ID);
+
+    assert_typed_success!(client.get_users(GetUsersOpts::default()));
+    assert_typed_success!(client.get_user(&entity_id));
+    assert_create_success!(client.create_user("user", UserOpts::default()));
+    assert_create_success!(client.clone_user(&entity_id));
+    assert_typed_success!(client.modify_user(&entity_id, ModifyUserOpts::default()));
+    assert_typed_success!(client.delete_user(&entity_id, false));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn group_lifecycle_executes_through_typed_facade() {
+    let Some(server) = fixture_server(MockVersion::V22_8, IDENTITY_PERMISSION_OVERRIDES).await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+    let entity_id = id(CREATED_ID);
+
+    assert_typed_success!(client.get_groups(GetGroupsOpts::default()));
+    assert_typed_success!(client.get_group(&entity_id));
+    assert_create_success!(client.create_group("group", GroupOpts::default()));
+    assert_create_success!(client.clone_group(&entity_id));
+    assert_typed_success!(client.modify_group(&entity_id, GroupOpts::default()));
+    assert_typed_success!(client.delete_group(&entity_id, false));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn role_lifecycle_executes_through_typed_facade() {
+    let Some(server) = fixture_server(MockVersion::V22_8, IDENTITY_PERMISSION_OVERRIDES).await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+    let entity_id = id(CREATED_ID);
+
+    assert_typed_success!(client.get_roles(GetRolesOpts::default()));
+    assert_typed_success!(client.get_role(&entity_id));
+    assert_create_success!(client.create_role("role", RoleOpts::default()));
+    assert_create_success!(client.clone_role(&entity_id));
+    assert_typed_success!(client.modify_role(&entity_id, RoleOpts::default()));
+    assert_typed_success!(client.delete_role(&entity_id, false));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn permission_lifecycle_executes_through_typed_facade() {
+    let Some(server) = fixture_server(MockVersion::V22_8, IDENTITY_PERMISSION_OVERRIDES).await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+    let entity_id = id(CREATED_ID);
+
+    assert_typed_success!(client.get_permissions(GetPermissionsOpts::default()));
+    assert_typed_success!(client.get_permission(&entity_id));
+    assert_create_success!(client.create_permission(PermissionOpts::default()));
+    assert_create_success!(client.clone_permission(&entity_id));
+    assert_typed_success!(client.modify_permission(&entity_id, PermissionOpts::default()));
+    assert_typed_success!(client.delete_permission(&entity_id, false));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn identity_and_permission_facades_preserve_status_and_parse_context() {
+    let Some(server) = fixture_server(
+        MockVersion::V22_8,
+        &[
+            (
+                "get_users",
+                r#"<get_users_response status="409" status_text="identity conflict"/>"#,
+            ),
+            (
+                "create_permission",
+                r#"<create_permission_response status="201" status_text="OK"/>"#,
+            ),
+        ],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+
+    assert_server_error!(client.get_user(&id("user-1")), 409, "identity conflict");
+    let parse_error = client
+        .clone_permission(&id("permission-1"))
+        .await
+        .expect_err("missing cloned permission id should fail");
+    assert!(matches!(
+        parse_error,
+        GvmError::Parse(ParseError::MissingElement(field)) if field == "id"
+    ));
+
+    server.shutdown().await;
 }
 
 #[tokio::test]

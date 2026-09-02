@@ -97,6 +97,14 @@ roots and response models. Existing builders remain the sole XML encoders,
 including optional relationship fields, omit/replace/clear host updates, and
 ultimate-delete behavior; all facade helpers delegate to generic execution.
 
+The identity-and-permission Phase 2 batch, tracked by
+[`#561`](https://github.com/greenbone-hive/rust-gvm/issues/561), migrates the
+complete user, group, role, and permission list/detail/create/clone/modify/delete
+lifecycles. Each semantic request delegates to its existing builder, preserving
+user authentication, role, host-access, and relationship-update shapes while
+the facade methods delegate to generic typed execution. Existing raw builders,
+response models, and compatibility APIs remain supported.
+
 The irregular-report Phase 3 batch, tracked by
 [`#546`](https://github.com/greenbone-hive/rust-gvm/issues/546), migrates report
 list/detail, structured scan and audit reports, audit hosts, nine structured

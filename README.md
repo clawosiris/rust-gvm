@@ -208,7 +208,8 @@ response type is selected at compile time. Migrated families cover version
 negotiation, authentication, standard and specialized task variants,
 target/credential/scanner lifecycles, scan-config, policy, and credential-store
 operations, alerts and schedules, filters, tags, notes, overrides, trashcan
-recovery, and irregular report retrieval, drill-down, and export operations:
+recovery, user, group, role, and permission lifecycles, plus irregular report
+retrieval, drill-down, and export operations:
 
 ```rust
 use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest};

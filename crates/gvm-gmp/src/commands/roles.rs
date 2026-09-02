@@ -6,7 +6,11 @@
 use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
+use crate::responses::{
+    CreateRoleResponse, DeleteRoleResponse, GetRolesResponse, ModifyRoleResponse,
+};
 use crate::types::EntityId;
+use crate::GmpRequest;
 
 /// Optional fields for role create and modify requests.
 #[derive(Debug, Clone, Default)]
@@ -28,6 +32,135 @@ pub struct GetRolesOpts {
     pub trash: Option<bool>,
     /// Whether to request detailed output.
     pub details: Option<bool>,
+}
+
+/// Semantic request for listing roles.
+#[derive(Debug, Clone, Default)]
+pub struct GetRolesRequest(GetRolesOpts);
+
+impl GetRolesRequest {
+    /// Create a role-list request.
+    #[must_use]
+    pub fn new(opts: GetRolesOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetRolesRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_roles(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetRolesRequest {
+    type Response = GetRolesResponse;
+}
+
+macro_rules! role_id_request {
+    ($name:ident, $response:ty, $builder:ident) => {
+        #[doc = concat!("Semantic request backed by [`", stringify!($builder), "`].")]
+        #[derive(Debug, Clone)]
+        pub struct $name(EntityId);
+
+        impl $name {
+            /// Create the semantic request.
+            #[must_use]
+            pub fn new(role_id: EntityId) -> Self {
+                Self(role_id)
+            }
+        }
+
+        impl Request for $name {
+            fn to_bytes(&self) -> Vec<u8> {
+                $builder(&self.0).to_bytes()
+            }
+        }
+
+        impl GmpRequest for $name {
+            type Response = $response;
+        }
+    };
+}
+
+role_id_request!(GetRoleRequest, GetRolesResponse, get_role);
+role_id_request!(CloneRoleRequest, CreateRoleResponse, clone_role);
+
+/// Semantic request for creating a role.
+#[derive(Debug, Clone)]
+pub struct CreateRoleRequest {
+    name: String,
+    opts: RoleOpts,
+}
+
+impl CreateRoleRequest {
+    /// Create a role-creation request.
+    #[must_use]
+    pub fn new(name: impl Into<String>, opts: RoleOpts) -> Self {
+        Self {
+            name: name.into(),
+            opts,
+        }
+    }
+}
+
+impl Request for CreateRoleRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_role(&self.name, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateRoleRequest {
+    type Response = CreateRoleResponse;
+}
+
+/// Semantic request for modifying a role.
+#[derive(Debug, Clone)]
+pub struct ModifyRoleRequest {
+    role_id: EntityId,
+    opts: RoleOpts,
+}
+
+impl ModifyRoleRequest {
+    /// Create a role-modification request.
+    #[must_use]
+    pub fn new(role_id: EntityId, opts: RoleOpts) -> Self {
+        Self { role_id, opts }
+    }
+}
+
+impl Request for ModifyRoleRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_role(&self.role_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyRoleRequest {
+    type Response = ModifyRoleResponse;
+}
+
+/// Semantic request for deleting a role.
+#[derive(Debug, Clone)]
+pub struct DeleteRoleRequest {
+    role_id: EntityId,
+    ultimate: bool,
+}
+
+impl DeleteRoleRequest {
+    /// Create a role-deletion request.
+    #[must_use]
+    pub fn new(role_id: EntityId, ultimate: bool) -> Self {
+        Self { role_id, ultimate }
+    }
+}
+
+impl Request for DeleteRoleRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_role(&self.role_id, self.ultimate).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteRoleRequest {
+    type Response = DeleteRoleResponse;
 }
 
 /// Build a clone request for an existing role.
@@ -97,6 +230,47 @@ mod tests {
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
+    }
+
+    #[test]
+    fn semantic_role_requests_match_builder_bytes_and_responses() {
+        fn associated<R, T>(_: &R)
+        where
+            R: GmpRequest<Response = T>,
+            T: crate::GmpResponse,
+        {
+        }
+        let role_id = id("role-1");
+        let get_opts = GetRolesOpts {
+            details: Some(true),
+            ..Default::default()
+        };
+        let opts = RoleOpts {
+            users: vec!["alice".into()],
+            ..Default::default()
+        };
+
+        let list = GetRolesRequest::new(get_opts.clone());
+        assert_eq!(list.to_bytes(), get_roles(get_opts).to_bytes());
+        associated::<_, GetRolesResponse>(&list);
+        let get = GetRoleRequest::new(role_id.clone());
+        assert_eq!(get.to_bytes(), get_role(&role_id).to_bytes());
+        associated::<_, GetRolesResponse>(&get);
+        let create = CreateRoleRequest::new("role", opts.clone());
+        assert_eq!(
+            create.to_bytes(),
+            create_role("role", opts.clone()).to_bytes()
+        );
+        associated::<_, CreateRoleResponse>(&create);
+        let clone = CloneRoleRequest::new(role_id.clone());
+        assert_eq!(clone.to_bytes(), clone_role(&role_id).to_bytes());
+        associated::<_, CreateRoleResponse>(&clone);
+        let modify = ModifyRoleRequest::new(role_id.clone(), opts.clone());
+        assert_eq!(modify.to_bytes(), modify_role(&role_id, opts).to_bytes());
+        associated::<_, ModifyRoleResponse>(&modify);
+        let delete = DeleteRoleRequest::new(role_id.clone(), true);
+        assert_eq!(delete.to_bytes(), delete_role(&role_id, true).to_bytes());
+        associated::<_, DeleteRoleResponse>(&delete);
     }
 
     #[test]

@@ -3,14 +3,20 @@
 
 //! User command builders.
 
+use std::fmt;
+
 use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
 use crate::enums::UserAuthType;
+use crate::responses::{
+    CreateUserResponse, DeleteUserResponse, GetUsersResponse, ModifyUserResponse,
+};
 use crate::types::{CollectionUpdate, EntityId};
+use crate::GmpRequest;
 
 /// Optional fields for user create requests.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct UserOpts {
     /// Optional comment text included in the request.
     pub comment: Option<String>,
@@ -25,7 +31,7 @@ pub struct UserOpts {
 }
 
 /// Optional fields for user modify requests.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct ModifyUserOpts {
     /// Optional replacement name.
     pub new_name: Option<String>,
@@ -39,6 +45,35 @@ pub struct ModifyUserOpts {
     pub role_ids: CollectionUpdate<EntityId>,
     /// Optional user authentication type.
     pub auth_type: Option<UserAuthType>,
+}
+
+fn redacted(value: &Option<String>) -> Option<&'static str> {
+    value.as_ref().map(|_| "<redacted>")
+}
+
+impl fmt::Debug for UserOpts {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("UserOpts")
+            .field("comment", &self.comment)
+            .field("password", &redacted(&self.password))
+            .field("host_access", &self.host_access)
+            .field("role_ids", &self.role_ids)
+            .field("auth_type", &self.auth_type)
+            .finish()
+    }
+}
+
+impl fmt::Debug for ModifyUserOpts {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ModifyUserOpts")
+            .field("new_name", &self.new_name)
+            .field("comment", &self.comment)
+            .field("password", &redacted(&self.password))
+            .field("host_access", &self.host_access)
+            .field("role_ids", &self.role_ids)
+            .field("auth_type", &self.auth_type)
+            .finish()
+    }
 }
 
 impl From<UserOpts> for ModifyUserOpts {
@@ -118,6 +153,138 @@ pub struct GetUsersOpts {
     pub trash: Option<bool>,
     /// Whether to request detailed output.
     pub details: Option<bool>,
+}
+
+/// Semantic request for listing users.
+#[derive(Debug, Clone, Default)]
+pub struct GetUsersRequest(GetUsersOpts);
+
+impl GetUsersRequest {
+    /// Create a user-list request.
+    #[must_use]
+    pub fn new(opts: GetUsersOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetUsersRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_users(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetUsersRequest {
+    type Response = GetUsersResponse;
+}
+
+macro_rules! user_id_request {
+    ($name:ident, $response:ty, $builder:ident) => {
+        #[doc = concat!("Semantic request backed by [`", stringify!($builder), "`].")]
+        #[derive(Debug, Clone)]
+        pub struct $name(EntityId);
+
+        impl $name {
+            /// Create the semantic request.
+            #[must_use]
+            pub fn new(user_id: EntityId) -> Self {
+                Self(user_id)
+            }
+        }
+
+        impl Request for $name {
+            fn to_bytes(&self) -> Vec<u8> {
+                $builder(&self.0).to_bytes()
+            }
+        }
+
+        impl GmpRequest for $name {
+            type Response = $response;
+        }
+    };
+}
+
+user_id_request!(GetUserRequest, GetUsersResponse, get_user);
+user_id_request!(CloneUserRequest, CreateUserResponse, clone_user);
+
+/// Semantic request for creating a user.
+#[derive(Debug, Clone)]
+pub struct CreateUserRequest {
+    name: String,
+    opts: UserOpts,
+}
+
+impl CreateUserRequest {
+    /// Create a user-creation request.
+    #[must_use]
+    pub fn new(name: impl Into<String>, opts: UserOpts) -> Self {
+        Self {
+            name: name.into(),
+            opts,
+        }
+    }
+}
+
+impl Request for CreateUserRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_user(&self.name, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateUserRequest {
+    type Response = CreateUserResponse;
+}
+
+/// Semantic request for modifying a user.
+#[derive(Debug, Clone)]
+pub struct ModifyUserRequest {
+    user_id: EntityId,
+    opts: ModifyUserOpts,
+}
+
+impl ModifyUserRequest {
+    /// Create a user-modification request.
+    #[must_use]
+    pub fn new(user_id: EntityId, opts: impl Into<ModifyUserOpts>) -> Self {
+        Self {
+            user_id,
+            opts: opts.into(),
+        }
+    }
+}
+
+impl Request for ModifyUserRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_user(&self.user_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyUserRequest {
+    type Response = ModifyUserResponse;
+}
+
+/// Semantic request for deleting a user.
+#[derive(Debug, Clone)]
+pub struct DeleteUserRequest {
+    user_id: EntityId,
+    ultimate: bool,
+}
+
+impl DeleteUserRequest {
+    /// Create a user-deletion request.
+    #[must_use]
+    pub fn new(user_id: EntityId, ultimate: bool) -> Self {
+        Self { user_id, ultimate }
+    }
+}
+
+impl Request for DeleteUserRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_user(&self.user_id, self.ultimate).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteUserRequest {
+    type Response = DeleteUserResponse;
 }
 
 /// Build a clone request for an existing user.
@@ -237,6 +404,52 @@ mod tests {
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
+    }
+
+    #[test]
+    fn semantic_user_requests_match_builder_bytes_and_responses() {
+        fn associated<R, T>(_: &R)
+        where
+            R: GmpRequest<Response = T>,
+            T: crate::GmpResponse,
+        {
+        }
+        let user_id = id("user-1");
+        let get_opts = GetUsersOpts {
+            details: Some(true),
+            ..Default::default()
+        };
+        let opts = UserOpts {
+            host_access: Some(UserHostAccess::deny("192.0.2.0/24")),
+            role_ids: vec![id("role-1")],
+            ..Default::default()
+        };
+        let modify_opts = ModifyUserOpts {
+            role_ids: CollectionUpdate::Clear,
+            ..Default::default()
+        };
+
+        let list = GetUsersRequest::new(get_opts.clone());
+        assert_eq!(list.to_bytes(), get_users(get_opts).to_bytes());
+        associated::<_, GetUsersResponse>(&list);
+        let get = GetUserRequest::new(user_id.clone());
+        assert_eq!(get.to_bytes(), get_user(&user_id).to_bytes());
+        associated::<_, GetUsersResponse>(&get);
+        let create = CreateUserRequest::new("user", opts.clone());
+        assert_eq!(create.to_bytes(), create_user("user", opts).to_bytes());
+        associated::<_, CreateUserResponse>(&create);
+        let clone = CloneUserRequest::new(user_id.clone());
+        assert_eq!(clone.to_bytes(), clone_user(&user_id).to_bytes());
+        associated::<_, CreateUserResponse>(&clone);
+        let modify = ModifyUserRequest::new(user_id.clone(), modify_opts.clone());
+        assert_eq!(
+            modify.to_bytes(),
+            modify_user(&user_id, modify_opts).to_bytes()
+        );
+        associated::<_, ModifyUserResponse>(&modify);
+        let delete = DeleteUserRequest::new(user_id.clone(), true);
+        assert_eq!(delete.to_bytes(), delete_user(&user_id, true).to_bytes());
+        associated::<_, DeleteUserResponse>(&delete);
     }
 
     #[test]
@@ -365,5 +578,28 @@ mod tests {
             )),
             "<modify_user user_id=\"u1\"><role id=\"0\"/></modify_user>"
         );
+    }
+
+    #[test]
+    fn user_option_debug_output_redacts_passwords() {
+        let create = format!(
+            "{:?}",
+            UserOpts {
+                password: Some("create-secret".into()),
+                ..Default::default()
+            }
+        );
+        let modify = format!(
+            "{:?}",
+            ModifyUserOpts {
+                password: Some("modify-secret".into()),
+                ..Default::default()
+            }
+        );
+
+        assert!(create.contains("<redacted>"));
+        assert!(!create.contains("create-secret"));
+        assert!(modify.contains("<redacted>"));
+        assert!(!modify.contains("modify-secret"));
     }
 }
