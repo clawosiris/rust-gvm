@@ -2113,6 +2113,7 @@ fn request_command_name(request_bytes: &[u8]) -> Option<&str> {
 
 fn next_only_semantic_command(command_name: &str, request_bytes: &[u8]) -> Option<&'static str> {
     match command_name {
+        "create_task" => specialized_task_semantic_command(request_bytes),
         "create_credential" if request_contains_credential_store_type(request_bytes) => {
             Some("create_credential_store_credential")
         }
@@ -2121,6 +2122,17 @@ fn next_only_semantic_command(command_name: &str, request_bytes: &[u8]) -> Optio
         }
         _ => None,
     }
+}
+
+fn specialized_task_semantic_command(request_bytes: &[u8]) -> Option<&'static str> {
+    let request = std::str::from_utf8(request_bytes).ok()?;
+    [
+        ("agent_group", "create_agent_group_task"),
+        ("oci_image_target", "create_oci_image_target_task"),
+        ("web_application_target", "create_web_application_task"),
+    ]
+    .into_iter()
+    .find_map(|(element, command)| request_contains_element(request, element).then_some(command))
 }
 
 fn request_contains_credential_store_type(request_bytes: &[u8]) -> bool {
@@ -2383,6 +2395,79 @@ mod tests {
         assert!(request_contains_credential_store_type(
             b"<create_credential><type>\n  cs_future \t</type></create_credential>"
         ));
+    }
+
+    #[test]
+    fn specialized_task_semantic_detection_matches_next_shapes() {
+        for (element, semantic_command) in [
+            ("agent_group", "create_agent_group_task"),
+            ("oci_image_target", "create_oci_image_target_task"),
+            ("web_application_target", "create_web_application_task"),
+        ] {
+            let request = format!("<create_task><{element} id=\"target-1\"/></create_task>");
+            assert_eq!(
+                next_only_semantic_command("create_task", request.as_bytes()),
+                Some(semantic_command)
+            );
+        }
+
+        assert_eq!(
+            next_only_semantic_command(
+                "create_task",
+                b"<create_task><target id=\"target-1\"/></create_task>",
+            ),
+            None
+        );
+        assert_eq!(
+            next_only_semantic_command(
+                "modify_task",
+                b"<modify_task><agent_group id=\"agent-group-1\"/></modify_task>",
+            ),
+            None
+        );
+        assert_eq!(next_only_semantic_command("create_task", b"\xff"), None);
+    }
+
+    #[test]
+    fn specialized_task_shape_gate_uses_next_version_without_request_metadata() {
+        let client = GmpClient {
+            connection: ScriptedConnection::new(std::iter::empty::<&str>()),
+            version: GmpVersion(22, 7),
+            wire_trace: None,
+            discovered_commands: None,
+        };
+
+        for (element, semantic_command) in [
+            ("agent_group", "create_agent_group_task"),
+            ("oci_image_target", "create_oci_image_target_task"),
+            ("web_application_target", "create_web_application_task"),
+        ] {
+            let request = format!("<create_task><{element} id=\"target-1\"/></create_task>");
+            let error = client
+                .ensure_command_supported(request.as_bytes(), None)
+                .expect_err("specialized task shape is gated before 22.8");
+            assert!(matches!(
+                error,
+                GvmError::UnsupportedCommand {
+                    ref command,
+                    version: GmpVersion(22, 7),
+                    required: "22.8",
+                } if command == semantic_command
+            ));
+        }
+
+        let client = GmpClient {
+            connection: ScriptedConnection::new(std::iter::empty::<&str>()),
+            version: GmpVersion(22, 8),
+            wire_trace: None,
+            discovered_commands: None,
+        };
+        client
+            .ensure_command_supported(
+                b"<create_task><agent_group id=\"agent-group-1\"/></create_task>",
+                None,
+            )
+            .expect("specialized task shape is available in 22.8");
     }
 
     #[test]

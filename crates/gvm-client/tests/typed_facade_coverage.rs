@@ -41,9 +41,11 @@ use gvm_gmp::commands::secinfo::GetSecInfoOpts;
 use gvm_gmp::commands::tags::{GetTagsOpts, TagOpts};
 use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest, ModifyTargetOpts};
 use gvm_gmp::commands::tasks::{
-    CloneTaskRequest, CreateTaskOpts, CreateTaskRequest, DeleteTaskRequest, GetTaskRequest,
-    GetTasksOpts, GetTasksRequest, ModifyTaskOpts, ModifyTaskRequest, ResumeTaskRequest,
-    StartTaskRequest, StopTaskRequest,
+    create_agent_group_task, create_container_image_task, create_oci_image_target_task,
+    create_web_application_task, CloneTaskRequest, CreateAgentGroupTaskOpts,
+    CreateOciImageTargetTaskOpts, CreateTaskOpts, CreateTaskRequest, CreateWebApplicationTaskOpts,
+    DeleteTaskRequest, GetTaskRequest, GetTasksOpts, GetTasksRequest, ModifyTaskError,
+    ModifyTaskOpts, ModifyTaskRequest, ResumeTaskRequest, StartTaskRequest, StopTaskRequest,
 };
 use gvm_gmp::commands::tickets::{CreateTicketOpts, GetTicketsOpts, TicketOpenNote};
 use gvm_gmp::commands::tls_certificates::{GetTlsCertificatesOpts, TlsCertificateOpts};
@@ -71,6 +73,41 @@ const TASK_LIFECYCLE_OVERRIDES: &[(&str, &str)] = &[
     (
         "delete_task",
         r#"<delete_task_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "start_task",
+        r#"<start_task_response status="202" status_text="OK"><report_id>22222222-2222-2222-2222-222222222222</report_id></start_task_response>"#,
+    ),
+    (
+        "stop_task",
+        r#"<stop_task_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "resume_task",
+        r#"<resume_task_response status="202" status_text="OK"><report_id>33333333-3333-3333-3333-333333333333</report_id></resume_task_response>"#,
+    ),
+];
+
+const DEFERRED_TASK_OVERRIDES: &[(&str, &str)] = &[
+    (
+        "get_tasks",
+        r#"<get_tasks_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "create_task",
+        r#"<create_task_response status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111"/>"#,
+    ),
+    (
+        "modify_task",
+        r#"<modify_task_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "delete_task",
+        r#"<delete_task_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "move_task",
+        r#"<move_task_response status="200" status_text="OK"/>"#,
     ),
     (
         "start_task",
@@ -196,6 +233,22 @@ macro_rules! assert_server_error {
             error,
             GvmError::Parse(ParseError::ServerError { status: $status, message })
                 if message == $message
+        ));
+    }};
+}
+
+macro_rules! assert_unsupported_command {
+    ($future:expr, $command:literal, $version:expr, $required:literal) => {{
+        let error = $future
+            .await
+            .expect_err("typed helper should reject unsupported command before sending");
+        assert!(matches!(
+            error,
+            GvmError::UnsupportedCommand {
+                command,
+                version,
+                required: $required,
+            } if command == $command && version == $version
         ));
     }};
 }
@@ -447,6 +500,241 @@ async fn standard_task_execute_preserves_status_and_parse_context() {
         parse_error,
         GvmError::Parse(ParseError::MissingElement(field)) if field == "id"
     ));
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn specialized_task_create_and_move_helpers_use_typed_execution() {
+    let Some(server) = fixture_server(MockVersion::V22_8, DEFERRED_TASK_OVERRIDES).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+
+    assert_create_success!(client.create_import_task("import", Some("comment")));
+    assert_create_success!(client.create_container_task("container", None));
+    assert_create_success!(client.create_agent_group_task(
+        "agents",
+        &id("agent-group-1"),
+        &id("scanner-1"),
+        CreateAgentGroupTaskOpts::default(),
+    ));
+    assert_create_success!(client.create_oci_image_target_task(
+        "oci",
+        &id("oci-target-1"),
+        &id("scanner-1"),
+        CreateOciImageTargetTaskOpts::default(),
+    ));
+    assert_create_success!(client.create_container_image_task(
+        "container image",
+        &id("oci-target-1"),
+        &id("scanner-1"),
+        CreateOciImageTargetTaskOpts::default(),
+    ));
+    assert_create_success!(client.create_web_application_task(
+        "web",
+        &id("web-target-1"),
+        &id("scanner-1"),
+        CreateWebApplicationTaskOpts::default(),
+    ));
+    assert_typed_success!(client.move_task(&id("task-1"), Some(&id("slave-1"))));
+
+    let commands = server
+        .command_history()
+        .iter()
+        .map(|record| record.command_name().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        commands,
+        [
+            "create_task",
+            "create_task",
+            "create_task",
+            "create_task",
+            "create_task",
+            "create_task",
+            "move_task",
+        ]
+    );
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn next_only_specialized_task_helpers_reject_before_send() {
+    let Some(server) = fixture_server(MockVersion::V22_7, DEFERRED_TASK_OVERRIDES).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+
+    assert_unsupported_command!(
+        client.send(create_agent_group_task(
+            "raw agents",
+            &id("agent-group-1"),
+            &id("scanner-1"),
+            CreateAgentGroupTaskOpts::default(),
+        )),
+        "create_agent_group_task",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        client.send(create_oci_image_target_task(
+            "raw oci",
+            &id("oci-target-1"),
+            &id("scanner-1"),
+            CreateOciImageTargetTaskOpts::default(),
+        )),
+        "create_oci_image_target_task",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        client.send(create_container_image_task(
+            "raw container image",
+            &id("oci-target-1"),
+            &id("scanner-1"),
+            CreateOciImageTargetTaskOpts::default(),
+        )),
+        "create_oci_image_target_task",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        client.send(create_web_application_task(
+            "raw web",
+            &id("web-target-1"),
+            &id("scanner-1"),
+            CreateWebApplicationTaskOpts::default(),
+        )),
+        "create_web_application_task",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+
+    assert_unsupported_command!(
+        client.create_agent_group_task(
+            "agents",
+            &id("agent-group-1"),
+            &id("scanner-1"),
+            CreateAgentGroupTaskOpts::default(),
+        ),
+        "create_agent_group_task",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        client.create_oci_image_target_task(
+            "oci",
+            &id("oci-target-1"),
+            &id("scanner-1"),
+            CreateOciImageTargetTaskOpts::default(),
+        ),
+        "create_oci_image_target_task",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        client.create_container_image_task(
+            "container image",
+            &id("oci-target-1"),
+            &id("scanner-1"),
+            CreateOciImageTargetTaskOpts::default(),
+        ),
+        "create_oci_image_target_task",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        client.create_web_application_task(
+            "web",
+            &id("web-target-1"),
+            &id("scanner-1"),
+            CreateWebApplicationTaskOpts::default(),
+        ),
+        "create_web_application_task",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+
+    assert!(server.command_history().is_empty());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn audit_variant_helpers_use_typed_execution_and_presend_validation() {
+    let Some(server) = fixture_server(MockVersion::V22_4, DEFERRED_TASK_OVERRIDES).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+
+    assert_typed_success!(client.get_audits(GetTasksOpts::default()));
+    assert_typed_success!(client.get_audit(&id("audit-1")));
+    assert_create_success!(client.create_audit(
+        "audit",
+        &id("config-1"),
+        &id("target-1"),
+        &id("scanner-1"),
+        CreateTaskOpts::default(),
+    ));
+    assert_create_success!(client.clone_audit(&id("audit-1")));
+    assert_typed_success!(client.modify_audit(&id("audit-1"), ModifyTaskOpts::default()));
+    assert_typed_success!(client.delete_audit(&id("audit-1")));
+    assert_eq!(
+        client
+            .start_audit(&id("audit-1"))
+            .await
+            .expect("audit start should parse")
+            .status,
+        202
+    );
+    assert_typed_success!(client.stop_audit(&id("audit-1")));
+    assert_eq!(
+        client
+            .resume_audit(&id("audit-1"))
+            .await
+            .expect("audit resume should parse")
+            .status,
+        202
+    );
+
+    let commands = server
+        .command_history()
+        .iter()
+        .map(|record| record.command_name().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        commands,
+        [
+            "get_tasks",
+            "get_tasks",
+            "create_task",
+            "create_task",
+            "modify_task",
+            "delete_task",
+            "start_task",
+            "stop_task",
+            "resume_task",
+        ]
+    );
+
+    server.clear_history();
+    let error = client
+        .modify_audit(
+            &id("audit-1"),
+            ModifyTaskOpts {
+                observer_group_ids: gvm_gmp::types::CollectionUpdate::replace([id("group-1")]),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("invalid audit observer update should fail before sending");
+    assert!(matches!(
+        error,
+        GvmError::ModifyTask(ModifyTaskError::ObserverGroupsWithoutUserUpdate)
+    ));
+    assert!(server.command_history().is_empty());
     server.shutdown().await;
 }
 

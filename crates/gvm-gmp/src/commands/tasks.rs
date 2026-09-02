@@ -12,7 +12,7 @@ use crate::common::{
 };
 use crate::enums::HostsOrdering;
 use crate::responses::{
-    CreateTaskResponse, DeleteTaskResponse, GetTasksResponse, ModifyTaskResponse,
+    CreateTaskResponse, DeleteTaskResponse, GetTasksResponse, ModifyTaskResponse, MoveTaskResponse,
     ResumeTaskResponse, StartTaskResponse, StopTaskResponse,
 };
 use crate::types::{CollectionUpdate, EntityId, ScalarUpdate};
@@ -399,6 +399,412 @@ task_action_request!(
     ResumeTaskResponse,
     resume_task,
     "Semantic request for resuming a standard scan task."
+);
+
+/// Semantic request for creating an import task.
+#[derive(Debug, Clone)]
+pub struct CreateImportTaskRequest {
+    name: String,
+    comment: Option<String>,
+}
+
+impl CreateImportTaskRequest {
+    /// Create an import-task request.
+    #[must_use]
+    pub fn new(name: impl Into<String>, comment: Option<String>) -> Self {
+        Self {
+            name: name.into(),
+            comment,
+        }
+    }
+}
+
+impl Request for CreateImportTaskRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_import_task(&self.name, self.comment.as_deref()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateImportTaskRequest {
+    type Response = CreateTaskResponse;
+}
+
+/// Semantic compatibility-alias request for creating a container/import task.
+#[derive(Debug, Clone)]
+pub struct CreateContainerTaskRequest {
+    name: String,
+    comment: Option<String>,
+}
+
+impl CreateContainerTaskRequest {
+    /// Create a container/import-task request.
+    #[must_use]
+    pub fn new(name: impl Into<String>, comment: Option<String>) -> Self {
+        Self {
+            name: name.into(),
+            comment,
+        }
+    }
+}
+
+impl Request for CreateContainerTaskRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_container_task(&self.name, self.comment.as_deref()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateContainerTaskRequest {
+    type Response = CreateTaskResponse;
+}
+
+/// Semantic request for creating an agent-group scan task.
+#[derive(Debug, Clone)]
+pub struct CreateAgentGroupTaskRequest {
+    name: String,
+    agent_group_id: EntityId,
+    scanner_id: EntityId,
+    opts: CreateAgentGroupTaskOpts,
+}
+
+impl CreateAgentGroupTaskRequest {
+    /// Create an agent-group task request.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        agent_group_id: EntityId,
+        scanner_id: EntityId,
+        opts: CreateAgentGroupTaskOpts,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            agent_group_id,
+            scanner_id,
+            opts,
+        }
+    }
+}
+
+impl Request for CreateAgentGroupTaskRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_agent_group_task(
+            &self.name,
+            &self.agent_group_id,
+            &self.scanner_id,
+            self.opts.clone(),
+        )
+        .to_bytes()
+    }
+
+    fn semantic_command_name(&self) -> Option<&'static str> {
+        Some("create_agent_group_task")
+    }
+}
+
+impl GmpRequest for CreateAgentGroupTaskRequest {
+    type Response = CreateTaskResponse;
+}
+
+/// Semantic request for creating an OCI image-target scan task.
+#[derive(Debug, Clone)]
+pub struct CreateOciImageTargetTaskRequest {
+    name: String,
+    oci_image_target_id: EntityId,
+    scanner_id: EntityId,
+    opts: CreateOciImageTargetTaskOpts,
+}
+
+impl CreateOciImageTargetTaskRequest {
+    /// Create an OCI image-target task request.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        oci_image_target_id: EntityId,
+        scanner_id: EntityId,
+        opts: CreateOciImageTargetTaskOpts,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            oci_image_target_id,
+            scanner_id,
+            opts,
+        }
+    }
+}
+
+impl Request for CreateOciImageTargetTaskRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_oci_image_target_task(
+            &self.name,
+            &self.oci_image_target_id,
+            &self.scanner_id,
+            self.opts.clone(),
+        )
+        .to_bytes()
+    }
+
+    fn semantic_command_name(&self) -> Option<&'static str> {
+        Some("create_oci_image_target_task")
+    }
+}
+
+impl GmpRequest for CreateOciImageTargetTaskRequest {
+    type Response = CreateTaskResponse;
+}
+
+/// Semantic compatibility-alias request for creating a container-image task.
+#[derive(Debug, Clone)]
+pub struct CreateContainerImageTaskRequest {
+    name: String,
+    oci_image_target_id: EntityId,
+    scanner_id: EntityId,
+    opts: CreateOciImageTargetTaskOpts,
+}
+
+impl CreateContainerImageTaskRequest {
+    /// Create a container-image task request.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        oci_image_target_id: EntityId,
+        scanner_id: EntityId,
+        opts: CreateOciImageTargetTaskOpts,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            oci_image_target_id,
+            scanner_id,
+            opts,
+        }
+    }
+}
+
+impl Request for CreateContainerImageTaskRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_container_image_task(
+            &self.name,
+            &self.oci_image_target_id,
+            &self.scanner_id,
+            self.opts.clone(),
+        )
+        .to_bytes()
+    }
+
+    fn semantic_command_name(&self) -> Option<&'static str> {
+        Some("create_oci_image_target_task")
+    }
+}
+
+impl GmpRequest for CreateContainerImageTaskRequest {
+    type Response = CreateTaskResponse;
+}
+
+/// Semantic request for creating a web-application-target scan task.
+#[derive(Debug, Clone)]
+pub struct CreateWebApplicationTaskRequest {
+    name: String,
+    web_application_target_id: EntityId,
+    scanner_id: EntityId,
+    opts: CreateWebApplicationTaskOpts,
+}
+
+impl CreateWebApplicationTaskRequest {
+    /// Create a web-application task request.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        web_application_target_id: EntityId,
+        scanner_id: EntityId,
+        opts: CreateWebApplicationTaskOpts,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            web_application_target_id,
+            scanner_id,
+            opts,
+        }
+    }
+}
+
+impl Request for CreateWebApplicationTaskRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_web_application_task(
+            &self.name,
+            &self.web_application_target_id,
+            &self.scanner_id,
+            self.opts.clone(),
+        )
+        .to_bytes()
+    }
+
+    fn semantic_command_name(&self) -> Option<&'static str> {
+        Some("create_web_application_task")
+    }
+}
+
+impl GmpRequest for CreateWebApplicationTaskRequest {
+    type Response = CreateTaskResponse;
+}
+
+/// Semantic request for moving a task to or from a remote slave.
+#[derive(Debug, Clone)]
+pub struct MoveTaskRequest {
+    task_id: EntityId,
+    slave_id: Option<EntityId>,
+}
+
+impl MoveTaskRequest {
+    /// Create a task-move request.
+    #[must_use]
+    pub fn new(task_id: EntityId, slave_id: Option<EntityId>) -> Self {
+        Self { task_id, slave_id }
+    }
+}
+
+impl Request for MoveTaskRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        move_task(&self.task_id, self.slave_id.as_ref()).to_bytes()
+    }
+}
+
+impl GmpRequest for MoveTaskRequest {
+    type Response = MoveTaskResponse;
+}
+
+/// Semantic request for listing audit tasks.
+#[derive(Debug, Clone, Default)]
+pub struct GetAuditsRequest {
+    opts: GetTasksOpts,
+}
+
+impl GetAuditsRequest {
+    /// Create an audit-list request.
+    #[must_use]
+    pub fn new(opts: GetTasksOpts) -> Self {
+        Self { opts }
+    }
+}
+
+impl Request for GetAuditsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_audits(self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetAuditsRequest {
+    type Response = GetTasksResponse;
+}
+
+/// Semantic request for creating an audit task.
+#[derive(Debug, Clone)]
+pub struct CreateAuditRequest {
+    name: String,
+    config_id: EntityId,
+    target_id: EntityId,
+    scanner_id: EntityId,
+    opts: CreateTaskOpts,
+}
+
+impl CreateAuditRequest {
+    /// Create an audit-task request.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        config_id: EntityId,
+        target_id: EntityId,
+        scanner_id: EntityId,
+        opts: CreateTaskOpts,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            config_id,
+            target_id,
+            scanner_id,
+            opts,
+        }
+    }
+}
+
+impl Request for CreateAuditRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_audit(
+            &self.name,
+            &self.config_id,
+            &self.target_id,
+            &self.scanner_id,
+            self.opts.clone(),
+        )
+        .to_bytes()
+    }
+}
+
+impl GmpRequest for CreateAuditRequest {
+    type Response = CreateTaskResponse;
+}
+
+task_action_request!(
+    GetAuditRequest,
+    GetTasksResponse,
+    get_audit,
+    "Semantic request for one detailed audit task."
+);
+task_action_request!(
+    CloneAuditRequest,
+    CreateTaskResponse,
+    clone_audit,
+    "Semantic request for cloning an audit task."
+);
+
+/// Semantic request for modifying an audit task.
+#[derive(Debug, Clone)]
+pub struct ModifyAuditRequest {
+    task_id: EntityId,
+    opts: ModifyTaskOpts,
+}
+
+impl ModifyAuditRequest {
+    /// Validate and create an audit-modification request.
+    ///
+    /// # Errors
+    /// Returns the same construction errors as [`modify_audit`].
+    pub fn new(task_id: EntityId, opts: ModifyTaskOpts) -> Result<Self, ModifyTaskError> {
+        validate_modify_task_opts(&opts)?;
+        Ok(Self { task_id, opts })
+    }
+}
+
+impl Request for ModifyAuditRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_task_with_usage(&self.task_id, self.opts.clone(), Some(UsageType::Audit)).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyAuditRequest {
+    type Response = ModifyTaskResponse;
+}
+
+task_action_request!(
+    DeleteAuditRequest,
+    DeleteTaskResponse,
+    delete_audit,
+    "Semantic request for deleting an audit task."
+);
+task_action_request!(
+    StartAuditRequest,
+    StartTaskResponse,
+    start_audit,
+    "Semantic request for starting an audit task."
+);
+task_action_request!(
+    StopAuditRequest,
+    StopTaskResponse,
+    stop_audit,
+    "Semantic request for stopping an audit task."
+);
+task_action_request!(
+    ResumeAuditRequest,
+    ResumeTaskResponse,
+    resume_audit,
+    "Semantic request for resuming an audit task."
 );
 
 /// Build a clone request for an existing task.
@@ -953,6 +1359,180 @@ mod tests {
     }
 
     #[test]
+    fn semantic_specialized_task_requests_match_legacy_builder_bytes() {
+        let task_id = id("task-1");
+        let scanner_id = id("scanner-1");
+        assert_eq!(
+            CreateImportTaskRequest::new("import", Some("comment".into())).to_bytes(),
+            create_import_task("import", Some("comment")).to_bytes()
+        );
+        assert_eq!(
+            CreateContainerTaskRequest::new("container", Some("comment".into())).to_bytes(),
+            create_container_task("container", Some("comment")).to_bytes()
+        );
+
+        let agent_opts = CreateAgentGroupTaskOpts {
+            comment: Some("agents".into()),
+            alterable: Some(true),
+            schedule_id: Some(id("schedule-1")),
+            alert_ids: vec![id("alert-1")],
+            schedule_periods: Some(2),
+            observers: vec!["alice".into()],
+            observer_group_ids: vec![id("group-1")],
+            preferences: vec![("key".into(), "value".into())],
+        };
+        assert_eq!(
+            CreateAgentGroupTaskRequest::new(
+                "agent task",
+                id("agent-group-1"),
+                scanner_id.clone(),
+                agent_opts.clone(),
+            )
+            .to_bytes(),
+            create_agent_group_task("agent task", &id("agent-group-1"), &scanner_id, agent_opts,)
+                .to_bytes()
+        );
+
+        let oci_opts = CreateOciImageTargetTaskOpts {
+            comment: Some("images".into()),
+            alterable: Some(true),
+            schedule_id: Some(id("schedule-1")),
+            alert_ids: vec![id("alert-1")],
+            schedule_periods: Some(2),
+            observers: vec!["alice".into()],
+            observer_group_ids: vec![id("group-1")],
+            preferences: vec![("key".into(), "value".into())],
+        };
+        assert_eq!(
+            CreateOciImageTargetTaskRequest::new(
+                "oci task",
+                id("oci-target-1"),
+                scanner_id.clone(),
+                oci_opts.clone(),
+            )
+            .to_bytes(),
+            create_oci_image_target_task(
+                "oci task",
+                &id("oci-target-1"),
+                &scanner_id,
+                oci_opts.clone(),
+            )
+            .to_bytes()
+        );
+        assert_eq!(
+            CreateContainerImageTaskRequest::new(
+                "container image task",
+                id("oci-target-1"),
+                scanner_id.clone(),
+                oci_opts.clone(),
+            )
+            .to_bytes(),
+            create_container_image_task(
+                "container image task",
+                &id("oci-target-1"),
+                &scanner_id,
+                oci_opts,
+            )
+            .to_bytes()
+        );
+
+        let web_opts = CreateWebApplicationTaskOpts {
+            alterable: Some(true),
+            schedule_id: Some(id("schedule-1")),
+            alert_ids: vec![id("alert-1")],
+            comment: Some("web".into()),
+            schedule_periods: Some(2),
+            observers: vec!["alice".into()],
+            observer_group_ids: vec![id("group-1")],
+            preferences: vec![("key".into(), "value".into())],
+        };
+        assert_eq!(
+            CreateWebApplicationTaskRequest::new(
+                "web task",
+                id("web-target-1"),
+                scanner_id.clone(),
+                web_opts.clone(),
+            )
+            .to_bytes(),
+            create_web_application_task("web task", &id("web-target-1"), &scanner_id, web_opts,)
+                .to_bytes()
+        );
+        assert_eq!(
+            MoveTaskRequest::new(task_id.clone(), Some(id("slave-1"))).to_bytes(),
+            move_task(&task_id, Some(&id("slave-1"))).to_bytes()
+        );
+    }
+
+    #[test]
+    fn semantic_audit_requests_match_legacy_builder_bytes() {
+        let task_id = id("task-1");
+        let scanner_id = id("scanner-1");
+        let list_opts = GetTasksOpts {
+            details: Some(true),
+            ..Default::default()
+        };
+        assert_eq!(
+            GetAuditsRequest::new(list_opts.clone()).to_bytes(),
+            get_audits(list_opts).to_bytes()
+        );
+        assert_eq!(
+            GetAuditRequest::new(task_id.clone()).to_bytes(),
+            get_audit(&task_id).to_bytes()
+        );
+        let audit_create_opts = CreateTaskOpts::default();
+        assert_eq!(
+            CreateAuditRequest::new(
+                "audit",
+                id("config-1"),
+                id("target-1"),
+                scanner_id.clone(),
+                audit_create_opts.clone(),
+            )
+            .to_bytes(),
+            create_audit(
+                "audit",
+                &id("config-1"),
+                &id("target-1"),
+                &scanner_id,
+                audit_create_opts,
+            )
+            .to_bytes()
+        );
+        assert_eq!(
+            CloneAuditRequest::new(task_id.clone()).to_bytes(),
+            clone_audit(&task_id).to_bytes()
+        );
+        let audit_modify_opts = ModifyTaskOpts {
+            comment: Some("updated".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            ModifyAuditRequest::new(task_id.clone(), audit_modify_opts.clone())
+                .expect("valid semantic audit modification")
+                .to_bytes(),
+            modify_audit(&task_id, audit_modify_opts)
+                .expect("valid builder audit modification")
+                .to_bytes()
+        );
+        assert_eq!(
+            DeleteAuditRequest::new(task_id.clone()).to_bytes(),
+            delete_audit(&task_id).to_bytes()
+        );
+        assert_eq!(
+            StartAuditRequest::new(task_id.clone()).to_bytes(),
+            start_audit(&task_id).to_bytes()
+        );
+        assert_eq!(
+            StopAuditRequest::new(task_id.clone()).to_bytes(),
+            stop_audit(&task_id).to_bytes()
+        );
+        assert_eq!(
+            ResumeAuditRequest::new(task_id.clone()).to_bytes(),
+            resume_audit(&task_id).to_bytes()
+        );
+    }
+
+    #[test]
     fn semantic_modify_task_preserves_builder_validation() {
         let opts = ModifyTaskOpts {
             observer_group_ids: CollectionUpdate::replace([id("group-1")]),
@@ -964,6 +1544,18 @@ mod tests {
         );
         assert_eq!(
             modify_task(&id("task-1"), opts).err(),
+            Some(ModifyTaskError::ObserverGroupsWithoutUserUpdate)
+        );
+        let audit_opts = ModifyTaskOpts {
+            observer_group_ids: CollectionUpdate::replace([id("group-1")]),
+            ..Default::default()
+        };
+        assert_eq!(
+            ModifyAuditRequest::new(id("audit-1"), audit_opts.clone()).err(),
+            Some(ModifyTaskError::ObserverGroupsWithoutUserUpdate)
+        );
+        assert_eq!(
+            modify_audit(&id("audit-1"), audit_opts).err(),
             Some(ModifyTaskError::ObserverGroupsWithoutUserUpdate)
         );
     }
@@ -995,7 +1587,101 @@ mod tests {
         assert_response::<_, DeleteTaskResponse>(&DeleteTaskRequest::new(task_id.clone(), false));
         assert_response::<_, StartTaskResponse>(&StartTaskRequest::new(task_id.clone()));
         assert_response::<_, StopTaskResponse>(&StopTaskRequest::new(task_id.clone()));
-        assert_response::<_, ResumeTaskResponse>(&ResumeTaskRequest::new(task_id));
+        assert_response::<_, ResumeTaskResponse>(&ResumeTaskRequest::new(task_id.clone()));
+        assert_response::<_, CreateTaskResponse>(&CreateImportTaskRequest::new("import", None));
+        assert_response::<_, CreateTaskResponse>(&CreateContainerTaskRequest::new(
+            "container",
+            None,
+        ));
+        assert_response::<_, CreateTaskResponse>(&CreateAgentGroupTaskRequest::new(
+            "agents",
+            id("agent-group-1"),
+            id("scanner-1"),
+            CreateAgentGroupTaskOpts::default(),
+        ));
+        assert_response::<_, CreateTaskResponse>(&CreateOciImageTargetTaskRequest::new(
+            "oci",
+            id("oci-target-1"),
+            id("scanner-1"),
+            CreateOciImageTargetTaskOpts::default(),
+        ));
+        assert_response::<_, CreateTaskResponse>(&CreateContainerImageTaskRequest::new(
+            "container image",
+            id("oci-target-1"),
+            id("scanner-1"),
+            CreateOciImageTargetTaskOpts::default(),
+        ));
+        assert_response::<_, CreateTaskResponse>(&CreateWebApplicationTaskRequest::new(
+            "web",
+            id("web-target-1"),
+            id("scanner-1"),
+            CreateWebApplicationTaskOpts::default(),
+        ));
+        assert_response::<_, MoveTaskResponse>(&MoveTaskRequest::new(task_id.clone(), None));
+        assert_response::<_, GetTasksResponse>(&GetAuditsRequest::default());
+        assert_response::<_, GetTasksResponse>(&GetAuditRequest::new(task_id.clone()));
+        assert_response::<_, CreateTaskResponse>(&CreateAuditRequest::new(
+            "audit",
+            id("config-1"),
+            id("target-1"),
+            id("scanner-1"),
+            CreateTaskOpts::default(),
+        ));
+        assert_response::<_, CreateTaskResponse>(&CloneAuditRequest::new(task_id.clone()));
+        assert_response::<_, ModifyTaskResponse>(
+            &ModifyAuditRequest::new(task_id.clone(), ModifyTaskOpts::default())
+                .expect("valid audit modification"),
+        );
+        assert_response::<_, DeleteTaskResponse>(&DeleteAuditRequest::new(task_id.clone()));
+        assert_response::<_, StartTaskResponse>(&StartAuditRequest::new(task_id.clone()));
+        assert_response::<_, StopTaskResponse>(&StopAuditRequest::new(task_id.clone()));
+        assert_response::<_, ResumeTaskResponse>(&ResumeAuditRequest::new(task_id));
+    }
+
+    #[test]
+    fn specialized_task_requests_preserve_next_only_semantic_names() {
+        let agent = CreateAgentGroupTaskRequest::new(
+            "agents",
+            id("agent-group-1"),
+            id("scanner-1"),
+            CreateAgentGroupTaskOpts::default(),
+        );
+        assert_eq!(
+            agent.semantic_command_name(),
+            Some("create_agent_group_task")
+        );
+
+        let oci = CreateOciImageTargetTaskRequest::new(
+            "oci",
+            id("oci-target-1"),
+            id("scanner-1"),
+            CreateOciImageTargetTaskOpts::default(),
+        );
+        assert_eq!(
+            oci.semantic_command_name(),
+            Some("create_oci_image_target_task")
+        );
+        let alias = CreateContainerImageTaskRequest::new(
+            "container image",
+            id("oci-target-1"),
+            id("scanner-1"),
+            CreateOciImageTargetTaskOpts::default(),
+        );
+        assert_eq!(
+            alias.semantic_command_name(),
+            Some("create_oci_image_target_task")
+        );
+
+        let web = CreateWebApplicationTaskRequest::new(
+            "web",
+            id("web-target-1"),
+            id("scanner-1"),
+            CreateWebApplicationTaskOpts::default(),
+        );
+        assert_eq!(
+            web.semantic_command_name(),
+            Some("create_web_application_task")
+        );
     }
 
     #[test]
