@@ -6,8 +6,12 @@
 use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
+use crate::responses::{
+    CreateScheduleResponse, DeleteScheduleResponse, GetSchedulesResponse, ModifyScheduleResponse,
+};
 use crate::schedule::ScheduleInput;
 use crate::types::EntityId;
+use crate::GmpRequest;
 
 /// Optional fields for schedule create and modify requests.
 ///
@@ -43,6 +47,212 @@ pub struct GetSchedulesOpts {
     pub details: Option<bool>,
     /// Whether to include tasks using the schedules.
     pub tasks: Option<bool>,
+}
+
+/// Semantic request for listing schedules.
+#[derive(Debug, Clone, Default)]
+pub struct GetSchedulesRequest {
+    opts: GetSchedulesOpts,
+}
+
+impl GetSchedulesRequest {
+    /// Create a schedule-list request.
+    #[must_use]
+    pub fn new(opts: GetSchedulesOpts) -> Self {
+        Self { opts }
+    }
+}
+
+impl Request for GetSchedulesRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_schedules(self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetSchedulesRequest {
+    type Response = GetSchedulesResponse;
+}
+
+/// Semantic request for one detailed schedule.
+#[derive(Debug, Clone)]
+pub struct GetScheduleRequest {
+    schedule_id: EntityId,
+}
+
+impl GetScheduleRequest {
+    /// Create a detailed single-schedule request.
+    #[must_use]
+    pub fn new(schedule_id: EntityId) -> Self {
+        Self { schedule_id }
+    }
+}
+
+impl Request for GetScheduleRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_schedule(&self.schedule_id).to_bytes()
+    }
+}
+
+impl GmpRequest for GetScheduleRequest {
+    type Response = GetSchedulesResponse;
+}
+
+/// Semantic request for creating a schedule with raw compatibility options.
+#[derive(Debug, Clone)]
+pub struct CreateScheduleRequest {
+    name: String,
+    opts: ScheduleOpts,
+}
+
+impl CreateScheduleRequest {
+    /// Create a raw-option schedule-creation request.
+    #[must_use]
+    pub fn new(name: impl Into<String>, opts: ScheduleOpts) -> Self {
+        Self {
+            name: name.into(),
+            opts,
+        }
+    }
+}
+
+impl Request for CreateScheduleRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_schedule(&self.name, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateScheduleRequest {
+    type Response = CreateScheduleResponse;
+}
+
+/// Semantic request for creating a schedule with typed recurrence input.
+#[derive(Debug, Clone)]
+pub struct CreateTypedScheduleRequest {
+    name: String,
+    input: ScheduleInput,
+}
+
+impl CreateTypedScheduleRequest {
+    /// Create a typed-input schedule-creation request.
+    #[must_use]
+    pub fn new(name: impl Into<String>, input: ScheduleInput) -> Self {
+        Self {
+            name: name.into(),
+            input,
+        }
+    }
+}
+
+impl Request for CreateTypedScheduleRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_typed_schedule(&self.name, self.input.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateTypedScheduleRequest {
+    type Response = CreateScheduleResponse;
+}
+
+/// Semantic request for cloning a schedule.
+#[derive(Debug, Clone)]
+pub struct CloneScheduleRequest {
+    schedule_id: EntityId,
+}
+
+impl CloneScheduleRequest {
+    /// Create a schedule-clone request.
+    #[must_use]
+    pub fn new(schedule_id: EntityId) -> Self {
+        Self { schedule_id }
+    }
+}
+
+impl Request for CloneScheduleRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        clone_schedule(&self.schedule_id).to_bytes()
+    }
+}
+
+impl GmpRequest for CloneScheduleRequest {
+    type Response = CreateScheduleResponse;
+}
+
+/// Semantic request for modifying a schedule with raw compatibility options.
+#[derive(Debug, Clone)]
+pub struct ModifyScheduleRequest {
+    schedule_id: EntityId,
+    opts: ScheduleOpts,
+}
+
+impl ModifyScheduleRequest {
+    /// Create a raw-option schedule-modification request.
+    #[must_use]
+    pub fn new(schedule_id: EntityId, opts: ScheduleOpts) -> Self {
+        Self { schedule_id, opts }
+    }
+}
+
+impl Request for ModifyScheduleRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_schedule(&self.schedule_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyScheduleRequest {
+    type Response = ModifyScheduleResponse;
+}
+
+/// Semantic request for modifying a schedule with typed recurrence input.
+#[derive(Debug, Clone)]
+pub struct ModifyTypedScheduleRequest {
+    schedule_id: EntityId,
+    input: ScheduleInput,
+}
+
+impl ModifyTypedScheduleRequest {
+    /// Create a typed-input schedule-modification request.
+    #[must_use]
+    pub fn new(schedule_id: EntityId, input: ScheduleInput) -> Self {
+        Self { schedule_id, input }
+    }
+}
+
+impl Request for ModifyTypedScheduleRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_typed_schedule(&self.schedule_id, self.input.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyTypedScheduleRequest {
+    type Response = ModifyScheduleResponse;
+}
+
+/// Semantic request for deleting a schedule.
+#[derive(Debug, Clone)]
+pub struct DeleteScheduleRequest {
+    schedule_id: EntityId,
+    ultimate: bool,
+}
+
+impl DeleteScheduleRequest {
+    /// Create a schedule-deletion request.
+    #[must_use]
+    pub fn new(schedule_id: EntityId, ultimate: bool) -> Self {
+        Self {
+            schedule_id,
+            ultimate,
+        }
+    }
+}
+
+impl Request for DeleteScheduleRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_schedule(&self.schedule_id, self.ultimate).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteScheduleRequest {
+    type Response = DeleteScheduleResponse;
 }
 
 /// Build a clone request for an existing schedule.
@@ -125,9 +335,88 @@ fn add_schedule_body(cmd: &mut XmlCommand, opts: &ScheduleOpts) {
 mod tests {
     use super::*;
     use crate::common::xml;
+    use crate::{ScheduleDefinition, ScheduleRecurrence, ScheduleTimestamp, ScheduleTimezone};
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
+    }
+
+    fn typed_input() -> ScheduleInput {
+        ScheduleInput::new(
+            ScheduleDefinition {
+                first_run: ScheduleTimestamp::parse("2030-01-01T00:00:00Z")
+                    .expect("valid timestamp"),
+                recurrence: ScheduleRecurrence::Daily,
+            },
+            ScheduleTimezone::new("UTC").expect("valid timezone"),
+        )
+    }
+
+    #[test]
+    fn semantic_schedule_requests_match_builder_bytes_and_responses() {
+        fn assert_response<R, T>(_: &R)
+        where
+            R: GmpRequest<Response = T>,
+            T: crate::GmpResponse,
+        {
+        }
+
+        let schedule_id = id("schedule-1");
+        let list_opts = GetSchedulesOpts {
+            details: Some(true),
+            ..Default::default()
+        };
+        let raw_opts = ScheduleOpts {
+            icalendar: Some("BEGIN:VCALENDAR\r\nEND:VCALENDAR".into()),
+            timezone: Some("UTC".into()),
+            ..Default::default()
+        };
+
+        let list = GetSchedulesRequest::new(list_opts.clone());
+        assert_eq!(list.to_bytes(), get_schedules(list_opts).to_bytes());
+        assert_response::<_, GetSchedulesResponse>(&list);
+
+        let get = GetScheduleRequest::new(schedule_id.clone());
+        assert_eq!(get.to_bytes(), get_schedule(&schedule_id).to_bytes());
+        assert_response::<_, GetSchedulesResponse>(&get);
+
+        let create = CreateScheduleRequest::new("schedule", raw_opts.clone());
+        assert_eq!(
+            create.to_bytes(),
+            create_schedule("schedule", raw_opts.clone()).to_bytes()
+        );
+        assert_response::<_, CreateScheduleResponse>(&create);
+
+        let typed_create = CreateTypedScheduleRequest::new("typed", typed_input());
+        let typed_create_xml = String::from_utf8(typed_create.to_bytes()).expect("request XML");
+        assert!(typed_create_xml.starts_with("<create_schedule>"));
+        assert!(typed_create_xml.contains("<name>typed</name>"));
+        assert!(typed_create_xml.contains("<timezone>UTC</timezone>"));
+        assert_response::<_, CreateScheduleResponse>(&typed_create);
+
+        let clone = CloneScheduleRequest::new(schedule_id.clone());
+        assert_eq!(clone.to_bytes(), clone_schedule(&schedule_id).to_bytes());
+        assert_response::<_, CreateScheduleResponse>(&clone);
+
+        let modify = ModifyScheduleRequest::new(schedule_id.clone(), raw_opts.clone());
+        assert_eq!(
+            modify.to_bytes(),
+            modify_schedule(&schedule_id, raw_opts).to_bytes()
+        );
+        assert_response::<_, ModifyScheduleResponse>(&modify);
+
+        let typed_modify = ModifyTypedScheduleRequest::new(schedule_id.clone(), typed_input());
+        let typed_modify_xml = String::from_utf8(typed_modify.to_bytes()).expect("request XML");
+        assert!(typed_modify_xml.starts_with("<modify_schedule schedule_id=\"schedule-1\">"));
+        assert!(typed_modify_xml.contains("<timezone>UTC</timezone>"));
+        assert_response::<_, ModifyScheduleResponse>(&typed_modify);
+
+        let delete = DeleteScheduleRequest::new(schedule_id.clone(), true);
+        assert_eq!(
+            delete.to_bytes(),
+            delete_schedule(&schedule_id, true).to_bytes()
+        );
+        assert_response::<_, DeleteScheduleResponse>(&delete);
     }
 
     #[test]

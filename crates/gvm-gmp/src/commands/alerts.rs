@@ -7,7 +7,12 @@ use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
 use crate::enums::{AlertCondition, AlertEvent, AlertMethod};
+use crate::responses::{
+    ActionResponse, CreateAlertResponse, DeleteAlertResponse, GetAlertsResponse,
+    GetReportsResponse, ModifyAlertResponse,
+};
 use crate::types::EntityId;
+use crate::GmpRequest;
 
 /// A name/value entry nested below an alert event, condition, or method.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,6 +88,214 @@ pub struct TriggerAlertOpts {
     pub report_format_id: Option<EntityId>,
     /// Optional delta report identifier.
     pub delta_report_id: Option<EntityId>,
+}
+
+/// Semantic request for listing alerts.
+#[derive(Debug, Clone, Default)]
+pub struct GetAlertsRequest {
+    opts: GetAlertsOpts,
+}
+
+impl GetAlertsRequest {
+    /// Create an alert-list request.
+    #[must_use]
+    pub fn new(opts: GetAlertsOpts) -> Self {
+        Self { opts }
+    }
+}
+
+impl Request for GetAlertsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_alerts(self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetAlertsRequest {
+    type Response = GetAlertsResponse;
+}
+
+/// Semantic request for one detailed alert.
+#[derive(Debug, Clone)]
+pub struct GetAlertRequest {
+    alert_id: EntityId,
+}
+
+impl GetAlertRequest {
+    /// Create a detailed single-alert request.
+    #[must_use]
+    pub fn new(alert_id: EntityId) -> Self {
+        Self { alert_id }
+    }
+}
+
+impl Request for GetAlertRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_alert(&self.alert_id).to_bytes()
+    }
+}
+
+impl GmpRequest for GetAlertRequest {
+    type Response = GetAlertsResponse;
+}
+
+/// Semantic request for creating an alert.
+#[derive(Debug, Clone)]
+pub struct CreateAlertRequest {
+    name: String,
+    opts: AlertOpts,
+}
+
+impl CreateAlertRequest {
+    /// Create an alert-creation request.
+    #[must_use]
+    pub fn new(name: impl Into<String>, opts: AlertOpts) -> Self {
+        Self {
+            name: name.into(),
+            opts,
+        }
+    }
+}
+
+impl Request for CreateAlertRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_alert(&self.name, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateAlertRequest {
+    type Response = CreateAlertResponse;
+}
+
+/// Semantic request for cloning an alert.
+#[derive(Debug, Clone)]
+pub struct CloneAlertRequest {
+    alert_id: EntityId,
+}
+
+impl CloneAlertRequest {
+    /// Create an alert-clone request.
+    #[must_use]
+    pub fn new(alert_id: EntityId) -> Self {
+        Self { alert_id }
+    }
+}
+
+impl Request for CloneAlertRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        clone_alert(&self.alert_id).to_bytes()
+    }
+}
+
+impl GmpRequest for CloneAlertRequest {
+    type Response = CreateAlertResponse;
+}
+
+/// Semantic request for modifying an alert.
+#[derive(Debug, Clone)]
+pub struct ModifyAlertRequest {
+    alert_id: EntityId,
+    opts: AlertOpts,
+}
+
+impl ModifyAlertRequest {
+    /// Create an alert-modification request.
+    #[must_use]
+    pub fn new(alert_id: EntityId, opts: AlertOpts) -> Self {
+        Self { alert_id, opts }
+    }
+}
+
+impl Request for ModifyAlertRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_alert(&self.alert_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyAlertRequest {
+    type Response = ModifyAlertResponse;
+}
+
+/// Semantic request for deleting an alert.
+#[derive(Debug, Clone)]
+pub struct DeleteAlertRequest {
+    alert_id: EntityId,
+    ultimate: bool,
+}
+
+impl DeleteAlertRequest {
+    /// Create an alert-deletion request.
+    #[must_use]
+    pub fn new(alert_id: EntityId, ultimate: bool) -> Self {
+        Self { alert_id, ultimate }
+    }
+}
+
+impl Request for DeleteAlertRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_alert(&self.alert_id, self.ultimate).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteAlertRequest {
+    type Response = DeleteAlertResponse;
+}
+
+/// Semantic request for testing an alert.
+#[derive(Debug, Clone)]
+pub struct TestAlertRequest {
+    alert_id: EntityId,
+}
+
+impl TestAlertRequest {
+    /// Create an alert-test request.
+    #[must_use]
+    pub fn new(alert_id: EntityId) -> Self {
+        Self { alert_id }
+    }
+}
+
+impl Request for TestAlertRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        test_alert(&self.alert_id).to_bytes()
+    }
+}
+
+impl GmpRequest for TestAlertRequest {
+    type Response = ActionResponse;
+}
+
+/// Semantic request for triggering an alert for a report.
+#[derive(Debug, Clone)]
+pub struct TriggerAlertRequest {
+    alert_id: EntityId,
+    report_id: EntityId,
+    opts: TriggerAlertOpts,
+}
+
+impl TriggerAlertRequest {
+    /// Create an alert-trigger request.
+    #[must_use]
+    pub fn new(alert_id: EntityId, report_id: EntityId, opts: TriggerAlertOpts) -> Self {
+        Self {
+            alert_id,
+            report_id,
+            opts,
+        }
+    }
+}
+
+impl Request for TriggerAlertRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        trigger_alert(&self.alert_id, &self.report_id, self.opts.clone()).to_bytes()
+    }
+
+    fn semantic_command_name(&self) -> Option<&'static str> {
+        Some("trigger_alert")
+    }
+}
+
+impl GmpRequest for TriggerAlertRequest {
+    type Response = GetReportsResponse;
 }
 
 /// Build a clone request for an existing alert.
@@ -223,6 +436,75 @@ mod tests {
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
+    }
+
+    #[test]
+    fn semantic_alert_requests_match_builder_bytes_and_responses() {
+        fn assert_response<R, T>(_: &R)
+        where
+            R: GmpRequest<Response = T>,
+            T: crate::GmpResponse,
+        {
+        }
+
+        let alert_id = id("alert-1");
+        let report_id = id("report-1");
+        let list_opts = GetAlertsOpts {
+            details: Some(true),
+            ..Default::default()
+        };
+        let alert_opts = AlertOpts {
+            comment: Some("typed".into()),
+            active: Some(true),
+            ..Default::default()
+        };
+        let trigger_opts = TriggerAlertOpts {
+            report_format_id: Some(id("format-1")),
+            ..Default::default()
+        };
+
+        let list = GetAlertsRequest::new(list_opts.clone());
+        assert_eq!(list.to_bytes(), get_alerts(list_opts).to_bytes());
+        assert_response::<_, GetAlertsResponse>(&list);
+
+        let get = GetAlertRequest::new(alert_id.clone());
+        assert_eq!(get.to_bytes(), get_alert(&alert_id).to_bytes());
+        assert_response::<_, GetAlertsResponse>(&get);
+
+        let create = CreateAlertRequest::new("alert", alert_opts.clone());
+        assert_eq!(
+            create.to_bytes(),
+            create_alert("alert", alert_opts.clone()).to_bytes()
+        );
+        assert_response::<_, CreateAlertResponse>(&create);
+
+        let clone = CloneAlertRequest::new(alert_id.clone());
+        assert_eq!(clone.to_bytes(), clone_alert(&alert_id).to_bytes());
+        assert_response::<_, CreateAlertResponse>(&clone);
+
+        let modify = ModifyAlertRequest::new(alert_id.clone(), alert_opts.clone());
+        assert_eq!(
+            modify.to_bytes(),
+            modify_alert(&alert_id, alert_opts).to_bytes()
+        );
+        assert_response::<_, ModifyAlertResponse>(&modify);
+
+        let delete = DeleteAlertRequest::new(alert_id.clone(), true);
+        assert_eq!(delete.to_bytes(), delete_alert(&alert_id, true).to_bytes());
+        assert_response::<_, DeleteAlertResponse>(&delete);
+
+        let test = TestAlertRequest::new(alert_id.clone());
+        assert_eq!(test.to_bytes(), test_alert(&alert_id).to_bytes());
+        assert_response::<_, ActionResponse>(&test);
+
+        let trigger =
+            TriggerAlertRequest::new(alert_id.clone(), report_id.clone(), trigger_opts.clone());
+        assert_eq!(
+            trigger.to_bytes(),
+            trigger_alert(&alert_id, &report_id, trigger_opts).to_bytes()
+        );
+        assert_eq!(trigger.semantic_command_name(), Some("trigger_alert"));
+        assert_response::<_, GetReportsResponse>(&trigger);
     }
 
     #[test]

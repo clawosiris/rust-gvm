@@ -14,7 +14,11 @@
 
 use gvm_connection::GvmConnection;
 use gvm_gmp::commands::aggregates::{get_aggregates_request, GetAggregatesRequestOpts};
-use gvm_gmp::commands::alerts::{create_alert, get_alerts, modify_alert, AlertOpts, GetAlertsOpts};
+use gvm_gmp::commands::alerts::{
+    AlertOpts, CloneAlertRequest, CreateAlertRequest, DeleteAlertRequest, GetAlertRequest,
+    GetAlertsOpts, GetAlertsRequest, ModifyAlertRequest, TestAlertRequest, TriggerAlertOpts,
+    TriggerAlertRequest,
+};
 use gvm_gmp::commands::assets::{
     create_asset, delete_asset, get_assets, modify_asset, AssetType, CreateAssetOpts,
     DeleteAssetOpts, GetAssetsOpts, ModifyAssetOpts,
@@ -95,8 +99,9 @@ use gvm_gmp::commands::scanners::{
     GetScannersOpts, GetScannersRequest, ModifyScannerRequest, ScannerOpts, VerifyScannerRequest,
 };
 use gvm_gmp::commands::schedules::{
-    create_schedule, create_typed_schedule, delete_schedule, get_schedules, modify_schedule,
-    modify_typed_schedule, GetSchedulesOpts, ScheduleOpts,
+    CloneScheduleRequest, CreateScheduleRequest, CreateTypedScheduleRequest, DeleteScheduleRequest,
+    GetScheduleRequest, GetSchedulesOpts, GetSchedulesRequest, ModifyScheduleRequest,
+    ModifyTypedScheduleRequest, ScheduleOpts,
 };
 use gvm_gmp::commands::secinfo::{
     get_cert_bund_advisories, get_cert_bund_advisory, get_cpe, get_cpes, get_cve, get_cves,
@@ -140,23 +145,24 @@ use gvm_gmp::commands::web_application_targets::{
     CreateWebApplicationTargetOpts, GetWebApplicationTargetsOpts, ModifyWebApplicationTargetOpts,
 };
 use gvm_gmp::responses::{
-    AuthenticateResponse, CreateAlertResponse, CreateAssetResponse, CreateConfigResponse,
-    CreateCredentialResponse, CreateFilterResponse, CreateGroupResponse, CreateHostResponse,
-    CreateNoteResponse, CreateOciImageTargetResponse, CreateOverrideResponse,
+    ActionResponse, AuthenticateResponse, CreateAlertResponse, CreateAssetResponse,
+    CreateConfigResponse, CreateCredentialResponse, CreateFilterResponse, CreateGroupResponse,
+    CreateHostResponse, CreateNoteResponse, CreateOciImageTargetResponse, CreateOverrideResponse,
     CreatePermissionResponse, CreatePortListResponse, CreateReportConfigResponse,
     CreateReportFormatResponse, CreateReportResponse, CreateRoleResponse, CreateScanConfigResponse,
     CreateScannerResponse, CreateScheduleResponse, CreateTagResponse, CreateTargetResponse,
     CreateTaskResponse, CreateTicketResponse, CreateTlsCertificateResponse, CreateUserResponse,
-    CreateWebApplicationTargetResponse, DeleteAssetResponse, DeleteConfigResponse,
-    DeleteCredentialResponse, DeleteOciImageTargetResponse, DeleteScanConfigResponse,
-    DeleteScannerResponse, DeleteScheduleResponse, DeleteTargetResponse, DeleteTaskResponse,
-    DeleteWebApplicationTargetResponse, DescribeAuthResponse, EmptyTrashcanResponse,
-    ExportScanReportResponse, GetAggregatesResponse, GetAlertsResponse, GetAssetsResponse,
-    GetAuditReportHostsResponse, GetAuditReportResponse, GetCertBundAdvisoriesResponse,
-    GetConfigsResponse, GetCpesResponse, GetCredentialStoresResponse, GetCredentialsResponse,
-    GetCvesResponse, GetDfnCertAdvisoriesResponse, GetFeaturesResponse, GetFeedsResponse,
-    GetFiltersResponse, GetGroupsResponse, GetHostsResponse, GetIntegrationConfigsResponse,
-    GetNotesResponse, GetNvtFamiliesResponse, GetNvtsResponse, GetOciImageTargetsResponse,
+    CreateWebApplicationTargetResponse, DeleteAlertResponse, DeleteAssetResponse,
+    DeleteConfigResponse, DeleteCredentialResponse, DeleteOciImageTargetResponse,
+    DeleteScanConfigResponse, DeleteScannerResponse, DeleteScheduleResponse, DeleteTargetResponse,
+    DeleteTaskResponse, DeleteWebApplicationTargetResponse, DescribeAuthResponse,
+    EmptyTrashcanResponse, ExportScanReportResponse, GetAggregatesResponse, GetAlertsResponse,
+    GetAssetsResponse, GetAuditReportHostsResponse, GetAuditReportResponse,
+    GetCertBundAdvisoriesResponse, GetConfigsResponse, GetCpesResponse,
+    GetCredentialStoresResponse, GetCredentialsResponse, GetCvesResponse,
+    GetDfnCertAdvisoriesResponse, GetFeaturesResponse, GetFeedsResponse, GetFiltersResponse,
+    GetGroupsResponse, GetHostsResponse, GetIntegrationConfigsResponse, GetNotesResponse,
+    GetNvtFamiliesResponse, GetNvtsResponse, GetOciImageTargetsResponse,
     GetOperatingSystemAssetsResponse, GetOverridesResponse, GetPermissionsResponse,
     GetPortListsResponse, GetReportApplicationsResponse, GetReportClosedCvesResponse,
     GetReportConfigsResponse, GetReportCvesResponse, GetReportErrorsResponse,
@@ -1670,8 +1676,15 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_alerts(&mut self, opts: GetAlertsOpts) -> Result<GetAlertsResponse, GvmError> {
-        let response = self.send(get_alerts(opts)).await?;
-        GetAlertsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetAlertsRequest::new(opts)).await
+    }
+
+    /// Send a detailed single-alert `get_alerts` request.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_alert(&mut self, alert_id: &EntityId) -> Result<GetAlertsResponse, GvmError> {
+        self.execute(GetAlertRequest::new(alert_id.clone())).await
     }
 
     /// Send a `create_alert` request and return a typed [`CreateAlertResponse`].
@@ -1683,8 +1696,18 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         name: &str,
         opts: AlertOpts,
     ) -> Result<CreateAlertResponse, GvmError> {
-        let response = self.send(create_alert(name, opts)).await?;
-        CreateAlertResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CreateAlertRequest::new(name, opts)).await
+    }
+
+    /// Send an alert-copy `create_alert` request.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn clone_alert(
+        &mut self,
+        alert_id: &EntityId,
+    ) -> Result<CreateAlertResponse, GvmError> {
+        self.execute(CloneAlertRequest::new(alert_id.clone())).await
     }
 
     /// Send a `modify_alert` request and return a typed [`ModifyAlertResponse`].
@@ -1696,8 +1719,47 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         alert_id: &EntityId,
         opts: AlertOpts,
     ) -> Result<ModifyAlertResponse, GvmError> {
-        let response = self.send(modify_alert(alert_id, opts)).await?;
-        ModifyAlertResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyAlertRequest::new(alert_id.clone(), opts))
+            .await
+    }
+
+    /// Send a `delete_alert` request.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn delete_alert(
+        &mut self,
+        alert_id: &EntityId,
+        ultimate: bool,
+    ) -> Result<DeleteAlertResponse, GvmError> {
+        self.execute(DeleteAlertRequest::new(alert_id.clone(), ultimate))
+            .await
+    }
+
+    /// Send a `test_alert` request.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn test_alert(&mut self, alert_id: &EntityId) -> Result<ActionResponse, GvmError> {
+        self.execute(TestAlertRequest::new(alert_id.clone())).await
+    }
+
+    /// Trigger an alert for a report through the report query command.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn trigger_alert(
+        &mut self,
+        alert_id: &EntityId,
+        report_id: &EntityId,
+        opts: TriggerAlertOpts,
+    ) -> Result<GetReportsResponse, GvmError> {
+        self.execute(TriggerAlertRequest::new(
+            alert_id.clone(),
+            report_id.clone(),
+            opts,
+        ))
+        .await
     }
 
     // ── Credentials ───────────────────────────────────────────────────────────
@@ -1884,8 +1946,19 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         opts: GetSchedulesOpts,
     ) -> Result<GetSchedulesResponse, GvmError> {
-        let response = self.send(get_schedules(opts)).await?;
-        GetSchedulesResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetSchedulesRequest::new(opts)).await
+    }
+
+    /// Send a detailed single-schedule `get_schedules` request.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_schedule(
+        &mut self,
+        schedule_id: &EntityId,
+    ) -> Result<GetSchedulesResponse, GvmError> {
+        self.execute(GetScheduleRequest::new(schedule_id.clone()))
+            .await
     }
 
     /// Send a `create_schedule` request and return a typed [`CreateScheduleResponse`].
@@ -1897,8 +1970,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         name: &str,
         opts: ScheduleOpts,
     ) -> Result<CreateScheduleResponse, GvmError> {
-        let response = self.send(create_schedule(name, opts)).await?;
-        CreateScheduleResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CreateScheduleRequest::new(name, opts)).await
     }
 
     /// Send a `create_schedule` request from typed recurrence input.
@@ -1910,8 +1982,20 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         name: &str,
         input: ScheduleInput,
     ) -> Result<CreateScheduleResponse, GvmError> {
-        let response = self.send(create_typed_schedule(name, input)).await?;
-        CreateScheduleResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CreateTypedScheduleRequest::new(name, input))
+            .await
+    }
+
+    /// Send a schedule-copy `create_schedule` request.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn clone_schedule(
+        &mut self,
+        schedule_id: &EntityId,
+    ) -> Result<CreateScheduleResponse, GvmError> {
+        self.execute(CloneScheduleRequest::new(schedule_id.clone()))
+            .await
     }
 
     /// Send a `modify_schedule` request using raw compatibility options and
@@ -1924,8 +2008,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         schedule_id: &EntityId,
         opts: ScheduleOpts,
     ) -> Result<ModifyScheduleResponse, GvmError> {
-        let response = self.send(modify_schedule(schedule_id, opts)).await?;
-        ModifyScheduleResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyScheduleRequest::new(schedule_id.clone(), opts))
+            .await
     }
 
     /// Send a `modify_schedule` request from typed recurrence input.
@@ -1937,8 +2021,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         schedule_id: &EntityId,
         input: ScheduleInput,
     ) -> Result<ModifyScheduleResponse, GvmError> {
-        let response = self.send(modify_typed_schedule(schedule_id, input)).await?;
-        ModifyScheduleResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyTypedScheduleRequest::new(schedule_id.clone(), input))
+            .await
     }
 
     /// Send a `delete_schedule` request and return a typed
@@ -1951,8 +2035,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         schedule_id: &EntityId,
         ultimate: bool,
     ) -> Result<DeleteScheduleResponse, GvmError> {
-        let response = self.send(delete_schedule(schedule_id, ultimate)).await?;
-        DeleteScheduleResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(DeleteScheduleRequest::new(schedule_id.clone(), ultimate))
+            .await
     }
 
     // ── Tags ──────────────────────────────────────────────────────────────────

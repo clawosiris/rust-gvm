@@ -180,6 +180,23 @@ fields, store preferences keep the existing wire-trace redaction, and the
 preference-bearing semantic request deliberately provides no `Debug`
 representation that could expose its values.
 
+## Alert and schedule command shapes
+
+Semantic requests model every public alert and schedule operation even when
+multiple operations reuse one XML root. Alert list/detail and create/clone pairs
+therefore remain distinct Rust request types with their established shared
+response models. Alert triggering is also explicit: it emits the existing
+`<get_reports alert_id="..." report_id="...">` shape and associates that
+request with `GetReportsResponse`, while `test_alert` uses the ordinary action
+response codec.
+
+Schedule requests retain both input levels. `CreateScheduleRequest` and
+`ModifyScheduleRequest` accept the raw iCalendar compatibility options;
+`CreateTypedScheduleRequest` and `ModifyTypedScheduleRequest` accept validated
+first-run and recurrence input and delegate to the existing typed builders.
+Typed convenience methods for both forms use `execute`, so status handling,
+parse context, version checks, and redacted tracing remain identical.
+
 ## Irregular report codecs and version policy
 
 The Phase 3 report family demonstrates that `GmpResponse` is a codec contract,
