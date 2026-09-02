@@ -6,7 +6,11 @@
 use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
+use crate::responses::{
+    CreateGroupResponse, DeleteGroupResponse, GetGroupsResponse, ModifyGroupResponse,
+};
 use crate::types::EntityId;
+use crate::GmpRequest;
 
 /// Optional fields for group create and modify requests.
 #[derive(Debug, Clone, Default)]
@@ -28,6 +32,135 @@ pub struct GetGroupsOpts {
     pub trash: Option<bool>,
     /// Whether to request detailed output.
     pub details: Option<bool>,
+}
+
+/// Semantic request for listing groups.
+#[derive(Debug, Clone, Default)]
+pub struct GetGroupsRequest(GetGroupsOpts);
+
+impl GetGroupsRequest {
+    /// Create a group-list request.
+    #[must_use]
+    pub fn new(opts: GetGroupsOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetGroupsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_groups(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetGroupsRequest {
+    type Response = GetGroupsResponse;
+}
+
+macro_rules! group_id_request {
+    ($name:ident, $response:ty, $builder:ident) => {
+        #[doc = concat!("Semantic request backed by [`", stringify!($builder), "`].")]
+        #[derive(Debug, Clone)]
+        pub struct $name(EntityId);
+
+        impl $name {
+            /// Create the semantic request.
+            #[must_use]
+            pub fn new(group_id: EntityId) -> Self {
+                Self(group_id)
+            }
+        }
+
+        impl Request for $name {
+            fn to_bytes(&self) -> Vec<u8> {
+                $builder(&self.0).to_bytes()
+            }
+        }
+
+        impl GmpRequest for $name {
+            type Response = $response;
+        }
+    };
+}
+
+group_id_request!(GetGroupRequest, GetGroupsResponse, get_group);
+group_id_request!(CloneGroupRequest, CreateGroupResponse, clone_group);
+
+/// Semantic request for creating a group.
+#[derive(Debug, Clone)]
+pub struct CreateGroupRequest {
+    name: String,
+    opts: GroupOpts,
+}
+
+impl CreateGroupRequest {
+    /// Create a group-creation request.
+    #[must_use]
+    pub fn new(name: impl Into<String>, opts: GroupOpts) -> Self {
+        Self {
+            name: name.into(),
+            opts,
+        }
+    }
+}
+
+impl Request for CreateGroupRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_group(&self.name, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateGroupRequest {
+    type Response = CreateGroupResponse;
+}
+
+/// Semantic request for modifying a group.
+#[derive(Debug, Clone)]
+pub struct ModifyGroupRequest {
+    group_id: EntityId,
+    opts: GroupOpts,
+}
+
+impl ModifyGroupRequest {
+    /// Create a group-modification request.
+    #[must_use]
+    pub fn new(group_id: EntityId, opts: GroupOpts) -> Self {
+        Self { group_id, opts }
+    }
+}
+
+impl Request for ModifyGroupRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_group(&self.group_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyGroupRequest {
+    type Response = ModifyGroupResponse;
+}
+
+/// Semantic request for deleting a group.
+#[derive(Debug, Clone)]
+pub struct DeleteGroupRequest {
+    group_id: EntityId,
+    ultimate: bool,
+}
+
+impl DeleteGroupRequest {
+    /// Create a group-deletion request.
+    #[must_use]
+    pub fn new(group_id: EntityId, ultimate: bool) -> Self {
+        Self { group_id, ultimate }
+    }
+}
+
+impl Request for DeleteGroupRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_group(&self.group_id, self.ultimate).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteGroupRequest {
+    type Response = DeleteGroupResponse;
 }
 
 /// Build a clone request for an existing group.
@@ -97,6 +230,47 @@ mod tests {
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
+    }
+
+    #[test]
+    fn semantic_group_requests_match_builder_bytes_and_responses() {
+        fn associated<R, T>(_: &R)
+        where
+            R: GmpRequest<Response = T>,
+            T: crate::GmpResponse,
+        {
+        }
+        let group_id = id("group-1");
+        let get_opts = GetGroupsOpts {
+            details: Some(true),
+            ..Default::default()
+        };
+        let opts = GroupOpts {
+            users: vec!["alice".into()],
+            ..Default::default()
+        };
+
+        let list = GetGroupsRequest::new(get_opts.clone());
+        assert_eq!(list.to_bytes(), get_groups(get_opts).to_bytes());
+        associated::<_, GetGroupsResponse>(&list);
+        let get = GetGroupRequest::new(group_id.clone());
+        assert_eq!(get.to_bytes(), get_group(&group_id).to_bytes());
+        associated::<_, GetGroupsResponse>(&get);
+        let create = CreateGroupRequest::new("group", opts.clone());
+        assert_eq!(
+            create.to_bytes(),
+            create_group("group", opts.clone()).to_bytes()
+        );
+        associated::<_, CreateGroupResponse>(&create);
+        let clone = CloneGroupRequest::new(group_id.clone());
+        assert_eq!(clone.to_bytes(), clone_group(&group_id).to_bytes());
+        associated::<_, CreateGroupResponse>(&clone);
+        let modify = ModifyGroupRequest::new(group_id.clone(), opts.clone());
+        assert_eq!(modify.to_bytes(), modify_group(&group_id, opts).to_bytes());
+        associated::<_, ModifyGroupResponse>(&modify);
+        let delete = DeleteGroupRequest::new(group_id.clone(), true);
+        assert_eq!(delete.to_bytes(), delete_group(&group_id, true).to_bytes());
+        associated::<_, DeleteGroupResponse>(&delete);
     }
 
     #[test]

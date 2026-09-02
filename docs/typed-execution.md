@@ -220,6 +220,21 @@ response. All of these baseline commands remain available on every supported
 GMP version, and retained facade helpers delegate through `execute` without
 changing raw `send` or `call` behavior.
 
+## Identity and authorization lifecycles
+
+Users, groups, roles, and permissions each expose semantic list, detailed-get,
+create, clone, modify, and delete request values. The list/detail and
+create/clone pairs remain separate Rust types despite sharing XML roots and
+response models, making the caller's intent explicit without introducing a
+second wire encoder.
+
+All 24 requests delegate to the established builders. This preserves the full
+user authentication and host-access shape, including explicit role clearing,
+as well as group membership, role membership, and permission subject/resource
+relationships. User option debug output redacts password values. The
+corresponding `GmpClient` convenience methods now use `execute`; existing
+builders, response types, `send`, and `call` remain source-compatible.
+
 ## Irregular report codecs and version policy
 
 The Phase 3 report family demonstrates that `GmpResponse` is a codec contract,
