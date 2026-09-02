@@ -44,8 +44,8 @@ use gvm_gmp::commands::reports::{
 };
 use gvm_gmp::commands::roles::RoleOpts;
 use gvm_gmp::commands::scan_configs::{
-    create_policy, get_policies, get_scan_config_preference, get_scan_config_preferences,
-    ConfigOpts, GetPolicyOpts, GetScanConfigPreferencesOpts, GetScanConfigsOpts,
+    create_policy, get_policies, ConfigOpts, GetPolicyOpts, GetScanConfigPreferenceRequest,
+    GetScanConfigPreferencesOpts, GetScanConfigPreferencesRequest, GetScanConfigsOpts,
 };
 use gvm_gmp::commands::scanners::ScannerOpts;
 use gvm_gmp::commands::schedules::{GetSchedulesOpts, ScheduleOpts};
@@ -3056,24 +3056,25 @@ async fn preference_getters_send_expected_mock_server_commands() {
         .expect("authenticate should succeed");
     server.clear_history();
 
-    let responses = [
+    let opts = GetScanConfigPreferencesOpts {
+        nvt_oid: Some("1.3.6.1".into()),
+        config_id: Some(EntityId::new("config-1").expect("valid id")),
+    };
+    let typed_responses = [
         client
-            .call(get_scan_config_preferences(GetScanConfigPreferencesOpts {
-                nvt_oid: Some("1.3.6.1".into()),
-                config_id: Some(EntityId::new("config-1").expect("valid id")),
-            }))
+            .execute(GetScanConfigPreferencesRequest::new(opts.clone()))
             .await
             .expect("scan-config preferences request should succeed"),
         client
-            .call(get_scan_config_preference(
-                "timeout",
-                GetScanConfigPreferencesOpts {
-                    nvt_oid: Some("1.3.6.1".into()),
-                    config_id: Some(EntityId::new("config-1").expect("valid id")),
-                },
-            ))
+            .execute(GetScanConfigPreferenceRequest::new("timeout", opts))
             .await
             .expect("scan-config preference request should succeed"),
+    ];
+    assert!(typed_responses
+        .iter()
+        .all(|response| response.status == 200 && response.items.is_empty()));
+
+    let responses = [
         client
             .call(get_nvt_preferences(GetNvtPreferencesOpts {
                 nvt_oid: Some("1.3.6.1".into()),

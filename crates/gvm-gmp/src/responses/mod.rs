@@ -153,8 +153,9 @@ pub use role::{
     CreateRoleResponse, DeleteRoleResponse, GetRolesResponse, ModifyRoleResponse, Role,
 };
 pub use scan_config::{
-    CreateScanConfigResponse, DeleteScanConfigResponse, GetScanConfigsResponse,
-    ModifyScanConfigResponse, ScanConfig, SyncConfigResponse,
+    CreateScanConfigResponse, DeleteScanConfigResponse, GetScanConfigPreferencesResponse,
+    GetScanConfigsResponse, ModifyScanConfigResponse, ScanConfig, ScanConfigPreference,
+    ScanConfigPreferenceNvt, SyncConfigResponse,
 };
 pub use scan_report::{GetScanReportResponse, ScanReport, ScanReportResultCount};
 pub use scanner::{

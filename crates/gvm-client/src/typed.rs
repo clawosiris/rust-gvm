@@ -84,10 +84,11 @@ use gvm_gmp::commands::reports::{
 use gvm_gmp::commands::results::{get_results, GetResultsOpts};
 use gvm_gmp::commands::roles::{create_role, get_roles, GetRolesOpts, RoleOpts};
 use gvm_gmp::commands::scan_configs::{
-    clone_scan_config, create_scan_config, delete_scan_config, get_policies, get_policy,
-    get_scan_config, get_scan_configs, import_policy, modify_policy_set_comment,
-    modify_policy_set_name, modify_scan_config, modify_scan_config_set_comment,
-    modify_scan_config_set_name, sync_config, ConfigOpts, GetPolicyOpts, GetScanConfigsOpts,
+    CloneScanConfigRequest, ConfigOpts, CreateScanConfigRequest, DeleteScanConfigRequest,
+    GetPoliciesRequest, GetPolicyOpts, GetPolicyRequest, GetScanConfigRequest, GetScanConfigsOpts,
+    GetScanConfigsRequest, ImportPolicyRequest, ImportScanConfigRequest,
+    ModifyPolicySetCommentRequest, ModifyPolicySetNameRequest, ModifyScanConfigRequest,
+    ModifyScanConfigSetCommentRequest, ModifyScanConfigSetNameRequest, SyncConfigRequest,
 };
 use gvm_gmp::commands::scanners::{
     CloneScannerRequest, CreateScannerRequest, DeleteScannerRequest, GetScannerRequest,
@@ -464,8 +465,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         opts: GetScanConfigsOpts,
     ) -> Result<GetScanConfigsResponse, GvmError> {
-        let response = self.send(get_scan_configs(opts)).await?;
-        GetScanConfigsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetScanConfigsRequest::new(opts)).await
     }
 
     /// Send a `create_scan_config` request and return a typed [`CreateScanConfigResponse`].
@@ -478,8 +478,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         base_id: Option<&EntityId>,
         opts: ConfigOpts,
     ) -> Result<CreateScanConfigResponse, GvmError> {
-        let response = self.send(create_scan_config(name, base_id, opts)).await?;
-        CreateScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CreateScanConfigRequest::new(name, base_id.cloned(), opts))
+            .await
     }
 
     /// Send a `create_config` request that imports scan-config XML and return a
@@ -492,9 +492,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         scan_config_xml: &str,
     ) -> Result<CreateScanConfigResponse, GvmError> {
-        let request = gvm_gmp::commands::scan_configs::import_scan_config(scan_config_xml)?;
-        let response = self.send(request).await?;
-        CreateScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ImportScanConfigRequest::new(scan_config_xml)?)
+            .await
     }
 
     /// Send a `get_scan_config` request and return a typed [`GetScanConfigsResponse`].
@@ -505,8 +504,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         config_id: &EntityId,
     ) -> Result<GetScanConfigsResponse, GvmError> {
-        let response = self.send(get_scan_config(config_id)).await?;
-        GetScanConfigsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetScanConfigRequest::new(config_id.clone()))
+            .await
     }
 
     /// Send a policy-scoped `get_configs` request and return a typed
@@ -518,8 +517,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         opts: GetScanConfigsOpts,
     ) -> Result<GetScanConfigsResponse, GvmError> {
-        let response = self.send(get_policies(opts)).await?;
-        GetScanConfigsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetPoliciesRequest::new(opts)).await
     }
 
     /// Send a `get_configs` request for a single policy and return a typed
@@ -532,8 +530,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         policy_id: &EntityId,
         opts: GetPolicyOpts,
     ) -> Result<GetScanConfigsResponse, GvmError> {
-        let response = self.send(get_policy(policy_id, opts)).await?;
-        GetScanConfigsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetPolicyRequest::new(policy_id.clone(), opts))
+            .await
     }
 
     /// Send a `create_config` request that imports policy XML and return a
@@ -546,9 +544,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         policy_xml: &str,
     ) -> Result<CreateScanConfigResponse, GvmError> {
-        let request = import_policy(policy_xml)?;
-        let response = self.send(request).await?;
-        CreateScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ImportPolicyRequest::new(policy_xml)?).await
     }
 
     /// Send a `modify_scan_config` request and return a typed [`ModifyScanConfigResponse`].
@@ -560,8 +556,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         config_id: &EntityId,
         opts: ConfigOpts,
     ) -> Result<ModifyScanConfigResponse, GvmError> {
-        let response = self.send(modify_scan_config(config_id, opts)).await?;
-        ModifyScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyScanConfigRequest::new(config_id.clone(), opts))
+            .await
     }
 
     /// Send a `modify_config` request to set a scan-config name and return a
@@ -574,10 +570,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         config_id: &EntityId,
         name: &str,
     ) -> Result<ModifyScanConfigResponse, GvmError> {
-        let response = self
-            .send(modify_scan_config_set_name(config_id, name))
-            .await?;
-        ModifyScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyScanConfigSetNameRequest::new(config_id.clone(), name))
+            .await
     }
 
     /// Send a `modify_config` request to set or clear a scan-config comment and
@@ -590,10 +584,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         config_id: &EntityId,
         comment: Option<&str>,
     ) -> Result<ModifyScanConfigResponse, GvmError> {
-        let response = self
-            .send(modify_scan_config_set_comment(config_id, comment))
-            .await?;
-        ModifyScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyScanConfigSetCommentRequest::new(
+            config_id.clone(),
+            comment.map(str::to_string),
+        ))
+        .await
     }
 
     /// Send a `modify_config` request to set a policy name and return a typed
@@ -606,8 +601,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         policy_id: &EntityId,
         name: &str,
     ) -> Result<ModifyScanConfigResponse, GvmError> {
-        let response = self.send(modify_policy_set_name(policy_id, name)).await?;
-        ModifyScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyPolicySetNameRequest::new(policy_id.clone(), name))
+            .await
     }
 
     /// Send a `modify_config` request to set or clear a policy comment and
@@ -620,10 +615,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         policy_id: &EntityId,
         comment: Option<&str>,
     ) -> Result<ModifyScanConfigResponse, GvmError> {
-        let response = self
-            .send(modify_policy_set_comment(policy_id, comment))
-            .await?;
-        ModifyScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyPolicySetCommentRequest::new(
+            policy_id.clone(),
+            comment.map(str::to_string),
+        ))
+        .await
     }
 
     /// Send a `delete_scan_config` request and return a typed [`DeleteScanConfigResponse`].
@@ -635,8 +631,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         config_id: &EntityId,
         ultimate: bool,
     ) -> Result<DeleteScanConfigResponse, GvmError> {
-        let response = self.send(delete_scan_config(config_id, ultimate)).await?;
-        DeleteScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(DeleteScanConfigRequest::new(config_id.clone(), ultimate))
+            .await
     }
 
     /// Send a `clone_scan_config` request and return a typed [`CreateScanConfigResponse`].
@@ -647,8 +643,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         config_id: &EntityId,
     ) -> Result<CreateScanConfigResponse, GvmError> {
-        let response = self.send(clone_scan_config(config_id)).await?;
-        CreateScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CloneScanConfigRequest::new(config_id.clone()))
+            .await
     }
 
     /// Send the global `sync_config` request and return a typed
@@ -657,8 +653,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn sync_config(&mut self) -> Result<SyncConfigResponse, GvmError> {
-        let response = self.send(sync_config()).await?;
-        SyncConfigResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(SyncConfigRequest::new()).await
     }
 
     /// Send the global `sync_config` request and return a typed

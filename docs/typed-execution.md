@@ -168,5 +168,47 @@ These checks run before transmission through the same `send` path used by raw
 and ordinary typed requests. The retained raw builders and helpers remain
 available when callers need unmodeled report details.
 
+## Scan configurations, policies, and preferences
+
+Scan configurations and policies demonstrate semantic typed requests layered
+over shared generic wire commands. Their requests continue to delegate to the
+existing `get_configs`, `create_config`, `modify_config`, and `delete_config`
+builders, so usage-type scoping, import XML validation, preference base64
+encoding, selection ordering, and exact bytes remain unchanged:
+
+```rust
+use gvm_gmp::commands::scan_configs::{
+    GetScanConfigPreferencesOpts, GetScanConfigPreferencesRequest,
+    ModifyScanConfigSetNvtPreferenceRequest,
+};
+
+let preferences = client
+    .execute(GetScanConfigPreferencesRequest::new(
+        GetScanConfigPreferencesOpts {
+            config_id: Some(config_id.clone()),
+            ..Default::default()
+        },
+    ))
+    .await?;
+
+client
+    .execute(ModifyScanConfigSetNvtPreferenceRequest::new(
+        config_id,
+        "Network connection timeout :",
+        "1.3.6.1.4.1.25623.1.0.10330",
+        Some("30".into()),
+    ))
+    .await?;
+```
+
+`GetScanConfigPreferencesResponse` preserves both GMP response shapes: default
+preferences encode the NVT/type in the preference name, while config-scoped
+preferences expose separate NVT metadata, identifier, type, configured value,
+alternate values, and default value. Empty values remain distinguishable from
+missing values. Passing `None` to a preference-mutation request retains the
+existing delete/fallback encoding. Import request constructors validate their
+XML before they can be executed, and `SyncConfigRequest` remains global and
+parameterless.
+
 See [ADR 0001](adr/0001-typed-request-response-execution.md) for ownership,
 compatibility, error, and security decisions.
