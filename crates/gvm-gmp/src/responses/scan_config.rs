@@ -9,6 +9,7 @@ use crate::responses::common::{
     count_info, optional_u32, parse_document, parse_entity_id, parse_entity_meta,
     status_from_response, ActionResponse, CountInfo, EntityMeta, ParseError,
 };
+use crate::{GmpResponse, GmpVersion};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -40,6 +41,51 @@ pub struct CreateScanConfigResponse {
     pub id: crate::EntityId,
 }
 
+/// NVT metadata attached to a configured preference.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ScanConfigPreferenceNvt {
+    /// NVT object identifier.
+    pub oid: String,
+    /// Optional NVT name.
+    pub name: Option<String>,
+}
+
+/// A default or configured NVT/scanner preference.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ScanConfigPreference {
+    /// NVT metadata, present for configuration-scoped preference responses.
+    pub nvt: Option<ScanConfigPreferenceNvt>,
+    /// Preference name.
+    pub name: String,
+    /// Optional preference identifier.
+    pub id: Option<String>,
+    /// Optional preference type.
+    pub type_: Option<String>,
+    /// Optional configured or default value.
+    pub value: Option<String>,
+    /// Alternate allowed values in wire order.
+    pub alternatives: Vec<String>,
+    /// Optional default value.
+    pub default: Option<String>,
+}
+
+/// Typed response for `get_preferences` requests owned by scan configs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct GetScanConfigPreferencesResponse {
+    /// GMP response status.
+    pub status: u16,
+    /// GMP response status text.
+    pub status_text: String,
+    /// Returned preferences in wire order.
+    pub items: Vec<ScanConfigPreference>,
+}
+
 impl ScanConfig {
     fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
         Ok(Self {
@@ -69,6 +115,12 @@ impl GetScanConfigsResponse {
     }
 }
 
+impl GmpResponse for GetScanConfigsResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 impl CreateScanConfigResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
@@ -83,6 +135,70 @@ impl CreateScanConfigResponse {
             status_text,
             id,
         })
+    }
+}
+
+impl GmpResponse for CreateScanConfigResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
+impl ScanConfigPreference {
+    fn from_node(node: &crate::responses::common::XmlNode) -> Result<Self, ParseError> {
+        let nvt = node
+            .child("nvt")
+            .map(|nvt| {
+                let oid = nvt
+                    .attr("oid")
+                    .filter(|oid| !oid.is_empty())
+                    .ok_or_else(|| ParseError::MissingElement("preference.nvt.oid".to_string()))?;
+                Ok::<_, ParseError>(ScanConfigPreferenceNvt {
+                    oid: oid.to_string(),
+                    name: nvt.optional_child_text("name"),
+                })
+            })
+            .transpose()?;
+        Ok(Self {
+            nvt,
+            name: node
+                .required_child_text("name")
+                .map_err(|_| ParseError::MissingElement("preference.name".to_string()))?,
+            id: node.optional_child_text("id"),
+            type_: node.optional_child_text("type"),
+            value: node.child("value").map(|value| value.text.clone()),
+            alternatives: node
+                .children_named("alt")
+                .map(|alt| alt.text.clone())
+                .collect(),
+            default: node.child("default").map(|default| default.text.clone()),
+        })
+    }
+}
+
+impl GetScanConfigPreferencesResponse {
+    /// Parse a typed preference response.
+    ///
+    /// # Errors
+    /// Returns an error for a non-success status or malformed preference XML.
+    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+        let (status, status_text) = status_from_response(response)?;
+        let root = parse_document(response.data())?;
+        let items = root
+            .children_named("preference")
+            .map(ScanConfigPreference::from_node)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            status,
+            status_text,
+            items,
+        })
+    }
+}
+
+impl GmpResponse for GetScanConfigPreferencesResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 
@@ -157,6 +273,57 @@ mod tests {
         let parsed = CreateScanConfigResponse::from_response(&response).expect("create parses");
 
         assert_eq!(parsed.id.as_str(), "cfg-1");
+    }
+
+    #[test]
+    fn parses_default_and_configured_preferences() {
+        let response = Response::from(
+            r#"<get_preferences_response status="200" status_text="OK">
+                <preference>
+                    <name>1.3.6.1:1:entry:Timeout :</name>
+                    <value>5</value>
+                    <alt>10</alt><alt>20</alt><default>5</default>
+                </preference>
+                <preference>
+                    <nvt oid="1.3.6.1"><name>Services</name></nvt>
+                    <id>1</id><name>Timeout :</name><type>entry</type><value></value>
+                </preference>
+            </get_preferences_response>"#,
+        );
+
+        let parsed =
+            GetScanConfigPreferencesResponse::from_response(&response).expect("preferences parse");
+        assert_eq!(parsed.items.len(), 2);
+        assert_eq!(parsed.items[0].value.as_deref(), Some("5"));
+        assert_eq!(parsed.items[0].alternatives, ["10", "20"]);
+        assert_eq!(parsed.items[0].default.as_deref(), Some("5"));
+        assert_eq!(
+            parsed.items[1].nvt.as_ref().map(|nvt| nvt.oid.as_str()),
+            Some("1.3.6.1")
+        );
+        assert_eq!(
+            parsed.items[1]
+                .nvt
+                .as_ref()
+                .and_then(|nvt| nvt.name.as_deref()),
+            Some("Services")
+        );
+        assert_eq!(parsed.items[1].value.as_deref(), Some(""));
+    }
+
+    #[test]
+    fn rejects_preference_nvt_without_oid() {
+        let response = Response::from(
+            r#"<get_preferences_response status="200" status_text="OK">
+                <preference><nvt><name>Services</name></nvt><name>Timeout</name></preference>
+            </get_preferences_response>"#,
+        );
+
+        let error = GetScanConfigPreferencesResponse::from_response(&response)
+            .expect_err("missing NVT OID must fail");
+        assert!(
+            matches!(error, ParseError::MissingElement(field) if field == "preference.nvt.oid")
+        );
     }
 
     #[test]

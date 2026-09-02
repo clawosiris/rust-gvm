@@ -205,8 +205,9 @@ println!("Raw XML: {} bytes", response.data().len());
 
 The `next` Technology Preview lane also exposes semantic request values whose
 response type is selected at compile time. Migrated families cover version
-negotiation, authentication, target/task/credential/scanner lifecycles, and
-irregular report retrieval, drill-down, and export operations:
+negotiation, authentication, target/task/credential/scanner lifecycles,
+scan-config and policy operations, and irregular report retrieval, drill-down,
+and export operations:
 
 ```rust
 use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest};

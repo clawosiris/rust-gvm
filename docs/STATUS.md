@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-09-01
+Last updated: 2026-09-02
 
 ## Support Direction
 
@@ -42,6 +42,16 @@ remain the single byte-compatible encoders, and the existing convenience
 methods remain additive wrappers over generic typed execution. Scan
 configurations remain a separate later batch because they include larger and
 more specialized command surfaces.
+
+The scan-config/policy Phase 2 batch, tracked by
+[`#549`](https://github.com/greenbone-hive/rust-gvm/issues/549), migrates every
+operation owned by the scan-config command family: scan configurations and
+policies, import, preference retrieval and mutation, NVT/family selection, and
+global synchronization. The generic config builders remain the single encoder,
+import validation still happens before transmission, and a typed preference
+response preserves both default and configuration-scoped shapes. Existing
+convenience methods delegate to generic execution; raw builders, `send`, `call`,
+and the deprecated global-sync compatibility shim remain supported.
 
 The irregular-report Phase 3 batch, tracked by
 [`#546`](https://github.com/greenbone-hive/rust-gvm/issues/546), migrates report

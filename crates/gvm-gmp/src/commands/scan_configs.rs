@@ -15,8 +15,12 @@ use crate::commands::configs::{
 };
 use crate::commands::usage_type::UsageType;
 use crate::common::bool_str;
-use crate::responses::ParseError;
+use crate::responses::{
+    CreateScanConfigResponse, DeleteScanConfigResponse, GetScanConfigPreferencesResponse,
+    GetScanConfigsResponse, ModifyScanConfigResponse, ParseError, SyncConfigResponse,
+};
 use crate::types::EntityId;
+use crate::GmpRequest;
 
 /// Optional fields for scan-configuration create and modify requests.
 #[derive(Debug, Clone, Default)]
@@ -66,6 +70,745 @@ pub struct GetPolicyOpts {
     /// Whether to include audits using this policy.
     pub audits: Option<bool>,
 }
+
+/// Semantic request for listing scan configurations.
+#[derive(Debug, Clone, Default)]
+pub struct GetScanConfigsRequest {
+    opts: GetScanConfigsOpts,
+}
+
+impl GetScanConfigsRequest {
+    /// Create a scan-configuration list request.
+    #[must_use]
+    pub fn new(opts: GetScanConfigsOpts) -> Self {
+        Self { opts }
+    }
+}
+
+impl Request for GetScanConfigsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_scan_configs(self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetScanConfigsRequest {
+    type Response = GetScanConfigsResponse;
+}
+
+/// Semantic request for one detailed scan configuration.
+#[derive(Debug, Clone)]
+pub struct GetScanConfigRequest {
+    config_id: EntityId,
+}
+
+impl GetScanConfigRequest {
+    /// Create a detailed single scan-configuration request.
+    #[must_use]
+    pub fn new(config_id: EntityId) -> Self {
+        Self { config_id }
+    }
+}
+
+impl Request for GetScanConfigRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_scan_config(&self.config_id).to_bytes()
+    }
+}
+
+impl GmpRequest for GetScanConfigRequest {
+    type Response = GetScanConfigsResponse;
+}
+
+/// Semantic request for creating a scan configuration.
+#[derive(Debug, Clone)]
+pub struct CreateScanConfigRequest {
+    name: String,
+    base_id: Option<EntityId>,
+    opts: ConfigOpts,
+}
+
+impl CreateScanConfigRequest {
+    /// Create a scan-configuration creation request.
+    #[must_use]
+    pub fn new(name: impl Into<String>, base_id: Option<EntityId>, opts: ConfigOpts) -> Self {
+        Self {
+            name: name.into(),
+            base_id,
+            opts,
+        }
+    }
+}
+
+impl Request for CreateScanConfigRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_scan_config(&self.name, self.base_id.as_ref(), self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateScanConfigRequest {
+    type Response = CreateScanConfigResponse;
+}
+
+/// Semantic request for cloning a scan configuration.
+#[derive(Debug, Clone)]
+pub struct CloneScanConfigRequest {
+    config_id: EntityId,
+}
+
+impl CloneScanConfigRequest {
+    /// Create a scan-configuration clone request.
+    #[must_use]
+    pub fn new(config_id: EntityId) -> Self {
+        Self { config_id }
+    }
+}
+
+impl Request for CloneScanConfigRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        clone_scan_config(&self.config_id).to_bytes()
+    }
+}
+
+impl GmpRequest for CloneScanConfigRequest {
+    type Response = CreateScanConfigResponse;
+}
+
+/// Semantic request for importing scan-configuration XML.
+#[derive(Debug, Clone)]
+pub struct ImportScanConfigRequest {
+    bytes: Vec<u8>,
+}
+
+impl ImportScanConfigRequest {
+    /// Validate import XML and create a scan-configuration import request.
+    ///
+    /// # Errors
+    /// Returns an error under the same conditions as [`import_scan_config`].
+    pub fn new(scan_config_xml: &str) -> Result<Self, ParseError> {
+        Ok(Self {
+            bytes: import_scan_config(scan_config_xml)?.to_bytes(),
+        })
+    }
+}
+
+impl Request for ImportScanConfigRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.bytes.clone()
+    }
+}
+
+impl GmpRequest for ImportScanConfigRequest {
+    type Response = CreateScanConfigResponse;
+}
+
+/// Semantic request for modifying a scan configuration.
+#[derive(Debug, Clone)]
+pub struct ModifyScanConfigRequest {
+    config_id: EntityId,
+    opts: ConfigOpts,
+}
+
+impl ModifyScanConfigRequest {
+    /// Create a scan-configuration modification request.
+    #[must_use]
+    pub fn new(config_id: EntityId, opts: ConfigOpts) -> Self {
+        Self { config_id, opts }
+    }
+}
+
+impl Request for ModifyScanConfigRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_scan_config(&self.config_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyScanConfigRequest {
+    type Response = ModifyScanConfigResponse;
+}
+
+/// Semantic request for deleting a scan configuration.
+#[derive(Debug, Clone)]
+pub struct DeleteScanConfigRequest {
+    config_id: EntityId,
+    ultimate: bool,
+}
+
+impl DeleteScanConfigRequest {
+    /// Create a scan-configuration deletion request.
+    #[must_use]
+    pub fn new(config_id: EntityId, ultimate: bool) -> Self {
+        Self {
+            config_id,
+            ultimate,
+        }
+    }
+}
+
+impl Request for DeleteScanConfigRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_scan_config(&self.config_id, self.ultimate).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteScanConfigRequest {
+    type Response = DeleteScanConfigResponse;
+}
+
+/// Semantic request for globally synchronizing configurations.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SyncConfigRequest;
+
+impl SyncConfigRequest {
+    /// Create a global configuration synchronization request.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl Request for SyncConfigRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        sync_config().to_bytes()
+    }
+}
+
+impl GmpRequest for SyncConfigRequest {
+    type Response = SyncConfigResponse;
+}
+
+/// Semantic request for listing policies.
+#[derive(Debug, Clone, Default)]
+pub struct GetPoliciesRequest {
+    opts: GetScanConfigsOpts,
+}
+
+impl GetPoliciesRequest {
+    /// Create a policy list request.
+    #[must_use]
+    pub fn new(opts: GetScanConfigsOpts) -> Self {
+        Self { opts }
+    }
+}
+
+impl Request for GetPoliciesRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_policies(self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetPoliciesRequest {
+    type Response = GetScanConfigsResponse;
+}
+
+/// Semantic request for one detailed policy.
+#[derive(Debug, Clone)]
+pub struct GetPolicyRequest {
+    policy_id: EntityId,
+    opts: GetPolicyOpts,
+}
+
+impl GetPolicyRequest {
+    /// Create a detailed single-policy request.
+    #[must_use]
+    pub fn new(policy_id: EntityId, opts: GetPolicyOpts) -> Self {
+        Self { policy_id, opts }
+    }
+}
+
+impl Request for GetPolicyRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_policy(&self.policy_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetPolicyRequest {
+    type Response = GetScanConfigsResponse;
+}
+
+/// Semantic request for creating a policy.
+#[derive(Debug, Clone)]
+pub struct CreatePolicyRequest {
+    name: String,
+    opts: ConfigOpts,
+}
+
+impl CreatePolicyRequest {
+    /// Create a policy creation request.
+    #[must_use]
+    pub fn new(name: impl Into<String>, opts: ConfigOpts) -> Self {
+        Self {
+            name: name.into(),
+            opts,
+        }
+    }
+}
+
+impl Request for CreatePolicyRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_policy(&self.name, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreatePolicyRequest {
+    type Response = CreateScanConfigResponse;
+}
+
+/// Semantic request for cloning a policy.
+#[derive(Debug, Clone)]
+pub struct ClonePolicyRequest {
+    policy_id: EntityId,
+}
+
+impl ClonePolicyRequest {
+    /// Create a policy clone request.
+    #[must_use]
+    pub fn new(policy_id: EntityId) -> Self {
+        Self { policy_id }
+    }
+}
+
+impl Request for ClonePolicyRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        clone_policy(&self.policy_id).to_bytes()
+    }
+}
+
+impl GmpRequest for ClonePolicyRequest {
+    type Response = CreateScanConfigResponse;
+}
+
+/// Semantic request for importing policy XML.
+#[derive(Debug, Clone)]
+pub struct ImportPolicyRequest {
+    bytes: Vec<u8>,
+}
+
+impl ImportPolicyRequest {
+    /// Validate import XML and create a policy import request.
+    ///
+    /// # Errors
+    /// Returns an error under the same conditions as [`import_policy`].
+    pub fn new(policy_xml: &str) -> Result<Self, ParseError> {
+        Ok(Self {
+            bytes: import_policy(policy_xml)?.to_bytes(),
+        })
+    }
+}
+
+impl Request for ImportPolicyRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.bytes.clone()
+    }
+}
+
+impl GmpRequest for ImportPolicyRequest {
+    type Response = CreateScanConfigResponse;
+}
+
+/// Semantic request for modifying a policy.
+#[derive(Debug, Clone)]
+pub struct ModifyPolicyRequest {
+    policy_id: EntityId,
+    opts: ConfigOpts,
+}
+
+impl ModifyPolicyRequest {
+    /// Create a policy modification request.
+    #[must_use]
+    pub fn new(policy_id: EntityId, opts: ConfigOpts) -> Self {
+        Self { policy_id, opts }
+    }
+}
+
+impl Request for ModifyPolicyRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_policy(&self.policy_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyPolicyRequest {
+    type Response = ModifyScanConfigResponse;
+}
+
+/// Semantic request for deleting a policy.
+#[derive(Debug, Clone)]
+pub struct DeletePolicyRequest {
+    policy_id: EntityId,
+}
+
+impl DeletePolicyRequest {
+    /// Create a policy deletion request.
+    #[must_use]
+    pub fn new(policy_id: EntityId) -> Self {
+        Self { policy_id }
+    }
+}
+
+impl Request for DeletePolicyRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_policy(&self.policy_id).to_bytes()
+    }
+}
+
+impl GmpRequest for DeletePolicyRequest {
+    type Response = DeleteScanConfigResponse;
+}
+
+/// Semantic request for scan-configuration preferences.
+#[derive(Debug, Clone, Default)]
+pub struct GetScanConfigPreferencesRequest {
+    opts: GetScanConfigPreferencesOpts,
+}
+
+impl GetScanConfigPreferencesRequest {
+    /// Create a scan-configuration preference list request.
+    #[must_use]
+    pub fn new(opts: GetScanConfigPreferencesOpts) -> Self {
+        Self { opts }
+    }
+}
+
+impl Request for GetScanConfigPreferencesRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_scan_config_preferences(self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetScanConfigPreferencesRequest {
+    type Response = GetScanConfigPreferencesResponse;
+}
+
+/// Semantic request for one scan-configuration preference.
+#[derive(Debug, Clone)]
+pub struct GetScanConfigPreferenceRequest {
+    name: String,
+    opts: GetScanConfigPreferencesOpts,
+}
+
+impl GetScanConfigPreferenceRequest {
+    /// Create a single scan-configuration preference request.
+    #[must_use]
+    pub fn new(name: impl Into<String>, opts: GetScanConfigPreferencesOpts) -> Self {
+        Self {
+            name: name.into(),
+            opts,
+        }
+    }
+}
+
+impl Request for GetScanConfigPreferenceRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_scan_config_preference(&self.name, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetScanConfigPreferenceRequest {
+    type Response = GetScanConfigPreferencesResponse;
+}
+
+macro_rules! define_nvt_preference_request {
+    ($request:ident, $builder:ident, $request_doc:literal, $new_doc:literal) => {
+        #[doc = $request_doc]
+        #[derive(Debug, Clone)]
+        pub struct $request {
+            resource_id: EntityId,
+            name: String,
+            nvt_oid: String,
+            value: Option<String>,
+        }
+
+        impl $request {
+            #[doc = $new_doc]
+            #[must_use]
+            pub fn new(
+                resource_id: EntityId,
+                name: impl Into<String>,
+                nvt_oid: impl Into<String>,
+                value: Option<String>,
+            ) -> Self {
+                Self {
+                    resource_id,
+                    name: name.into(),
+                    nvt_oid: nvt_oid.into(),
+                    value,
+                }
+            }
+        }
+
+        impl Request for $request {
+            fn to_bytes(&self) -> Vec<u8> {
+                $builder(
+                    &self.resource_id,
+                    &self.name,
+                    &self.nvt_oid,
+                    self.value.as_deref(),
+                )
+                .to_bytes()
+            }
+        }
+
+        impl GmpRequest for $request {
+            type Response = ModifyScanConfigResponse;
+        }
+    };
+}
+
+macro_rules! define_scanner_preference_request {
+    ($request:ident, $builder:ident, $request_doc:literal, $new_doc:literal) => {
+        #[doc = $request_doc]
+        #[derive(Debug, Clone)]
+        pub struct $request {
+            resource_id: EntityId,
+            name: String,
+            value: Option<String>,
+        }
+
+        impl $request {
+            #[doc = $new_doc]
+            #[must_use]
+            pub fn new(
+                resource_id: EntityId,
+                name: impl Into<String>,
+                value: Option<String>,
+            ) -> Self {
+                Self {
+                    resource_id,
+                    name: name.into(),
+                    value,
+                }
+            }
+        }
+
+        impl Request for $request {
+            fn to_bytes(&self) -> Vec<u8> {
+                $builder(&self.resource_id, &self.name, self.value.as_deref()).to_bytes()
+            }
+        }
+
+        impl GmpRequest for $request {
+            type Response = ModifyScanConfigResponse;
+        }
+    };
+}
+
+macro_rules! define_nvt_selection_request {
+    ($request:ident, $builder:ident, $request_doc:literal, $new_doc:literal) => {
+        #[doc = $request_doc]
+        #[derive(Debug, Clone)]
+        pub struct $request {
+            resource_id: EntityId,
+            family: String,
+            nvt_oids: Vec<String>,
+        }
+
+        impl $request {
+            #[doc = $new_doc]
+            #[must_use]
+            pub fn new(
+                resource_id: EntityId,
+                family: impl Into<String>,
+                nvt_oids: Vec<String>,
+            ) -> Self {
+                Self {
+                    resource_id,
+                    family: family.into(),
+                    nvt_oids,
+                }
+            }
+        }
+
+        impl Request for $request {
+            fn to_bytes(&self) -> Vec<u8> {
+                $builder(&self.resource_id, &self.family, &self.nvt_oids).to_bytes()
+            }
+        }
+
+        impl GmpRequest for $request {
+            type Response = ModifyScanConfigResponse;
+        }
+    };
+}
+
+macro_rules! define_family_selection_request {
+    ($request:ident, $builder:ident, $request_doc:literal, $new_doc:literal) => {
+        #[doc = $request_doc]
+        #[derive(Debug, Clone)]
+        pub struct $request {
+            resource_id: EntityId,
+            families: Vec<NvtFamilySelection>,
+            auto_add_new_families: bool,
+        }
+
+        impl $request {
+            #[doc = $new_doc]
+            #[must_use]
+            pub fn new(
+                resource_id: EntityId,
+                families: Vec<NvtFamilySelection>,
+                auto_add_new_families: bool,
+            ) -> Self {
+                Self {
+                    resource_id,
+                    families,
+                    auto_add_new_families,
+                }
+            }
+        }
+
+        impl Request for $request {
+            fn to_bytes(&self) -> Vec<u8> {
+                $builder(
+                    &self.resource_id,
+                    &self.families,
+                    self.auto_add_new_families,
+                )
+                .to_bytes()
+            }
+        }
+
+        impl GmpRequest for $request {
+            type Response = ModifyScanConfigResponse;
+        }
+    };
+}
+
+macro_rules! define_name_request {
+    ($request:ident, $builder:ident, $request_doc:literal, $new_doc:literal) => {
+        #[doc = $request_doc]
+        #[derive(Debug, Clone)]
+        pub struct $request {
+            resource_id: EntityId,
+            name: String,
+        }
+
+        impl $request {
+            #[doc = $new_doc]
+            #[must_use]
+            pub fn new(resource_id: EntityId, name: impl Into<String>) -> Self {
+                Self {
+                    resource_id,
+                    name: name.into(),
+                }
+            }
+        }
+
+        impl Request for $request {
+            fn to_bytes(&self) -> Vec<u8> {
+                $builder(&self.resource_id, &self.name).to_bytes()
+            }
+        }
+
+        impl GmpRequest for $request {
+            type Response = ModifyScanConfigResponse;
+        }
+    };
+}
+
+macro_rules! define_comment_request {
+    ($request:ident, $builder:ident, $request_doc:literal, $new_doc:literal) => {
+        #[doc = $request_doc]
+        #[derive(Debug, Clone)]
+        pub struct $request {
+            resource_id: EntityId,
+            comment: Option<String>,
+        }
+
+        impl $request {
+            #[doc = $new_doc]
+            #[must_use]
+            pub fn new(resource_id: EntityId, comment: Option<String>) -> Self {
+                Self {
+                    resource_id,
+                    comment,
+                }
+            }
+        }
+
+        impl Request for $request {
+            fn to_bytes(&self) -> Vec<u8> {
+                $builder(&self.resource_id, self.comment.as_deref()).to_bytes()
+            }
+        }
+
+        impl GmpRequest for $request {
+            type Response = ModifyScanConfigResponse;
+        }
+    };
+}
+
+define_nvt_preference_request!(
+    ModifyScanConfigSetNvtPreferenceRequest,
+    modify_scan_config_set_nvt_preference,
+    "Semantic request for setting or deleting a scan-config NVT preference.",
+    "Create a scan-config NVT-preference mutation request."
+);
+define_scanner_preference_request!(
+    ModifyScanConfigSetScannerPreferenceRequest,
+    modify_scan_config_set_scanner_preference,
+    "Semantic request for setting or deleting a scan-config scanner preference.",
+    "Create a scan-config scanner-preference mutation request."
+);
+define_nvt_selection_request!(
+    ModifyScanConfigSetNvtSelectionRequest,
+    modify_scan_config_set_nvt_selection,
+    "Semantic request for replacing a scan-config NVT selection.",
+    "Create a scan-config NVT-selection mutation request."
+);
+define_family_selection_request!(
+    ModifyScanConfigSetFamilySelectionRequest,
+    modify_scan_config_set_family_selection,
+    "Semantic request for replacing a scan-config family selection.",
+    "Create a scan-config family-selection mutation request."
+);
+define_name_request!(
+    ModifyScanConfigSetNameRequest,
+    modify_scan_config_set_name,
+    "Semantic request for setting a scan-configuration name.",
+    "Create a scan-configuration name mutation request."
+);
+define_comment_request!(
+    ModifyScanConfigSetCommentRequest,
+    modify_scan_config_set_comment,
+    "Semantic request for setting or clearing a scan-configuration comment.",
+    "Create a scan-configuration comment mutation request."
+);
+
+define_nvt_preference_request!(
+    ModifyPolicySetNvtPreferenceRequest,
+    modify_policy_set_nvt_preference,
+    "Semantic request for setting or deleting a policy NVT preference.",
+    "Create a policy NVT-preference mutation request."
+);
+define_scanner_preference_request!(
+    ModifyPolicySetScannerPreferenceRequest,
+    modify_policy_set_scanner_preference,
+    "Semantic request for setting or deleting a policy scanner preference.",
+    "Create a policy scanner-preference mutation request."
+);
+define_nvt_selection_request!(
+    ModifyPolicySetNvtSelectionRequest,
+    modify_policy_set_nvt_selection,
+    "Semantic request for replacing a policy NVT selection.",
+    "Create a policy NVT-selection mutation request."
+);
+define_family_selection_request!(
+    ModifyPolicySetFamilySelectionRequest,
+    modify_policy_set_family_selection,
+    "Semantic request for replacing a policy family selection.",
+    "Create a policy family-selection mutation request."
+);
+define_name_request!(
+    ModifyPolicySetNameRequest,
+    modify_policy_set_name,
+    "Semantic request for setting a policy name.",
+    "Create a policy name mutation request."
+);
+define_comment_request!(
+    ModifyPolicySetCommentRequest,
+    modify_policy_set_comment,
+    "Semantic request for setting or clearing a policy comment.",
+    "Create a policy comment mutation request."
+);
 
 /// Build a clone request for an existing scan config.
 #[must_use]
@@ -793,5 +1536,285 @@ mod tests {
             xml(clone_policy(&id("p1"))),
             "<create_config><copy>p1</copy></create_config>"
         );
+    }
+
+    #[test]
+    fn semantic_scan_config_and_policy_requests_match_builders() {
+        let config_id = id("config-1");
+        let base_id = id("base-1");
+        let list_opts = GetScanConfigsOpts {
+            filter_string: Some("name=example".into()),
+            details: Some(true),
+            ..Default::default()
+        };
+        let config_opts = ConfigOpts {
+            comment: Some("comment".into()),
+            usage_type: Some("custom".into()),
+        };
+        let policy_opts = GetPolicyOpts { audits: Some(true) };
+        let import_xml = "<get_configs_response><config id=\"config-1\"/></get_configs_response>";
+
+        assert_eq!(
+            GetScanConfigsRequest::new(list_opts.clone()).to_bytes(),
+            get_scan_configs(list_opts.clone()).to_bytes()
+        );
+        assert_eq!(
+            GetScanConfigRequest::new(config_id.clone()).to_bytes(),
+            get_scan_config(&config_id).to_bytes()
+        );
+        assert_eq!(
+            CreateScanConfigRequest::new("config", Some(base_id.clone()), config_opts.clone())
+                .to_bytes(),
+            create_scan_config("config", Some(&base_id), config_opts.clone()).to_bytes()
+        );
+        assert_eq!(
+            CloneScanConfigRequest::new(config_id.clone()).to_bytes(),
+            clone_scan_config(&config_id).to_bytes()
+        );
+        assert_eq!(
+            ImportScanConfigRequest::new(import_xml)
+                .expect("valid import")
+                .to_bytes(),
+            import_scan_config(import_xml)
+                .expect("valid import")
+                .to_bytes()
+        );
+        assert_eq!(
+            ModifyScanConfigRequest::new(config_id.clone(), config_opts.clone()).to_bytes(),
+            modify_scan_config(&config_id, config_opts.clone()).to_bytes()
+        );
+        assert_eq!(
+            DeleteScanConfigRequest::new(config_id.clone(), true).to_bytes(),
+            delete_scan_config(&config_id, true).to_bytes()
+        );
+        assert_eq!(
+            SyncConfigRequest::new().to_bytes(),
+            sync_config().to_bytes()
+        );
+
+        assert_eq!(
+            GetPoliciesRequest::new(list_opts.clone()).to_bytes(),
+            get_policies(list_opts).to_bytes()
+        );
+        assert_eq!(
+            GetPolicyRequest::new(config_id.clone(), policy_opts.clone()).to_bytes(),
+            get_policy(&config_id, policy_opts).to_bytes()
+        );
+        assert_eq!(
+            CreatePolicyRequest::new("policy", config_opts.clone()).to_bytes(),
+            create_policy("policy", config_opts.clone()).to_bytes()
+        );
+        assert_eq!(
+            ClonePolicyRequest::new(config_id.clone()).to_bytes(),
+            clone_policy(&config_id).to_bytes()
+        );
+        assert_eq!(
+            ImportPolicyRequest::new(import_xml)
+                .expect("valid import")
+                .to_bytes(),
+            import_policy(import_xml).expect("valid import").to_bytes()
+        );
+        assert_eq!(
+            ModifyPolicyRequest::new(config_id.clone(), config_opts.clone()).to_bytes(),
+            modify_policy(&config_id, config_opts).to_bytes()
+        );
+        assert_eq!(
+            DeletePolicyRequest::new(config_id.clone()).to_bytes(),
+            delete_policy(&config_id).to_bytes()
+        );
+
+        assert!(ImportScanConfigRequest::new("<invalid/>").is_err());
+        assert!(ImportPolicyRequest::new("<invalid/>").is_err());
+    }
+
+    #[test]
+    fn semantic_preference_and_selection_requests_match_builders() {
+        let resource_id = id("config-1");
+        let preference_opts = GetScanConfigPreferencesOpts {
+            nvt_oid: Some("1.3.6.1".into()),
+            config_id: Some(resource_id.clone()),
+        };
+        let nvt_oids = vec!["1.3.6.1".into(), "1.3.6.2".into()];
+        let families = vec![NvtFamilySelection {
+            name: "General".into(),
+            growing: true,
+            all: false,
+        }];
+
+        assert_eq!(
+            GetScanConfigPreferencesRequest::new(preference_opts.clone()).to_bytes(),
+            get_scan_config_preferences(preference_opts.clone()).to_bytes()
+        );
+        assert_eq!(
+            GetScanConfigPreferenceRequest::new("timeout", preference_opts.clone()).to_bytes(),
+            get_scan_config_preference("timeout", preference_opts).to_bytes()
+        );
+
+        assert_eq!(
+            ModifyScanConfigSetNvtPreferenceRequest::new(
+                resource_id.clone(),
+                "timeout",
+                "1.3.6.1",
+                Some("30".into())
+            )
+            .to_bytes(),
+            modify_scan_config_set_nvt_preference(&resource_id, "timeout", "1.3.6.1", Some("30"))
+                .to_bytes()
+        );
+        assert_eq!(
+            ModifyScanConfigSetScannerPreferenceRequest::new(
+                resource_id.clone(),
+                "max_checks",
+                None
+            )
+            .to_bytes(),
+            modify_scan_config_set_scanner_preference(&resource_id, "max_checks", None).to_bytes()
+        );
+        assert_eq!(
+            ModifyScanConfigSetNvtSelectionRequest::new(
+                resource_id.clone(),
+                "General",
+                nvt_oids.clone()
+            )
+            .to_bytes(),
+            modify_scan_config_set_nvt_selection(&resource_id, "General", &nvt_oids).to_bytes()
+        );
+        assert_eq!(
+            ModifyScanConfigSetFamilySelectionRequest::new(
+                resource_id.clone(),
+                families.clone(),
+                true
+            )
+            .to_bytes(),
+            modify_scan_config_set_family_selection(&resource_id, &families, true).to_bytes()
+        );
+        assert_eq!(
+            ModifyScanConfigSetNameRequest::new(resource_id.clone(), "renamed").to_bytes(),
+            modify_scan_config_set_name(&resource_id, "renamed").to_bytes()
+        );
+        assert_eq!(
+            ModifyScanConfigSetCommentRequest::new(resource_id.clone(), None).to_bytes(),
+            modify_scan_config_set_comment(&resource_id, None).to_bytes()
+        );
+    }
+
+    #[test]
+    fn semantic_policy_preference_and_selection_requests_match_builders() {
+        let resource_id = id("policy-1");
+        let nvt_oids = vec!["1.3.6.1".into(), "1.3.6.2".into()];
+        let families = vec![NvtFamilySelection {
+            name: "General".into(),
+            growing: true,
+            all: false,
+        }];
+
+        assert_eq!(
+            ModifyPolicySetNvtPreferenceRequest::new(
+                resource_id.clone(),
+                "timeout",
+                "1.3.6.1",
+                Some("30".into())
+            )
+            .to_bytes(),
+            modify_policy_set_nvt_preference(&resource_id, "timeout", "1.3.6.1", Some("30"))
+                .to_bytes()
+        );
+        assert_eq!(
+            ModifyPolicySetScannerPreferenceRequest::new(resource_id.clone(), "max_checks", None)
+                .to_bytes(),
+            modify_policy_set_scanner_preference(&resource_id, "max_checks", None).to_bytes()
+        );
+        assert_eq!(
+            ModifyPolicySetNvtSelectionRequest::new(
+                resource_id.clone(),
+                "General",
+                nvt_oids.clone()
+            )
+            .to_bytes(),
+            modify_policy_set_nvt_selection(&resource_id, "General", &nvt_oids).to_bytes()
+        );
+        assert_eq!(
+            ModifyPolicySetFamilySelectionRequest::new(
+                resource_id.clone(),
+                families.clone(),
+                false
+            )
+            .to_bytes(),
+            modify_policy_set_family_selection(&resource_id, &families, false).to_bytes()
+        );
+        assert_eq!(
+            ModifyPolicySetNameRequest::new(resource_id.clone(), "renamed").to_bytes(),
+            modify_policy_set_name(&resource_id, "renamed").to_bytes()
+        );
+        assert_eq!(
+            ModifyPolicySetCommentRequest::new(resource_id.clone(), Some("comment".into()))
+                .to_bytes(),
+            modify_policy_set_comment(&resource_id, Some("comment")).to_bytes()
+        );
+    }
+
+    #[test]
+    fn semantic_scan_config_requests_have_expected_response_associations() {
+        fn assert_response<R, T>(_: &R)
+        where
+            R: GmpRequest<Response = T>,
+            T: crate::GmpResponse,
+        {
+        }
+
+        let resource_id = id("config-1");
+        assert_response::<_, GetScanConfigsResponse>(&GetScanConfigsRequest::default());
+        assert_response::<_, GetScanConfigsResponse>(&GetScanConfigRequest::new(
+            resource_id.clone(),
+        ));
+        assert_response::<_, CreateScanConfigResponse>(&CreateScanConfigRequest::new(
+            "config",
+            None,
+            ConfigOpts::default(),
+        ));
+        assert_response::<_, CreateScanConfigResponse>(&CloneScanConfigRequest::new(
+            resource_id.clone(),
+        ));
+        assert_response::<_, CreateScanConfigResponse>(
+            &ImportScanConfigRequest::new("<get_configs_response/>").expect("valid import"),
+        );
+        assert_response::<_, ModifyScanConfigResponse>(&ModifyScanConfigRequest::new(
+            resource_id.clone(),
+            ConfigOpts::default(),
+        ));
+        assert_response::<_, DeleteScanConfigResponse>(&DeleteScanConfigRequest::new(
+            resource_id.clone(),
+            false,
+        ));
+        assert_response::<_, SyncConfigResponse>(&SyncConfigRequest::new());
+        assert_response::<_, GetScanConfigPreferencesResponse>(
+            &GetScanConfigPreferencesRequest::default(),
+        );
+        assert_response::<_, GetScanConfigPreferencesResponse>(
+            &GetScanConfigPreferenceRequest::new(
+                "timeout",
+                GetScanConfigPreferencesOpts::default(),
+            ),
+        );
+        assert_response::<_, GetScanConfigsResponse>(&GetPoliciesRequest::default());
+        assert_response::<_, GetScanConfigsResponse>(&GetPolicyRequest::new(
+            resource_id.clone(),
+            GetPolicyOpts::default(),
+        ));
+        assert_response::<_, CreateScanConfigResponse>(&CreatePolicyRequest::new(
+            "policy",
+            ConfigOpts::default(),
+        ));
+        assert_response::<_, CreateScanConfigResponse>(&ClonePolicyRequest::new(
+            resource_id.clone(),
+        ));
+        assert_response::<_, CreateScanConfigResponse>(
+            &ImportPolicyRequest::new("<get_configs_response/>").expect("valid import"),
+        );
+        assert_response::<_, ModifyScanConfigResponse>(&ModifyPolicyRequest::new(
+            resource_id.clone(),
+            ConfigOpts::default(),
+        ));
+        assert_response::<_, DeleteScanConfigResponse>(&DeletePolicyRequest::new(resource_id));
     }
 }
