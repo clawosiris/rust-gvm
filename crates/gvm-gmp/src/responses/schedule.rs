@@ -10,6 +10,7 @@ use crate::responses::common::{
     status_from_response, ActionResponse, CountInfo, EntityMeta, ParseError,
 };
 use crate::schedule::{parse_icalendar_with_timezone, ScheduleObservation, ScheduleTimestamp};
+use crate::{GmpResponse, GmpVersion};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -112,6 +113,12 @@ impl GetSchedulesResponse {
     }
 }
 
+impl GmpResponse for GetSchedulesResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 impl CreateScheduleResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
@@ -126,6 +133,12 @@ impl CreateScheduleResponse {
             status_text,
             id,
         })
+    }
+}
+
+impl GmpResponse for CreateScheduleResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 

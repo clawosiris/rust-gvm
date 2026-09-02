@@ -9,7 +9,7 @@ use gvm_client::{
 };
 use gvm_client::{GmpClient, GvmError};
 use gvm_connection::UnixSocketConnection;
-use gvm_gmp::commands::alerts::{AlertOpts, GetAlertsOpts};
+use gvm_gmp::commands::alerts::{AlertOpts, GetAlertsOpts, TriggerAlertOpts};
 use gvm_gmp::commands::credentials::{
     CloneCredentialRequest, CreateCredentialRequest, CredentialOpts, DeleteCredentialRequest,
     GetCredentialRequest, GetCredentialsOpts, GetCredentialsRequest, ModifyCredentialOpts,
@@ -52,7 +52,10 @@ use gvm_gmp::commands::tls_certificates::{GetTlsCertificatesOpts, TlsCertificate
 use gvm_gmp::commands::users::{GetUsersOpts, UserOpts};
 use gvm_gmp::responses::{ActionResponse, ParseError};
 use gvm_gmp::types::{EntityId, GmpVersion, ScalarUpdate};
-use gvm_gmp::GmpRequest;
+use gvm_gmp::{
+    GmpRequest, ScheduleDefinition, ScheduleInput, ScheduleRecurrence, ScheduleTimestamp,
+    ScheduleTimezone,
+};
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 use gvm_protocol::Request;
 
@@ -162,6 +165,49 @@ const SCANNER_LIFECYCLE_OVERRIDES: &[(&str, &str)] = &[
     (
         "verify_scanner",
         r#"<verify_scanner_response status="200" status_text="OK"/>"#,
+    ),
+];
+
+const ALERT_SCHEDULE_OVERRIDES: &[(&str, &str)] = &[
+    (
+        "get_alerts",
+        r#"<get_alerts_response status="200" status_text="OK"><alert_count>0<filtered>0</filtered></alert_count></get_alerts_response>"#,
+    ),
+    (
+        "create_alert",
+        r#"<create_alert_response status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111"/>"#,
+    ),
+    (
+        "modify_alert",
+        r#"<modify_alert_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "delete_alert",
+        r#"<delete_alert_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "test_alert",
+        r#"<test_alert_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "get_reports",
+        r#"<get_reports_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "get_schedules",
+        r#"<get_schedules_response status="200" status_text="OK"><schedule_count>0<filtered>0</filtered></schedule_count></get_schedules_response>"#,
+    ),
+    (
+        "create_schedule",
+        r#"<create_schedule_response status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111"/>"#,
+    ),
+    (
+        "modify_schedule",
+        r#"<modify_schedule_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "delete_schedule",
+        r#"<delete_schedule_response status="200" status_text="OK"/>"#,
     ),
 ];
 
@@ -953,6 +999,136 @@ async fn scanner_execute_preserves_status_and_parse_context() {
         .execute(CloneScannerRequest::new(id("scanner-1")))
         .await
         .expect_err("missing clone id should fail");
+    assert!(matches!(
+        parse_error,
+        GvmError::Parse(ParseError::MissingElement(field)) if field == "id"
+    ));
+    server.shutdown().await;
+}
+
+fn typed_schedule_input() -> ScheduleInput {
+    ScheduleInput::new(
+        ScheduleDefinition {
+            first_run: ScheduleTimestamp::parse("2030-01-01T00:00:00Z").expect("valid first run"),
+            recurrence: ScheduleRecurrence::Daily,
+        },
+        ScheduleTimezone::new("UTC").expect("valid timezone"),
+    )
+}
+
+#[tokio::test]
+async fn alert_and_schedule_families_execute_through_typed_facade() {
+    let Some(server) = fixture_server(MockVersion::V22_4, ALERT_SCHEDULE_OVERRIDES).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let alert_id = id("alert-1");
+    let report_id = id("report-1");
+    let schedule_id = id("schedule-1");
+
+    assert_typed_success!(client.get_alerts(GetAlertsOpts::default()));
+    assert_typed_success!(client.get_alert(&alert_id));
+    assert_create_success!(client.create_alert("alert", AlertOpts::default()));
+    assert_create_success!(client.clone_alert(&alert_id));
+    assert_typed_success!(client.modify_alert(&alert_id, AlertOpts::default()));
+    assert_typed_success!(client.delete_alert(&alert_id, false));
+    assert_typed_success!(client.test_alert(&alert_id));
+    assert_typed_success!(client.trigger_alert(&alert_id, &report_id, TriggerAlertOpts::default()));
+
+    assert_typed_success!(client.get_schedules(GetSchedulesOpts::default()));
+    assert_typed_success!(client.get_schedule(&schedule_id));
+    assert_create_success!(client.create_schedule(
+        "raw",
+        ScheduleOpts {
+            icalendar: Some("BEGIN:VCALENDAR\r\nEND:VCALENDAR".into()),
+            timezone: Some("UTC".into()),
+            ..Default::default()
+        }
+    ));
+    assert_create_success!(client.create_typed_schedule("typed", typed_schedule_input()));
+    assert_create_success!(client.clone_schedule(&schedule_id));
+    assert_typed_success!(client.modify_schedule(&schedule_id, ScheduleOpts::default()));
+    assert_typed_success!(client.modify_typed_schedule(&schedule_id, typed_schedule_input()));
+    assert_typed_success!(client.delete_schedule(&schedule_id, true));
+
+    let history = server.command_history();
+    let commands = history
+        .iter()
+        .map(|record| record.command_name().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        commands,
+        [
+            "get_alerts",
+            "get_alerts",
+            "create_alert",
+            "create_alert",
+            "modify_alert",
+            "delete_alert",
+            "test_alert",
+            "get_reports",
+            "get_schedules",
+            "get_schedules",
+            "create_schedule",
+            "create_schedule",
+            "create_schedule",
+            "modify_schedule",
+            "modify_schedule",
+            "delete_schedule",
+        ]
+    );
+
+    let trigger_xml = history
+        .iter()
+        .find(|record| record.command_name() == "get_reports")
+        .and_then(|record| std::str::from_utf8(record.raw_xml()).ok())
+        .expect("trigger request XML");
+    assert!(trigger_xml.contains("alert_id=\"alert-1\""));
+    assert!(trigger_xml.contains("report_id=\"report-1\""));
+    assert!(history.iter().any(|record| {
+        record.command_name() == "create_schedule"
+            && std::str::from_utf8(record.raw_xml())
+                .is_ok_and(|xml| xml.contains("BEGIN:VCALENDAR"))
+    }));
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn alert_and_schedule_execute_preserve_status_and_parse_context() {
+    let Some(server) = fixture_server(
+        MockVersion::V22_4,
+        &[
+            (
+                "get_alerts",
+                r#"<get_alerts_response status="409" status_text="alert conflict"/>"#,
+            ),
+            (
+                "create_schedule",
+                r#"<create_schedule_response status="201" status_text="OK"/>"#,
+            ),
+        ],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+
+    let status_error = client
+        .get_alert(&id("alert-1"))
+        .await
+        .expect_err("non-success alert response should fail");
+    assert!(matches!(
+        status_error,
+        GvmError::Parse(ParseError::ServerError { status: 409, message })
+            if message == "alert conflict"
+    ));
+
+    let parse_error = client
+        .clone_schedule(&id("schedule-1"))
+        .await
+        .expect_err("missing cloned schedule id should fail");
     assert!(matches!(
         parse_error,
         GvmError::Parse(ParseError::MissingElement(field)) if field == "id"

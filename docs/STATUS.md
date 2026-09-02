@@ -72,6 +72,15 @@ response preserves both default and configuration-scoped shapes. Existing
 convenience methods delegate to generic execution; raw builders, `send`, `call`,
 and the deprecated global-sync compatibility shim remain supported.
 
+The alert-and-schedule Phase 2 batch, tracked by
+[`#555`](https://github.com/greenbone-hive/rust-gvm/issues/555), migrates every
+public alert and schedule builder to semantic typed execution. Alert list,
+detail, create, clone, modify, delete, test, and report-trigger operations keep
+their established response shapes, including the report response returned by
+triggering. Schedule list, detail, create, clone, modify, and delete retain both
+raw compatibility options and typed recurrence input. Existing builders remain
+the sole wire encoders and all facade helpers delegate to generic execution.
+
 The irregular-report Phase 3 batch, tracked by
 [`#546`](https://github.com/greenbone-hive/rust-gvm/issues/546), migrates report
 list/detail, structured scan and audit reports, audit hosts, nine structured

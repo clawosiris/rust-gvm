@@ -12,7 +12,7 @@ use crate::responses::common::{
     count_info, parse_bool, parse_document, parse_entity_id, parse_entity_meta, parse_named_entity,
     status_from_response, ActionResponse, CountInfo, EntityMeta, NamedEntity, ParseError,
 };
-use crate::{AlertCondition, AlertEvent, AlertMethod};
+use crate::{AlertCondition, AlertEvent, AlertMethod, GmpResponse, GmpVersion};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -92,6 +92,12 @@ impl GetAlertsResponse {
     }
 }
 
+impl GmpResponse for GetAlertsResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 impl CreateAlertResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
@@ -106,6 +112,12 @@ impl CreateAlertResponse {
             status_text,
             id,
         })
+    }
+}
+
+impl GmpResponse for CreateAlertResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 
