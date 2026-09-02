@@ -6,7 +6,11 @@
 use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
+use crate::responses::{
+    CreateNoteResponse, DeleteNoteResponse, GetNotesResponse, ModifyNoteResponse,
+};
 use crate::types::{CollectionUpdate, EntityId};
+use crate::GmpRequest;
 
 /// Optional fields for note create requests.
 #[derive(Debug, Clone, Default)]
@@ -63,6 +67,135 @@ pub struct GetNotesOpts {
     pub details: Option<bool>,
     /// Whether to include associated result references in the response.
     pub result: Option<bool>,
+}
+
+/// Semantic request for listing notes.
+#[derive(Debug, Clone, Default)]
+pub struct GetNotesRequest(GetNotesOpts);
+
+impl GetNotesRequest {
+    /// Create a note-list request.
+    #[must_use]
+    pub fn new(opts: GetNotesOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetNotesRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_notes(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetNotesRequest {
+    type Response = GetNotesResponse;
+}
+
+macro_rules! note_id_request {
+    ($name:ident, $response:ty, $builder:ident) => {
+        #[doc = concat!("Semantic request backed by [`", stringify!($builder), "`].")]
+        #[derive(Debug, Clone)]
+        pub struct $name(EntityId);
+
+        impl $name {
+            /// Create the semantic request.
+            #[must_use]
+            pub fn new(note_id: EntityId) -> Self {
+                Self(note_id)
+            }
+        }
+
+        impl Request for $name {
+            fn to_bytes(&self) -> Vec<u8> {
+                $builder(&self.0).to_bytes()
+            }
+        }
+
+        impl GmpRequest for $name {
+            type Response = $response;
+        }
+    };
+}
+
+note_id_request!(GetNoteRequest, GetNotesResponse, get_note);
+note_id_request!(CloneNoteRequest, CreateNoteResponse, clone_note);
+
+/// Semantic request for creating a note.
+#[derive(Debug, Clone)]
+pub struct CreateNoteRequest {
+    nvt_oid: String,
+    opts: NoteOpts,
+}
+
+impl CreateNoteRequest {
+    /// Create a note-creation request.
+    #[must_use]
+    pub fn new(nvt_oid: impl Into<String>, opts: NoteOpts) -> Self {
+        Self {
+            nvt_oid: nvt_oid.into(),
+            opts,
+        }
+    }
+}
+
+impl Request for CreateNoteRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_note(&self.nvt_oid, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateNoteRequest {
+    type Response = CreateNoteResponse;
+}
+
+/// Semantic request for modifying a note.
+#[derive(Debug, Clone)]
+pub struct ModifyNoteRequest {
+    note_id: EntityId,
+    opts: ModifyNoteOpts,
+}
+
+impl ModifyNoteRequest {
+    /// Create a note-modification request.
+    #[must_use]
+    pub fn new(note_id: EntityId, opts: ModifyNoteOpts) -> Self {
+        Self { note_id, opts }
+    }
+}
+
+impl Request for ModifyNoteRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_note(&self.note_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyNoteRequest {
+    type Response = ModifyNoteResponse;
+}
+
+/// Semantic request for deleting a note.
+#[derive(Debug, Clone)]
+pub struct DeleteNoteRequest {
+    note_id: EntityId,
+    ultimate: bool,
+}
+
+impl DeleteNoteRequest {
+    /// Create a note-deletion request.
+    #[must_use]
+    pub fn new(note_id: EntityId, ultimate: bool) -> Self {
+        Self { note_id, ultimate }
+    }
+}
+
+impl Request for DeleteNoteRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_note(&self.note_id, self.ultimate).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteNoteRequest {
+    type Response = DeleteNoteResponse;
 }
 
 /// Build a clone request for an existing note.
@@ -187,6 +320,53 @@ mod tests {
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
+    }
+
+    #[test]
+    fn semantic_note_requests_match_builder_bytes_and_responses() {
+        fn associated<R, T>(_: &R)
+        where
+            R: GmpRequest<Response = T>,
+            T: crate::GmpResponse,
+        {
+        }
+        let note_id = id("note-1");
+        let get_opts = GetNotesOpts {
+            details: Some(true),
+            result: Some(true),
+            ..Default::default()
+        };
+        let opts = NoteOpts {
+            text: Some("body".into()),
+            hosts: vec!["192.0.2.1".into()],
+            ..Default::default()
+        };
+        let modify_opts = ModifyNoteOpts {
+            hosts: CollectionUpdate::Clear,
+            ..Default::default()
+        };
+
+        let list = GetNotesRequest::new(get_opts.clone());
+        assert_eq!(list.to_bytes(), get_notes(get_opts).to_bytes());
+        associated::<_, GetNotesResponse>(&list);
+        let get = GetNoteRequest::new(note_id.clone());
+        assert_eq!(get.to_bytes(), get_note(&note_id).to_bytes());
+        associated::<_, GetNotesResponse>(&get);
+        let create = CreateNoteRequest::new("1.3.6.1", opts.clone());
+        assert_eq!(create.to_bytes(), create_note("1.3.6.1", opts).to_bytes());
+        associated::<_, CreateNoteResponse>(&create);
+        let clone = CloneNoteRequest::new(note_id.clone());
+        assert_eq!(clone.to_bytes(), clone_note(&note_id).to_bytes());
+        associated::<_, CreateNoteResponse>(&clone);
+        let modify = ModifyNoteRequest::new(note_id.clone(), modify_opts.clone());
+        assert_eq!(
+            modify.to_bytes(),
+            modify_note(&note_id, modify_opts).to_bytes()
+        );
+        associated::<_, ModifyNoteResponse>(&modify);
+        let delete = DeleteNoteRequest::new(note_id.clone(), true);
+        assert_eq!(delete.to_bytes(), delete_note(&note_id, true).to_bytes());
+        associated::<_, DeleteNoteResponse>(&delete);
     }
 
     #[test]

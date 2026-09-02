@@ -197,13 +197,20 @@ first-run and recurrence input and delegate to the existing typed builders.
 Typed convenience methods for both forms use `execute`, so status handling,
 parse context, version checks, and redacted tracing remain identical.
 
-## Filters, tags, and trashcan recovery
+## Supporting resource lifecycles and trashcan recovery
 
 Filters and tags each expose semantic list, detailed-get, create, clone,
 modify, and delete request values. The list/detail and create/clone pairs keep
 separate Rust types even where they share a wire command and response model,
 so call-site intent remains explicit while the established builders remain the
 single XML encoders.
+
+Notes and overrides follow the same lifecycle pattern. Their semantic request
+values delegate to the existing builders, preserving NVT associations, optional
+task/result fields, omit/replace/clear host updates, severity fields, and
+ultimate deletion. Retained facade helpers—including the newly completed
+detail, clone, modify, and delete methods—execute through the same generic
+client path without changing raw compatibility.
 
 Trashcan operations follow the same rule. `EmptyTrashcanRequest` selects the
 existing empty-trashcan response, while `RestoreRequest` and

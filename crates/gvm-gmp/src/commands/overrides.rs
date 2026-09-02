@@ -6,7 +6,11 @@
 use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
+use crate::responses::{
+    CreateOverrideResponse, DeleteOverrideResponse, GetOverridesResponse, ModifyOverrideResponse,
+};
 use crate::types::{CollectionUpdate, EntityId};
+use crate::GmpRequest;
 
 /// Optional fields for override create requests.
 #[derive(Debug, Clone, Default)]
@@ -63,6 +67,138 @@ pub struct GetOverridesOpts {
     pub details: Option<bool>,
     /// Whether to include associated result references in the response.
     pub result: Option<bool>,
+}
+
+/// Semantic request for listing overrides.
+#[derive(Debug, Clone, Default)]
+pub struct GetOverridesRequest(GetOverridesOpts);
+
+impl GetOverridesRequest {
+    /// Create an override-list request.
+    #[must_use]
+    pub fn new(opts: GetOverridesOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetOverridesRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_overrides(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetOverridesRequest {
+    type Response = GetOverridesResponse;
+}
+
+macro_rules! override_id_request {
+    ($name:ident, $response:ty, $builder:ident) => {
+        #[doc = concat!("Semantic request backed by [`", stringify!($builder), "`].")]
+        #[derive(Debug, Clone)]
+        pub struct $name(EntityId);
+
+        impl $name {
+            /// Create the semantic request.
+            #[must_use]
+            pub fn new(override_id: EntityId) -> Self {
+                Self(override_id)
+            }
+        }
+
+        impl Request for $name {
+            fn to_bytes(&self) -> Vec<u8> {
+                $builder(&self.0).to_bytes()
+            }
+        }
+
+        impl GmpRequest for $name {
+            type Response = $response;
+        }
+    };
+}
+
+override_id_request!(GetOverrideRequest, GetOverridesResponse, get_override);
+override_id_request!(CloneOverrideRequest, CreateOverrideResponse, clone_override);
+
+/// Semantic request for creating an override.
+#[derive(Debug, Clone)]
+pub struct CreateOverrideRequest {
+    nvt_oid: String,
+    opts: OverrideOpts,
+}
+
+impl CreateOverrideRequest {
+    /// Create an override-creation request.
+    #[must_use]
+    pub fn new(nvt_oid: impl Into<String>, opts: OverrideOpts) -> Self {
+        Self {
+            nvt_oid: nvt_oid.into(),
+            opts,
+        }
+    }
+}
+
+impl Request for CreateOverrideRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_override(&self.nvt_oid, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateOverrideRequest {
+    type Response = CreateOverrideResponse;
+}
+
+/// Semantic request for modifying an override.
+#[derive(Debug, Clone)]
+pub struct ModifyOverrideRequest {
+    override_id: EntityId,
+    opts: ModifyOverrideOpts,
+}
+
+impl ModifyOverrideRequest {
+    /// Create an override-modification request.
+    #[must_use]
+    pub fn new(override_id: EntityId, opts: ModifyOverrideOpts) -> Self {
+        Self { override_id, opts }
+    }
+}
+
+impl Request for ModifyOverrideRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_override(&self.override_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyOverrideRequest {
+    type Response = ModifyOverrideResponse;
+}
+
+/// Semantic request for deleting an override.
+#[derive(Debug, Clone)]
+pub struct DeleteOverrideRequest {
+    override_id: EntityId,
+    ultimate: bool,
+}
+
+impl DeleteOverrideRequest {
+    /// Create an override-deletion request.
+    #[must_use]
+    pub fn new(override_id: EntityId, ultimate: bool) -> Self {
+        Self {
+            override_id,
+            ultimate,
+        }
+    }
+}
+
+impl Request for DeleteOverrideRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_override(&self.override_id, self.ultimate).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteOverrideRequest {
+    type Response = DeleteOverrideResponse;
 }
 
 /// Build a clone request for an existing override.
@@ -185,6 +321,60 @@ mod tests {
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
+    }
+
+    #[test]
+    fn semantic_override_requests_match_builder_bytes_and_responses() {
+        fn associated<R, T>(_: &R)
+        where
+            R: GmpRequest<Response = T>,
+            T: crate::GmpResponse,
+        {
+        }
+        let override_id = id("override-1");
+        let get_opts = GetOverridesOpts {
+            details: Some(true),
+            result: Some(true),
+            ..Default::default()
+        };
+        let opts = OverrideOpts {
+            text: Some("body".into()),
+            hosts: vec!["192.0.2.1".into()],
+            new_severity: Some("3.0".into()),
+            ..Default::default()
+        };
+        let modify_opts = ModifyOverrideOpts {
+            hosts: CollectionUpdate::Clear,
+            ..Default::default()
+        };
+
+        let list = GetOverridesRequest::new(get_opts.clone());
+        assert_eq!(list.to_bytes(), get_overrides(get_opts).to_bytes());
+        associated::<_, GetOverridesResponse>(&list);
+        let get = GetOverrideRequest::new(override_id.clone());
+        assert_eq!(get.to_bytes(), get_override(&override_id).to_bytes());
+        associated::<_, GetOverridesResponse>(&get);
+        let create = CreateOverrideRequest::new("1.3.6.1", opts.clone());
+        assert_eq!(
+            create.to_bytes(),
+            create_override("1.3.6.1", opts).to_bytes()
+        );
+        associated::<_, CreateOverrideResponse>(&create);
+        let clone = CloneOverrideRequest::new(override_id.clone());
+        assert_eq!(clone.to_bytes(), clone_override(&override_id).to_bytes());
+        associated::<_, CreateOverrideResponse>(&clone);
+        let modify = ModifyOverrideRequest::new(override_id.clone(), modify_opts.clone());
+        assert_eq!(
+            modify.to_bytes(),
+            modify_override(&override_id, modify_opts).to_bytes()
+        );
+        associated::<_, ModifyOverrideResponse>(&modify);
+        let delete = DeleteOverrideRequest::new(override_id.clone(), true);
+        assert_eq!(
+            delete.to_bytes(),
+            delete_override(&override_id, true).to_bytes()
+        );
+        associated::<_, DeleteOverrideResponse>(&delete);
     }
 
     #[test]
