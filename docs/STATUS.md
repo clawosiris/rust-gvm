@@ -22,9 +22,18 @@ contract before family-by-family migration. See
 The first focused Phase 2 batch, tracked by
 [`#539`](https://github.com/greenbone-hive/rust-gvm/issues/539), migrated the
 standard scan-task list/get/create/clone/modify/delete/start/stop/resume
-lifecycle to the same typed execution contract. It intentionally leaves import,
-agent-group, OCI/container-image, web-application, move, and audit task shapes
-for later focused batches.
+lifecycle to the same typed execution contract.
+
+The deferred task-variant Phase 2 batch, tracked by
+[`#553`](https://github.com/greenbone-hive/rust-gvm/issues/553), completes that
+task-family boundary with semantic requests for import/container, agent-group,
+OCI/container-image, web-application, and move operations plus the complete
+audit-scoped lifecycle. Each specialized request delegates to its existing
+builder, including compatibility aliases, and the typed facade delegates to
+generic execution without changing wire bytes or response models. Agent-group,
+OCI/container-image, and web-application task requests preserve their GMP 22.8
+semantic gate before the shared `create_task` wire command can be sent. Raw
+builder calls receive the same shape-based pre-send protection.
 
 The credential-focused Phase 2 batch, tracked by
 [`#544`](https://github.com/greenbone-hive/rust-gvm/issues/544), migrates the

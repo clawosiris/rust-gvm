@@ -266,6 +266,22 @@ mod tests {
     }
 
     #[test]
+    fn specialized_task_semantic_aliases_require_next() {
+        for command in [
+            "create_agent_group_task",
+            "create_oci_image_target_task",
+            "create_web_application_task",
+        ] {
+            assert!(!command_supported(command, GmpVersion(22, 7)));
+            assert!(command_supported(command, GmpVersion(22, 8)));
+            assert_eq!(
+                minimum_version_for_command(command),
+                Some(GmpVersion(22, 8))
+            );
+        }
+    }
+
+    #[test]
     fn help_discovered_command_is_not_proven_by_version() {
         assert_eq!(
             minimum_version_for_command("export_scan_report"),

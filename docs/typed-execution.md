@@ -123,6 +123,30 @@ not need Serde derives. A request whose encoding genuinely differs by GMP
 version must make that distinction explicit in the GMP layer; transport code is
 not the place for command-specific branching.
 
+## Specialized task variants
+
+Task variants that share an XML root still use distinct semantic Rust values.
+For example, standard scans, imports, agent-group scans, OCI/container-image
+scans, web-application scans, and audits all reuse `<create_task>`, but each has
+a request type whose fields match that operation. Compatibility aliases such as
+container/import and container-image/OCI remain separately named while
+delegating to the same established builders.
+
+Agent-group, OCI/container-image, and web-application task requests declare
+their GMP Next semantic capability even though the wire root is the baseline
+`create_task` command. Generic execution therefore rejects them before sending
+on GMP 22.7 and earlier, preserving the existing versioned-client boundary.
+The client also recognizes these shapes when their existing raw builders are
+passed to `send` or `call`, so the compatibility escape hatch cannot bypass the
+same gate. Import/container and move requests retain their established baseline
+behavior.
+
+Audit list, detail, create, clone, modify, delete, start, stop, and resume
+requests likewise remain audit-scoped types even where their wire command is a
+task command. This keeps compile-time intent explicit without duplicating XML
+encoding or changing server behavior. Fallible audit modification validates
+observer updates in its constructor before execution.
+
 ## Credential stores and semantic aliases
 
 Credential stores are available from GMP 22.8. Their list, detail,

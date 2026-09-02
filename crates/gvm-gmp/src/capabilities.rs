@@ -270,7 +270,10 @@ pub fn minimum_version_for_command(name: &str) -> Option<GmpVersion> {
     match name {
         // Semantic aliases distinguish newer helper shapes that reuse baseline
         // wire command names.
-        "create_credential_store_credential"
+        "create_agent_group_task"
+        | "create_credential_store_credential"
+        | "create_oci_image_target_task"
+        | "create_web_application_task"
         | "get_report_export"
         | "modify_credential_store_credential" => Some(GmpVersion(22, 8)),
         _ => command_capability(name).and_then(|capability| capability.min_version),
