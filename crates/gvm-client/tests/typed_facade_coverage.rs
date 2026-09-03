@@ -5,7 +5,9 @@
 #![cfg(feature = "unix-socket-tests")]
 
 use gvm_client::{
-    ExportScanReportOpts, GetOciImageTargetsOpts, GetReportExportOpts, GetWebApplicationTargetsOpts,
+    CreateOciImageTargetOpts, CreateWebApplicationTargetOpts, ExportScanReportOpts,
+    GetOciImageTargetsOpts, GetReportExportOpts, GetWebApplicationTargetsOpts,
+    ModifyOciImageTargetOpts, ModifyWebApplicationTargetOpts,
 };
 use gvm_client::{GmpClient, GvmError};
 use gvm_connection::UnixSocketConnection;
@@ -39,7 +41,9 @@ use gvm_gmp::commands::scanners::{
 use gvm_gmp::commands::schedules::{GetSchedulesOpts, ScheduleOpts};
 use gvm_gmp::commands::secinfo::{GenericInfoType, GetInfoListOpts, GetSecInfoOpts};
 use gvm_gmp::commands::tags::{GetTagsOpts, TagOpts};
-use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest, ModifyTargetOpts};
+use gvm_gmp::commands::targets::{
+    CloneTargetRequest, GetTargetsOpts, GetTargetsRequest, ModifyTargetOpts,
+};
 use gvm_gmp::commands::tasks::{
     create_agent_group_task, create_container_image_task, create_oci_image_target_task,
     create_web_application_task, CloneTaskRequest, CreateAgentGroupTaskOpts,
@@ -294,6 +298,45 @@ const NVT_SECINFO_OVERRIDES: &[(&str, &str)] = &[
     (
         "get_info",
         r#"<get_info_response status="200" status_text="OK"><cert_bund_adv id="CB-1"><name>CERT</name></cert_bund_adv><cpe id="cpe:/a:example"><name>CPE</name></cpe><cve id="CVE-2026-0001"><name>CVE</name></cve><dfn_cert_adv id="DFN-1"><name>DFN</name></dfn_cert_adv><nvt oid="1.3.6.1"><name>NVT</name></nvt><ovaldef id="oval:example:def:1"><name>OVAL</name></ovaldef><os id="os-1"><name>OS</name></os><vuln id="vuln-1"><name>Vulnerability</name></vuln></get_info_response>"#,
+    ),
+];
+
+const ALTERNATE_TARGET_OVERRIDES: &[(&str, &str)] = &[
+    (
+        "create_target",
+        r#"<create_target_response status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111"/>"#,
+    ),
+    (
+        "create_oci_image_target",
+        r#"<create_oci_image_target_response status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111"/>"#,
+    ),
+    (
+        "get_oci_image_targets",
+        r#"<get_oci_image_targets_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "modify_oci_image_target",
+        r#"<modify_oci_image_target_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "delete_oci_image_target",
+        r#"<delete_oci_image_target_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "create_web_application_target",
+        r#"<create_web_application_target_response status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111"/>"#,
+    ),
+    (
+        "get_web_application_targets",
+        r#"<get_web_application_targets_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "modify_web_application_target",
+        r#"<modify_web_application_target_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "delete_web_application_target",
+        r#"<delete_web_application_target_response status="200" status_text="OK"/>"#,
     ),
 ];
 
@@ -556,6 +599,110 @@ async fn nvt_and_secinfo_queries_execute_through_typed_facade() {
             "unexpected facade inventory for {command}"
         );
     }
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn alternate_target_requests_execute_through_typed_facade() {
+    let Some(server) = fixture_server(MockVersion::V22_8, ALTERNATE_TARGET_OVERRIDES).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let target_id = id(CREATED_ID);
+
+    assert_create_success!(client.execute(CloneTargetRequest::new(target_id.clone())));
+
+    assert_create_success!(client.create_oci_image_target_parsed(
+        "oci",
+        &["registry.example/image:latest".into()],
+        CreateOciImageTargetOpts::default()
+    ));
+    assert_create_success!(client.clone_oci_image_target_parsed(&target_id));
+    assert_typed_success!(client.get_oci_image_target_parsed(&target_id, Some(true)));
+    assert_typed_success!(client.get_oci_image_targets_parsed(GetOciImageTargetsOpts::default()));
+    assert_typed_success!(
+        client.modify_oci_image_target_parsed(&target_id, ModifyOciImageTargetOpts::default())
+    );
+    assert_typed_success!(client.delete_oci_image_target_parsed(&target_id, false));
+
+    assert_create_success!(client.create_web_application_target_parsed(
+        "web",
+        &["https://example.com".into()],
+        CreateWebApplicationTargetOpts::default()
+    ));
+    assert_create_success!(client.clone_web_application_target_parsed(&target_id));
+    assert_typed_success!(client.get_web_application_target_parsed(&target_id, Some(true)));
+    assert_typed_success!(
+        client.get_web_application_targets_parsed(GetWebApplicationTargetsOpts::default())
+    );
+    assert_typed_success!(client.modify_web_application_target_parsed(
+        &target_id,
+        ModifyWebApplicationTargetOpts::default()
+    ));
+    assert_typed_success!(client.delete_web_application_target_parsed(&target_id, false));
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 13);
+    for (command, expected_count) in [
+        ("create_target", 1),
+        ("create_oci_image_target", 2),
+        ("get_oci_image_targets", 2),
+        ("modify_oci_image_target", 1),
+        ("delete_oci_image_target", 1),
+        ("create_web_application_target", 2),
+        ("get_web_application_targets", 2),
+        ("modify_web_application_target", 1),
+        ("delete_web_application_target", 1),
+    ] {
+        assert_eq!(
+            history
+                .iter()
+                .filter(|record| record.command_name() == command)
+                .count(),
+            expected_count,
+            "unexpected semantic inventory for {command}"
+        );
+    }
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn alternate_target_facades_preserve_status_and_parse_context() {
+    let Some(server) = fixture_server(
+        MockVersion::V22_8,
+        &[
+            (
+                "get_oci_image_targets",
+                r#"<get_oci_image_targets_response status="503" status_text="registry unavailable"/>"#,
+            ),
+            (
+                "create_web_application_target",
+                r#"<create_web_application_target_response status="201" status_text="OK"/>"#,
+            ),
+        ],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+
+    assert_server_error!(
+        client.get_oci_image_target_parsed(&id("oci-1"), None),
+        503,
+        "registry unavailable"
+    );
+    let parse_error = client
+        .clone_web_application_target_parsed(&id("web-1"))
+        .await
+        .expect_err("missing cloned target id should fail");
+    assert!(matches!(
+        parse_error,
+        GvmError::Parse(ParseError::MissingElement(field)) if field == "id"
+    ));
 
     server.shutdown().await;
 }
@@ -2510,6 +2657,30 @@ async fn distinct_registry_and_semantic_version_gates_fail_before_transport_send
             version: GmpVersion(22, 7),
             required: "22.8",
         } if command == "get_oci_image_targets"
+    ));
+    let oci_clone_error = v227_client
+        .clone_oci_image_target_parsed(&id("oci-1"))
+        .await
+        .expect_err("22.8 OCI-image-target clone gate should reject 22.7");
+    assert!(matches!(
+        oci_clone_error,
+        GvmError::UnsupportedCommand {
+            command,
+            version: GmpVersion(22, 7),
+            required: "22.8",
+        } if command == "create_oci_image_target"
+    ));
+    let web_clone_error = v227_client
+        .clone_web_application_target_parsed(&id("web-1"))
+        .await
+        .expect_err("22.8 web-application-target clone gate should reject 22.7");
+    assert!(matches!(
+        web_clone_error,
+        GvmError::UnsupportedCommand {
+            command,
+            version: GmpVersion(22, 7),
+            required: "22.8",
+        } if command == "create_web_application_target"
     ));
     assert!(v227_server.command_history().is_empty());
     v227_server.shutdown().await;

@@ -8,7 +8,12 @@ use gvm_protocol::{Request, XmlCommand};
 use crate::common::{
     add_filter_attrs, add_optional_id_element, add_text_element, bool_str, set_optional_bool_attr,
 };
+use crate::responses::{
+    CreateOciImageTargetResponse, DeleteOciImageTargetResponse, GetOciImageTargetsResponse,
+    ModifyOciImageTargetResponse,
+};
 use crate::types::EntityId;
+use crate::GmpRequest;
 
 /// Optional fields for `create_oci_image_target` requests.
 #[derive(Debug, Clone, Default)]
@@ -43,6 +48,174 @@ pub struct ModifyOciImageTargetOpts {
     pub image_references: Vec<String>,
     /// Optional credential used for the target.
     pub credential_id: Option<EntityId>,
+}
+
+/// Semantic request for cloning an OCI image target.
+#[derive(Debug, Clone)]
+pub struct CloneOciImageTargetRequest {
+    oci_image_target_id: EntityId,
+}
+
+impl CloneOciImageTargetRequest {
+    /// Create an OCI-image-target clone request.
+    #[must_use]
+    pub fn new(oci_image_target_id: EntityId) -> Self {
+        Self {
+            oci_image_target_id,
+        }
+    }
+}
+
+impl Request for CloneOciImageTargetRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        clone_oci_image_target(&self.oci_image_target_id).to_bytes()
+    }
+}
+
+impl GmpRequest for CloneOciImageTargetRequest {
+    type Response = CreateOciImageTargetResponse;
+}
+
+/// Semantic request for creating an OCI image target.
+#[derive(Debug, Clone)]
+pub struct CreateOciImageTargetRequest {
+    name: String,
+    image_references: Vec<String>,
+    opts: CreateOciImageTargetOpts,
+}
+
+impl CreateOciImageTargetRequest {
+    /// Create an OCI-image-target creation request.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        image_references: Vec<String>,
+        opts: CreateOciImageTargetOpts,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            image_references,
+            opts,
+        }
+    }
+}
+
+impl Request for CreateOciImageTargetRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_oci_image_target(&self.name, &self.image_references, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateOciImageTargetRequest {
+    type Response = CreateOciImageTargetResponse;
+}
+
+/// Semantic request for listing OCI image targets.
+#[derive(Debug, Clone, Default)]
+pub struct GetOciImageTargetsRequest {
+    opts: GetOciImageTargetsOpts,
+}
+
+impl GetOciImageTargetsRequest {
+    /// Create an OCI-image-target list request.
+    #[must_use]
+    pub fn new(opts: GetOciImageTargetsOpts) -> Self {
+        Self { opts }
+    }
+}
+
+impl Request for GetOciImageTargetsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_oci_image_targets(self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetOciImageTargetsRequest {
+    type Response = GetOciImageTargetsResponse;
+}
+
+/// Semantic request for one detailed OCI image target.
+#[derive(Debug, Clone)]
+pub struct GetOciImageTargetRequest {
+    oci_image_target_id: EntityId,
+    tasks: Option<bool>,
+}
+
+impl GetOciImageTargetRequest {
+    /// Create a detailed OCI-image-target request.
+    #[must_use]
+    pub fn new(oci_image_target_id: EntityId, tasks: Option<bool>) -> Self {
+        Self {
+            oci_image_target_id,
+            tasks,
+        }
+    }
+}
+
+impl Request for GetOciImageTargetRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_oci_image_target(&self.oci_image_target_id, self.tasks).to_bytes()
+    }
+}
+
+impl GmpRequest for GetOciImageTargetRequest {
+    type Response = GetOciImageTargetsResponse;
+}
+
+/// Semantic request for modifying an OCI image target.
+#[derive(Debug, Clone)]
+pub struct ModifyOciImageTargetRequest {
+    oci_image_target_id: EntityId,
+    opts: ModifyOciImageTargetOpts,
+}
+
+impl ModifyOciImageTargetRequest {
+    /// Create an OCI-image-target modification request.
+    #[must_use]
+    pub fn new(oci_image_target_id: EntityId, opts: ModifyOciImageTargetOpts) -> Self {
+        Self {
+            oci_image_target_id,
+            opts,
+        }
+    }
+}
+
+impl Request for ModifyOciImageTargetRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_oci_image_target(&self.oci_image_target_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyOciImageTargetRequest {
+    type Response = ModifyOciImageTargetResponse;
+}
+
+/// Semantic request for deleting an OCI image target.
+#[derive(Debug, Clone)]
+pub struct DeleteOciImageTargetRequest {
+    oci_image_target_id: EntityId,
+    ultimate: bool,
+}
+
+impl DeleteOciImageTargetRequest {
+    /// Create an OCI-image-target deletion request.
+    #[must_use]
+    pub fn new(oci_image_target_id: EntityId, ultimate: bool) -> Self {
+        Self {
+            oci_image_target_id,
+            ultimate,
+        }
+    }
+}
+
+impl Request for DeleteOciImageTargetRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_oci_image_target(&self.oci_image_target_id, self.ultimate).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteOciImageTargetRequest {
+    type Response = DeleteOciImageTargetResponse;
 }
 
 /// Build a clone request for an existing OCI image target.
@@ -182,5 +355,69 @@ mod tests {
             xml(delete_oci_image_target(&id("target-1"), true)),
             "<delete_oci_image_target oci_image_target_id=\"target-1\" ultimate=\"1\"/>"
         );
+    }
+
+    #[test]
+    fn semantic_requests_preserve_builder_bytes_and_response_associations() {
+        fn assert_response<R: GmpRequest<Response = T>, T: crate::GmpResponse>(_: &R) {}
+
+        let target_id = id("target-1");
+        let request = CloneOciImageTargetRequest::new(target_id.clone());
+        assert_eq!(
+            request.to_bytes(),
+            clone_oci_image_target(&target_id).to_bytes()
+        );
+        assert_response::<_, CreateOciImageTargetResponse>(&request);
+
+        let create_opts = CreateOciImageTargetOpts {
+            comment: Some("note".into()),
+            credential_id: Some(id("cred-1")),
+        };
+        let image_references = vec!["registry.example/image:1".into()];
+        let request =
+            CreateOciImageTargetRequest::new("oci", image_references.clone(), create_opts.clone());
+        assert_eq!(
+            request.to_bytes(),
+            create_oci_image_target("oci", &image_references, create_opts).to_bytes()
+        );
+        assert_response::<_, CreateOciImageTargetResponse>(&request);
+
+        let get_opts = GetOciImageTargetsOpts {
+            filter_string: Some("name=oci".into()),
+            tasks: Some(true),
+            ..Default::default()
+        };
+        let request = GetOciImageTargetsRequest::new(get_opts.clone());
+        assert_eq!(
+            request.to_bytes(),
+            get_oci_image_targets(get_opts).to_bytes()
+        );
+        assert_response::<_, GetOciImageTargetsResponse>(&request);
+
+        let request = GetOciImageTargetRequest::new(target_id.clone(), Some(false));
+        assert_eq!(
+            request.to_bytes(),
+            get_oci_image_target(&target_id, Some(false)).to_bytes()
+        );
+        assert_response::<_, GetOciImageTargetsResponse>(&request);
+
+        let modify_opts = ModifyOciImageTargetOpts {
+            name: Some("updated".into()),
+            image_references: vec!["registry.example/image:latest".into()],
+            ..Default::default()
+        };
+        let request = ModifyOciImageTargetRequest::new(target_id.clone(), modify_opts.clone());
+        assert_eq!(
+            request.to_bytes(),
+            modify_oci_image_target(&target_id, modify_opts).to_bytes()
+        );
+        assert_response::<_, ModifyOciImageTargetResponse>(&request);
+
+        let request = DeleteOciImageTargetRequest::new(target_id.clone(), true);
+        assert_eq!(
+            request.to_bytes(),
+            delete_oci_image_target(&target_id, true).to_bytes()
+        );
+        assert_response::<_, DeleteOciImageTargetResponse>(&request);
     }
 }

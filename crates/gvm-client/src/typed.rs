@@ -63,9 +63,9 @@ use gvm_gmp::commands::nvts::{
     GetScanConfigNvtsRequest,
 };
 use gvm_gmp::commands::oci_image_targets::{
-    clone_oci_image_target, create_oci_image_target, delete_oci_image_target, get_oci_image_target,
-    get_oci_image_targets, modify_oci_image_target, CreateOciImageTargetOpts,
-    GetOciImageTargetsOpts, ModifyOciImageTargetOpts,
+    CloneOciImageTargetRequest, CreateOciImageTargetOpts, CreateOciImageTargetRequest,
+    DeleteOciImageTargetRequest, GetOciImageTargetRequest, GetOciImageTargetsOpts,
+    GetOciImageTargetsRequest, ModifyOciImageTargetOpts, ModifyOciImageTargetRequest,
 };
 use gvm_gmp::commands::operating_systems::{
     get_operating_system, get_operating_systems, GetOperatingSystemsOpts,
@@ -164,9 +164,10 @@ use gvm_gmp::commands::users::{
 };
 use gvm_gmp::commands::version::GetVersionRequest;
 use gvm_gmp::commands::web_application_targets::{
-    clone_web_application_target, create_web_application_target, delete_web_application_target,
-    get_web_application_target, get_web_application_targets, modify_web_application_target,
-    CreateWebApplicationTargetOpts, GetWebApplicationTargetsOpts, ModifyWebApplicationTargetOpts,
+    CloneWebApplicationTargetRequest, CreateWebApplicationTargetOpts,
+    CreateWebApplicationTargetRequest, DeleteWebApplicationTargetRequest,
+    GetWebApplicationTargetRequest, GetWebApplicationTargetsOpts, GetWebApplicationTargetsRequest,
+    ModifyWebApplicationTargetOpts, ModifyWebApplicationTargetRequest,
 };
 use gvm_gmp::responses::{
     ActionResponse, AuthenticateResponse, CreateAlertResponse, CreateAssetResponse,
@@ -314,10 +315,12 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         image_references: &[String],
         opts: CreateOciImageTargetOpts,
     ) -> Result<CreateOciImageTargetResponse, GvmError> {
-        let response = self
-            .send(create_oci_image_target(name, image_references, opts))
-            .await?;
-        CreateOciImageTargetResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CreateOciImageTargetRequest::new(
+            name,
+            image_references.to_vec(),
+            opts,
+        ))
+        .await
     }
 
     /// Send a `clone_oci_image_target` request and return a typed
@@ -329,10 +332,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         oci_image_target_id: &EntityId,
     ) -> Result<CreateOciImageTargetResponse, GvmError> {
-        let response = self
-            .send(clone_oci_image_target(oci_image_target_id))
-            .await?;
-        CreateOciImageTargetResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CloneOciImageTargetRequest::new(oci_image_target_id.clone()))
+            .await
     }
 
     /// Send a `get_oci_image_targets` request for one target and return a typed
@@ -345,10 +346,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         oci_image_target_id: &EntityId,
         tasks: Option<bool>,
     ) -> Result<GetOciImageTargetsResponse, GvmError> {
-        let response = self
-            .send(get_oci_image_target(oci_image_target_id, tasks))
-            .await?;
-        GetOciImageTargetsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetOciImageTargetRequest::new(
+            oci_image_target_id.clone(),
+            tasks,
+        ))
+        .await
     }
 
     /// Send a `get_oci_image_targets` request and return a typed
@@ -360,8 +362,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         opts: GetOciImageTargetsOpts,
     ) -> Result<GetOciImageTargetsResponse, GvmError> {
-        let response = self.send(get_oci_image_targets(opts)).await?;
-        GetOciImageTargetsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetOciImageTargetsRequest::new(opts)).await
     }
 
     /// Send a `modify_oci_image_target` request and return a typed
@@ -374,10 +375,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         oci_image_target_id: &EntityId,
         opts: ModifyOciImageTargetOpts,
     ) -> Result<ModifyOciImageTargetResponse, GvmError> {
-        let response = self
-            .send(modify_oci_image_target(oci_image_target_id, opts))
-            .await?;
-        ModifyOciImageTargetResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyOciImageTargetRequest::new(
+            oci_image_target_id.clone(),
+            opts,
+        ))
+        .await
     }
 
     /// Send a `delete_oci_image_target` request and return a typed
@@ -390,10 +392,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         oci_image_target_id: &EntityId,
         ultimate: bool,
     ) -> Result<DeleteOciImageTargetResponse, GvmError> {
-        let response = self
-            .send(delete_oci_image_target(oci_image_target_id, ultimate))
-            .await?;
-        DeleteOciImageTargetResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(DeleteOciImageTargetRequest::new(
+            oci_image_target_id.clone(),
+            ultimate,
+        ))
+        .await
     }
 
     /// Send a `create_web_application_target` request and return a typed
@@ -407,10 +410,12 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         urls: &[String],
         opts: CreateWebApplicationTargetOpts,
     ) -> Result<CreateWebApplicationTargetResponse, GvmError> {
-        let response = self
-            .send(create_web_application_target(name, urls, opts))
-            .await?;
-        CreateWebApplicationTargetResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CreateWebApplicationTargetRequest::new(
+            name,
+            urls.to_vec(),
+            opts,
+        ))
+        .await
     }
 
     /// Send a `clone_web_application_target` request and return a typed
@@ -422,10 +427,10 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         web_application_target_id: &EntityId,
     ) -> Result<CreateWebApplicationTargetResponse, GvmError> {
-        let response = self
-            .send(clone_web_application_target(web_application_target_id))
-            .await?;
-        CreateWebApplicationTargetResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CloneWebApplicationTargetRequest::new(
+            web_application_target_id.clone(),
+        ))
+        .await
     }
 
     /// Send a `get_web_application_targets` request for one target and return a
@@ -438,10 +443,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         web_application_target_id: &EntityId,
         tasks: Option<bool>,
     ) -> Result<GetWebApplicationTargetsResponse, GvmError> {
-        let response = self
-            .send(get_web_application_target(web_application_target_id, tasks))
-            .await?;
-        GetWebApplicationTargetsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetWebApplicationTargetRequest::new(
+            web_application_target_id.clone(),
+            tasks,
+        ))
+        .await
     }
 
     /// Send a `get_web_application_targets` request and return a typed
@@ -453,8 +459,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         opts: GetWebApplicationTargetsOpts,
     ) -> Result<GetWebApplicationTargetsResponse, GvmError> {
-        let response = self.send(get_web_application_targets(opts)).await?;
-        GetWebApplicationTargetsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetWebApplicationTargetsRequest::new(opts))
+            .await
     }
 
     /// Send a `modify_web_application_target` request and return a typed
@@ -467,13 +473,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         web_application_target_id: &EntityId,
         opts: ModifyWebApplicationTargetOpts,
     ) -> Result<ModifyWebApplicationTargetResponse, GvmError> {
-        let response = self
-            .send(modify_web_application_target(
-                web_application_target_id,
-                opts,
-            ))
-            .await?;
-        ModifyWebApplicationTargetResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyWebApplicationTargetRequest::new(
+            web_application_target_id.clone(),
+            opts,
+        ))
+        .await
     }
 
     /// Send a `delete_web_application_target` request and return a typed
@@ -486,13 +490,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         web_application_target_id: &EntityId,
         ultimate: bool,
     ) -> Result<DeleteWebApplicationTargetResponse, GvmError> {
-        let response = self
-            .send(delete_web_application_target(
-                web_application_target_id,
-                ultimate,
-            ))
-            .await?;
-        DeleteWebApplicationTargetResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(DeleteWebApplicationTargetRequest::new(
+            web_application_target_id.clone(),
+            ultimate,
+        ))
+        .await
     }
 
     // ── Scan Configs ──────────────────────────────────────────────────────────
