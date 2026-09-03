@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-09-02
+Last updated: 2026-09-03
 
 ## Support Direction
 
@@ -104,6 +104,17 @@ lifecycles. Each semantic request delegates to its existing builder, preserving
 user authentication, role, host-access, and relationship-update shapes while
 the facade methods delegate to generic typed execution. Existing raw builders,
 response models, and compatibility APIs remain supported.
+
+The NVT-and-SecInfo Phase 2 batch, tracked by
+[`#563`](https://github.com/greenbone-hive/rust-gvm/issues/563), migrates all 19
+public query builders to semantic typed execution. Global and scan-config NVT
+list/detail requests, NVT preferences, and family discovery preserve their
+distinct intent while delegating to the established builders. Generic
+`get_info` list/detail requests use a generic response model for all supported
+resource kinds, while CPE, CVE, advisory, operating-system, and vulnerability
+requests retain their specialized response codecs. Existing facade methods now
+delegate to `execute`; explicit SecInfo operating-system and vulnerability
+helper names avoid changing the distinct asset and legacy `get_vulns` APIs.
 
 The irregular-report Phase 3 batch, tracked by
 [`#546`](https://github.com/greenbone-hive/rust-gvm/issues/546), migrates report

@@ -9,6 +9,7 @@ use crate::responses::common::{
     count_info, optional_u32, parse_document, parse_score, status_from_response, CountInfo,
     ParseError,
 };
+use crate::{GmpResponse, GmpVersion};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -105,6 +106,12 @@ impl GetNvtsResponse {
     }
 }
 
+impl GmpResponse for GetNvtsResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 impl GetNvtFamiliesResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
@@ -127,6 +134,12 @@ impl GetNvtFamiliesResponse {
             items,
             counts,
         })
+    }
+}
+
+impl GmpResponse for GetNvtFamiliesResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 

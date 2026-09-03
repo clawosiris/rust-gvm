@@ -3,9 +3,14 @@
 
 //! SecInfo command builders.
 
-use gvm_protocol::XmlCommand;
+use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::set_optional_bool_attr;
+use crate::responses::{
+    GetCertBundAdvisoriesResponse, GetCpesResponse, GetCvesResponse, GetDfnCertAdvisoriesResponse,
+    GetInfoResponse, GetOperatingSystemsResponse, GetVulnerabilitiesResponse,
+};
+use crate::GmpRequest;
 
 /// Typed `SecInfo` resource kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -126,6 +131,178 @@ impl From<GetSecInfoOpts> for GetInfoListOpts {
     }
 }
 
+/// Semantic request for retrieving one generic security-information entry.
+#[derive(Debug, Clone)]
+pub struct GetInfoRequest {
+    info_id: String,
+    info_type: GenericInfoType,
+}
+
+impl GetInfoRequest {
+    /// Create a generic single-entry `get_info` request.
+    #[must_use]
+    pub fn new(info_id: impl Into<String>, info_type: GenericInfoType) -> Self {
+        Self {
+            info_id: info_id.into(),
+            info_type,
+        }
+    }
+}
+
+impl Request for GetInfoRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_info(&self.info_id, self.info_type).to_bytes()
+    }
+}
+
+impl GmpRequest for GetInfoRequest {
+    type Response = GetInfoResponse;
+}
+
+/// Semantic request for listing generic security-information entries.
+#[derive(Debug, Clone)]
+pub struct GetInfoListRequest {
+    info_type: GenericInfoType,
+    opts: GetInfoListOpts,
+}
+
+impl GetInfoListRequest {
+    /// Create a generic `get_info` list request.
+    #[must_use]
+    pub fn new(info_type: GenericInfoType, opts: GetInfoListOpts) -> Self {
+        Self { info_type, opts }
+    }
+}
+
+impl Request for GetInfoListRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_info_list(self.info_type, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetInfoListRequest {
+    type Response = GetInfoResponse;
+}
+
+macro_rules! secinfo_list_request {
+    ($name:ident, $builder:ident, $response:ty, $doc:literal) => {
+        #[doc = $doc]
+        #[derive(Debug, Clone)]
+        pub struct $name {
+            opts: GetSecInfoOpts,
+        }
+
+        impl $name {
+            /// Create this `SecInfo` list request.
+            #[must_use]
+            pub fn new(opts: GetSecInfoOpts) -> Self {
+                Self { opts }
+            }
+        }
+
+        impl Request for $name {
+            fn to_bytes(&self) -> Vec<u8> {
+                $builder(self.opts.clone()).to_bytes()
+            }
+        }
+
+        impl GmpRequest for $name {
+            type Response = $response;
+        }
+    };
+}
+
+macro_rules! secinfo_detail_request {
+    ($name:ident, $builder:ident, $response:ty, $doc:literal) => {
+        #[doc = $doc]
+        #[derive(Debug, Clone)]
+        pub struct $name {
+            info_id: String,
+        }
+
+        impl $name {
+            /// Create this single-entry `SecInfo` request.
+            #[must_use]
+            pub fn new(info_id: impl Into<String>) -> Self {
+                Self {
+                    info_id: info_id.into(),
+                }
+            }
+        }
+
+        impl Request for $name {
+            fn to_bytes(&self) -> Vec<u8> {
+                $builder(&self.info_id).to_bytes()
+            }
+        }
+
+        impl GmpRequest for $name {
+            type Response = $response;
+        }
+    };
+}
+
+secinfo_list_request!(
+    GetCpesRequest,
+    get_cpes,
+    GetCpesResponse,
+    "Semantic request for listing CPE entries."
+);
+secinfo_detail_request!(
+    GetCpeRequest,
+    get_cpe,
+    GetCpesResponse,
+    "Semantic request for retrieving one CPE entry."
+);
+secinfo_list_request!(
+    GetCvesRequest,
+    get_cves,
+    GetCvesResponse,
+    "Semantic request for listing CVE entries."
+);
+secinfo_detail_request!(
+    GetCveRequest,
+    get_cve,
+    GetCvesResponse,
+    "Semantic request for retrieving one CVE entry."
+);
+secinfo_list_request!(
+    GetCertBundAdvisoriesRequest,
+    get_cert_bund_advisories,
+    GetCertBundAdvisoriesResponse,
+    "Semantic request for listing CERT-Bund advisories."
+);
+secinfo_detail_request!(
+    GetCertBundAdvisoryRequest,
+    get_cert_bund_advisory,
+    GetCertBundAdvisoriesResponse,
+    "Semantic request for retrieving one CERT-Bund advisory."
+);
+secinfo_list_request!(
+    GetDfnCertAdvisoriesRequest,
+    get_dfn_cert_advisories,
+    GetDfnCertAdvisoriesResponse,
+    "Semantic request for listing DFN-CERT advisories."
+);
+secinfo_detail_request!(
+    GetDfnCertAdvisoryRequest,
+    get_dfn_cert_advisory,
+    GetDfnCertAdvisoriesResponse,
+    "Semantic request for retrieving one DFN-CERT advisory."
+);
+secinfo_list_request!(
+    GetOperatingSystemsRequest,
+    get_operating_systems,
+    GetOperatingSystemsResponse,
+    "Semantic request for listing `SecInfo` operating-system entries."
+);
+secinfo_list_request!(
+    GetVulnerabilitiesRequest,
+    get_vulnerabilities,
+    GetVulnerabilitiesResponse,
+    "Semantic request for listing `SecInfo` vulnerability entries."
+);
+
 fn build_get_info_list(info_type: GenericInfoType, opts: &GetInfoListOpts) -> XmlCommand {
     let mut cmd = XmlCommand::new("get_info");
     cmd.set_attribute("type", info_type.as_gmp_str());
@@ -220,12 +397,7 @@ pub fn get_vulnerabilities(opts: GetSecInfoOpts) -> XmlCommand {
 
 #[cfg(test)]
 mod tests {
-    use crate::commands::secinfo::{
-        get_cert_bund_advisories, get_cert_bund_advisory, get_cpe, get_cpes, get_cve, get_cves,
-        get_dfn_cert_advisories, get_dfn_cert_advisory, get_info, get_info_list,
-        get_operating_systems, get_vulnerabilities, GenericInfoType, GetInfoListOpts,
-        GetSecInfoOpts, InfoType,
-    };
+    use super::*;
     use crate::common::xml;
 
     #[test]
@@ -345,6 +517,89 @@ mod tests {
                 GetInfoListOpts::default()
             )),
             "<get_info type=\"OVALDEF\"/>"
+        );
+    }
+
+    #[test]
+    fn semantic_requests_preserve_builder_bytes_and_response_associations() {
+        fn assert_response<R: GmpRequest<Response = T>, T: crate::GmpResponse>(_: &R) {}
+
+        let list_opts = GetInfoListOpts {
+            filter: Some("severity>7".into()),
+            details: Some(true),
+            ..Default::default()
+        };
+        let request = GetInfoListRequest::new(GenericInfoType::Nvt, list_opts.clone());
+        assert_eq!(
+            request.to_bytes(),
+            get_info_list(GenericInfoType::Nvt, list_opts).to_bytes()
+        );
+        assert_response::<_, GetInfoResponse>(&request);
+
+        let request = GetInfoRequest::new("oval:example:def:1", GenericInfoType::Ovaldef);
+        assert_eq!(
+            request.to_bytes(),
+            get_info("oval:example:def:1", GenericInfoType::Ovaldef).to_bytes()
+        );
+        assert_response::<_, GetInfoResponse>(&request);
+
+        let opts = GetSecInfoOpts {
+            filter: Some("severity>7".into()),
+            filter_id: Some("filter-1".into()),
+            details: Some(true),
+        };
+
+        macro_rules! assert_list {
+            ($request:ident, $builder:ident, $response:ty) => {{
+                let request = $request::new(opts.clone());
+                assert_eq!(request.to_bytes(), $builder(opts.clone()).to_bytes());
+                assert_response::<_, $response>(&request);
+            }};
+        }
+
+        macro_rules! assert_detail {
+            ($request:ident, $builder:ident, $response:ty, $id:literal) => {{
+                let request = $request::new($id);
+                assert_eq!(request.to_bytes(), $builder($id).to_bytes());
+                assert_response::<_, $response>(&request);
+            }};
+        }
+
+        assert_list!(GetCpesRequest, get_cpes, GetCpesResponse);
+        assert_detail!(GetCpeRequest, get_cpe, GetCpesResponse, "cpe:/a:example");
+        assert_list!(GetCvesRequest, get_cves, GetCvesResponse);
+        assert_detail!(GetCveRequest, get_cve, GetCvesResponse, "CVE-2026-0001");
+        assert_list!(
+            GetCertBundAdvisoriesRequest,
+            get_cert_bund_advisories,
+            GetCertBundAdvisoriesResponse
+        );
+        assert_detail!(
+            GetCertBundAdvisoryRequest,
+            get_cert_bund_advisory,
+            GetCertBundAdvisoriesResponse,
+            "CB-K26-001"
+        );
+        assert_list!(
+            GetDfnCertAdvisoriesRequest,
+            get_dfn_cert_advisories,
+            GetDfnCertAdvisoriesResponse
+        );
+        assert_detail!(
+            GetDfnCertAdvisoryRequest,
+            get_dfn_cert_advisory,
+            GetDfnCertAdvisoriesResponse,
+            "DFN-2026-001"
+        );
+        assert_list!(
+            GetOperatingSystemsRequest,
+            get_operating_systems,
+            GetOperatingSystemsResponse
+        );
+        assert_list!(
+            GetVulnerabilitiesRequest,
+            get_vulnerabilities,
+            GetVulnerabilitiesResponse
         );
     }
 }
