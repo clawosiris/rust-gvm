@@ -258,6 +258,22 @@ SecInfo operating-system and vulnerability facades are named
 change the distinct `get_assets` and legacy `get_vulns` helper behavior. Raw
 builders and `send`/`call` remain available for callers that need complete XML.
 
+## Alternate target lifecycles
+
+The target command boundary includes a semantic `CloneTargetRequest` for the
+remaining standard target clone operation and complete list, detail, create,
+clone, modify, and delete request types for both OCI-image and web-application
+targets. Each request delegates to its existing builder, so filters, saved
+filter identifiers, trash and task flags, image/URL collections, credential
+relationships, ultimate deletion, and exact XML bytes remain unchanged.
+
+Standard target cloning retains the baseline `create_target` capability. The
+OCI-image and web-application request types keep their separate semantic intent
+and their existing GMP 22.8 command gates, including clone requests encoded by
+the respective creation command. All existing `_parsed` convenience methods
+for the two alternate-target families are thin `execute` wrappers. Raw builders
+and `send`/`call` remain available without introducing a second encoding path.
+
 ## Irregular report codecs and version policy
 
 The Phase 3 report family demonstrates that `GmpResponse` is a codec contract,

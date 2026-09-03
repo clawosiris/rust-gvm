@@ -306,6 +306,30 @@ impl GmpRequest for DeleteTargetRequest {
     type Response = DeleteTargetResponse;
 }
 
+/// Semantic request for cloning a target.
+#[derive(Debug, Clone)]
+pub struct CloneTargetRequest {
+    target_id: EntityId,
+}
+
+impl CloneTargetRequest {
+    /// Create a target-clone request.
+    #[must_use]
+    pub fn new(target_id: EntityId) -> Self {
+        Self { target_id }
+    }
+}
+
+impl Request for CloneTargetRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        clone_target(&self.target_id).to_bytes()
+    }
+}
+
+impl GmpRequest for CloneTargetRequest {
+    type Response = CreateTargetResponse;
+}
+
 /// Build a clone request for an existing target.
 #[must_use]
 pub fn clone_target(target_id: &EntityId) -> impl Request {
@@ -668,6 +692,8 @@ mod tests {
 
     #[test]
     fn semantic_target_requests_match_legacy_builder_bytes() {
+        fn assert_response<R: GmpRequest<Response = T>, T: crate::GmpResponse>(_: &R) {}
+
         let list_opts = GetTargetsOpts {
             filter_string: Some("name=production".into()),
             details: Some(true),
@@ -713,6 +739,10 @@ mod tests {
             DeleteTargetRequest::new(target_id.clone(), true).to_bytes(),
             delete_target(&target_id, true).to_bytes()
         );
+
+        let request = CloneTargetRequest::new(target_id.clone());
+        assert_eq!(request.to_bytes(), clone_target(&target_id).to_bytes());
+        assert_response::<_, CreateTargetResponse>(&request);
     }
 
     #[test]

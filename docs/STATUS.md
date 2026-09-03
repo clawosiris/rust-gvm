@@ -14,7 +14,7 @@ The `next` Technology Preview lane now includes the first statically associated
 typed-execution slice. `GmpRequest` binds a semantic request to one
 `GmpResponse`, and `GmpClient::execute` preserves existing command gates,
 redacted tracing, parsing, and compatibility APIs. Version/authentication,
-target list/get/create/modify/delete, and asynchronous report export prove the
+target list/get/create/clone/modify/delete, and asynchronous report export prove the
 contract before family-by-family migration. See
 [ADR 0001](adr/0001-typed-request-response-execution.md) and the
 [typed-execution guide](typed-execution.md).
@@ -115,6 +115,17 @@ resource kinds, while CPE, CVE, advisory, operating-system, and vulnerability
 requests retain their specialized response codecs. Existing facade methods now
 delegate to `execute`; explicit SecInfo operating-system and vulnerability
 helper names avoid changing the distinct asset and legacy `get_vulns` APIs.
+
+The alternate-target Phase 2 batch, tracked by
+[`#567`](https://github.com/greenbone-hive/rust-gvm/issues/567), completes the
+existing target command boundary with the remaining standard target clone plus
+all OCI-image and web-application target list/detail/create/clone/modify/delete
+operations. Each operation has a distinct semantic request and delegates to its
+established public builder, preserving filters, relationship fields, mutation
+behavior, and exact XML bytes. The OCI-image and web-application families
+retain their GMP 22.8 gates while standard target cloning remains baseline.
+All twelve existing `_parsed` facade helpers now delegate to `execute`;
+builders and raw/custom execution remain supported.
 
 The irregular-report Phase 3 batch, tracked by
 [`#546`](https://github.com/greenbone-hive/rust-gvm/issues/546), migrates report

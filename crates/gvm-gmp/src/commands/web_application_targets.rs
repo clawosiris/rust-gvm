@@ -8,7 +8,12 @@ use gvm_protocol::{Request, XmlCommand};
 use crate::common::{
     add_filter_attrs, add_optional_id_element, add_text_element, bool_str, set_optional_bool_attr,
 };
+use crate::responses::{
+    CreateWebApplicationTargetResponse, DeleteWebApplicationTargetResponse,
+    GetWebApplicationTargetsResponse, ModifyWebApplicationTargetResponse,
+};
 use crate::types::EntityId;
+use crate::GmpRequest;
 
 /// Optional fields for `create_web_application_target` requests.
 #[derive(Debug, Clone, Default)]
@@ -47,6 +52,174 @@ pub struct ModifyWebApplicationTargetOpts {
     pub exclude_urls: Vec<String>,
     /// Optional credential used for the target.
     pub credential_id: Option<EntityId>,
+}
+
+/// Semantic request for cloning a web application target.
+#[derive(Debug, Clone)]
+pub struct CloneWebApplicationTargetRequest {
+    web_application_target_id: EntityId,
+}
+
+impl CloneWebApplicationTargetRequest {
+    /// Create a web-application-target clone request.
+    #[must_use]
+    pub fn new(web_application_target_id: EntityId) -> Self {
+        Self {
+            web_application_target_id,
+        }
+    }
+}
+
+impl Request for CloneWebApplicationTargetRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        clone_web_application_target(&self.web_application_target_id).to_bytes()
+    }
+}
+
+impl GmpRequest for CloneWebApplicationTargetRequest {
+    type Response = CreateWebApplicationTargetResponse;
+}
+
+/// Semantic request for creating a web application target.
+#[derive(Debug, Clone)]
+pub struct CreateWebApplicationTargetRequest {
+    name: String,
+    urls: Vec<String>,
+    opts: CreateWebApplicationTargetOpts,
+}
+
+impl CreateWebApplicationTargetRequest {
+    /// Create a web-application-target creation request.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        urls: Vec<String>,
+        opts: CreateWebApplicationTargetOpts,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            urls,
+            opts,
+        }
+    }
+}
+
+impl Request for CreateWebApplicationTargetRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_web_application_target(&self.name, &self.urls, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateWebApplicationTargetRequest {
+    type Response = CreateWebApplicationTargetResponse;
+}
+
+/// Semantic request for listing web application targets.
+#[derive(Debug, Clone, Default)]
+pub struct GetWebApplicationTargetsRequest {
+    opts: GetWebApplicationTargetsOpts,
+}
+
+impl GetWebApplicationTargetsRequest {
+    /// Create a web-application-target list request.
+    #[must_use]
+    pub fn new(opts: GetWebApplicationTargetsOpts) -> Self {
+        Self { opts }
+    }
+}
+
+impl Request for GetWebApplicationTargetsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_web_application_targets(self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetWebApplicationTargetsRequest {
+    type Response = GetWebApplicationTargetsResponse;
+}
+
+/// Semantic request for one detailed web application target.
+#[derive(Debug, Clone)]
+pub struct GetWebApplicationTargetRequest {
+    web_application_target_id: EntityId,
+    tasks: Option<bool>,
+}
+
+impl GetWebApplicationTargetRequest {
+    /// Create a detailed web-application-target request.
+    #[must_use]
+    pub fn new(web_application_target_id: EntityId, tasks: Option<bool>) -> Self {
+        Self {
+            web_application_target_id,
+            tasks,
+        }
+    }
+}
+
+impl Request for GetWebApplicationTargetRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_web_application_target(&self.web_application_target_id, self.tasks).to_bytes()
+    }
+}
+
+impl GmpRequest for GetWebApplicationTargetRequest {
+    type Response = GetWebApplicationTargetsResponse;
+}
+
+/// Semantic request for modifying a web application target.
+#[derive(Debug, Clone)]
+pub struct ModifyWebApplicationTargetRequest {
+    web_application_target_id: EntityId,
+    opts: ModifyWebApplicationTargetOpts,
+}
+
+impl ModifyWebApplicationTargetRequest {
+    /// Create a web-application-target modification request.
+    #[must_use]
+    pub fn new(web_application_target_id: EntityId, opts: ModifyWebApplicationTargetOpts) -> Self {
+        Self {
+            web_application_target_id,
+            opts,
+        }
+    }
+}
+
+impl Request for ModifyWebApplicationTargetRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_web_application_target(&self.web_application_target_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyWebApplicationTargetRequest {
+    type Response = ModifyWebApplicationTargetResponse;
+}
+
+/// Semantic request for deleting a web application target.
+#[derive(Debug, Clone)]
+pub struct DeleteWebApplicationTargetRequest {
+    web_application_target_id: EntityId,
+    ultimate: bool,
+}
+
+impl DeleteWebApplicationTargetRequest {
+    /// Create a web-application-target deletion request.
+    #[must_use]
+    pub fn new(web_application_target_id: EntityId, ultimate: bool) -> Self {
+        Self {
+            web_application_target_id,
+            ultimate,
+        }
+    }
+}
+
+impl Request for DeleteWebApplicationTargetRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_web_application_target(&self.web_application_target_id, self.ultimate).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteWebApplicationTargetRequest {
+    type Response = DeleteWebApplicationTargetResponse;
 }
 
 /// Build a clone request for an existing web application target.
@@ -204,5 +377,72 @@ mod tests {
             xml(delete_web_application_target(&id("target-1"), true)),
             "<delete_web_application_target ultimate=\"1\" web_application_target_id=\"target-1\"/>"
         );
+    }
+
+    #[test]
+    fn semantic_requests_preserve_builder_bytes_and_response_associations() {
+        fn assert_response<R: GmpRequest<Response = T>, T: crate::GmpResponse>(_: &R) {}
+
+        let target_id = id("target-1");
+        let request = CloneWebApplicationTargetRequest::new(target_id.clone());
+        assert_eq!(
+            request.to_bytes(),
+            clone_web_application_target(&target_id).to_bytes()
+        );
+        assert_response::<_, CreateWebApplicationTargetResponse>(&request);
+
+        let create_opts = CreateWebApplicationTargetOpts {
+            comment: Some("note".into()),
+            exclude_urls: vec!["https://example.com/logout".into()],
+            credential_id: Some(id("cred-1")),
+        };
+        let urls = vec!["https://example.com".into()];
+        let request =
+            CreateWebApplicationTargetRequest::new("web", urls.clone(), create_opts.clone());
+        assert_eq!(
+            request.to_bytes(),
+            create_web_application_target("web", &urls, create_opts).to_bytes()
+        );
+        assert_response::<_, CreateWebApplicationTargetResponse>(&request);
+
+        let get_opts = GetWebApplicationTargetsOpts {
+            filter_string: Some("name=web".into()),
+            tasks: Some(true),
+            ..Default::default()
+        };
+        let request = GetWebApplicationTargetsRequest::new(get_opts.clone());
+        assert_eq!(
+            request.to_bytes(),
+            get_web_application_targets(get_opts).to_bytes()
+        );
+        assert_response::<_, GetWebApplicationTargetsResponse>(&request);
+
+        let request = GetWebApplicationTargetRequest::new(target_id.clone(), Some(false));
+        assert_eq!(
+            request.to_bytes(),
+            get_web_application_target(&target_id, Some(false)).to_bytes()
+        );
+        assert_response::<_, GetWebApplicationTargetsResponse>(&request);
+
+        let modify_opts = ModifyWebApplicationTargetOpts {
+            name: Some("updated".into()),
+            urls: vec!["https://example.com/app".into()],
+            exclude_urls: vec!["https://example.com/logout".into()],
+            ..Default::default()
+        };
+        let request =
+            ModifyWebApplicationTargetRequest::new(target_id.clone(), modify_opts.clone());
+        assert_eq!(
+            request.to_bytes(),
+            modify_web_application_target(&target_id, modify_opts).to_bytes()
+        );
+        assert_response::<_, ModifyWebApplicationTargetResponse>(&request);
+
+        let request = DeleteWebApplicationTargetRequest::new(target_id.clone(), true);
+        assert_eq!(
+            request.to_bytes(),
+            delete_web_application_target(&target_id, true).to_bytes()
+        );
+        assert_response::<_, DeleteWebApplicationTargetResponse>(&request);
     }
 }
