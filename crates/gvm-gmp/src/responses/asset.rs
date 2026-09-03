@@ -11,7 +11,7 @@ use crate::responses::common::{
     EntityMeta, ParseError, XmlNode,
 };
 use crate::responses::host::Host;
-use crate::EntityId;
+use crate::{EntityId, GmpResponse, GmpVersion};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -233,6 +233,12 @@ impl GetAssetsResponse {
     }
 }
 
+impl GmpResponse for GetAssetsResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 impl GetOperatingSystemAssetsResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
@@ -251,6 +257,12 @@ impl GetOperatingSystemAssetsResponse {
     }
 }
 
+impl GmpResponse for GetOperatingSystemAssetsResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 impl CreateAssetResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
@@ -265,6 +277,12 @@ impl CreateAssetResponse {
             status_text,
             id,
         })
+    }
+}
+
+impl GmpResponse for CreateAssetResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 

@@ -9,6 +9,7 @@ use crate::responses::common::{
     count_info, optional_u32, parse_document, parse_entity_meta, parse_entity_ref, parse_score,
     status_from_response, CountInfo, EntityMeta, NamedEntity, ParseError,
 };
+use crate::{GmpResponse, GmpVersion};
 
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -145,6 +146,12 @@ impl GetResultsResponse {
             items,
             counts: count_info(&root, "result_count")?,
         })
+    }
+}
+
+impl GmpResponse for GetResultsResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 

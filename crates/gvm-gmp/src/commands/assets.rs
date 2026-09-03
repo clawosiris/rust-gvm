@@ -6,7 +6,11 @@
 use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::{add_filter_attrs, set_optional_bool_attr};
+use crate::responses::{
+    CreateAssetResponse, DeleteAssetResponse, GetAssetsResponse, ModifyAssetResponse,
+};
 use crate::types::EntityId;
+use crate::GmpRequest;
 
 /// Typed GMP asset type values.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -114,6 +118,138 @@ pub struct DeleteAssetOpts {
     /// always applies its asset-specific deletion semantics, so this field is
     /// deliberately not serialized.
     pub ultimate: Option<bool>,
+}
+
+/// Semantic request for listing generic assets.
+#[derive(Debug, Clone)]
+pub struct GetAssetsRequest {
+    opts: GetAssetsOpts,
+}
+
+impl GetAssetsRequest {
+    /// Create a generic asset-list request.
+    #[must_use]
+    pub fn new(opts: GetAssetsOpts) -> Self {
+        Self { opts }
+    }
+}
+
+impl Request for GetAssetsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_assets(self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetAssetsRequest {
+    type Response = GetAssetsResponse;
+}
+
+/// Semantic request for retrieving one generic asset.
+#[derive(Debug, Clone)]
+pub struct GetAssetRequest {
+    asset_id: EntityId,
+    asset_type: AssetType,
+}
+
+impl GetAssetRequest {
+    /// Create a single-asset request.
+    #[must_use]
+    pub fn new(asset_id: EntityId, asset_type: AssetType) -> Self {
+        Self {
+            asset_id,
+            asset_type,
+        }
+    }
+}
+
+impl Request for GetAssetRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_assets(GetAssetsOpts {
+            asset_id: Some(self.asset_id.clone()),
+            type_: Some(self.asset_type.clone()),
+            details: Some(true),
+            ..Default::default()
+        })
+        .to_bytes()
+    }
+}
+
+impl GmpRequest for GetAssetRequest {
+    type Response = GetAssetsResponse;
+}
+
+/// Semantic request for creating a generic asset.
+#[derive(Debug, Clone)]
+pub struct CreateAssetRequest {
+    opts: CreateAssetOpts,
+}
+
+impl CreateAssetRequest {
+    /// Create a generic asset-creation request.
+    #[must_use]
+    pub fn new(opts: CreateAssetOpts) -> Self {
+        Self { opts }
+    }
+}
+
+impl Request for CreateAssetRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_asset(self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateAssetRequest {
+    type Response = CreateAssetResponse;
+}
+
+/// Semantic request for modifying a generic asset.
+#[derive(Debug, Clone)]
+pub struct ModifyAssetRequest {
+    asset_id: EntityId,
+    opts: ModifyAssetOpts,
+}
+
+impl ModifyAssetRequest {
+    /// Create a generic asset-modification request.
+    #[must_use]
+    pub fn new(asset_id: EntityId, opts: ModifyAssetOpts) -> Self {
+        Self { asset_id, opts }
+    }
+}
+
+impl Request for ModifyAssetRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_asset(&self.asset_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyAssetRequest {
+    type Response = ModifyAssetResponse;
+}
+
+/// Semantic request for deleting a generic asset.
+#[derive(Debug, Clone)]
+pub struct DeleteAssetRequest {
+    asset_id: EntityId,
+    opts: DeleteAssetOpts,
+}
+
+impl DeleteAssetRequest {
+    /// Create a generic asset-deletion request.
+    #[must_use]
+    pub fn new(asset_id: EntityId, opts: DeleteAssetOpts) -> Self {
+        Self { asset_id, opts }
+    }
+}
+
+impl Request for DeleteAssetRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_asset(&self.asset_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteAssetRequest {
+    type Response = DeleteAssetResponse;
 }
 
 /// Build a generic `create_asset` request.
@@ -254,5 +390,63 @@ mod tests {
             xml(delete_asset(&id("a1"), DeleteAssetOpts::default())),
             "<delete_asset asset_id=\"a1\"/>"
         );
+    }
+
+    #[test]
+    fn semantic_asset_requests_match_builder_bytes_and_responses() {
+        fn assert_response<R: GmpRequest<Response = T>, T: crate::GmpResponse>(_: &R) {}
+
+        let get_opts = GetAssetsOpts {
+            type_: Some(AssetType::custom("firmware")),
+            filter_string: Some("name=example".into()),
+            details: Some(true),
+            ..Default::default()
+        };
+        let request = GetAssetsRequest::new(get_opts.clone());
+        assert_eq!(request.to_bytes(), get_assets(get_opts).to_bytes());
+        assert_response::<_, GetAssetsResponse>(&request);
+
+        let request = GetAssetRequest::new(id("asset-1"), AssetType::OperatingSystem);
+        assert_eq!(
+            request.to_bytes(),
+            get_assets(GetAssetsOpts {
+                asset_id: Some(id("asset-1")),
+                type_: Some(AssetType::OperatingSystem),
+                details: Some(true),
+                ..Default::default()
+            })
+            .to_bytes()
+        );
+        assert_response::<_, GetAssetsResponse>(&request);
+
+        let create_opts = CreateAssetOpts {
+            asset_type: AssetType::Host,
+            comment: Some("created".into()),
+            value: Some("192.0.2.10".into()),
+        };
+        let request = CreateAssetRequest::new(create_opts.clone());
+        assert_eq!(request.to_bytes(), create_asset(create_opts).to_bytes());
+        assert_response::<_, CreateAssetResponse>(&request);
+
+        let modify_opts = ModifyAssetOpts {
+            comment: Some("updated".into()),
+            value: Some("ignored".into()),
+        };
+        let request = ModifyAssetRequest::new(id("asset-1"), modify_opts.clone());
+        assert_eq!(
+            request.to_bytes(),
+            modify_asset(&id("asset-1"), modify_opts).to_bytes()
+        );
+        assert_response::<_, ModifyAssetResponse>(&request);
+
+        let delete_opts = DeleteAssetOpts {
+            ultimate: Some(true),
+        };
+        let request = DeleteAssetRequest::new(id("asset-1"), delete_opts.clone());
+        assert_eq!(
+            request.to_bytes(),
+            delete_asset(&id("asset-1"), delete_opts).to_bytes()
+        );
+        assert_response::<_, DeleteAssetResponse>(&request);
     }
 }

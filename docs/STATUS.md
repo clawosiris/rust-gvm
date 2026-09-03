@@ -116,6 +116,18 @@ requests retain their specialized response codecs. Existing facade methods now
 delegate to `execute`; explicit SecInfo operating-system and vulnerability
 helper names avoid changing the distinct asset and legacy `get_vulns` APIs.
 
+The asset-and-result Phase 2 batch, tracked by
+[`#566`](https://github.com/greenbone-hive/rust-gvm/issues/566), migrates the
+complete generic asset, host alias, operating-system asset alias, and result
+query surfaces to semantic typed execution. Generic list/detail/create/modify/
+delete requests and their resource-specific aliases remain distinct Rust types
+while delegating to the existing `get_assets`, `create_asset`, `modify_asset`,
+and `delete_asset` builders. This preserves type selection, filters, detail
+flags, ignored compatibility fields, asset deletion semantics, and exact XML
+bytes. Result list/detail requests likewise retain their existing `get_results`
+encodings. All corresponding facade helpers use `execute`, while raw builders,
+`send`, and `call` remain supported.
+
 The alternate-target Phase 2 batch, tracked by
 [`#567`](https://github.com/greenbone-hive/rust-gvm/issues/567), completes the
 existing target command boundary with the remaining standard target clone plus
