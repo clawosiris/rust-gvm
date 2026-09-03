@@ -58,7 +58,9 @@ use gvm_gmp::commands::notes::{
     GetNotesRequest, ModifyNoteOpts, ModifyNoteRequest, NoteOpts,
 };
 use gvm_gmp::commands::nvts::{
-    get_nvt_families, get_nvts, get_scan_config_nvt, get_scan_config_nvts, GetNvtsOpts,
+    GetNvtFamiliesRequest, GetNvtPreferenceRequest, GetNvtPreferencesOpts,
+    GetNvtPreferencesRequest, GetNvtRequest, GetNvtsOpts, GetNvtsRequest, GetScanConfigNvtRequest,
+    GetScanConfigNvtsRequest,
 };
 use gvm_gmp::commands::oci_image_targets::{
     clone_oci_image_target, create_oci_image_target, delete_oci_image_target, get_oci_image_target,
@@ -118,8 +120,10 @@ use gvm_gmp::commands::schedules::{
     ModifyTypedScheduleRequest, ScheduleOpts,
 };
 use gvm_gmp::commands::secinfo::{
-    get_cert_bund_advisories, get_cert_bund_advisory, get_cpe, get_cpes, get_cve, get_cves,
-    get_dfn_cert_advisories, get_dfn_cert_advisory, GetSecInfoOpts,
+    GenericInfoType, GetCertBundAdvisoriesRequest, GetCertBundAdvisoryRequest, GetCpeRequest,
+    GetCpesRequest, GetCveRequest, GetCvesRequest, GetDfnCertAdvisoriesRequest,
+    GetDfnCertAdvisoryRequest, GetInfoListOpts, GetInfoListRequest, GetInfoRequest,
+    GetOperatingSystemsRequest, GetSecInfoOpts, GetVulnerabilitiesRequest,
 };
 use gvm_gmp::commands::system::{
     describe_auth, get_settings, get_timezones, get_vulnerability as get_vulnerability_cmd,
@@ -183,27 +187,28 @@ use gvm_gmp::responses::{
     GetCertBundAdvisoriesResponse, GetConfigsResponse, GetCpesResponse,
     GetCredentialStoresResponse, GetCredentialsResponse, GetCvesResponse,
     GetDfnCertAdvisoriesResponse, GetFeaturesResponse, GetFeedsResponse, GetFiltersResponse,
-    GetGroupsResponse, GetHostsResponse, GetIntegrationConfigsResponse, GetNotesResponse,
-    GetNvtFamiliesResponse, GetNvtsResponse, GetOciImageTargetsResponse,
-    GetOperatingSystemAssetsResponse, GetOverridesResponse, GetPermissionsResponse,
-    GetPortListsResponse, GetReportApplicationsResponse, GetReportClosedCvesResponse,
-    GetReportConfigsResponse, GetReportCvesResponse, GetReportErrorsResponse,
-    GetReportFormatsResponse, GetReportHostsResponse, GetReportOperatingSystemsResponse,
-    GetReportPortsResponse, GetReportTlsCertificatesResponse, GetReportVulnsResponse,
-    GetReportsResponse, GetResultsResponse, GetRolesResponse, GetScanConfigsResponse,
-    GetScannersResponse, GetSchedulesResponse, GetSettingsResponse, GetSystemReportsResponse,
-    GetTagsResponse, GetTargetsResponse, GetTasksResponse, GetTicketsResponse,
-    GetTimezonesResponse, GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse,
-    GetVulnerabilitiesResponse, GetWebApplicationTargetsResponse, HelpResponse,
-    ModifyAlertResponse, ModifyAssetResponse, ModifyAuthResponse, ModifyConfigResponse,
-    ModifyCredentialResponse, ModifyFilterResponse, ModifyGroupResponse,
-    ModifyIntegrationConfigResponse, ModifyLicenseResponse, ModifyNoteResponse,
-    ModifyOciImageTargetResponse, ModifyOverrideResponse, ModifyPermissionResponse,
-    ModifyPortListResponse, ModifyRoleResponse, ModifyScanConfigResponse, ModifyScannerResponse,
-    ModifyScheduleResponse, ModifyTagResponse, ModifyTargetResponse, ModifyTaskResponse,
-    ModifyTicketResponse, ModifyUserResponse, ModifyWebApplicationTargetResponse, MoveTaskResponse,
-    ReportExport, RestoreResponse, ResumeTaskResponse, RunWizardResponse, StartTaskResponse,
-    StopTaskResponse, SyncConfigResponse, VerifyCredentialStoreResponse, VerifyScannerResponse,
+    GetGroupsResponse, GetHostsResponse, GetInfoResponse, GetIntegrationConfigsResponse,
+    GetNotesResponse, GetNvtFamiliesResponse, GetNvtsResponse, GetOciImageTargetsResponse,
+    GetOperatingSystemAssetsResponse, GetOperatingSystemsResponse, GetOverridesResponse,
+    GetPermissionsResponse, GetPortListsResponse, GetReportApplicationsResponse,
+    GetReportClosedCvesResponse, GetReportConfigsResponse, GetReportCvesResponse,
+    GetReportErrorsResponse, GetReportFormatsResponse, GetReportHostsResponse,
+    GetReportOperatingSystemsResponse, GetReportPortsResponse, GetReportTlsCertificatesResponse,
+    GetReportVulnsResponse, GetReportsResponse, GetResultsResponse, GetRolesResponse,
+    GetScanConfigPreferencesResponse, GetScanConfigsResponse, GetScannersResponse,
+    GetSchedulesResponse, GetSettingsResponse, GetSystemReportsResponse, GetTagsResponse,
+    GetTargetsResponse, GetTasksResponse, GetTicketsResponse, GetTimezonesResponse,
+    GetTlsCertificatesResponse, GetUsersResponse, GetVersionResponse, GetVulnerabilitiesResponse,
+    GetWebApplicationTargetsResponse, HelpResponse, ModifyAlertResponse, ModifyAssetResponse,
+    ModifyAuthResponse, ModifyConfigResponse, ModifyCredentialResponse, ModifyFilterResponse,
+    ModifyGroupResponse, ModifyIntegrationConfigResponse, ModifyLicenseResponse,
+    ModifyNoteResponse, ModifyOciImageTargetResponse, ModifyOverrideResponse,
+    ModifyPermissionResponse, ModifyPortListResponse, ModifyRoleResponse, ModifyScanConfigResponse,
+    ModifyScannerResponse, ModifyScheduleResponse, ModifyTagResponse, ModifyTargetResponse,
+    ModifyTaskResponse, ModifyTicketResponse, ModifyUserResponse,
+    ModifyWebApplicationTargetResponse, MoveTaskResponse, ReportExport, RestoreResponse,
+    ResumeTaskResponse, RunWizardResponse, StartTaskResponse, StopTaskResponse, SyncConfigResponse,
+    VerifyCredentialStoreResponse, VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
 use gvm_gmp::{CredentialStoreCredentialType, FeedType, ScheduleInput};
@@ -1545,8 +1550,15 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_nvts(&mut self, opts: GetNvtsOpts) -> Result<GetNvtsResponse, GvmError> {
-        let response = self.send(get_nvts(opts)).await?;
-        GetNvtsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetNvtsRequest::new(opts)).await
+    }
+
+    /// Send a detailed `get_nvts` request for one NVT.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_nvt(&mut self, nvt_oid: &str) -> Result<GetNvtsResponse, GvmError> {
+        self.execute(GetNvtRequest::new(nvt_oid)).await
     }
 
     /// Send a scan-config scoped `get_nvts` request and return a typed [`GetNvtsResponse`].
@@ -1557,8 +1569,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         opts: GetNvtsOpts,
     ) -> Result<GetNvtsResponse, GvmError> {
-        let response = self.send(get_scan_config_nvts(opts)).await?;
-        GetNvtsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetScanConfigNvtsRequest::new(opts)).await
     }
 
     /// Send a scan-config compatibility `get_nvts` request for a single NVT.
@@ -1569,8 +1580,30 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         nvt_oid: &str,
     ) -> Result<GetNvtsResponse, GvmError> {
-        let response = self.send(get_scan_config_nvt(nvt_oid)).await?;
-        GetNvtsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetScanConfigNvtRequest::new(nvt_oid)).await
+    }
+
+    /// Send a `get_preferences` request for NVT preferences.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_nvt_preferences(
+        &mut self,
+        opts: GetNvtPreferencesOpts,
+    ) -> Result<GetScanConfigPreferencesResponse, GvmError> {
+        self.execute(GetNvtPreferencesRequest::new(opts)).await
+    }
+
+    /// Send a `get_preferences` request for one NVT preference.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_nvt_preference(
+        &mut self,
+        name: &str,
+        opts: GetNvtPreferencesOpts,
+    ) -> Result<GetScanConfigPreferencesResponse, GvmError> {
+        self.execute(GetNvtPreferenceRequest::new(name, opts)).await
     }
 
     /// Send a `get_nvt_families` request and return a typed [`GetNvtFamiliesResponse`].
@@ -1578,8 +1611,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_nvt_families(&mut self) -> Result<GetNvtFamiliesResponse, GvmError> {
-        let response = self.send(get_nvt_families()).await?;
-        GetNvtFamiliesResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetNvtFamiliesRequest::new()).await
     }
 
     // ── SecInfo ───────────────────────────────────────────────────────────────
@@ -1589,8 +1621,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_cves(&mut self, opts: GetSecInfoOpts) -> Result<GetCvesResponse, GvmError> {
-        let response = self.send(get_cves(opts)).await?;
-        GetCvesResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetCvesRequest::new(opts)).await
     }
 
     /// Send a `get_info` request for a single CVE entry and return a typed
@@ -1599,8 +1630,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_cve(&mut self, cve_id: &str) -> Result<GetCvesResponse, GvmError> {
-        let response = self.send(get_cve(cve_id)).await?;
-        GetCvesResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetCveRequest::new(cve_id)).await
     }
 
     /// Send a `get_info` request for CPE entries and return a typed [`GetCpesResponse`].
@@ -1608,8 +1638,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_cpes(&mut self, opts: GetSecInfoOpts) -> Result<GetCpesResponse, GvmError> {
-        let response = self.send(get_cpes(opts)).await?;
-        GetCpesResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetCpesRequest::new(opts)).await
     }
 
     /// Send a `get_info` request for a single CPE entry and return a typed
@@ -1618,8 +1647,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_cpe(&mut self, cpe_id: &str) -> Result<GetCpesResponse, GvmError> {
-        let response = self.send(get_cpe(cpe_id)).await?;
-        GetCpesResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetCpeRequest::new(cpe_id)).await
     }
 
     /// Send a `get_info` request for CERT-Bund advisories and return a typed
@@ -1631,8 +1659,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         opts: GetSecInfoOpts,
     ) -> Result<GetCertBundAdvisoriesResponse, GvmError> {
-        let response = self.send(get_cert_bund_advisories(opts)).await?;
-        GetCertBundAdvisoriesResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetCertBundAdvisoriesRequest::new(opts)).await
     }
 
     /// Send a `get_info` request for a single CERT-Bund advisory and return a
@@ -1644,8 +1671,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         cert_id: &str,
     ) -> Result<GetCertBundAdvisoriesResponse, GvmError> {
-        let response = self.send(get_cert_bund_advisory(cert_id)).await?;
-        GetCertBundAdvisoriesResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetCertBundAdvisoryRequest::new(cert_id)).await
     }
 
     /// Send a `get_info` request for DFN-CERT advisories and return a typed
@@ -1657,8 +1683,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         opts: GetSecInfoOpts,
     ) -> Result<GetDfnCertAdvisoriesResponse, GvmError> {
-        let response = self.send(get_dfn_cert_advisories(opts)).await?;
-        GetDfnCertAdvisoriesResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetDfnCertAdvisoriesRequest::new(opts)).await
     }
 
     /// Send a `get_info` request for a single DFN-CERT advisory and return a
@@ -1670,8 +1695,59 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         cert_id: &str,
     ) -> Result<GetDfnCertAdvisoriesResponse, GvmError> {
-        let response = self.send(get_dfn_cert_advisory(cert_id)).await?;
-        GetDfnCertAdvisoriesResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetDfnCertAdvisoryRequest::new(cert_id)).await
+    }
+
+    /// Send a generic single-entry `get_info` request.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_info(
+        &mut self,
+        info_id: &str,
+        info_type: GenericInfoType,
+    ) -> Result<GetInfoResponse, GvmError> {
+        self.execute(GetInfoRequest::new(info_id, info_type)).await
+    }
+
+    /// Send a generic `get_info` list request.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_info_list(
+        &mut self,
+        info_type: GenericInfoType,
+        opts: GetInfoListOpts,
+    ) -> Result<GetInfoResponse, GvmError> {
+        self.execute(GetInfoListRequest::new(info_type, opts)).await
+    }
+
+    /// Send a `SecInfo` `get_info type="os"` list request.
+    ///
+    /// This is distinct from [`Self::get_operating_system_assets`], which
+    /// executes the `get_assets` command family.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_secinfo_operating_systems(
+        &mut self,
+        opts: GetSecInfoOpts,
+    ) -> Result<GetOperatingSystemsResponse, GvmError> {
+        self.execute(GetOperatingSystemsRequest::new(opts)).await
+    }
+
+    /// Send a `SecInfo` `get_info type="vuln"` list request.
+    ///
+    /// This is distinct from [`Self::get_vulnerabilities`], which executes the
+    /// legacy `get_vulns` command family.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_secinfo_vulnerabilities(
+        &mut self,
+        opts: GetSecInfoOpts,
+    ) -> Result<GetVulnerabilitiesResponse, GvmError> {
+        self.execute(GetVulnerabilitiesRequest::new(opts)).await
     }
 
     /// Send a `get_vulns` request for vulnerabilities and return a typed

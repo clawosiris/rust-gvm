@@ -235,6 +235,29 @@ relationships. User option debug output redacts password values. The
 corresponding `GmpClient` convenience methods now use `execute`; existing
 builders, response types, `send`, and `call` remain source-compatible.
 
+## NVT and SecInfo queries
+
+All seven NVT builders have matching semantic requests for global and
+scan-config-scoped list/detail retrieval, NVT preference list/detail retrieval,
+and family discovery. Requests continue to delegate to the public builders, so
+filters, preference flags, scan-config identifiers, sorting, and exact XML
+bytes remain unchanged. NVT preferences reuse the established
+`GetScanConfigPreferencesResponse` codec because gvmd returns the same
+`get_preferences_response` shape.
+
+The twelve SecInfo builders retain separate semantic Rust values even though
+they all encode `get_info`. Specialized CPE, CVE, CERT-Bund, DFN-CERT,
+operating-system, and vulnerability requests keep their existing response
+models. `GetInfoRequest` and `GetInfoListRequest` instead select
+`GetInfoResponse`, which provides one typed compatibility model across all
+public `GenericInfoType` variants, including NVT and OVAL definitions.
+
+Existing CPE, CVE, and advisory facade names remain source-compatible. The
+SecInfo operating-system and vulnerability facades are named
+`get_secinfo_operating_systems` and `get_secinfo_vulnerabilities` so they do not
+change the distinct `get_assets` and legacy `get_vulns` helper behavior. Raw
+builders and `send`/`call` remain available for callers that need complete XML.
+
 ## Irregular report codecs and version policy
 
 The Phase 3 report family demonstrates that `GmpResponse` is a codec contract,

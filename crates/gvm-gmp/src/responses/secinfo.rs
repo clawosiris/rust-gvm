@@ -8,6 +8,46 @@ use gvm_protocol::Response;
 use crate::responses::common::{
     count_info, parse_document, status_from_response, CountInfo, ParseError,
 };
+use crate::{GmpResponse, GmpVersion};
+
+const GENERIC_INFO_ELEMENTS: &[(&str, &str)] = &[
+    ("cert_bund_adv", "CERT_BUND_ADV"),
+    ("cpe", "CPE"),
+    ("cve", "CVE"),
+    ("dfn_cert_adv", "DFN_CERT_ADV"),
+    ("nvt", "NVT"),
+    ("ovaldef", "OVALDEF"),
+    ("os", "os"),
+    ("vuln", "vuln"),
+];
+
+/// A resource returned by the generic `get_info` compatibility command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct GenericInfo {
+    /// GMP `type` value corresponding to the resource element.
+    pub info_type: String,
+    /// Resource identifier. NVT `oid` attributes are normalized into this field.
+    pub id: String,
+    /// Resource name.
+    pub name: String,
+}
+
+/// Typed response for generic `get_info` list and detail requests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct GetInfoResponse {
+    /// GMP response status.
+    pub status: u16,
+    /// GMP response status text.
+    pub status_text: String,
+    /// Returned resources in wire order.
+    pub items: Vec<GenericInfo>,
+    /// Generic resource counts when supplied by gvmd.
+    pub counts: CountInfo,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -91,6 +131,65 @@ fn parse_secinfo_item(
         .to_string();
     let name = node.required_child_text("name")?;
     Ok((id, name))
+}
+
+impl GenericInfo {
+    fn from_node(
+        node: &crate::responses::common::XmlNode,
+        info_type: &str,
+    ) -> Result<Self, ParseError> {
+        let id = node
+            .attr("id")
+            .or_else(|| node.attr("oid"))
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| ParseError::MissingElement(format!("{}.id", node.name)))?;
+        Ok(Self {
+            info_type: info_type.to_string(),
+            id: id.to_string(),
+            name: node.required_child_text("name")?,
+        })
+    }
+}
+
+impl GetInfoResponse {
+    /// Parse any public generic `get_info` resource shape.
+    ///
+    /// # Errors
+    /// Returns an error for a non-success status or malformed known resource.
+    pub fn from_response(response: &Response) -> Result<Self, ParseError> {
+        let (status, status_text) = status_from_response(response)?;
+        let root = parse_document(response.data())?;
+        let items = root
+            .children
+            .iter()
+            .filter_map(|node| {
+                GENERIC_INFO_ELEMENTS
+                    .iter()
+                    .find(|(element, _)| *element == node.name)
+                    .map(|(_, info_type)| GenericInfo::from_node(node, info_type))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut counts = CountInfo::default();
+        for (element, _) in GENERIC_INFO_ELEMENTS {
+            let candidate = count_info(&root, &format!("{element}_count"))?;
+            if candidate != CountInfo::default() {
+                counts = candidate;
+                break;
+            }
+        }
+        Ok(Self {
+            status,
+            status_text,
+            items,
+            counts,
+        })
+    }
+}
+
+impl GmpResponse for GetInfoResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
 }
 
 impl Cve {
@@ -188,6 +287,25 @@ impl GetDfnCertAdvisoriesResponse {
         })
     }
 }
+
+macro_rules! impl_gmp_response {
+    ($($response:ty),+ $(,)?) => {
+        $(
+            impl GmpResponse for $response {
+                fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+                    Self::from_response(response)
+                }
+            }
+        )+
+    };
+}
+
+impl_gmp_response!(
+    GetCvesResponse,
+    GetCpesResponse,
+    GetCertBundAdvisoriesResponse,
+    GetDfnCertAdvisoriesResponse,
+);
 
 #[cfg(test)]
 mod tests {
@@ -329,6 +447,37 @@ mod tests {
 
         assert_eq!(parsed.counts, CountInfo::default());
     }
+
+    #[test]
+    fn parses_generic_info_resources_and_counts() {
+        let response = Response::from(
+            r#"<get_info_response status="200" status_text="OK">
+                <nvt oid="1.3.6.1"><name>Example NVT</name></nvt>
+                <nvt_count>1<filtered>1</filtered></nvt_count>
+            </get_info_response>"#,
+        );
+
+        let parsed = GetInfoResponse::from_response(&response).expect("generic info parses");
+
+        assert_eq!(parsed.items.len(), 1);
+        assert_eq!(parsed.items[0].info_type, "NVT");
+        assert_eq!(parsed.items[0].id, "1.3.6.1");
+        assert_eq!(parsed.items[0].name, "Example NVT");
+        assert_eq!(parsed.counts.total, Some(1));
+        assert_eq!(parsed.counts.filtered, Some(1));
+    }
+
+    #[test]
+    fn generic_info_preserves_parse_context() {
+        let response = Response::from(
+            r#"<get_info_response status="200" status_text="OK"><ovaldef><name>Missing id</name></ovaldef></get_info_response>"#,
+        );
+
+        assert!(matches!(
+            GetInfoResponse::from_response(&response),
+            Err(ParseError::MissingElement(field)) if field == "ovaldef.id"
+        ));
+    }
 }
 
 // === Additional SecInfo Response Types ===
@@ -416,6 +565,8 @@ impl GetVulnerabilitiesResponse {
         })
     }
 }
+
+impl_gmp_response!(GetOperatingSystemsResponse, GetVulnerabilitiesResponse);
 
 #[cfg(test)]
 mod additional_tests {

@@ -209,7 +209,8 @@ negotiation, authentication, standard and specialized task variants,
 target/credential/scanner lifecycles, scan-config, policy, and credential-store
 operations, alerts and schedules, filters, tags, notes, overrides, trashcan
 recovery, user, group, role, and permission lifecycles, plus irregular report
-retrieval, drill-down, and export operations:
+retrieval, drill-down, and export operations and the complete NVT/SecInfo query
+surface:
 
 ```rust
 use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest};

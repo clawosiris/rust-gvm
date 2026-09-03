@@ -19,7 +19,7 @@ use gvm_gmp::commands::filters::{FilterOpts, GetFiltersOpts};
 use gvm_gmp::commands::groups::{GetGroupsOpts, GroupOpts};
 use gvm_gmp::commands::hosts::{GetHostsOpts, HostOpts};
 use gvm_gmp::commands::notes::{GetNotesOpts, ModifyNoteOpts, NoteOpts};
-use gvm_gmp::commands::nvts::GetNvtsOpts;
+use gvm_gmp::commands::nvts::{GetNvtPreferencesOpts, GetNvtsOpts};
 use gvm_gmp::commands::overrides::{GetOverridesOpts, ModifyOverrideOpts, OverrideOpts};
 use gvm_gmp::commands::permissions::{GetPermissionsOpts, PermissionOpts};
 use gvm_gmp::commands::port_lists::{GetPortListsOpts, PortListOpts};
@@ -37,7 +37,7 @@ use gvm_gmp::commands::scanners::{
     GetScannersOpts, GetScannersRequest, ModifyScannerRequest, ScannerOpts, VerifyScannerRequest,
 };
 use gvm_gmp::commands::schedules::{GetSchedulesOpts, ScheduleOpts};
-use gvm_gmp::commands::secinfo::GetSecInfoOpts;
+use gvm_gmp::commands::secinfo::{GenericInfoType, GetInfoListOpts, GetSecInfoOpts};
 use gvm_gmp::commands::tags::{GetTagsOpts, TagOpts};
 use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest, ModifyTargetOpts};
 use gvm_gmp::commands::tasks::{
@@ -278,6 +278,25 @@ const IDENTITY_PERMISSION_OVERRIDES: &[(&str, &str)] = &[
     ),
 ];
 
+const NVT_SECINFO_OVERRIDES: &[(&str, &str)] = &[
+    (
+        "get_nvts",
+        r#"<get_nvts_response status="200" status_text="OK"><nvt oid="1.3.6.1"><name>Example NVT</name></nvt><nvt_count>1<filtered>1</filtered></nvt_count></get_nvts_response>"#,
+    ),
+    (
+        "get_preferences",
+        r#"<get_preferences_response status="200" status_text="OK"><preference><name>timeout</name><value>30</value></preference></get_preferences_response>"#,
+    ),
+    (
+        "get_nvt_families",
+        r#"<get_nvt_families_response status="200" status_text="OK"><nvt_family><name>General</name><count>1</count></nvt_family><family_count>1</family_count></get_nvt_families_response>"#,
+    ),
+    (
+        "get_info",
+        r#"<get_info_response status="200" status_text="OK"><cert_bund_adv id="CB-1"><name>CERT</name></cert_bund_adv><cpe id="cpe:/a:example"><name>CPE</name></cpe><cve id="CVE-2026-0001"><name>CVE</name></cve><dfn_cert_adv id="DFN-1"><name>DFN</name></dfn_cert_adv><nvt oid="1.3.6.1"><name>NVT</name></nvt><ovaldef id="oval:example:def:1"><name>OVAL</name></ovaldef><os id="os-1"><name>OS</name></os><vuln id="vuln-1"><name>Vulnerability</name></vuln></get_info_response>"#,
+    ),
+];
+
 struct SemanticAliasRequest;
 
 impl Request for SemanticAliasRequest {
@@ -481,6 +500,108 @@ async fn identity_and_permission_facades_preserve_status_and_parse_context() {
     assert!(matches!(
         parse_error,
         GvmError::Parse(ParseError::MissingElement(field)) if field == "id"
+    ));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn nvt_and_secinfo_queries_execute_through_typed_facade() {
+    let Some(server) = fixture_server(MockVersion::V22_8, NVT_SECINFO_OVERRIDES).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+
+    assert_typed_success!(client.get_nvts(GetNvtsOpts::default()));
+    assert_typed_success!(client.get_nvt("1.3.6.1"));
+    assert_typed_success!(client.get_scan_config_nvts(GetNvtsOpts::default()));
+    assert_typed_success!(client.get_scan_config_nvt("1.3.6.1"));
+    assert_typed_success!(client.get_nvt_preferences(GetNvtPreferencesOpts::default()));
+    assert_typed_success!(client.get_nvt_preference(
+        "timeout",
+        GetNvtPreferencesOpts {
+            nvt_oid: Some("1.3.6.1".into()),
+        }
+    ));
+    assert_typed_success!(client.get_nvt_families());
+
+    assert_typed_success!(client.get_info("oval:example:def:1", GenericInfoType::Ovaldef));
+    assert_typed_success!(client.get_info_list(GenericInfoType::Nvt, GetInfoListOpts::default()));
+    assert_typed_success!(client.get_cpes(GetSecInfoOpts::default()));
+    assert_typed_success!(client.get_cpe("cpe:/a:example"));
+    assert_typed_success!(client.get_cves(GetSecInfoOpts::default()));
+    assert_typed_success!(client.get_cve("CVE-2026-0001"));
+    assert_typed_success!(client.get_cert_bund_advisories(GetSecInfoOpts::default()));
+    assert_typed_success!(client.get_cert_bund_advisory("CB-1"));
+    assert_typed_success!(client.get_dfn_cert_advisories(GetSecInfoOpts::default()));
+    assert_typed_success!(client.get_dfn_cert_advisory("DFN-1"));
+    assert_typed_success!(client.get_secinfo_operating_systems(GetSecInfoOpts::default()));
+    assert_typed_success!(client.get_secinfo_vulnerabilities(GetSecInfoOpts::default()));
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 19);
+    for (command, expected_count) in [
+        ("get_nvts", 4),
+        ("get_preferences", 2),
+        ("get_nvt_families", 1),
+        ("get_info", 12),
+    ] {
+        assert_eq!(
+            history
+                .iter()
+                .filter(|record| record.command_name() == command)
+                .count(),
+            expected_count,
+            "unexpected facade inventory for {command}"
+        );
+    }
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn nvt_and_secinfo_queries_preserve_status_and_parse_context() {
+    let Some(server) = fixture_server(
+        MockVersion::V22_8,
+        &[(
+            "get_nvts",
+            r#"<get_nvts_response status="503" status_text="feed unavailable"/>"#,
+        )],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut status_client = client(&server).await;
+
+    assert_server_error!(
+        status_client.get_scan_config_nvt("1.3.6.1"),
+        503,
+        "feed unavailable"
+    );
+
+    server.shutdown().await;
+
+    let Some(server) = fixture_server(
+        MockVersion::V22_8,
+        &[(
+            "get_preferences",
+            r#"<get_preferences_response status="200" status_text="OK"><preference><value>30</value></preference></get_preferences_response>"#,
+        )],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut parse_client = client(&server).await;
+    let parse_error = parse_client
+        .get_nvt_preferences(GetNvtPreferencesOpts::default())
+        .await
+        .expect_err("missing NVT preference name should fail");
+    assert!(matches!(
+        parse_error,
+        GvmError::Parse(ParseError::MissingElement(field)) if field == "preference.name"
     ));
 
     server.shutdown().await;

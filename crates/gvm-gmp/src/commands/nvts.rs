@@ -6,7 +6,9 @@
 use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::{add_filter_attrs, set_optional_bool_attr};
+use crate::responses::{GetNvtFamiliesResponse, GetNvtsResponse, GetScanConfigPreferencesResponse};
 use crate::types::EntityId;
+use crate::GmpRequest;
 
 /// Options for `get_nvts` requests.
 #[derive(Debug, Clone, Default)]
@@ -40,6 +42,180 @@ pub struct GetNvtsOpts {
 pub struct GetNvtPreferencesOpts {
     /// Optional NVT OID to restrict preference lookup.
     pub nvt_oid: Option<String>,
+}
+
+/// Semantic request for listing NVTs.
+#[derive(Debug, Clone)]
+pub struct GetNvtsRequest {
+    opts: GetNvtsOpts,
+}
+
+impl GetNvtsRequest {
+    /// Create an NVT-list request.
+    #[must_use]
+    pub fn new(opts: GetNvtsOpts) -> Self {
+        Self { opts }
+    }
+}
+
+impl Request for GetNvtsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_nvts(self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetNvtsRequest {
+    type Response = GetNvtsResponse;
+}
+
+/// Semantic request for listing NVTs in a scan-config context.
+#[derive(Debug, Clone)]
+pub struct GetScanConfigNvtsRequest {
+    opts: GetNvtsOpts,
+}
+
+impl GetScanConfigNvtsRequest {
+    /// Create a scan-config-scoped NVT-list request.
+    #[must_use]
+    pub fn new(opts: GetNvtsOpts) -> Self {
+        Self { opts }
+    }
+}
+
+impl Request for GetScanConfigNvtsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_scan_config_nvts(self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetScanConfigNvtsRequest {
+    type Response = GetNvtsResponse;
+}
+
+/// Semantic request for retrieving one NVT.
+#[derive(Debug, Clone)]
+pub struct GetNvtRequest {
+    nvt_oid: String,
+}
+
+impl GetNvtRequest {
+    /// Create a single-NVT request.
+    #[must_use]
+    pub fn new(nvt_oid: impl Into<String>) -> Self {
+        Self {
+            nvt_oid: nvt_oid.into(),
+        }
+    }
+}
+
+impl Request for GetNvtRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_nvt(&self.nvt_oid).to_bytes()
+    }
+}
+
+impl GmpRequest for GetNvtRequest {
+    type Response = GetNvtsResponse;
+}
+
+/// Semantic request for retrieving one NVT in a scan-config context.
+#[derive(Debug, Clone)]
+pub struct GetScanConfigNvtRequest {
+    nvt_oid: String,
+}
+
+impl GetScanConfigNvtRequest {
+    /// Create a scan-config compatibility request for one NVT.
+    #[must_use]
+    pub fn new(nvt_oid: impl Into<String>) -> Self {
+        Self {
+            nvt_oid: nvt_oid.into(),
+        }
+    }
+}
+
+impl Request for GetScanConfigNvtRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_scan_config_nvt(&self.nvt_oid).to_bytes()
+    }
+}
+
+impl GmpRequest for GetScanConfigNvtRequest {
+    type Response = GetNvtsResponse;
+}
+
+/// Semantic request for listing NVT preferences.
+#[derive(Debug, Clone)]
+pub struct GetNvtPreferencesRequest {
+    opts: GetNvtPreferencesOpts,
+}
+
+impl GetNvtPreferencesRequest {
+    /// Create an NVT-preference-list request.
+    #[must_use]
+    pub fn new(opts: GetNvtPreferencesOpts) -> Self {
+        Self { opts }
+    }
+}
+
+impl Request for GetNvtPreferencesRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_nvt_preferences(self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetNvtPreferencesRequest {
+    type Response = GetScanConfigPreferencesResponse;
+}
+
+/// Semantic request for retrieving one NVT preference.
+#[derive(Debug, Clone)]
+pub struct GetNvtPreferenceRequest {
+    name: String,
+    opts: GetNvtPreferencesOpts,
+}
+
+impl GetNvtPreferenceRequest {
+    /// Create a single-NVT-preference request.
+    #[must_use]
+    pub fn new(name: impl Into<String>, opts: GetNvtPreferencesOpts) -> Self {
+        Self {
+            name: name.into(),
+            opts,
+        }
+    }
+}
+
+impl Request for GetNvtPreferenceRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_nvt_preference(&self.name, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetNvtPreferenceRequest {
+    type Response = GetScanConfigPreferencesResponse;
+}
+
+/// Semantic request for listing NVT families.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GetNvtFamiliesRequest;
+
+impl GetNvtFamiliesRequest {
+    /// Create an NVT-family-list request.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl Request for GetNvtFamiliesRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_nvt_families().to_bytes()
+    }
+}
+
+impl GmpRequest for GetNvtFamiliesRequest {
+    type Response = GetNvtFamiliesResponse;
 }
 
 /// Build a `get_nvts` request.
@@ -188,5 +364,58 @@ mod tests {
             "<get_preferences nvt_oid=\"1.3.6.1\" preference=\"timeout\"/>"
         );
         assert_eq!(xml(get_nvt_families()), "<get_nvt_families/>");
+    }
+
+    #[test]
+    fn semantic_requests_preserve_builder_bytes_and_response_associations() {
+        fn assert_response<R: GmpRequest<Response = T>, T: crate::GmpResponse>(_: &R) {}
+
+        let opts = GetNvtsOpts {
+            config_id: Some(id("config-1")),
+            details: Some(true),
+            ..Default::default()
+        };
+        let request = GetNvtsRequest::new(opts.clone());
+        assert_eq!(request.to_bytes(), get_nvts(opts.clone()).to_bytes());
+        assert_response::<_, GetNvtsResponse>(&request);
+
+        let request = GetScanConfigNvtsRequest::new(opts.clone());
+        assert_eq!(
+            request.to_bytes(),
+            get_scan_config_nvts(opts.clone()).to_bytes()
+        );
+        assert_response::<_, GetNvtsResponse>(&request);
+
+        let request = GetNvtRequest::new("1.3.6.1");
+        assert_eq!(request.to_bytes(), get_nvt("1.3.6.1").to_bytes());
+        assert_response::<_, GetNvtsResponse>(&request);
+
+        let request = GetScanConfigNvtRequest::new("1.3.6.1");
+        assert_eq!(
+            request.to_bytes(),
+            get_scan_config_nvt("1.3.6.1").to_bytes()
+        );
+        assert_response::<_, GetNvtsResponse>(&request);
+
+        let preference_opts = GetNvtPreferencesOpts {
+            nvt_oid: Some("1.3.6.1".into()),
+        };
+        let request = GetNvtPreferencesRequest::new(preference_opts.clone());
+        assert_eq!(
+            request.to_bytes(),
+            get_nvt_preferences(preference_opts.clone()).to_bytes()
+        );
+        assert_response::<_, GetScanConfigPreferencesResponse>(&request);
+
+        let request = GetNvtPreferenceRequest::new("timeout", preference_opts.clone());
+        assert_eq!(
+            request.to_bytes(),
+            get_nvt_preference("timeout", preference_opts).to_bytes()
+        );
+        assert_response::<_, GetScanConfigPreferencesResponse>(&request);
+
+        let request = GetNvtFamiliesRequest::new();
+        assert_eq!(request.to_bytes(), get_nvt_families().to_bytes());
+        assert_response::<_, GetNvtFamiliesResponse>(&request);
     }
 }
