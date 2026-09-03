@@ -10,6 +10,7 @@ use crate::responses::common::{
     count_info, optional_u32, parse_bool, parse_document, parse_entity_meta, parse_named_entity,
     status_from_response, ActionResponse, CountInfo, EntityMeta, NamedEntity, ParseError, XmlNode,
 };
+use crate::{GmpResponse, GmpVersion};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -234,6 +235,12 @@ impl GetAgentsResponse {
     }
 }
 
+impl GmpResponse for GetAgentsResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 impl GetAgentInstallerInstructionResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
@@ -244,6 +251,12 @@ impl GetAgentInstallerInstructionResponse {
             language: root.required_child_text("language")?,
             instruction: root.required_child_text("instruction")?,
         })
+    }
+}
+
+impl GmpResponse for GetAgentInstallerInstructionResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 
@@ -259,6 +272,12 @@ impl GetAgentSupportBundleResponse {
             status_text,
             file: AgentSupportBundle::from_node(file)?,
         })
+    }
+}
+
+impl GmpResponse for GetAgentSupportBundleResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 

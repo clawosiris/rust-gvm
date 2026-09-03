@@ -9,6 +9,7 @@ use crate::responses::common::{
     count_info, parse_document, parse_entity_id, parse_entity_meta, status_from_response,
     ActionResponse, CountInfo, EntityMeta, NamedEntity, ParseError, XmlNode,
 };
+use crate::{GmpResponse, GmpVersion};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -65,6 +66,12 @@ impl GetAgentGroupsResponse {
     }
 }
 
+impl GmpResponse for GetAgentGroupsResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 impl CreateAgentGroupResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
@@ -79,6 +86,12 @@ impl CreateAgentGroupResponse {
             status_text,
             id,
         })
+    }
+}
+
+impl GmpResponse for CreateAgentGroupResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 

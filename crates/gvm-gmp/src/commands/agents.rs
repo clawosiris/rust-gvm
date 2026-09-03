@@ -6,7 +6,13 @@
 use gvm_protocol::{xml_command::XmlElement, Request, XmlCommand};
 
 use crate::common::{add_filter_attrs, add_text_element, bool_str};
+use crate::responses::{
+    DeleteAgentResponse, GetAgentInstallerInstructionResponse, GetAgentSupportBundleResponse,
+    GetAgentsResponse, ModifyAgentControlScanConfigResponse, ModifyAgentResponse,
+    SyncAgentsResponse,
+};
 use crate::types::EntityId;
+use crate::GmpRequest;
 
 /// Supported agent installer instruction languages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,6 +114,207 @@ pub struct ModifyAgentControlScanConfigOpts {
     pub agent_defaults: Option<AgentConfigOpts>,
     /// Default update-to-latest value for controlled agents.
     pub update_to_latest: Option<bool>,
+}
+
+/// Semantic request for listing agents.
+#[derive(Debug, Clone, Default)]
+pub struct GetAgentsRequest(GetAgentsOpts);
+
+impl GetAgentsRequest {
+    /// Create an agent-list request.
+    #[must_use]
+    pub fn new(opts: GetAgentsOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetAgentsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_agents(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetAgentsRequest {
+    type Response = GetAgentsResponse;
+}
+
+/// Semantic request for one agent.
+#[derive(Debug, Clone)]
+pub struct GetAgentRequest(EntityId);
+
+impl GetAgentRequest {
+    /// Create a single-agent request.
+    #[must_use]
+    pub fn new(agent_id: EntityId) -> Self {
+        Self(agent_id)
+    }
+}
+
+impl Request for GetAgentRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_agent(&self.0).to_bytes()
+    }
+}
+
+impl GmpRequest for GetAgentRequest {
+    type Response = GetAgentsResponse;
+}
+
+/// Semantic request for modifying agents.
+#[derive(Debug, Clone)]
+pub struct ModifyAgentRequest {
+    agent_ids: Vec<EntityId>,
+    opts: ModifyAgentOpts,
+}
+
+impl ModifyAgentRequest {
+    /// Create an agent-modification request.
+    #[must_use]
+    pub fn new(agent_ids: Vec<EntityId>, opts: ModifyAgentOpts) -> Self {
+        Self { agent_ids, opts }
+    }
+}
+
+impl Request for ModifyAgentRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_agent(&self.agent_ids, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyAgentRequest {
+    type Response = ModifyAgentResponse;
+}
+
+/// Semantic request for deleting agents.
+#[derive(Debug, Clone)]
+pub struct DeleteAgentRequest(Vec<EntityId>);
+
+impl DeleteAgentRequest {
+    /// Create an agent-deletion request.
+    #[must_use]
+    pub fn new(agent_ids: Vec<EntityId>) -> Self {
+        Self(agent_ids)
+    }
+}
+
+impl Request for DeleteAgentRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_agent(&self.0).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteAgentRequest {
+    type Response = DeleteAgentResponse;
+}
+
+/// Semantic request for synchronizing agents.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SyncAgentsRequest;
+
+impl SyncAgentsRequest {
+    /// Create an agent-synchronization request.
+    #[must_use]
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Request for SyncAgentsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        sync_agents().to_bytes()
+    }
+}
+
+impl GmpRequest for SyncAgentsRequest {
+    type Response = SyncAgentsResponse;
+}
+
+/// Semantic request for modifying agent-control defaults.
+#[derive(Debug, Clone)]
+pub struct ModifyAgentControlScanConfigRequest {
+    agent_control_id: EntityId,
+    opts: ModifyAgentControlScanConfigOpts,
+}
+
+impl ModifyAgentControlScanConfigRequest {
+    /// Create an agent-control defaults request.
+    #[must_use]
+    pub fn new(agent_control_id: EntityId, opts: ModifyAgentControlScanConfigOpts) -> Self {
+        Self {
+            agent_control_id,
+            opts,
+        }
+    }
+}
+
+impl Request for ModifyAgentControlScanConfigRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_agent_control_scan_config(&self.agent_control_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyAgentControlScanConfigRequest {
+    type Response = ModifyAgentControlScanConfigResponse;
+}
+
+/// Semantic request for agent installer instructions.
+#[derive(Debug, Clone)]
+pub struct GetAgentInstallerInstructionRequest {
+    scanner_id: EntityId,
+    language: AgentInstallerLanguage,
+    origin_url: String,
+}
+
+impl GetAgentInstallerInstructionRequest {
+    /// Create an installer-instruction request.
+    #[must_use]
+    pub fn new(
+        scanner_id: EntityId,
+        language: AgentInstallerLanguage,
+        origin_url: impl Into<String>,
+    ) -> Self {
+        Self {
+            scanner_id,
+            language,
+            origin_url: origin_url.into(),
+        }
+    }
+}
+
+impl Request for GetAgentInstallerInstructionRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_agent_installer_instruction(&self.scanner_id, self.language, &self.origin_url)
+            .to_bytes()
+    }
+}
+
+impl GmpRequest for GetAgentInstallerInstructionRequest {
+    type Response = GetAgentInstallerInstructionResponse;
+}
+
+/// Semantic request for an agent support bundle.
+#[derive(Debug, Clone)]
+pub struct GetAgentSupportBundleRequest {
+    agent_uuid: EntityId,
+    days: Option<u32>,
+}
+
+impl GetAgentSupportBundleRequest {
+    /// Create a support-bundle request.
+    #[must_use]
+    pub fn new(agent_uuid: EntityId, days: Option<u32>) -> Self {
+        Self { agent_uuid, days }
+    }
+}
+
+impl Request for GetAgentSupportBundleRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_agent_support_bundle(&self.agent_uuid, self.days).to_bytes()
+    }
+}
+
+impl GmpRequest for GetAgentSupportBundleRequest {
+    type Response = GetAgentSupportBundleResponse;
 }
 
 /// Build a `get_agents` request.
@@ -274,6 +481,11 @@ fn add_u32_child(parent: &mut XmlElement, name: &str, value: Option<u32>) {
 mod tests {
     use super::*;
     use crate::common::xml;
+    use crate::responses::{
+        DeleteAgentResponse, GetAgentInstallerInstructionResponse, GetAgentSupportBundleResponse,
+        GetAgentsResponse, ModifyAgentControlScanConfigResponse, ModifyAgentResponse,
+        SyncAgentsResponse,
+    };
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
@@ -368,6 +580,84 @@ mod tests {
         assert_eq!(
             xml(get_agent_support_bundle(&id("agent-1"), None)),
             "<get_agent_support_bundle agent_uuid=\"agent-1\"/>"
+        );
+    }
+
+    #[test]
+    fn semantic_requests_preserve_builder_bytes_and_response_associations() {
+        fn agents<R: GmpRequest<Response = GetAgentsResponse>>(_: &R) {}
+        fn modify<R: GmpRequest<Response = ModifyAgentResponse>>(_: &R) {}
+        fn delete<R: GmpRequest<Response = DeleteAgentResponse>>(_: &R) {}
+        fn sync<R: GmpRequest<Response = SyncAgentsResponse>>(_: &R) {}
+        fn control<R: GmpRequest<Response = ModifyAgentControlScanConfigResponse>>(_: &R) {}
+        fn instruction<R: GmpRequest<Response = GetAgentInstallerInstructionResponse>>(_: &R) {}
+        fn bundle<R: GmpRequest<Response = GetAgentSupportBundleResponse>>(_: &R) {}
+
+        let agent_id = id("agent-1");
+        let agent_ids = vec![agent_id.clone(), id("agent-2")];
+        let list_opts = GetAgentsOpts {
+            filter_string: Some("scanner=agent-controller".into()),
+            filter_id: Some(id("filter-1")),
+        };
+        let modify_opts = ModifyAgentOpts {
+            authorized: Some(true),
+            update_to_latest: Some(false),
+            comment: Some("managed".into()),
+            config: Some(sample_config()),
+        };
+        let control_opts = ModifyAgentControlScanConfigOpts {
+            agent_defaults: Some(sample_config()),
+            update_to_latest: Some(true),
+        };
+
+        let list = GetAgentsRequest::new(list_opts.clone());
+        agents(&list);
+        assert_eq!(list.to_bytes(), get_agents(list_opts).to_bytes());
+        let get = GetAgentRequest::new(agent_id.clone());
+        agents(&get);
+        assert_eq!(get.to_bytes(), get_agent(&agent_id).to_bytes());
+        let modify_request = ModifyAgentRequest::new(agent_ids.clone(), modify_opts.clone());
+        modify(&modify_request);
+        assert_eq!(
+            modify_request.to_bytes(),
+            modify_agent(&agent_ids, modify_opts).to_bytes()
+        );
+        let delete_request = DeleteAgentRequest::new(agent_ids.clone());
+        delete(&delete_request);
+        assert_eq!(
+            delete_request.to_bytes(),
+            delete_agent(&agent_ids).to_bytes()
+        );
+        let sync_request = SyncAgentsRequest::new();
+        sync(&sync_request);
+        assert_eq!(sync_request.to_bytes(), sync_agents().to_bytes());
+        let control_request =
+            ModifyAgentControlScanConfigRequest::new(agent_id.clone(), control_opts.clone());
+        control(&control_request);
+        assert_eq!(
+            control_request.to_bytes(),
+            modify_agent_control_scan_config(&agent_id, control_opts).to_bytes()
+        );
+        let instruction_request = GetAgentInstallerInstructionRequest::new(
+            agent_id.clone(),
+            AgentInstallerLanguage::De,
+            "https://gvmd.example",
+        );
+        instruction(&instruction_request);
+        assert_eq!(
+            instruction_request.to_bytes(),
+            get_agent_installer_instruction(
+                &agent_id,
+                AgentInstallerLanguage::De,
+                "https://gvmd.example",
+            )
+            .to_bytes()
+        );
+        let bundle_request = GetAgentSupportBundleRequest::new(agent_id.clone(), Some(14));
+        bundle(&bundle_request);
+        assert_eq!(
+            bundle_request.to_bytes(),
+            get_agent_support_bundle(&agent_id, Some(14)).to_bytes()
         );
     }
 }

@@ -141,6 +141,21 @@ passed to `send` or `call`, so the compatibility escape hatch cannot bypass the
 same gate. Import/container and move requests retain their established baseline
 behavior.
 
+## Agents and integration configurations
+
+All agent, agent-group, and integration-configuration commands require GMP
+22.8. Their semantic requests delegate to the existing builders, so filters,
+identifier collections, scheduler values, nested agent defaults, and complete
+integration replacements remain byte-for-byte compatible. The typed agent and
+agent-group facade methods and the parsed integration helpers now use
+`execute`; the raw integration methods remain available for callers that need
+the unmodeled response.
+
+Agent installer instructions retain their language and origin metadata.
+Support-bundle responses continue to decode base64 content into binary bytes
+and validate declared sizes. OIDC client secrets remain redacted from
+semantic-request diagnostics and wire tracing.
+
 Audit list, detail, create, clone, modify, delete, start, stop, and resume
 requests likewise remain audit-scoped types even where their wire command is a
 task command. This keeps compile-time intent explicit without duplicating XML
