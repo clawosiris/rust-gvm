@@ -258,6 +258,28 @@ SecInfo operating-system and vulnerability facades are named
 change the distinct `get_assets` and legacy `get_vulns` helper behavior. Raw
 builders and `send`/`call` remain available for callers that need complete XML.
 
+## Assets, hosts, operating-system assets, and results
+
+Generic asset list/detail/create/modify/delete operations have semantic request
+values associated with their existing asset response models. Host and
+operating-system asset operations keep separate semantic request types even
+though they reuse the generic asset wire roots. This makes resource intent
+explicit without duplicating the established encoders or conflating asset
+operating systems with the distinct SecInfo `get_info` surface.
+
+The aliases preserve their current behavior: host and operating-system queries
+set the same asset `type` values and detail flags; host and generic asset
+modification continue to ignore their compatibility `value` fields; and asset
+deletion continues to omit the unsupported `ultimate` attribute. Existing
+generic and resource-specific facade methods, including detail/modify/delete
+completion for the alias families, delegate to `execute`.
+
+Result list and detail requests are likewise distinct semantic values over the
+same `get_results` builder family and share `GetResultsResponse`. Filters,
+saved-filter identifiers, detail selection, response status mapping, and parse
+context remain unchanged. Raw builders and custom execution stay available for
+all four families.
+
 ## Alternate target lifecycles
 
 The target command boundary includes a semantic `CloneTargetRequest` for the

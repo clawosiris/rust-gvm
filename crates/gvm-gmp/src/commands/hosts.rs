@@ -9,7 +9,11 @@ use crate::commands::assets::{
     create_asset, delete_asset, get_assets, modify_asset, AssetType, CreateAssetOpts,
     DeleteAssetOpts, GetAssetsOpts, ModifyAssetOpts,
 };
+use crate::responses::{
+    CreateHostResponse, DeleteHostResponse, GetHostsResponse, ModifyHostResponse,
+};
 use crate::types::EntityId;
+use crate::GmpRequest;
 
 /// Optional fields for host create and modify requests.
 #[derive(Debug, Clone, Default)]
@@ -45,6 +49,128 @@ pub struct GetHostsOpts {
     pub trash: Option<bool>,
     /// Whether to request detailed output.
     pub details: Option<bool>,
+}
+
+/// Semantic request for listing host assets.
+#[derive(Debug, Clone)]
+pub struct GetHostsRequest {
+    opts: GetHostsOpts,
+}
+
+impl GetHostsRequest {
+    /// Create a host-list request.
+    #[must_use]
+    pub fn new(opts: GetHostsOpts) -> Self {
+        Self { opts }
+    }
+}
+
+impl Request for GetHostsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_hosts(self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetHostsRequest {
+    type Response = GetHostsResponse;
+}
+
+/// Semantic request for retrieving one host asset.
+#[derive(Debug, Clone)]
+pub struct GetHostRequest {
+    host_id: EntityId,
+}
+
+impl GetHostRequest {
+    /// Create a single-host request.
+    #[must_use]
+    pub fn new(host_id: EntityId) -> Self {
+        Self { host_id }
+    }
+}
+
+impl Request for GetHostRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_host(&self.host_id).to_bytes()
+    }
+}
+
+impl GmpRequest for GetHostRequest {
+    type Response = GetHostsResponse;
+}
+
+/// Semantic request for creating a host asset.
+#[derive(Debug, Clone)]
+pub struct CreateHostRequest {
+    opts: HostOpts,
+}
+
+impl CreateHostRequest {
+    /// Create a host-creation request.
+    #[must_use]
+    pub fn new(opts: HostOpts) -> Self {
+        Self { opts }
+    }
+}
+
+impl Request for CreateHostRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_host(self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateHostRequest {
+    type Response = CreateHostResponse;
+}
+
+/// Semantic request for modifying a host asset.
+#[derive(Debug, Clone)]
+pub struct ModifyHostRequest {
+    host_id: EntityId,
+    opts: HostOpts,
+}
+
+impl ModifyHostRequest {
+    /// Create a host-modification request.
+    #[must_use]
+    pub fn new(host_id: EntityId, opts: HostOpts) -> Self {
+        Self { host_id, opts }
+    }
+}
+
+impl Request for ModifyHostRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_host(&self.host_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyHostRequest {
+    type Response = ModifyHostResponse;
+}
+
+/// Semantic request for deleting a host asset.
+#[derive(Debug, Clone)]
+pub struct DeleteHostRequest {
+    host_id: EntityId,
+    ultimate: bool,
+}
+
+impl DeleteHostRequest {
+    /// Create a host-deletion request.
+    #[must_use]
+    pub fn new(host_id: EntityId, ultimate: bool) -> Self {
+        Self { host_id, ultimate }
+    }
+}
+
+impl Request for DeleteHostRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_host(&self.host_id, self.ultimate).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteHostRequest {
+    type Response = DeleteHostResponse;
 }
 
 /// Build a `create_host` request.
@@ -147,5 +273,49 @@ mod tests {
             xml(delete_host(&id("h1"), false)),
             "<delete_asset asset_id=\"h1\"/>"
         );
+    }
+
+    #[test]
+    fn semantic_host_requests_match_builder_bytes_and_responses() {
+        fn assert_response<R: GmpRequest<Response = T>, T: crate::GmpResponse>(_: &R) {}
+
+        let get_opts = GetHostsOpts {
+            filter_string: Some("name=host".into()),
+            details: Some(true),
+            ..Default::default()
+        };
+        let request = GetHostsRequest::new(get_opts.clone());
+        assert_eq!(request.to_bytes(), get_hosts(get_opts).to_bytes());
+        assert_response::<_, GetHostsResponse>(&request);
+
+        let request = GetHostRequest::new(id("host-1"));
+        assert_eq!(request.to_bytes(), get_host(&id("host-1")).to_bytes());
+        assert_response::<_, GetHostsResponse>(&request);
+
+        let host_opts = HostOpts {
+            comment: Some("host".into()),
+            value: Some("192.0.2.10".into()),
+        };
+        let request = CreateHostRequest::new(host_opts.clone());
+        assert_eq!(request.to_bytes(), create_host(host_opts).to_bytes());
+        assert_response::<_, CreateHostResponse>(&request);
+
+        let modify_opts = HostOpts {
+            comment: Some("updated".into()),
+            value: Some("ignored".into()),
+        };
+        let request = ModifyHostRequest::new(id("host-1"), modify_opts.clone());
+        assert_eq!(
+            request.to_bytes(),
+            modify_host(&id("host-1"), modify_opts).to_bytes()
+        );
+        assert_response::<_, ModifyHostResponse>(&request);
+
+        let request = DeleteHostRequest::new(id("host-1"), true);
+        assert_eq!(
+            request.to_bytes(),
+            delete_host(&id("host-1"), true).to_bytes()
+        );
+        assert_response::<_, DeleteHostResponse>(&request);
     }
 }

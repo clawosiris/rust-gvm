@@ -12,6 +12,9 @@ use gvm_client::{
 use gvm_client::{GmpClient, GvmError};
 use gvm_connection::UnixSocketConnection;
 use gvm_gmp::commands::alerts::{AlertOpts, GetAlertsOpts, TriggerAlertOpts};
+use gvm_gmp::commands::assets::{
+    AssetType, CreateAssetOpts, DeleteAssetOpts, GetAssetsOpts, ModifyAssetOpts,
+};
 use gvm_gmp::commands::credentials::{
     CloneCredentialRequest, CreateCredentialRequest, CredentialOpts, DeleteCredentialRequest,
     GetCredentialRequest, GetCredentialsOpts, GetCredentialsRequest, ModifyCredentialOpts,
@@ -22,6 +25,7 @@ use gvm_gmp::commands::groups::{GetGroupsOpts, GroupOpts};
 use gvm_gmp::commands::hosts::{GetHostsOpts, HostOpts};
 use gvm_gmp::commands::notes::{GetNotesOpts, ModifyNoteOpts, NoteOpts};
 use gvm_gmp::commands::nvts::{GetNvtPreferencesOpts, GetNvtsOpts};
+use gvm_gmp::commands::operating_systems::GetOperatingSystemsOpts;
 use gvm_gmp::commands::overrides::{GetOverridesOpts, ModifyOverrideOpts, OverrideOpts};
 use gvm_gmp::commands::permissions::{GetPermissionsOpts, PermissionOpts};
 use gvm_gmp::commands::port_lists::{GetPortListsOpts, PortListOpts};
@@ -337,6 +341,29 @@ const ALTERNATE_TARGET_OVERRIDES: &[(&str, &str)] = &[
     (
         "delete_web_application_target",
         r#"<delete_web_application_target_response status="200" status_text="OK"/>"#,
+    ),
+];
+
+const ASSET_HOST_RESULT_OVERRIDES: &[(&str, &str)] = &[
+    (
+        "get_assets",
+        r#"<get_assets_response status="200" status_text="OK"><asset_count>0<filtered>0</filtered></asset_count></get_assets_response>"#,
+    ),
+    (
+        "create_asset",
+        r#"<create_asset_response status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111"/>"#,
+    ),
+    (
+        "modify_asset",
+        r#"<modify_asset_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "delete_asset",
+        r#"<delete_asset_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "get_results",
+        r#"<get_results_response status="200" status_text="OK"><result_count>0<filtered>0</filtered></result_count></get_results_response>"#,
     ),
 ];
 
@@ -751,6 +778,124 @@ async fn nvt_and_secinfo_queries_preserve_status_and_parse_context() {
         GvmError::Parse(ParseError::MissingElement(field)) if field == "preference.name"
     ));
 
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn assets_hosts_operating_systems_and_results_execute_through_typed_facade() {
+    let Some(server) = fixture_server(MockVersion::V22_8, ASSET_HOST_RESULT_OVERRIDES).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    let asset_id = id(CREATED_ID);
+    server.clear_history();
+
+    assert_typed_success!(client.get_assets(GetAssetsOpts::default()));
+    assert_typed_success!(client.get_asset(&asset_id, AssetType::custom("firmware")));
+    let created = client
+        .create_asset(CreateAssetOpts {
+            asset_type: AssetType::Host,
+            comment: Some("created".into()),
+            value: Some("192.0.2.10".into()),
+        })
+        .await
+        .expect("generic asset create should parse");
+    assert_eq!(created.status, 201);
+    assert_eq!(created.id.as_ref(), Some(&asset_id));
+    assert_typed_success!(client.modify_asset(
+        &asset_id,
+        ModifyAssetOpts {
+            comment: Some("updated".into()),
+            value: Some("ignored".into()),
+        }
+    ));
+    assert_typed_success!(client.delete_asset(
+        &asset_id,
+        DeleteAssetOpts {
+            ultimate: Some(true),
+        }
+    ));
+
+    assert_typed_success!(client.get_hosts(GetHostsOpts::default()));
+    assert_typed_success!(client.get_host(&asset_id));
+    assert_create_success!(client.create_host(HostOpts::named("192.0.2.20")));
+    assert_typed_success!(client.modify_host(
+        &asset_id,
+        HostOpts {
+            comment: Some("updated host".into()),
+            value: Some("ignored".into()),
+        }
+    ));
+    assert_typed_success!(client.delete_host(&asset_id, true));
+
+    assert_typed_success!(client.get_operating_system_assets(GetOperatingSystemsOpts::default()));
+    assert_typed_success!(client.get_operating_system_asset(&asset_id, Some(true)));
+    assert_typed_success!(
+        client.modify_operating_system_asset(&asset_id, Some("updated OS".into()))
+    );
+    assert_typed_success!(client.delete_operating_system_asset(&asset_id));
+
+    assert_typed_success!(client.get_results(GetResultsOpts::default()));
+    assert_typed_success!(client.get_result(&asset_id));
+
+    let history = server.command_history();
+    for (command, expected_count) in [
+        ("get_assets", 6),
+        ("create_asset", 2),
+        ("modify_asset", 3),
+        ("delete_asset", 3),
+        ("get_results", 2),
+    ] {
+        assert_eq!(
+            history
+                .iter()
+                .filter(|record| record.command_name() == command)
+                .count(),
+            expected_count,
+            "unexpected facade inventory for {command}"
+        );
+    }
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn asset_and_result_facades_preserve_status_and_parse_context() {
+    let Some(server) = fixture_server(
+        MockVersion::V22_8,
+        &[(
+            "get_assets",
+            r#"<get_assets_response status="409" status_text="asset conflict"/>"#,
+        )],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut status_client = client(&server).await;
+    assert_server_error!(status_client.get_host(&id("host-1")), 409, "asset conflict");
+    server.shutdown().await;
+
+    let Some(server) = fixture_server(
+        MockVersion::V22_8,
+        &[(
+            "get_results",
+            r#"<get_results_response status="200" status_text="OK"><result/></get_results_response>"#,
+        )],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut parse_client = client(&server).await;
+    let parse_error = parse_client
+        .get_result(&id("result-1"))
+        .await
+        .expect_err("malformed result should fail");
+    assert!(matches!(
+        parse_error,
+        GvmError::Parse(ParseError::MissingElement(field)) if field == "result.id"
+    ));
     server.shutdown().await;
 }
 

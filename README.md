@@ -210,7 +210,9 @@ OCI-image, and web-application target lifecycles, credential/scanner
 lifecycles, scan-config, policy, and credential-store operations, alerts and
 schedules, filters, tags, notes, overrides, trashcan recovery, user, group,
 role, and permission lifecycles, plus irregular report retrieval, drill-down,
-and export operations and the complete NVT/SecInfo query surface:
+and export operations and the complete NVT/SecInfo query surface. Generic
+assets, host and operating-system asset lifecycles, and result list/detail
+queries use the same execution contract:
 
 ```rust
 use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest};

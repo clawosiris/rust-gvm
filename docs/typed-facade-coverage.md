@@ -19,6 +19,8 @@ Coverage is organized by behavior family:
   responses and assert typed results plus command history;
 - create helpers use a shared response table and assert typed create IDs;
 - report export exercises both the simple and options XML shapes;
+- generic assets, host and operating-system aliases, and result queries assert
+  every typed facade shape plus their shared wire-command inventory;
 - server-status and malformed-payload cases assert typed error mapping;
 - the 22.6 registry gate, 22.8 registry gate, and 22.8 semantic-command gates
   are exercised through typed methods.
