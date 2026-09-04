@@ -11,6 +11,16 @@ use gvm_client::{
 };
 use gvm_client::{GmpClient, GvmError};
 use gvm_connection::UnixSocketConnection;
+use gvm_gmp::commands::agent_groups::{
+    CloneAgentGroupRequest, CreateAgentGroupOpts, CreateAgentGroupRequest, DeleteAgentGroupRequest,
+    GetAgentGroupRequest, GetAgentGroupsRequest, ModifyAgentGroupOpts, ModifyAgentGroupRequest,
+};
+use gvm_gmp::commands::agents::{
+    AgentInstallerLanguage, DeleteAgentRequest, GetAgentInstallerInstructionRequest,
+    GetAgentRequest, GetAgentSupportBundleRequest, GetAgentsRequest,
+    ModifyAgentControlScanConfigOpts, ModifyAgentControlScanConfigRequest, ModifyAgentOpts,
+    ModifyAgentRequest, SyncAgentsRequest,
+};
 use gvm_gmp::commands::alerts::{AlertOpts, GetAlertsOpts, TriggerAlertOpts};
 use gvm_gmp::commands::assets::{
     AssetType, CreateAssetOpts, DeleteAssetOpts, GetAssetsOpts, ModifyAssetOpts,
@@ -23,6 +33,10 @@ use gvm_gmp::commands::credentials::{
 use gvm_gmp::commands::filters::{FilterOpts, GetFiltersOpts};
 use gvm_gmp::commands::groups::{GetGroupsOpts, GroupOpts};
 use gvm_gmp::commands::hosts::{GetHostsOpts, HostOpts};
+use gvm_gmp::commands::integration_configs::{
+    GetIntegrationConfigRequest, GetIntegrationConfigsRequest, ModifyIntegrationConfigOpts,
+    ModifyIntegrationConfigRequest,
+};
 use gvm_gmp::commands::notes::{GetNotesOpts, ModifyNoteOpts, NoteOpts};
 use gvm_gmp::commands::nvts::{GetNvtPreferencesOpts, GetNvtsOpts};
 use gvm_gmp::commands::operating_systems::GetOperatingSystemsOpts;
@@ -2737,6 +2751,7 @@ async fn generic_execute_preserves_server_status_and_parse_error_context() {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn distinct_registry_and_semantic_version_gates_fail_before_transport_send() {
     let Some(v225_server) = fixture_server(MockVersion::V22_5, &[]).await else {
         return;
@@ -2778,6 +2793,134 @@ async fn distinct_registry_and_semantic_version_gates_fail_before_transport_send
     v227_server.clear_history();
     let report_id = id(CREATED_ID);
     let format_id = id("33333333-3333-3333-3333-333333333333");
+
+    assert_unsupported_command!(
+        v227_client.execute(GetAgentsRequest::default()),
+        "get_agents",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetAgentRequest::new(id("agent-1"))),
+        "get_agents",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(ModifyAgentRequest::new(
+            vec![id("agent-1")],
+            ModifyAgentOpts::default(),
+        )),
+        "modify_agent",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(DeleteAgentRequest::new(vec![id("agent-1")])),
+        "delete_agent",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(SyncAgentsRequest::new()),
+        "sync_agents",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(ModifyAgentControlScanConfigRequest::new(
+            id("scanner-1"),
+            ModifyAgentControlScanConfigOpts::default(),
+        )),
+        "modify_agent_control_scan_config",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetAgentInstallerInstructionRequest::new(
+            id("scanner-1"),
+            AgentInstallerLanguage::En,
+            "https://gvmd.example",
+        )),
+        "get_agent_installer_instruction",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetAgentSupportBundleRequest::new(id("agent-1"), Some(7))),
+        "get_agent_support_bundle",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(CreateAgentGroupRequest::new(
+            "group",
+            vec![id("agent-1")],
+            "0 */5 * * *",
+            CreateAgentGroupOpts::default(),
+        )),
+        "create_agent_group",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(CloneAgentGroupRequest::new(id("group-1"))),
+        "create_agent_group",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetAgentGroupsRequest::default()),
+        "get_agent_groups",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetAgentGroupRequest::new(id("group-1"))),
+        "get_agent_groups",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(ModifyAgentGroupRequest::new(
+            id("group-1"),
+            "0 */5 * * *",
+            ModifyAgentGroupOpts::default(),
+        )),
+        "modify_agent_group",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(DeleteAgentGroupRequest::new(id("group-1"), false)),
+        "delete_agent_group",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetIntegrationConfigsRequest::default()),
+        "get_integration_configs",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(GetIntegrationConfigRequest::new(
+            id("integration-1"),
+            Some(true),
+        )),
+        "get_integration_configs",
+        GmpVersion(22, 7),
+        "22.8"
+    );
+    assert_unsupported_command!(
+        v227_client.execute(ModifyIntegrationConfigRequest::new(
+            id("integration-1"),
+            ModifyIntegrationConfigOpts::default(),
+        )),
+        "modify_integration_config",
+        GmpVersion(22, 7),
+        "22.8"
+    );
 
     let export_error = v227_client
         .get_report_export(&report_id, &format_id)

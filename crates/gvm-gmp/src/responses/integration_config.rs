@@ -9,6 +9,7 @@ use crate::responses::common::{
     count_info, parse_document, parse_entity_meta, status_from_response, ActionResponse, CountInfo,
     EntityMeta, ParseError, XmlNode,
 };
+use crate::{GmpResponse, GmpVersion};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -94,6 +95,12 @@ impl GetIntegrationConfigsResponse {
             items,
             counts: count_info(&root, "integration_config_count")?,
         })
+    }
+}
+
+impl GmpResponse for GetIntegrationConfigsResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 

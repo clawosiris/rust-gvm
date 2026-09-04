@@ -139,6 +139,16 @@ retain their GMP 22.8 gates while standard target cloning remains baseline.
 All twelve existing `_parsed` facade helpers now delegate to `execute`;
 builders and raw/custom execution remain supported.
 
+The agent-and-integration Phase 3 batch, tracked by
+[`#568`](https://github.com/greenbone-hive/rust-gvm/issues/568), migrates all 17
+public agent, agent-group, and integration-configuration builders to semantic
+typed execution. Existing agent and agent-group typed helpers and the parsed
+integration helpers now delegate to `execute`, while the raw integration
+methods, builders, and response models remain supported. All requests preserve
+their GMP 22.8 pre-send gate, and installer instructions, identifier
+collections, integration secrets, and binary/base64 support bundles retain
+their established wire and decoding behavior.
+
 The irregular-report Phase 3 batch, tracked by
 [`#546`](https://github.com/greenbone-hive/rust-gvm/issues/546), migrates report
 list/detail, structured scan and audit reports, audit hosts, nine structured

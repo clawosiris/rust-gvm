@@ -24,12 +24,13 @@ use std::sync::Arc;
 
 use gvm_connection::GvmConnection;
 use gvm_gmp::commands::agent_groups::{
-    clone_agent_group, create_agent_group, delete_agent_group, get_agent_group, get_agent_groups,
-    modify_agent_group,
+    CloneAgentGroupRequest, CreateAgentGroupRequest, DeleteAgentGroupRequest, GetAgentGroupRequest,
+    GetAgentGroupsRequest, ModifyAgentGroupRequest,
 };
 use gvm_gmp::commands::agents::{
-    delete_agent, get_agent, get_agent_installer_instruction, get_agent_support_bundle, get_agents,
-    modify_agent, modify_agent_control_scan_config, sync_agents,
+    DeleteAgentRequest, GetAgentInstallerInstructionRequest, GetAgentRequest,
+    GetAgentSupportBundleRequest, GetAgentsRequest, ModifyAgentControlScanConfigRequest,
+    ModifyAgentRequest, SyncAgentsRequest,
 };
 use gvm_gmp::commands::credentials::{
     create_credential_store_credential, get_credential_store, get_credential_stores,
@@ -498,8 +499,7 @@ impl<C: GvmConnection> GmpClient<C> {
     /// Returns an error if the server does not support the command, the transport fails,
     /// parsing fails, or the server returns a non-success status.
     pub async fn get_agents(&mut self, opts: GetAgentsOpts) -> Result<GetAgentsResponse, GvmError> {
-        let response = self.call(get_agents(opts)).await?;
-        GetAgentsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetAgentsRequest::new(opts)).await
     }
 
     /// Get a single agent.
@@ -508,8 +508,7 @@ impl<C: GvmConnection> GmpClient<C> {
     /// Returns an error if the server does not support the command, the transport fails,
     /// parsing fails, or the server returns a non-success status.
     pub async fn get_agent(&mut self, agent_id: &EntityId) -> Result<GetAgentsResponse, GvmError> {
-        let response = self.call(get_agent(agent_id)).await?;
-        GetAgentsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetAgentRequest::new(agent_id.clone())).await
     }
 
     /// Modify one or more agents.
@@ -522,8 +521,8 @@ impl<C: GvmConnection> GmpClient<C> {
         agent_ids: &[EntityId],
         opts: ModifyAgentOpts,
     ) -> Result<ModifyAgentResponse, GvmError> {
-        let response = self.call(modify_agent(agent_ids, opts)).await?;
-        ModifyAgentResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyAgentRequest::new(agent_ids.to_vec(), opts))
+            .await
     }
 
     /// Delete one or more agents.
@@ -535,8 +534,8 @@ impl<C: GvmConnection> GmpClient<C> {
         &mut self,
         agent_ids: &[EntityId],
     ) -> Result<DeleteAgentResponse, GvmError> {
-        let response = self.call(delete_agent(agent_ids)).await?;
-        DeleteAgentResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(DeleteAgentRequest::new(agent_ids.to_vec()))
+            .await
     }
 
     /// Synchronize agents.
@@ -545,8 +544,7 @@ impl<C: GvmConnection> GmpClient<C> {
     /// Returns an error if the server does not support the command, the transport fails,
     /// parsing fails, or the server returns a non-success status.
     pub async fn sync_agents(&mut self) -> Result<SyncAgentsResponse, GvmError> {
-        let response = self.call(sync_agents()).await?;
-        SyncAgentsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(SyncAgentsRequest::new()).await
     }
 
     /// Modify the agent-control scan configuration defaults.
@@ -559,10 +557,11 @@ impl<C: GvmConnection> GmpClient<C> {
         agent_control_id: &EntityId,
         opts: ModifyAgentControlScanConfigOpts,
     ) -> Result<ModifyAgentControlScanConfigResponse, GvmError> {
-        let response = self
-            .call(modify_agent_control_scan_config(agent_control_id, opts))
-            .await?;
-        ModifyAgentControlScanConfigResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyAgentControlScanConfigRequest::new(
+            agent_control_id.clone(),
+            opts,
+        ))
+        .await
     }
 
     /// Get agent installer instructions.
@@ -576,12 +575,12 @@ impl<C: GvmConnection> GmpClient<C> {
         language: AgentInstallerLanguage,
         origin_url: &str,
     ) -> Result<GetAgentInstallerInstructionResponse, GvmError> {
-        let response = self
-            .call(get_agent_installer_instruction(
-                scanner_id, language, origin_url,
-            ))
-            .await?;
-        GetAgentInstallerInstructionResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetAgentInstallerInstructionRequest::new(
+            scanner_id.clone(),
+            language,
+            origin_url,
+        ))
+        .await
     }
 
     /// Get an agent support bundle.
@@ -594,10 +593,8 @@ impl<C: GvmConnection> GmpClient<C> {
         agent_uuid: &EntityId,
         days: Option<u32>,
     ) -> Result<GetAgentSupportBundleResponse, GvmError> {
-        let response = self
-            .call(get_agent_support_bundle(agent_uuid, days))
-            .await?;
-        GetAgentSupportBundleResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetAgentSupportBundleRequest::new(agent_uuid.clone(), days))
+            .await
     }
 
     /// Create an agent group.
@@ -612,15 +609,13 @@ impl<C: GvmConnection> GmpClient<C> {
         scheduler_cron_time: &str,
         opts: CreateAgentGroupOpts,
     ) -> Result<CreateAgentGroupResponse, GvmError> {
-        let response = self
-            .call(create_agent_group(
-                name,
-                agent_ids,
-                scheduler_cron_time,
-                opts,
-            ))
-            .await?;
-        CreateAgentGroupResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CreateAgentGroupRequest::new(
+            name,
+            agent_ids.to_vec(),
+            scheduler_cron_time,
+            opts,
+        ))
+        .await
     }
 
     /// Clone an agent group.
@@ -632,8 +627,8 @@ impl<C: GvmConnection> GmpClient<C> {
         &mut self,
         agent_group_id: &EntityId,
     ) -> Result<CloneAgentGroupResponse, GvmError> {
-        let response = self.call(clone_agent_group(agent_group_id)).await?;
-        CloneAgentGroupResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CloneAgentGroupRequest::new(agent_group_id.clone()))
+            .await
     }
 
     /// Get a single agent group.
@@ -645,8 +640,8 @@ impl<C: GvmConnection> GmpClient<C> {
         &mut self,
         agent_group_id: &EntityId,
     ) -> Result<GetAgentGroupsResponse, GvmError> {
-        let response = self.call(get_agent_group(agent_group_id)).await?;
-        GetAgentGroupsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetAgentGroupRequest::new(agent_group_id.clone()))
+            .await
     }
 
     /// List agent groups.
@@ -658,8 +653,7 @@ impl<C: GvmConnection> GmpClient<C> {
         &mut self,
         opts: GetAgentGroupsOpts,
     ) -> Result<GetAgentGroupsResponse, GvmError> {
-        let response = self.call(get_agent_groups(opts)).await?;
-        GetAgentGroupsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetAgentGroupsRequest::new(opts)).await
     }
 
     /// Modify an agent group.
@@ -673,14 +667,12 @@ impl<C: GvmConnection> GmpClient<C> {
         scheduler_cron_time: &str,
         opts: ModifyAgentGroupOpts,
     ) -> Result<ModifyAgentGroupResponse, GvmError> {
-        let response = self
-            .call(modify_agent_group(
-                agent_group_id,
-                scheduler_cron_time,
-                opts,
-            ))
-            .await?;
-        ModifyAgentGroupResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyAgentGroupRequest::new(
+            agent_group_id.clone(),
+            scheduler_cron_time,
+            opts,
+        ))
+        .await
     }
 
     /// Delete an agent group.
@@ -693,10 +685,11 @@ impl<C: GvmConnection> GmpClient<C> {
         agent_group_id: &EntityId,
         ultimate: bool,
     ) -> Result<DeleteAgentGroupResponse, GvmError> {
-        let response = self
-            .call(delete_agent_group(agent_group_id, ultimate))
-            .await?;
-        DeleteAgentGroupResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(DeleteAgentGroupRequest::new(
+            agent_group_id.clone(),
+            ultimate,
+        ))
+        .await
     }
 
     /// Create an OCI image target.

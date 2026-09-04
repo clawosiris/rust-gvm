@@ -53,8 +53,8 @@ use gvm_gmp::commands::hosts::{
     ModifyHostRequest,
 };
 use gvm_gmp::commands::integration_configs::{
-    get_integration_config, get_integration_configs, modify_integration_config,
-    GetIntegrationConfigsOpts, ModifyIntegrationConfigOpts,
+    GetIntegrationConfigRequest, GetIntegrationConfigsOpts, GetIntegrationConfigsRequest,
+    ModifyIntegrationConfigOpts, ModifyIntegrationConfigRequest,
 };
 use gvm_gmp::commands::notes::{
     CloneNoteRequest, CreateNoteRequest, DeleteNoteRequest, GetNoteRequest, GetNotesOpts,
@@ -2743,10 +2743,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         integration_config_id: &EntityId,
         details: Option<bool>,
     ) -> Result<GetIntegrationConfigsResponse, GvmError> {
-        let response = self
-            .send(get_integration_config(integration_config_id, details))
-            .await?;
-        GetIntegrationConfigsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetIntegrationConfigRequest::new(
+            integration_config_id.clone(),
+            details,
+        ))
+        .await
     }
 
     /// Send a `get_integration_configs` request and return a typed response.
@@ -2760,8 +2761,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         opts: GetIntegrationConfigsOpts,
     ) -> Result<GetIntegrationConfigsResponse, GvmError> {
-        let response = self.send(get_integration_configs(opts)).await?;
-        GetIntegrationConfigsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetIntegrationConfigsRequest::new(opts)).await
     }
 
     /// Send a `modify_integration_config` request and return a typed response.
@@ -2776,10 +2776,11 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         integration_config_id: &EntityId,
         opts: ModifyIntegrationConfigOpts,
     ) -> Result<ModifyIntegrationConfigResponse, GvmError> {
-        let response = self
-            .send(modify_integration_config(integration_config_id, opts))
-            .await?;
-        ModifyIntegrationConfigResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyIntegrationConfigRequest::new(
+            integration_config_id.clone(),
+            opts,
+        ))
+        .await
     }
 
     // ── Assets ──────────────────────────────────────────────────────────────────
