@@ -311,6 +311,16 @@ the respective creation command. All existing `_parsed` convenience methods
 for the two alternate-target families are thin `execute` wrappers. Raw builders
 and `send`/`call` remain available without introducing a second encoding path.
 
+## Generic configurations and port lists
+
+Generic configurations retain separate list, detail, create, clone, modify,
+and delete request values over the existing generic config builders. Port
+lists follow the same lifecycle and include semantic create/delete port-range
+requests. The associated response is fixed for every operation, including the
+action-shaped port-range responses. Existing filters, usage types, pagination,
+identifiers, and mutation options are passed unchanged to the legacy encoders;
+raw builders and execution remain supported.
+
 ## Irregular report codecs and version policy
 
 The Phase 3 report family demonstrates that `GmpResponse` is a codec contract,

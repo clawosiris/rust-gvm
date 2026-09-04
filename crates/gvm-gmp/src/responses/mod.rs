@@ -128,7 +128,8 @@ pub use permission::{
     ModifyPermissionResponse, Permission,
 };
 pub use port_list::{
-    CreatePortListResponse, GetPortListsResponse, ModifyPortListResponse, PortList,
+    CreatePortListResponse, CreatePortRangeResponse, DeletePortListResponse,
+    DeletePortRangeResponse, GetPortListsResponse, ModifyPortListResponse, PortList,
 };
 pub use report::{
     CreateReportResponse, DeleteReportResponse, ExportScanReportResponse,

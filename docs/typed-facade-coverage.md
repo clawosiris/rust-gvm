@@ -21,6 +21,8 @@ Coverage is organized by behavior family:
 - report export exercises both the simple and options XML shapes;
 - generic assets, host and operating-system aliases, and result queries assert
   every typed facade shape plus their shared wire-command inventory;
+- generic configuration and port-list coverage exercises all fourteen list,
+  detail, lifecycle, and port-range semantic operations;
 - server-status and malformed-payload cases assert typed error mapping;
 - the 22.6 registry gate, 22.8 registry gate, and 22.8 semantic-command gates
   are exercised through typed methods.

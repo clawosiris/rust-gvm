@@ -9,6 +9,7 @@ use crate::responses::common::{
     count_info, optional_u32, parse_document, parse_entity_id, parse_entity_meta,
     status_from_response, ActionResponse, CountInfo, EntityMeta, ParseError,
 };
+use crate::{GmpResponse, GmpVersion};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -99,6 +100,12 @@ impl GetPortListsResponse {
     }
 }
 
+impl GmpResponse for GetPortListsResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 impl CreatePortListResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
@@ -116,8 +123,16 @@ impl CreatePortListResponse {
     }
 }
 
+impl GmpResponse for CreatePortListResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 pub type ModifyPortListResponse = ActionResponse;
 pub type DeletePortListResponse = ActionResponse;
+pub type CreatePortRangeResponse = ActionResponse;
+pub type DeletePortRangeResponse = ActionResponse;
 
 #[cfg(test)]
 mod tests {
