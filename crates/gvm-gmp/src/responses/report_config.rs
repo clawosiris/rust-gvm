@@ -9,6 +9,7 @@ use crate::responses::common::{
     count_info, parse_document, parse_entity_id, parse_entity_meta, parse_named_entity,
     status_from_response, ActionResponse, CountInfo, EntityMeta, NamedEntity, ParseError,
 };
+use crate::{GmpResponse, GmpVersion};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -77,6 +78,18 @@ impl CreateReportConfigResponse {
             status_text,
             id,
         })
+    }
+}
+
+impl GmpResponse for GetReportConfigsResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
+impl GmpResponse for CreateReportConfigResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 

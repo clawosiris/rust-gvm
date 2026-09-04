@@ -3,26 +3,31 @@
 
 //! Report configuration command builders.
 
-use gvm_protocol::XmlCommand;
+use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::{add_text_element, bool_str};
+use crate::responses::{
+    CreateReportConfigResponse, DeleteReportConfigResponse, GetReportConfigsResponse,
+    ModifyReportConfigResponse,
+};
+use crate::GmpRequest;
 
 /// Optional fields for `create_report_config` requests.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct CreateReportConfigOpts {
     /// Optional comment text included in the request.
     pub comment: Option<String>,
 }
 
 /// Optional fields for `delete_report_config` requests.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct DeleteReportConfigOpts {
     /// Whether to permanently delete the report configuration.
     pub ultimate: Option<bool>,
 }
 
 /// Options for `get_report_configs` requests.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct GetReportConfigsOpts {
     /// Optional inline filter expression.
     pub filter: Option<String>,
@@ -33,12 +38,216 @@ pub struct GetReportConfigsOpts {
 }
 
 /// Optional fields for `modify_report_config` requests.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ModifyReportConfigOpts {
     /// Optional resource name.
     pub name: Option<String>,
     /// Optional comment text included in the request.
     pub comment: Option<String>,
+}
+
+/// Semantic request for creating a report configuration with default options.
+#[derive(Debug, Clone)]
+pub struct CreateReportConfigRequest {
+    name: String,
+    report_format_id: String,
+}
+
+impl CreateReportConfigRequest {
+    /// Create a report-configuration request with default options.
+    #[must_use]
+    pub fn new(name: impl Into<String>, report_format_id: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            report_format_id: report_format_id.into(),
+        }
+    }
+}
+
+impl Request for CreateReportConfigRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_report_config(&self.name, &self.report_format_id).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateReportConfigRequest {
+    type Response = CreateReportConfigResponse;
+}
+
+/// Semantic request for creating a report configuration with optional fields.
+#[derive(Debug, Clone)]
+pub struct CreateReportConfigWithOptsRequest {
+    name: String,
+    report_format_id: String,
+    opts: CreateReportConfigOpts,
+}
+
+impl CreateReportConfigWithOptsRequest {
+    /// Create a report-configuration request with optional fields.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        report_format_id: impl Into<String>,
+        opts: CreateReportConfigOpts,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            report_format_id: report_format_id.into(),
+            opts,
+        }
+    }
+}
+
+impl Request for CreateReportConfigWithOptsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_report_config_opts(&self.name, &self.report_format_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateReportConfigWithOptsRequest {
+    type Response = CreateReportConfigResponse;
+}
+
+macro_rules! report_config_id_request {
+    ($name:ident, $response:ty, $builder:ident) => {
+        #[doc = concat!("Semantic request backed by [`", stringify!($builder), "`].")]
+        #[derive(Debug, Clone)]
+        pub struct $name(String);
+
+        impl $name {
+            /// Create the semantic request.
+            #[must_use]
+            pub fn new(id: impl Into<String>) -> Self {
+                Self(id.into())
+            }
+        }
+
+        impl Request for $name {
+            fn to_bytes(&self) -> Vec<u8> {
+                $builder(&self.0).to_bytes()
+            }
+        }
+
+        impl GmpRequest for $name {
+            type Response = $response;
+        }
+    };
+}
+
+report_config_id_request!(
+    CloneReportConfigRequest,
+    CreateReportConfigResponse,
+    clone_report_config
+);
+report_config_id_request!(
+    DeleteReportConfigRequest,
+    DeleteReportConfigResponse,
+    delete_report_config
+);
+report_config_id_request!(
+    GetReportConfigRequest,
+    GetReportConfigsResponse,
+    get_report_config
+);
+
+/// Semantic request for deleting a report configuration with optional fields.
+#[derive(Debug, Clone)]
+pub struct DeleteReportConfigWithOptsRequest {
+    id: String,
+    opts: DeleteReportConfigOpts,
+}
+
+impl DeleteReportConfigWithOptsRequest {
+    /// Create a report-configuration deletion request with optional fields.
+    #[must_use]
+    pub fn new(id: impl Into<String>, opts: DeleteReportConfigOpts) -> Self {
+        Self {
+            id: id.into(),
+            opts,
+        }
+    }
+}
+
+impl Request for DeleteReportConfigWithOptsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_report_config_opts(&self.id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteReportConfigWithOptsRequest {
+    type Response = DeleteReportConfigResponse;
+}
+
+/// Semantic request for listing report configurations with default options.
+#[derive(Debug, Clone, Default)]
+pub struct GetReportConfigsRequest;
+
+impl GetReportConfigsRequest {
+    /// Create a report-configuration list request with default options.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl Request for GetReportConfigsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_report_configs().to_bytes()
+    }
+}
+
+impl GmpRequest for GetReportConfigsRequest {
+    type Response = GetReportConfigsResponse;
+}
+
+/// Semantic request for listing report configurations with optional attributes.
+#[derive(Debug, Clone, Default)]
+pub struct GetReportConfigsWithOptsRequest(GetReportConfigsOpts);
+
+impl GetReportConfigsWithOptsRequest {
+    /// Create a report-configuration list request with optional attributes.
+    #[must_use]
+    pub fn new(opts: GetReportConfigsOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetReportConfigsWithOptsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_report_configs_opts(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetReportConfigsWithOptsRequest {
+    type Response = GetReportConfigsResponse;
+}
+
+/// Semantic request for modifying a report configuration.
+#[derive(Debug, Clone)]
+pub struct ModifyReportConfigRequest {
+    id: String,
+    opts: ModifyReportConfigOpts,
+}
+
+impl ModifyReportConfigRequest {
+    /// Create a report-configuration modification request.
+    #[must_use]
+    pub fn new(id: impl Into<String>, opts: ModifyReportConfigOpts) -> Self {
+        Self {
+            id: id.into(),
+            opts,
+        }
+    }
+}
+
+impl Request for ModifyReportConfigRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_report_config(&self.id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyReportConfigRequest {
+    type Response = ModifyReportConfigResponse;
 }
 
 /// Build a `create_report_config` request.
@@ -189,5 +398,83 @@ mod tests {
             )),
             "<delete_report_config report_config_id=\"cfg1\" ultimate=\"1\"/>"
         );
+    }
+
+    #[test]
+    fn semantic_requests_match_all_builder_bytes_and_responses() {
+        fn associated<R, T>(_: &R)
+        where
+            R: GmpRequest<Response = T>,
+            T: crate::GmpResponse,
+        {
+        }
+
+        let create_opts = CreateReportConfigOpts {
+            comment: Some("comment".into()),
+        };
+        let delete_opts = DeleteReportConfigOpts {
+            ultimate: Some(true),
+        };
+        let get_opts = GetReportConfigsOpts {
+            filter: Some("name=cfg".into()),
+            first: Some(2),
+            rows: Some(4),
+        };
+        let modify_opts = ModifyReportConfigOpts {
+            name: Some("renamed".into()),
+            comment: Some("changed".into()),
+        };
+
+        let create = CreateReportConfigRequest::new("cfg", "rf-1");
+        assert_eq!(
+            create.to_bytes(),
+            create_report_config("cfg", "rf-1").to_bytes()
+        );
+        associated::<_, CreateReportConfigResponse>(&create);
+
+        let create_with_opts =
+            CreateReportConfigWithOptsRequest::new("cfg", "rf-1", create_opts.clone());
+        assert_eq!(
+            create_with_opts.to_bytes(),
+            create_report_config_opts("cfg", "rf-1", create_opts).to_bytes()
+        );
+        associated::<_, CreateReportConfigResponse>(&create_with_opts);
+
+        let clone = CloneReportConfigRequest::new("cfg-1");
+        assert_eq!(clone.to_bytes(), clone_report_config("cfg-1").to_bytes());
+        associated::<_, CreateReportConfigResponse>(&clone);
+
+        let delete = DeleteReportConfigRequest::new("cfg-1");
+        assert_eq!(delete.to_bytes(), delete_report_config("cfg-1").to_bytes());
+        associated::<_, DeleteReportConfigResponse>(&delete);
+
+        let delete_with_opts = DeleteReportConfigWithOptsRequest::new("cfg-1", delete_opts.clone());
+        assert_eq!(
+            delete_with_opts.to_bytes(),
+            delete_report_config_opts("cfg-1", delete_opts).to_bytes()
+        );
+        associated::<_, DeleteReportConfigResponse>(&delete_with_opts);
+
+        let list = GetReportConfigsRequest::new();
+        assert_eq!(list.to_bytes(), get_report_configs().to_bytes());
+        associated::<_, GetReportConfigsResponse>(&list);
+
+        let list_with_opts = GetReportConfigsWithOptsRequest::new(get_opts.clone());
+        assert_eq!(
+            list_with_opts.to_bytes(),
+            get_report_configs_opts(get_opts).to_bytes()
+        );
+        associated::<_, GetReportConfigsResponse>(&list_with_opts);
+
+        let get = GetReportConfigRequest::new("cfg-1");
+        assert_eq!(get.to_bytes(), get_report_config("cfg-1").to_bytes());
+        associated::<_, GetReportConfigsResponse>(&get);
+
+        let modify = ModifyReportConfigRequest::new("cfg-1", modify_opts.clone());
+        assert_eq!(
+            modify.to_bytes(),
+            modify_report_config("cfg-1", modify_opts).to_bytes()
+        );
+        associated::<_, ModifyReportConfigResponse>(&modify);
     }
 }

@@ -321,6 +321,16 @@ action-shaped port-range responses. Existing filters, usage types, pagination,
 identifiers, and mutation options are passed unchanged to the legacy encoders;
 raw builders and execution remain supported.
 
+## Report configurations, report formats, and TLS certificates
+
+Report configurations retain distinct semantic values for default and
+option-bearing create, list, and delete builders alongside clone, detail, and
+modify operations. Report-format create, clone, import, list, detail, modify,
+delete, and verify requests preserve import validation and existing response
+shapes. TLS certificates expose the same complete lifecycle without changing
+certificate or private-key payload encoding. All semantic requests delegate to
+the established builders, and raw compatibility APIs remain available.
+
 ## Irregular report codecs and version policy
 
 The Phase 3 report family demonstrates that `GmpResponse` is a codec contract,

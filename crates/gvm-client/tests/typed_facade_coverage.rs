@@ -47,7 +47,10 @@ use gvm_gmp::commands::operating_systems::GetOperatingSystemsOpts;
 use gvm_gmp::commands::overrides::{GetOverridesOpts, ModifyOverrideOpts, OverrideOpts};
 use gvm_gmp::commands::permissions::{GetPermissionsOpts, PermissionOpts};
 use gvm_gmp::commands::port_lists::{GetPortListsOpts, ModifyPortListOpts, PortListOpts};
-use gvm_gmp::commands::report_configs::GetReportConfigsOpts;
+use gvm_gmp::commands::report_configs::{
+    CreateReportConfigOpts, DeleteReportConfigOpts, GetReportConfigsOpts, GetReportConfigsRequest,
+    ModifyReportConfigOpts,
+};
 use gvm_gmp::commands::report_formats::{GetReportFormatsOpts, ReportFormatOpts};
 use gvm_gmp::commands::reports::{
     GetReportDetailsOpts, GetReportExportRequest, GetReportVulnsRequest, GetReportsOpts,
@@ -425,6 +428,61 @@ const CONFIG_PORT_LIST_OVERRIDES: &[(&str, &str)] = &[
     (
         "delete_port_range",
         r#"<delete_port_range_response status="200" status_text="OK"/>"#,
+    ),
+];
+
+const REPORT_CONFIG_FORMAT_TLS_OVERRIDES: &[(&str, &str)] = &[
+    (
+        "create_report_config",
+        r#"<create_report_config_response status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111"/>"#,
+    ),
+    (
+        "delete_report_config",
+        r#"<delete_report_config_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "get_report_configs",
+        r#"<get_report_configs_response status="200" status_text="OK"><report_config_count>0<filtered>0</filtered></report_config_count></get_report_configs_response>"#,
+    ),
+    (
+        "modify_report_config",
+        r#"<modify_report_config_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "create_report_format",
+        r#"<create_report_format_response status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111"/>"#,
+    ),
+    (
+        "delete_report_format",
+        r#"<delete_report_format_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "get_report_formats",
+        r#"<get_report_formats_response status="200" status_text="OK"><report_format_count>0<filtered>0</filtered></report_format_count></get_report_formats_response>"#,
+    ),
+    (
+        "modify_report_format",
+        r#"<modify_report_format_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "verify_report_format",
+        r#"<verify_report_format_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "create_tls_certificate",
+        r#"<create_tls_certificate_response status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111"/>"#,
+    ),
+    (
+        "delete_tls_certificate",
+        r#"<delete_tls_certificate_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "get_tls_certificates",
+        r#"<get_tls_certificates_response status="200" status_text="OK"><tls_certificate_count>0<filtered>0</filtered></tls_certificate_count></get_tls_certificates_response>"#,
+    ),
+    (
+        "modify_tls_certificate",
+        r#"<modify_tls_certificate_response status="200" status_text="OK"/>"#,
     ),
 ];
 
@@ -1020,6 +1078,133 @@ async fn asset_and_result_facades_preserve_status_and_parse_context() {
         parse_error,
         GvmError::Parse(ParseError::MissingElement(field)) if field == "result.id"
     ));
+    server.shutdown().await;
+}
+
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn report_config_format_and_tls_facades_cover_all_semantic_requests() {
+    let Some(server) = fixture_server(MockVersion::V22_8, REPORT_CONFIG_FORMAT_TLS_OVERRIDES).await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+    let resource_id = id(CREATED_ID);
+    server.clear_history();
+
+    assert_typed_success!(client.execute(GetReportConfigsRequest::new()));
+    assert_typed_success!(client.get_report_configs_parsed(GetReportConfigsOpts::default()));
+    assert_typed_success!(client.get_report_config(CREATED_ID));
+    assert_create_success!(client.create_report_config("config", CREATED_ID));
+    assert_create_success!(client.create_report_config_with_opts(
+        "config with comment",
+        CREATED_ID,
+        CreateReportConfigOpts {
+            comment: Some("comment".into()),
+        },
+    ));
+    assert_create_success!(client.clone_report_config(CREATED_ID));
+    assert_typed_success!(client.modify_report_config(
+        CREATED_ID,
+        ModifyReportConfigOpts {
+            name: Some("renamed".into()),
+            comment: Some("changed".into()),
+        },
+    ));
+    assert_typed_success!(client.delete_report_config(CREATED_ID));
+    assert_typed_success!(client.delete_report_config_with_opts(
+        CREATED_ID,
+        DeleteReportConfigOpts {
+            ultimate: Some(true),
+        },
+    ));
+
+    assert_typed_success!(client.get_report_formats(GetReportFormatsOpts::default()));
+    assert_typed_success!(client.get_report_format(&resource_id));
+    assert_create_success!(client.create_report_format("format", ReportFormatOpts::default()));
+    assert_create_success!(client.clone_report_format(&resource_id));
+    assert_create_success!(client
+        .import_report_format(r#"<get_report_formats_response status="200" status_text="OK"/>"#,));
+    assert_typed_success!(client.modify_report_format(&resource_id, ReportFormatOpts::default()));
+    assert_typed_success!(client.delete_report_format(&resource_id, true));
+    assert_typed_success!(client.verify_report_format(&resource_id));
+
+    assert_typed_success!(client.get_tls_certificates(GetTlsCertificatesOpts::default()));
+    assert_typed_success!(client.get_tls_certificate(&resource_id));
+    assert_create_success!(
+        client.create_tls_certificate("certificate", TlsCertificateOpts::default(),)
+    );
+    assert_create_success!(client.clone_tls_certificate(&resource_id));
+    assert_typed_success!(
+        client.modify_tls_certificate(&resource_id, TlsCertificateOpts::default(),)
+    );
+    assert_typed_success!(client.delete_tls_certificate(&resource_id, true));
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 23);
+    for (command, expected_count) in [
+        ("create_report_config", 3),
+        ("delete_report_config", 2),
+        ("get_report_configs", 3),
+        ("modify_report_config", 1),
+        ("create_report_format", 3),
+        ("delete_report_format", 1),
+        ("get_report_formats", 2),
+        ("modify_report_format", 1),
+        ("verify_report_format", 1),
+        ("create_tls_certificate", 2),
+        ("delete_tls_certificate", 1),
+        ("get_tls_certificates", 2),
+        ("modify_tls_certificate", 1),
+    ] {
+        assert_eq!(
+            history
+                .iter()
+                .filter(|record| record.command_name() == command)
+                .count(),
+            expected_count,
+            "unexpected facade count for {command}",
+        );
+    }
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn report_config_format_and_tls_preserve_status_and_parse_context() {
+    let Some(server) = fixture_server(
+        MockVersion::V22_8,
+        &[
+            (
+                "get_report_configs",
+                r#"<get_report_configs_response status="409" status_text="configuration conflict"/>"#,
+            ),
+            (
+                "create_tls_certificate",
+                r#"<create_tls_certificate_response status="201" status_text="OK"/>"#,
+            ),
+        ],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+
+    assert_server_error!(
+        client.get_report_config(CREATED_ID),
+        409,
+        "configuration conflict"
+    );
+    let error = client
+        .clone_tls_certificate(&id(CREATED_ID))
+        .await
+        .expect_err("missing cloned certificate id should fail");
+    assert!(matches!(
+        error,
+        GvmError::Parse(ParseError::MissingElement(field)) if field == "id"
+    ));
+
     server.shutdown().await;
 }
 

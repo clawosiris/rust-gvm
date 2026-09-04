@@ -23,6 +23,8 @@ Coverage is organized by behavior family:
   every typed facade shape plus their shared wire-command inventory;
 - generic configuration and port-list coverage exercises all fourteen list,
   detail, lifecycle, and port-range semantic operations;
+- report configuration, report format, and TLS certificate coverage exercises
+  all 23 existing builder shapes through fixed response associations;
 - server-status and malformed-payload cases assert typed error mapping;
 - the 22.6 registry gate, 22.8 registry gate, and 22.8 semantic-command gates
   are exercised through typed methods.
