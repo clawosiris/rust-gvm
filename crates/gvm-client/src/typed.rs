@@ -13,7 +13,7 @@
 //! validation, including non-2xx status detection.
 
 use gvm_connection::GvmConnection;
-use gvm_gmp::commands::aggregates::{get_aggregates_request, GetAggregatesRequestOpts};
+use gvm_gmp::commands::aggregates::{GetAggregatesRequest, GetAggregatesRequestOpts};
 use gvm_gmp::commands::alerts::{
     AlertOpts, CloneAlertRequest, CreateAlertRequest, DeleteAlertRequest, GetAlertRequest,
     GetAlertsOpts, GetAlertsRequest, ModifyAlertRequest, TestAlertRequest, TriggerAlertOpts,
@@ -36,8 +36,8 @@ use gvm_gmp::commands::credentials::{
     ModifyCredentialOpts, ModifyCredentialRequest, ModifyCredentialStoreCredentialOpts,
     ModifyCredentialStoreCredentialRequest, VerifyCredentialStoreRequest,
 };
-use gvm_gmp::commands::features::get_features;
-use gvm_gmp::commands::feed::{get_feed, get_feeds};
+use gvm_gmp::commands::features::GetFeaturesRequest;
+use gvm_gmp::commands::feed::{GetFeedRequest, GetFeedsRequest};
 use gvm_gmp::commands::filters::{
     CloneFilterRequest, CreateFilterRequest, DeleteFilterRequest, FilterOpts, GetFilterRequest,
     GetFiltersOpts, GetFiltersRequest, ModifyFilterRequest,
@@ -46,7 +46,7 @@ use gvm_gmp::commands::groups::{
     CloneGroupRequest, CreateGroupRequest, DeleteGroupRequest, GetGroupRequest, GetGroupsOpts,
     GetGroupsRequest, GroupOpts, ModifyGroupRequest,
 };
-use gvm_gmp::commands::help::{help, help_with_mode, HelpMode};
+use gvm_gmp::commands::help::{HelpMode, HelpRequest, HelpWithModeRequest};
 use gvm_gmp::commands::hosts::{
     CreateHostRequest, DeleteHostRequest, GetHostRequest, GetHostsOpts, GetHostsRequest, HostOpts,
     ModifyHostRequest,
@@ -135,11 +135,11 @@ use gvm_gmp::commands::secinfo::{
     GetOperatingSystemsRequest, GetSecInfoOpts, GetVulnerabilitiesRequest,
 };
 use gvm_gmp::commands::system::{
-    describe_auth, get_settings, get_timezones, get_vulnerability as get_vulnerability_cmd,
-    get_vulns, modify_auth, modify_license_with_opts, run_wizard_with_opts, FilteredGetOpts,
-    ModifyLicenseOpts, RunWizardOpts,
+    modify_auth, modify_license_with_opts, run_wizard_with_opts, DescribeAuthRequest,
+    FilteredGetOpts, GetSettingsRequest, GetTimezonesRequest, GetVulnerabilityRequest,
+    GetVulnsRequest, ModifyLicenseOpts, RunWizardOpts,
 };
-use gvm_gmp::commands::system_reports::{get_system_reports, GetSystemReportsOpts};
+use gvm_gmp::commands::system_reports::{GetSystemReportsOpts, GetSystemReportsRequest};
 use gvm_gmp::commands::tags::{
     CloneTagRequest, CreateTagRequest, DeleteTagRequest, GetTagRequest, GetTagsOpts,
     GetTagsRequest, ModifyTagRequest, TagOpts,
@@ -1563,8 +1563,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_feeds(&mut self) -> Result<GetFeedsResponse, GvmError> {
-        let response = self.send(get_feeds()).await?;
-        GetFeedsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetFeedsRequest::new()).await
     }
 
     /// Send a type-filtered `get_feeds` request and return a typed response.
@@ -1572,8 +1571,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_feed(&mut self, feed_type: FeedType) -> Result<GetFeedsResponse, GvmError> {
-        let response = self.send(get_feed(feed_type)).await?;
-        GetFeedsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetFeedRequest::new(feed_type)).await
     }
 
     /// Send a `get_timezones` request and return a typed [`GetTimezonesResponse`].
@@ -1581,8 +1579,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_timezones(&mut self) -> Result<GetTimezonesResponse, GvmError> {
-        let response = self.send(get_timezones()).await?;
-        GetTimezonesResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetTimezonesRequest::new()).await
     }
 
     /// Send a `get_credential_stores` request and return a typed [`GetCredentialStoresResponse`].
@@ -1853,8 +1850,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         opts: FilteredGetOpts,
     ) -> Result<GetVulnerabilitiesResponse, GvmError> {
-        let response = self.send(get_vulns(opts)).await?;
-        GetVulnerabilitiesResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetVulnsRequest::new(opts)).await
     }
 
     /// Send a `get_vulns` request for a single vulnerability and return a typed
@@ -1866,8 +1862,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         vulnerability_id: &str,
     ) -> Result<GetVulnerabilitiesResponse, GvmError> {
-        let response = self.send(get_vulnerability_cmd(vulnerability_id)).await?;
-        GetVulnerabilitiesResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetVulnerabilityRequest::new(vulnerability_id))
+            .await
     }
 
     // ── Alerts ────────────────────────────────────────────────────────────────
@@ -3385,10 +3381,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         resource_type: &str,
         opts: GetAggregatesRequestOpts,
     ) -> Result<GetAggregatesResponse, GvmError> {
-        let response = self
-            .send(get_aggregates_request(resource_type, opts))
-            .await?;
-        GetAggregatesResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetAggregatesRequest::new(resource_type, opts))
+            .await
     }
 
     /// Send a `get_features` request and return a typed
@@ -3400,8 +3394,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_features_parsed(&mut self) -> Result<GetFeaturesResponse, GvmError> {
-        let response = self.send(get_features()).await?;
-        GetFeaturesResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetFeaturesRequest::new()).await
     }
 
     /// Send a `get_settings` request and return a typed [`GetSettingsResponse`].
@@ -3409,8 +3402,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_settings(&mut self) -> Result<GetSettingsResponse, GvmError> {
-        let response = self.send(get_settings(FilteredGetOpts::default())).await?;
-        GetSettingsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetSettingsRequest::default()).await
     }
 
     /// Send a `get_system_reports` request and return typed report metadata and payloads.
@@ -3421,8 +3413,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         opts: GetSystemReportsOpts,
     ) -> Result<GetSystemReportsResponse, GvmError> {
-        let response = self.send(get_system_reports(opts)).await?;
-        GetSystemReportsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetSystemReportsRequest::new(opts)).await
     }
 
     /// Send a `help` request and return a typed [`HelpResponse`].
@@ -3430,8 +3421,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_help(&mut self) -> Result<HelpResponse, GvmError> {
-        let response = self.send(help(None)).await?;
-        HelpResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(HelpRequest::new(None)).await
     }
 
     /// Send a `help` request for an explicit response mode.
@@ -3439,8 +3429,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn get_help_with_mode(&mut self, mode: HelpMode) -> Result<HelpResponse, GvmError> {
-        let response = self.send(help_with_mode(mode)).await?;
-        HelpResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(HelpWithModeRequest::new(mode)).await
     }
 
     /// Send a `describe_auth` request and return a typed [`DescribeAuthResponse`].
@@ -3448,8 +3437,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
     /// # Errors
     /// Returns an error if the request fails or response parsing fails.
     pub async fn describe_auth(&mut self) -> Result<DescribeAuthResponse, GvmError> {
-        let response = self.send(describe_auth()).await?;
-        DescribeAuthResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(DescribeAuthRequest::new()).await
     }
 
     /// Modify a named authentication group and return a typed

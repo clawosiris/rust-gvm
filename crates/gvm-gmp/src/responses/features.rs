@@ -8,6 +8,7 @@ use gvm_protocol::Response;
 use crate::responses::common::{
     parse_bool, parse_document, status_from_response, ParseError, XmlNode,
 };
+use crate::{GmpResponse, GmpVersion};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -59,6 +60,12 @@ impl GetFeaturesResponse {
             status_text,
             features,
         })
+    }
+}
+
+impl GmpResponse for GetFeaturesResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 

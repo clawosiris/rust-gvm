@@ -3,11 +3,13 @@
 
 //! Aggregate command builders.
 
-use gvm_protocol::XmlCommand;
+use gvm_protocol::{Request, XmlCommand};
 
 use crate::commands::usage_type::UsageType;
 use crate::enums::SortOrder;
+use crate::responses::GetAggregatesResponse;
 use crate::types::EntityId;
+use crate::GmpRequest;
 
 /// Legacy options for `get_aggregates` requests.
 ///
@@ -121,6 +123,62 @@ pub struct GetAggregatesRequestOpts {
     pub mode: Option<AggregateMode>,
     /// Optional task or config usage type.
     pub usage_type: Option<UsageType>,
+}
+
+/// Semantic request for current gvmd aggregate discovery.
+#[derive(Debug, Clone)]
+pub struct GetAggregatesRequest {
+    resource_type: String,
+    opts: GetAggregatesRequestOpts,
+}
+
+impl GetAggregatesRequest {
+    /// Create a current aggregate-discovery request.
+    #[must_use]
+    pub fn new(resource_type: impl Into<String>, opts: GetAggregatesRequestOpts) -> Self {
+        Self {
+            resource_type: resource_type.into(),
+            opts,
+        }
+    }
+}
+
+impl Request for GetAggregatesRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_aggregates_request(&self.resource_type, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetAggregatesRequest {
+    type Response = GetAggregatesResponse;
+}
+
+/// Semantic compatibility request for the legacy aggregate wire shape.
+#[derive(Debug, Clone)]
+pub struct GetLegacyAggregatesRequest {
+    resource_type: String,
+    opts: GetAggregatesOpts,
+}
+
+impl GetLegacyAggregatesRequest {
+    /// Create a legacy aggregate-discovery request.
+    #[must_use]
+    pub fn new(resource_type: impl Into<String>, opts: GetAggregatesOpts) -> Self {
+        Self {
+            resource_type: resource_type.into(),
+            opts,
+        }
+    }
+}
+
+impl Request for GetLegacyAggregatesRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_aggregates(&self.resource_type, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetLegacyAggregatesRequest {
+    type Response = GetAggregatesResponse;
 }
 
 /// Build a current gvmd `get_aggregates` request.

@@ -7,6 +7,7 @@ use gvm_protocol::Response;
 
 use crate::responses::common::{parse_document, status_from_response, ParseError, XmlNode};
 use crate::types::EntityId;
+use crate::{GmpResponse, GmpVersion};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -55,6 +56,12 @@ impl GetResourceNamesResponse {
             resource_type,
             items,
         })
+    }
+}
+
+impl GmpResponse for GetResourceNamesResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 

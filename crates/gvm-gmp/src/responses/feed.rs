@@ -8,6 +8,7 @@ use gvm_protocol::Response;
 use crate::responses::common::{
     count_info, parse_bool, parse_document, status_from_response, CountInfo, ParseError, XmlNode,
 };
+use crate::{GmpResponse, GmpVersion};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -87,6 +88,12 @@ impl GetFeedsResponse {
             feed_roles_set: optional_bool_child(&root, "feed_roles_set")?,
             feed_resources_access: optional_bool_child(&root, "feed_resources_access")?,
         })
+    }
+}
+
+impl GmpResponse for GetFeedsResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 

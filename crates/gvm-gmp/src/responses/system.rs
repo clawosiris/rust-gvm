@@ -10,7 +10,7 @@ use quick_xml::Reader;
 use crate::responses::common::{
     parse_document, parse_entity_id, status_from_response, ActionResponse, ParseError,
 };
-use crate::EntityId;
+use crate::{EntityId, GmpResponse, GmpVersion};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -279,6 +279,25 @@ impl RunWizardResponse {
         })
     }
 }
+
+macro_rules! impl_gmp_response {
+    ($($response:ty),+ $(,)?) => {
+        $(
+            impl GmpResponse for $response {
+                fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+                    Self::from_response(response)
+                }
+            }
+        )+
+    };
+}
+
+impl_gmp_response!(
+    GetSettingsResponse,
+    GetTimezonesResponse,
+    HelpResponse,
+    DescribeAuthResponse,
+);
 
 fn extract_wizard_response_xml(data: &[u8]) -> Result<Option<Vec<u8>>, ParseError> {
     let text = std::str::from_utf8(data)?;
