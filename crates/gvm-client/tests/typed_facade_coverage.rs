@@ -53,8 +53,9 @@ use gvm_gmp::commands::report_configs::{
 };
 use gvm_gmp::commands::report_formats::{GetReportFormatsOpts, ReportFormatOpts};
 use gvm_gmp::commands::reports::{
+    CreateReportOpts, CreateReportRequest, DeleteAuditReportRequest, DeleteReportRequest,
     GetReportDetailsOpts, GetReportExportRequest, GetReportVulnsRequest, GetReportsOpts,
-    GetReportsRequest,
+    GetReportsRequest, ImportReportOpts, ImportReportRequest,
 };
 use gvm_gmp::commands::results::GetResultsOpts;
 use gvm_gmp::commands::roles::{GetRolesOpts, RoleOpts};
@@ -1349,6 +1350,126 @@ async fn semantic_report_requests_execute_large_and_mixed_repeated_responses() {
     assert_eq!(vulnerabilities.items[1].id.as_deref(), Some("three"));
     assert_eq!(vulnerabilities.items[2].id.as_deref(), Some("two"));
     server.shutdown().await;
+}
+
+#[tokio::test]
+async fn remaining_report_mutations_execute_with_fixed_response_associations() {
+    let overrides = [
+        (
+            "create_report",
+            r#"<create_report_response status="201" status_text="OK, resource created" id="11111111-1111-1111-1111-111111111111"/>"#,
+        ),
+        (
+            "delete_report",
+            r#"<delete_report_response status="200" status_text="OK"/>"#,
+        ),
+    ];
+    let Some(server) = fixture_server(MockVersion::V22_4, &overrides).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+    let task_id = id("22222222-2222-2222-2222-222222222222");
+    let report_id = id("33333333-3333-3333-3333-333333333333");
+
+    let created = client
+        .execute(CreateReportRequest::new(
+            task_id.clone(),
+            CreateReportOpts::default(),
+        ))
+        .await
+        .expect("report creation should decode");
+    assert_eq!(created.status, 201);
+
+    let imported = client
+        .execute(
+            ImportReportRequest::new(
+                r#"<report id="imported"><name>Imported</name></report>"#,
+                &task_id,
+                ImportReportOpts {
+                    in_assets: Some(true),
+                },
+            )
+            .expect("valid report XML"),
+        )
+        .await
+        .expect("report import should decode");
+    assert_eq!(imported.status, 201);
+
+    let deleted = client
+        .execute(DeleteReportRequest::new(report_id.clone(), true))
+        .await
+        .expect("report deletion should decode");
+    assert_eq!(deleted.status, 200);
+
+    let audit_deleted = client
+        .execute(DeleteAuditReportRequest::new(report_id))
+        .await
+        .expect("audit-report deletion should decode");
+    assert_eq!(audit_deleted.status, 200);
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 4);
+    assert_eq!(history[0].command_name(), "create_report");
+    assert_eq!(history[1].command_name(), "create_report");
+    assert_eq!(history[2].command_name(), "delete_report");
+    assert_eq!(history[3].command_name(), "delete_report");
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn report_mutation_execution_preserves_server_status_and_parse_context() {
+    let Some(status_server) = fixture_server(
+        MockVersion::V22_4,
+        &[(
+            "create_report",
+            r#"<create_report_response status="503" status_text="backend unavailable"/>"#,
+        )],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut status_client = client(&status_server).await;
+    let status_error = status_client
+        .execute(CreateReportRequest::new(
+            id("22222222-2222-2222-2222-222222222222"),
+            CreateReportOpts::default(),
+        ))
+        .await
+        .expect_err("server status should fail");
+    assert!(matches!(
+        status_error,
+        GvmError::Parse(ParseError::ServerError { status: 503, message })
+            if message == "backend unavailable"
+    ));
+    status_server.shutdown().await;
+
+    let Some(malformed_server) = fixture_server(
+        MockVersion::V22_4,
+        &[(
+            "create_report",
+            r#"<create_report_response status="201" status_text="created"/>"#,
+        )],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut malformed_client = client(&malformed_server).await;
+    let malformed_error = malformed_client
+        .import_report(
+            r#"<report id="imported"><name>Imported</name></report>"#,
+            &id("22222222-2222-2222-2222-222222222222"),
+            ImportReportOpts::default(),
+        )
+        .await
+        .expect_err("missing response id should retain parse context");
+    assert!(matches!(
+        malformed_error,
+        GvmError::Parse(ParseError::MissingElement(field)) if field == "id"
+    ));
+    malformed_server.shutdown().await;
 }
 
 #[tokio::test]

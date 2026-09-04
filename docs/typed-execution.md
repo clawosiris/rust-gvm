@@ -376,6 +376,16 @@ These checks run before transmission through the same `send` path used by raw
 and ordinary typed requests. The retained raw builders and helpers remain
 available when callers need unmodeled report details.
 
+## Report mutations
+
+Report creation and XML import use separate semantic request values even though
+both delegate to the existing `<create_report>` builders and decode the same
+typed create response. Import validation and payload encoding still happen in
+the legacy builder before transmission. Ordinary and audit-report deletion are
+likewise distinct semantic values over the established `<delete_report>` wire
+shape and action response. The `import_report` convenience method is a thin
+`execute` wrapper; raw builders and custom report XML remain supported.
+
 ## Scan configurations, policies, and preferences
 
 Scan configurations and policies demonstrate semantic typed requests layered

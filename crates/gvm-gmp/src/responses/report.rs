@@ -431,6 +431,7 @@ macro_rules! impl_report_gmp_response {
 }
 
 impl_report_gmp_response!(
+    CreateReportResponse,
     GetReportsResponse,
     GetReportVulnsResponse,
     GetReportTlsCertificatesResponse,
