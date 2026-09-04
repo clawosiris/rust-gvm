@@ -149,6 +149,14 @@ their GMP 22.8 pre-send gate, and installer instructions, identifier
 collections, integration secrets, and binary/base64 support bundles retain
 their established wire and decoding behavior.
 
+The generic-configuration and port-list Phase 3 batch, tracked by
+[`#572`](https://github.com/greenbone-hive/rust-gvm/issues/572), migrates all
+generic configuration list/detail/create/clone/modify/delete operations and the
+complete port-list and port-range lifecycle to semantic typed execution.
+Existing builders remain the single encoders, all established typed helpers
+delegate to `execute`, and additive detail, clone, delete, and port-range
+helpers expose protocol operations that were already available as builders.
+
 The irregular-report Phase 3 batch, tracked by
 [`#546`](https://github.com/greenbone-hive/rust-gvm/issues/546), migrates report
 list/detail, structured scan and audit reports, audit hosts, nine structured

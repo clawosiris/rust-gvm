@@ -25,10 +25,9 @@ use gvm_gmp::commands::assets::{
 };
 use gvm_gmp::commands::authentication::AuthenticateRequest;
 use gvm_gmp::commands::configs::{
-    clone_config as clone_config_cmd, create_config as create_config_cmd,
-    delete_config as delete_config_cmd, get_config as get_config_cmd, get_configs,
-    modify_config as modify_config_cmd, CloneConfigOpts, CreateConfigOpts, DeleteConfigOpts,
-    GetConfigOpts, GetConfigsOpts, ModifyConfigOpts,
+    CloneConfigOpts, CloneConfigRequest, CreateConfigOpts, CreateConfigRequest, DeleteConfigOpts,
+    DeleteConfigRequest, GetConfigOpts, GetConfigRequest, GetConfigsOpts, GetConfigsRequest,
+    ModifyConfigOpts, ModifyConfigRequest,
 };
 use gvm_gmp::commands::credentials::{
     CreateCredentialRequest, CreateCredentialStoreCredentialRequest, CredentialOpts,
@@ -83,8 +82,9 @@ use gvm_gmp::commands::permissions::{
     GetPermissionsOpts, GetPermissionsRequest, ModifyPermissionRequest, PermissionOpts,
 };
 use gvm_gmp::commands::port_lists::{
-    create_port_list, get_port_lists, modify_port_list, GetPortListsOpts, ModifyPortListOpts,
-    PortListOpts,
+    ClonePortListRequest, CreatePortListRequest, CreatePortRangeRequest, DeletePortListRequest,
+    DeletePortRangeRequest, GetPortListRequest, GetPortListsOpts, GetPortListsRequest,
+    ModifyPortListOpts, ModifyPortListRequest, PortListOpts,
 };
 use gvm_gmp::commands::report_configs::{
     clone_report_config, get_report_configs_opts, GetReportConfigsOpts,
@@ -177,18 +177,19 @@ use gvm_gmp::responses::{
     ActionResponse, AuthenticateResponse, CreateAlertResponse, CreateAssetResponse,
     CreateConfigResponse, CreateCredentialResponse, CreateFilterResponse, CreateGroupResponse,
     CreateHostResponse, CreateNoteResponse, CreateOciImageTargetResponse, CreateOverrideResponse,
-    CreatePermissionResponse, CreatePortListResponse, CreateReportConfigResponse,
-    CreateReportFormatResponse, CreateReportResponse, CreateRoleResponse, CreateScanConfigResponse,
-    CreateScannerResponse, CreateScheduleResponse, CreateTagResponse, CreateTargetResponse,
-    CreateTaskResponse, CreateTicketResponse, CreateTlsCertificateResponse, CreateUserResponse,
-    CreateWebApplicationTargetResponse, DeleteAlertResponse, DeleteAssetResponse,
-    DeleteConfigResponse, DeleteCredentialResponse, DeleteFilterResponse, DeleteGroupResponse,
-    DeleteHostResponse, DeleteNoteResponse, DeleteOciImageTargetResponse, DeleteOverrideResponse,
-    DeletePermissionResponse, DeleteRoleResponse, DeleteScanConfigResponse, DeleteScannerResponse,
-    DeleteScheduleResponse, DeleteTagResponse, DeleteTargetResponse, DeleteTaskResponse,
-    DeleteUserResponse, DeleteWebApplicationTargetResponse, DescribeAuthResponse,
-    EmptyTrashcanResponse, ExportScanReportResponse, GetAggregatesResponse, GetAlertsResponse,
-    GetAssetsResponse, GetAuditReportHostsResponse, GetAuditReportResponse,
+    CreatePermissionResponse, CreatePortListResponse, CreatePortRangeResponse,
+    CreateReportConfigResponse, CreateReportFormatResponse, CreateReportResponse,
+    CreateRoleResponse, CreateScanConfigResponse, CreateScannerResponse, CreateScheduleResponse,
+    CreateTagResponse, CreateTargetResponse, CreateTaskResponse, CreateTicketResponse,
+    CreateTlsCertificateResponse, CreateUserResponse, CreateWebApplicationTargetResponse,
+    DeleteAlertResponse, DeleteAssetResponse, DeleteConfigResponse, DeleteCredentialResponse,
+    DeleteFilterResponse, DeleteGroupResponse, DeleteHostResponse, DeleteNoteResponse,
+    DeleteOciImageTargetResponse, DeleteOverrideResponse, DeletePermissionResponse,
+    DeletePortListResponse, DeletePortRangeResponse, DeleteRoleResponse, DeleteScanConfigResponse,
+    DeleteScannerResponse, DeleteScheduleResponse, DeleteTagResponse, DeleteTargetResponse,
+    DeleteTaskResponse, DeleteUserResponse, DeleteWebApplicationTargetResponse,
+    DescribeAuthResponse, EmptyTrashcanResponse, ExportScanReportResponse, GetAggregatesResponse,
+    GetAlertsResponse, GetAssetsResponse, GetAuditReportHostsResponse, GetAuditReportResponse,
     GetCertBundAdvisoriesResponse, GetConfigsResponse, GetCpesResponse,
     GetCredentialStoresResponse, GetCredentialsResponse, GetCvesResponse,
     GetDfnCertAdvisoriesResponse, GetFeaturesResponse, GetFeedsResponse, GetFiltersResponse,
@@ -216,7 +217,7 @@ use gvm_gmp::responses::{
     VerifyCredentialStoreResponse, VerifyScannerResponse,
 };
 use gvm_gmp::types::EntityId;
-use gvm_gmp::{CredentialStoreCredentialType, FeedType, ScheduleInput};
+use gvm_gmp::{CredentialStoreCredentialType, FeedType, PortRangeType, ScheduleInput};
 
 use crate::{GmpClient, GvmError};
 
@@ -816,8 +817,19 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         opts: GetPortListsOpts,
     ) -> Result<GetPortListsResponse, GvmError> {
-        let response = self.send(get_port_lists(opts)).await?;
-        GetPortListsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetPortListsRequest::new(opts)).await
+    }
+
+    /// Send a detailed `get_port_lists` request for one port list.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn get_port_list(
+        &mut self,
+        port_list_id: &EntityId,
+    ) -> Result<GetPortListsResponse, GvmError> {
+        self.execute(GetPortListRequest::new(port_list_id.clone()))
+            .await
     }
 
     /// Send a `create_port_list` request and return a typed [`CreatePortListResponse`].
@@ -829,8 +841,19 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         name: &str,
         opts: PortListOpts,
     ) -> Result<CreatePortListResponse, GvmError> {
-        let response = self.send(create_port_list(name, opts)).await?;
-        CreatePortListResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CreatePortListRequest::new(name, opts)).await
+    }
+
+    /// Clone a port list through `create_port_list`.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn clone_port_list(
+        &mut self,
+        port_list_id: &EntityId,
+    ) -> Result<CreatePortListResponse, GvmError> {
+        self.execute(ClonePortListRequest::new(port_list_id.clone()))
+            .await
     }
 
     /// Send a `modify_port_list` request and return a typed
@@ -846,8 +869,53 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         port_list_id: &EntityId,
         opts: ModifyPortListOpts,
     ) -> Result<ModifyPortListResponse, GvmError> {
-        let response = self.send(modify_port_list(port_list_id, opts)).await?;
-        ModifyPortListResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyPortListRequest::new(port_list_id.clone(), opts))
+            .await
+    }
+
+    /// Send a `delete_port_list` request.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn delete_port_list(
+        &mut self,
+        port_list_id: &EntityId,
+        ultimate: bool,
+    ) -> Result<DeletePortListResponse, GvmError> {
+        self.execute(DeletePortListRequest::new(port_list_id.clone(), ultimate))
+            .await
+    }
+
+    /// Send a `create_port_range` request.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn create_port_range(
+        &mut self,
+        port_list_id: &EntityId,
+        range_type: PortRangeType,
+        start: u16,
+        end: u16,
+    ) -> Result<CreatePortRangeResponse, GvmError> {
+        self.execute(CreatePortRangeRequest::new(
+            port_list_id.clone(),
+            range_type,
+            start,
+            end,
+        ))
+        .await
+    }
+
+    /// Send a `delete_port_range` request.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or response parsing fails.
+    pub async fn delete_port_range(
+        &mut self,
+        port_range_id: &EntityId,
+    ) -> Result<DeletePortRangeResponse, GvmError> {
+        self.execute(DeletePortRangeRequest::new(port_range_id.clone()))
+            .await
     }
 
     // ── Tasks ─────────────────────────────────────────────────────────────────
@@ -2911,8 +2979,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         opts: GetConfigsOpts,
     ) -> Result<GetConfigsResponse, GvmError> {
-        let response = self.send(get_configs(opts)).await?;
-        GetConfigsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetConfigsRequest::new(opts)).await
     }
 
     /// Send a generic single-config `get_configs` request and return typed generic configs.
@@ -2924,8 +2991,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         config_id: &EntityId,
         opts: GetConfigOpts,
     ) -> Result<GetConfigsResponse, GvmError> {
-        let response = self.send(get_config_cmd(config_id, opts)).await?;
-        GetConfigsResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(GetConfigRequest::new(config_id.clone(), opts))
+            .await
     }
 
     /// Send a generic `create_config` request and return a typed response.
@@ -2936,8 +3003,7 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         &mut self,
         opts: CreateConfigOpts,
     ) -> Result<CreateConfigResponse, GvmError> {
-        let response = self.send(create_config_cmd(opts)).await?;
-        CreateConfigResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CreateConfigRequest::new(opts)).await
     }
 
     /// Send a generic config clone request and return a typed response.
@@ -2949,8 +3015,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         config_id: &EntityId,
         opts: CloneConfigOpts,
     ) -> Result<CreateConfigResponse, GvmError> {
-        let response = self.send(clone_config_cmd(config_id, opts)).await?;
-        CreateConfigResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(CloneConfigRequest::new(config_id.clone(), opts))
+            .await
     }
 
     /// Send a generic `modify_config` request and return a typed response.
@@ -2962,8 +3028,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         config_id: &EntityId,
         opts: ModifyConfigOpts,
     ) -> Result<ModifyConfigResponse, GvmError> {
-        let response = self.send(modify_config_cmd(config_id, opts)).await?;
-        ModifyConfigResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ModifyConfigRequest::new(config_id.clone(), opts))
+            .await
     }
 
     /// Send a generic `delete_config` request and return a typed response.
@@ -2975,8 +3041,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         config_id: &EntityId,
         opts: DeleteConfigOpts,
     ) -> Result<DeleteConfigResponse, GvmError> {
-        let response = self.send(delete_config_cmd(config_id, opts)).await?;
-        DeleteConfigResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(DeleteConfigRequest::new(config_id.clone(), opts))
+            .await
     }
 
     // ── TLS Certificates ──────────────────────────────────────────────────────

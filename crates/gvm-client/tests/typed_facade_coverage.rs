@@ -25,6 +25,10 @@ use gvm_gmp::commands::alerts::{AlertOpts, GetAlertsOpts, TriggerAlertOpts};
 use gvm_gmp::commands::assets::{
     AssetType, CreateAssetOpts, DeleteAssetOpts, GetAssetsOpts, ModifyAssetOpts,
 };
+use gvm_gmp::commands::configs::{
+    CloneConfigOpts, ConfigUsageType, CreateConfigOpts, DeleteConfigOpts, GetConfigOpts,
+    GetConfigsOpts, ModifyConfigOpts,
+};
 use gvm_gmp::commands::credentials::{
     CloneCredentialRequest, CreateCredentialRequest, CredentialOpts, DeleteCredentialRequest,
     GetCredentialRequest, GetCredentialsOpts, GetCredentialsRequest, ModifyCredentialOpts,
@@ -42,7 +46,7 @@ use gvm_gmp::commands::nvts::{GetNvtPreferencesOpts, GetNvtsOpts};
 use gvm_gmp::commands::operating_systems::GetOperatingSystemsOpts;
 use gvm_gmp::commands::overrides::{GetOverridesOpts, ModifyOverrideOpts, OverrideOpts};
 use gvm_gmp::commands::permissions::{GetPermissionsOpts, PermissionOpts};
-use gvm_gmp::commands::port_lists::{GetPortListsOpts, PortListOpts};
+use gvm_gmp::commands::port_lists::{GetPortListsOpts, ModifyPortListOpts, PortListOpts};
 use gvm_gmp::commands::report_configs::GetReportConfigsOpts;
 use gvm_gmp::commands::report_formats::{GetReportFormatsOpts, ReportFormatOpts};
 use gvm_gmp::commands::reports::{
@@ -75,8 +79,8 @@ use gvm_gmp::commands::users::{GetUsersOpts, ModifyUserOpts, UserOpts};
 use gvm_gmp::responses::{ActionResponse, ParseError};
 use gvm_gmp::types::{CollectionUpdate, EntityId, GmpVersion, ScalarUpdate};
 use gvm_gmp::{
-    GmpRequest, ScheduleDefinition, ScheduleInput, ScheduleRecurrence, ScheduleTimestamp,
-    ScheduleTimezone,
+    GmpRequest, PortRangeType, ScheduleDefinition, ScheduleInput, ScheduleRecurrence,
+    ScheduleTimestamp, ScheduleTimezone,
 };
 use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 use gvm_protocol::Request;
@@ -378,6 +382,49 @@ const ASSET_HOST_RESULT_OVERRIDES: &[(&str, &str)] = &[
     (
         "get_results",
         r#"<get_results_response status="200" status_text="OK"><result_count>0<filtered>0</filtered></result_count></get_results_response>"#,
+    ),
+];
+
+const CONFIG_PORT_LIST_OVERRIDES: &[(&str, &str)] = &[
+    (
+        "get_configs",
+        r#"<get_configs_response status="200" status_text="OK"><config_count>0<filtered>0</filtered></config_count></get_configs_response>"#,
+    ),
+    (
+        "create_config",
+        r#"<create_config_response status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111"/>"#,
+    ),
+    (
+        "modify_config",
+        r#"<modify_config_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "delete_config",
+        r#"<delete_config_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "get_port_lists",
+        r#"<get_port_lists_response status="200" status_text="OK"><port_list_count>0<filtered>0</filtered></port_list_count></get_port_lists_response>"#,
+    ),
+    (
+        "create_port_list",
+        r#"<create_port_list_response status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111"/>"#,
+    ),
+    (
+        "modify_port_list",
+        r#"<modify_port_list_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "delete_port_list",
+        r#"<delete_port_list_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "create_port_range",
+        r#"<create_port_range_response status="201" status_text="OK"/>"#,
+    ),
+    (
+        "delete_port_range",
+        r#"<delete_port_range_response status="200" status_text="OK"/>"#,
     ),
 ];
 
@@ -874,6 +921,69 @@ async fn assets_hosts_operating_systems_and_results_execute_through_typed_facade
 }
 
 #[tokio::test]
+async fn generic_config_and_port_list_facades_cover_every_semantic_request() {
+    let Some(server) = fixture_server(MockVersion::V22_8, CONFIG_PORT_LIST_OVERRIDES).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    let config_id = id(CREATED_ID);
+    let port_list_id = id(CREATED_ID);
+    let port_range_id = id("22222222-2222-2222-2222-222222222222");
+    server.clear_history();
+
+    assert_typed_success!(client.get_configs(GetConfigsOpts::default()));
+    assert_typed_success!(client.get_config(&config_id, GetConfigOpts::default()));
+    assert_create_success!(client.create_config(CreateConfigOpts {
+        name: "baseline".into(),
+        base_id: None,
+        comment: Some("generic".into()),
+        usage_type: Some(ConfigUsageType::Scan),
+    }));
+    assert_create_success!(client.clone_config(&config_id, CloneConfigOpts::default()));
+    assert_typed_success!(client.modify_config(&config_id, ModifyConfigOpts::default()));
+    assert_typed_success!(client.delete_config(&config_id, DeleteConfigOpts::default()));
+
+    assert_typed_success!(client.get_port_lists(GetPortListsOpts::default()));
+    assert_typed_success!(client.get_port_list(&port_list_id));
+    assert_create_success!(client.create_port_list("web", PortListOpts::default()));
+    assert_create_success!(client.clone_port_list(&port_list_id));
+    assert_typed_success!(client.modify_port_list(&port_list_id, ModifyPortListOpts::default()));
+    assert_typed_success!(client.delete_port_list(&port_list_id, false));
+    let created_range = client
+        .create_port_range(&port_list_id, PortRangeType::Tcp, 80, 443)
+        .await
+        .expect("typed port-range creation should parse");
+    assert_eq!(created_range.status, 201);
+    assert_typed_success!(client.delete_port_range(&port_range_id));
+
+    let history = server.command_history();
+    assert_eq!(history.len(), 14);
+    for (command, expected_count) in [
+        ("get_configs", 2),
+        ("create_config", 2),
+        ("modify_config", 1),
+        ("delete_config", 1),
+        ("get_port_lists", 2),
+        ("create_port_list", 2),
+        ("modify_port_list", 1),
+        ("delete_port_list", 1),
+        ("create_port_range", 1),
+        ("delete_port_range", 1),
+    ] {
+        assert_eq!(
+            history
+                .iter()
+                .filter(|record| record.command_name() == command)
+                .count(),
+            expected_count,
+            "unexpected facade inventory for {command}"
+        );
+    }
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn asset_and_result_facades_preserve_status_and_parse_context() {
     let Some(server) = fixture_server(
         MockVersion::V22_8,
@@ -910,6 +1020,44 @@ async fn asset_and_result_facades_preserve_status_and_parse_context() {
         parse_error,
         GvmError::Parse(ParseError::MissingElement(field)) if field == "result.id"
     ));
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn generic_config_and_port_list_facades_preserve_status_and_parse_context() {
+    let Some(server) = fixture_server(
+        MockVersion::V22_8,
+        &[
+            (
+                "get_configs",
+                r#"<get_configs_response status="409" status_text="configuration conflict"/>"#,
+            ),
+            (
+                "create_port_list",
+                r#"<create_port_list_response status="201" status_text="OK"/>"#,
+            ),
+        ],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+
+    assert_server_error!(
+        client.get_config(&id("config-1"), GetConfigOpts::default()),
+        409,
+        "configuration conflict"
+    );
+    let parse_error = client
+        .clone_port_list(&id("port-list-1"))
+        .await
+        .expect_err("missing cloned port-list id should fail");
+    assert!(matches!(
+        parse_error,
+        GvmError::Parse(ParseError::MissingElement(field)) if field == "id"
+    ));
+
     server.shutdown().await;
 }
 

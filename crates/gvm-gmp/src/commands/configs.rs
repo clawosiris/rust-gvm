@@ -7,7 +7,11 @@ use gvm_protocol::{Request, XmlCommand};
 
 use crate::commands::usage_type::UsageType;
 use crate::common::{add_filter_attrs, add_text_element, set_optional_bool_attr};
+use crate::responses::{
+    CreateConfigResponse, DeleteConfigResponse, GetConfigsResponse, ModifyConfigResponse,
+};
 use crate::types::EntityId;
+use crate::GmpRequest;
 
 /// Typed GMP config usage-type values.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -139,6 +143,150 @@ pub struct DeleteConfigOpts {
     pub ultimate: Option<bool>,
 }
 
+/// Semantic request for listing generic configurations.
+#[derive(Debug, Clone, Default)]
+pub struct GetConfigsRequest(GetConfigsOpts);
+
+impl GetConfigsRequest {
+    /// Create a generic-configuration list request.
+    #[must_use]
+    pub fn new(opts: GetConfigsOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetConfigsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_configs(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetConfigsRequest {
+    type Response = GetConfigsResponse;
+}
+
+/// Semantic request for one detailed generic configuration.
+#[derive(Debug, Clone)]
+pub struct GetConfigRequest {
+    config_id: EntityId,
+    opts: GetConfigOpts,
+}
+
+impl GetConfigRequest {
+    /// Create a detailed single-configuration request.
+    #[must_use]
+    pub fn new(config_id: EntityId, opts: GetConfigOpts) -> Self {
+        Self { config_id, opts }
+    }
+}
+
+impl Request for GetConfigRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_config(&self.config_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetConfigRequest {
+    type Response = GetConfigsResponse;
+}
+
+/// Semantic request for creating a generic configuration.
+#[derive(Debug, Clone)]
+pub struct CreateConfigRequest(CreateConfigOpts);
+
+impl CreateConfigRequest {
+    /// Create a generic-configuration creation request.
+    #[must_use]
+    pub fn new(opts: CreateConfigOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for CreateConfigRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_config(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateConfigRequest {
+    type Response = CreateConfigResponse;
+}
+
+/// Semantic request for cloning a generic configuration.
+#[derive(Debug, Clone)]
+pub struct CloneConfigRequest {
+    config_id: EntityId,
+    opts: CloneConfigOpts,
+}
+
+impl CloneConfigRequest {
+    /// Create a generic-configuration clone request.
+    #[must_use]
+    pub fn new(config_id: EntityId, opts: CloneConfigOpts) -> Self {
+        Self { config_id, opts }
+    }
+}
+
+impl Request for CloneConfigRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        clone_config(&self.config_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CloneConfigRequest {
+    type Response = CreateConfigResponse;
+}
+
+/// Semantic request for modifying a generic configuration.
+#[derive(Debug, Clone)]
+pub struct ModifyConfigRequest {
+    config_id: EntityId,
+    opts: ModifyConfigOpts,
+}
+
+impl ModifyConfigRequest {
+    /// Create a generic-configuration modification request.
+    #[must_use]
+    pub fn new(config_id: EntityId, opts: ModifyConfigOpts) -> Self {
+        Self { config_id, opts }
+    }
+}
+
+impl Request for ModifyConfigRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_config(&self.config_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyConfigRequest {
+    type Response = ModifyConfigResponse;
+}
+
+/// Semantic request for deleting a generic configuration.
+#[derive(Debug, Clone)]
+pub struct DeleteConfigRequest {
+    config_id: EntityId,
+    opts: DeleteConfigOpts,
+}
+
+impl DeleteConfigRequest {
+    /// Create a generic-configuration deletion request.
+    #[must_use]
+    pub fn new(config_id: EntityId, opts: DeleteConfigOpts) -> Self {
+        Self { config_id, opts }
+    }
+}
+
+impl Request for DeleteConfigRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_config(&self.config_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteConfigRequest {
+    type Response = DeleteConfigResponse;
+}
+
 /// Build a generic clone request for an existing config.
 #[must_use]
 pub fn clone_config(config_id: &EntityId, opts: CloneConfigOpts) -> impl Request {
@@ -242,6 +390,83 @@ mod tests {
 
     fn id(value: &str) -> EntityId {
         EntityId::new(value).expect("valid id")
+    }
+
+    #[test]
+    fn semantic_config_requests_match_builder_bytes_and_responses() {
+        fn associated<R, T>(_: &R)
+        where
+            R: GmpRequest<Response = T>,
+            T: crate::GmpResponse,
+        {
+        }
+
+        let config_id = id("config-1");
+        let list_opts = GetConfigsOpts {
+            filter_string: Some("name=baseline".into()),
+            details: Some(true),
+            usage_type: Some(ConfigUsageType::Policy),
+            ..Default::default()
+        };
+        let request = GetConfigsRequest::new(list_opts.clone());
+        assert_eq!(request.to_bytes(), get_configs(list_opts).to_bytes());
+        associated::<_, GetConfigsResponse>(&request);
+
+        let detail_opts = GetConfigOpts {
+            families: Some(true),
+            preferences: Some(true),
+            tasks: Some(true),
+            usage_type: Some(ConfigUsageType::Scan),
+            ..Default::default()
+        };
+        let request = GetConfigRequest::new(config_id.clone(), detail_opts.clone());
+        assert_eq!(
+            request.to_bytes(),
+            get_config(&config_id, detail_opts).to_bytes()
+        );
+        associated::<_, GetConfigsResponse>(&request);
+
+        let create_opts = CreateConfigOpts {
+            name: "baseline".into(),
+            base_id: Some(id("base-1")),
+            comment: Some("copied".into()),
+            usage_type: Some(ConfigUsageType::Scan),
+        };
+        let request = CreateConfigRequest::new(create_opts.clone());
+        assert_eq!(request.to_bytes(), create_config(create_opts).to_bytes());
+        associated::<_, CreateConfigResponse>(&request);
+
+        let clone_opts = CloneConfigOpts {
+            name: Some("copy".into()),
+        };
+        let request = CloneConfigRequest::new(config_id.clone(), clone_opts.clone());
+        assert_eq!(
+            request.to_bytes(),
+            clone_config(&config_id, clone_opts).to_bytes()
+        );
+        associated::<_, CreateConfigResponse>(&request);
+
+        let modify_opts = ModifyConfigOpts {
+            name: Some("renamed".into()),
+            comment: Some(String::new()),
+            usage_type: Some(ConfigUsageType::Policy),
+        };
+        let request = ModifyConfigRequest::new(config_id.clone(), modify_opts.clone());
+        assert_eq!(
+            request.to_bytes(),
+            modify_config(&config_id, modify_opts).to_bytes()
+        );
+        associated::<_, ModifyConfigResponse>(&request);
+
+        let delete_opts = DeleteConfigOpts {
+            ultimate: Some(true),
+        };
+        let request = DeleteConfigRequest::new(config_id.clone(), delete_opts.clone());
+        assert_eq!(
+            request.to_bytes(),
+            delete_config(&config_id, delete_opts).to_bytes()
+        );
+        associated::<_, DeleteConfigResponse>(&request);
     }
 
     #[test]
