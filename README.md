@@ -220,7 +220,10 @@ report-configuration, report-format, and TLS-certificate lifecycles are fully
 covered. Read-only system discovery is covered as well, including aggregates,
 features, feeds, settings, timezones, help, system reports, generic information,
 preferences, resource names, vulnerabilities, license status, and authentication
-description:
+description. System
+authentication, license, and wizard mutations plus user-setting list, detail,
+and modification operations are also statically associated while retaining
+their existing builders and redaction guarantees:
 
 ```rust
 use gvm_gmp::commands::targets::{GetTargetsOpts, GetTargetsRequest};
