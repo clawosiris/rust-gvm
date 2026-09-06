@@ -177,6 +177,15 @@ helpers remain supported. Version policy stays explicit: audit operations are
 22.7+, scan/drill-down/synchronous-export operations are 22.8+, and
 `export_scan_report` still requires positive help discovery.
 
+The remaining report-mutation Phase 3 batch, tracked by
+[`#576`](https://github.com/greenbone-hive/rust-gvm/issues/576), adds semantic
+requests for report creation, XML import, deletion, and audit-report deletion.
+Create and import retain distinct Rust request types over their shared
+`create_report` wire root, while both deletion forms preserve the established
+`delete_report` encoding. The existing typed import helper now delegates to
+generic execution without changing validation, base64 payload handling,
+response parsing, or raw compatibility APIs.
+
 | Crate | Status | Lines | Tests | Description |
 |-------|--------|-------|-------|-------------|
 | `gvm-protocol` | ✅ Implemented | ~2,330 | 67 | XML command builder, response parser, streaming reader |

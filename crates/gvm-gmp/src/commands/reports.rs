@@ -11,11 +11,12 @@ use crate::common::{
     validate_single_xml_document,
 };
 use crate::responses::{
-    ExportScanReportResponse, GetAuditReportHostsResponse, GetAuditReportResponse,
-    GetReportApplicationsResponse, GetReportClosedCvesResponse, GetReportCvesResponse,
-    GetReportErrorsResponse, GetReportHostsResponse, GetReportOperatingSystemsResponse,
-    GetReportPortsResponse, GetReportTlsCertificatesResponse, GetReportVulnsResponse,
-    GetReportsResponse, GetScanReportResponse, ParseError, ReportExport,
+    CreateReportResponse, DeleteReportResponse, ExportScanReportResponse,
+    GetAuditReportHostsResponse, GetAuditReportResponse, GetReportApplicationsResponse,
+    GetReportClosedCvesResponse, GetReportCvesResponse, GetReportErrorsResponse,
+    GetReportHostsResponse, GetReportOperatingSystemsResponse, GetReportPortsResponse,
+    GetReportTlsCertificatesResponse, GetReportVulnsResponse, GetReportsResponse,
+    GetScanReportResponse, ParseError, ReportExport,
 };
 use crate::types::EntityId;
 use crate::GmpRequest;
@@ -36,6 +37,115 @@ pub struct CreateReportOpts {
 pub struct ImportReportOpts {
     /// Whether to import assets embedded in the report XML.
     pub in_assets: Option<bool>,
+}
+
+/// Semantic request for creating a report.
+#[derive(Debug, Clone)]
+pub struct CreateReportRequest {
+    task_id: EntityId,
+    opts: CreateReportOpts,
+}
+
+impl CreateReportRequest {
+    /// Create a report-creation request.
+    #[must_use]
+    pub fn new(task_id: EntityId, opts: CreateReportOpts) -> Self {
+        Self { task_id, opts }
+    }
+}
+
+impl Request for CreateReportRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_report(&self.task_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateReportRequest {
+    type Response = CreateReportResponse;
+}
+
+/// Semantic request for importing report XML.
+#[derive(Debug, Clone)]
+pub struct ImportReportRequest {
+    bytes: Vec<u8>,
+}
+
+impl ImportReportRequest {
+    /// Validate report XML and create a report-import request.
+    ///
+    /// # Errors
+    /// Returns an error under the same conditions as [`import_report`].
+    pub fn new(
+        report_xml: &str,
+        task_id: &EntityId,
+        opts: ImportReportOpts,
+    ) -> Result<Self, ParseError> {
+        Ok(Self {
+            bytes: import_report(report_xml, task_id, opts)?.to_bytes(),
+        })
+    }
+}
+
+impl Request for ImportReportRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.bytes.clone()
+    }
+}
+
+impl GmpRequest for ImportReportRequest {
+    type Response = CreateReportResponse;
+}
+
+/// Semantic request for deleting a report.
+#[derive(Debug, Clone)]
+pub struct DeleteReportRequest {
+    report_id: EntityId,
+    ultimate: bool,
+}
+
+impl DeleteReportRequest {
+    /// Create a report-deletion request.
+    #[must_use]
+    pub fn new(report_id: EntityId, ultimate: bool) -> Self {
+        Self {
+            report_id,
+            ultimate,
+        }
+    }
+}
+
+impl Request for DeleteReportRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_report(&self.report_id, self.ultimate).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteReportRequest {
+    type Response = DeleteReportResponse;
+}
+
+/// Semantic request for deleting an audit report.
+#[derive(Debug, Clone)]
+pub struct DeleteAuditReportRequest {
+    report_id: EntityId,
+}
+
+impl DeleteAuditReportRequest {
+    /// Create an audit-report deletion request.
+    #[must_use]
+    pub fn new(report_id: EntityId) -> Self {
+        Self { report_id }
+    }
+}
+
+impl Request for DeleteAuditReportRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_audit_report(&self.report_id).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteAuditReportRequest {
+    type Response = DeleteReportResponse;
 }
 
 /// Options for `get_reports` requests.
@@ -823,6 +933,10 @@ mod tests {
 
     #[test]
     fn semantic_report_requests_have_fixed_response_types() {
+        assert_associated_response::<CreateReportRequest, CreateReportResponse>();
+        assert_associated_response::<ImportReportRequest, CreateReportResponse>();
+        assert_associated_response::<DeleteReportRequest, DeleteReportResponse>();
+        assert_associated_response::<DeleteAuditReportRequest, DeleteReportResponse>();
         assert_associated_response::<GetReportsRequest, GetReportsResponse>();
         assert_associated_response::<GetReportRequest, GetReportsResponse>();
         assert_associated_response::<GetAuditReportsRequest, GetReportsResponse>();
@@ -846,6 +960,44 @@ mod tests {
         assert_associated_response::<GetReportErrorsRequest, GetReportErrorsResponse>();
         assert_associated_response::<GetReportClosedCvesRequest, GetReportClosedCvesResponse>();
         assert_associated_response::<ExportScanReportRequest, ExportScanReportResponse>();
+    }
+
+    #[test]
+    fn semantic_report_mutation_requests_match_legacy_builder_bytes() {
+        let task_id = id("task-1");
+        let create_opts = CreateReportOpts {
+            format_id: Some(id("format-1")),
+            filter_id: Some(id("filter-1")),
+            ignore_pagination: Some(true),
+        };
+        assert_eq!(
+            CreateReportRequest::new(task_id.clone(), create_opts.clone()).to_bytes(),
+            create_report(&task_id, create_opts).to_bytes()
+        );
+
+        let report_xml = r#"<report id="imported-report"><name>Imported</name></report>"#;
+        let import_opts = ImportReportOpts {
+            in_assets: Some(true),
+        };
+        assert_eq!(
+            ImportReportRequest::new(report_xml, &task_id, import_opts.clone())
+                .expect("valid report XML")
+                .to_bytes(),
+            import_report(report_xml, &task_id, import_opts)
+                .expect("valid report XML")
+                .to_bytes()
+        );
+        assert!(ImportReportRequest::new("<not-report/>", &task_id, Default::default()).is_err());
+
+        let report_id = id("report-1");
+        assert_eq!(
+            DeleteReportRequest::new(report_id.clone(), true).to_bytes(),
+            delete_report(&report_id, true).to_bytes()
+        );
+        assert_eq!(
+            DeleteAuditReportRequest::new(report_id.clone()).to_bytes(),
+            delete_audit_report(&report_id).to_bytes()
+        );
     }
 
     #[test]

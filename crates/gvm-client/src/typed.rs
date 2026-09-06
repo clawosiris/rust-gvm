@@ -99,13 +99,13 @@ use gvm_gmp::commands::report_formats::{
     VerifyReportFormatRequest,
 };
 use gvm_gmp::commands::reports::{
-    import_report, ExportScanReportOpts, ExportScanReportRequest, GetAuditReportHostsOpts,
+    ExportScanReportOpts, ExportScanReportRequest, GetAuditReportHostsOpts,
     GetAuditReportHostsRequest, GetAuditReportOpts, GetAuditReportRequest,
     GetReportApplicationsRequest, GetReportClosedCvesRequest, GetReportCvesRequest,
     GetReportDetailsOpts, GetReportErrorsRequest, GetReportExportOpts, GetReportExportRequest,
     GetReportHostsRequest, GetReportOperatingSystemsRequest, GetReportPortsRequest,
     GetReportTlsCertificatesRequest, GetReportVulnsRequest, GetReportsOpts, GetReportsRequest,
-    ImportReportOpts,
+    ImportReportOpts, ImportReportRequest,
 };
 use gvm_gmp::commands::results::{GetResultRequest, GetResultsOpts, GetResultsRequest};
 use gvm_gmp::commands::roles::{
@@ -3262,9 +3262,8 @@ impl<C: GvmConnection + Send> GmpClient<C> {
         task_id: &EntityId,
         opts: ImportReportOpts,
     ) -> Result<CreateReportResponse, GvmError> {
-        let request = import_report(report_xml, task_id, opts)?;
-        let response = self.send(request).await?;
-        CreateReportResponse::from_response(&response).map_err(GvmError::Parse)
+        self.execute(ImportReportRequest::new(report_xml, task_id, opts)?)
+            .await
     }
 
     // ── Report Configs ────────────────────────────────────────────────────────
