@@ -68,7 +68,11 @@ use gvm_gmp::commands::scanners::{
 };
 use gvm_gmp::commands::schedules::{GetSchedulesOpts, ScheduleOpts};
 use gvm_gmp::commands::secinfo::{GenericInfoType, GetInfoListOpts, GetSecInfoOpts};
-use gvm_gmp::commands::system::FilteredGetOpts;
+use gvm_gmp::commands::system::{
+    FilteredGetOpts, ModifyAuthRequest, ModifyLicenseOpts, ModifyLicenseRequest,
+    ModifyLicenseWithOptsRequest, ModifySettingRequest, RunWizardOpts, RunWizardRequest,
+    RunWizardWithOptsRequest,
+};
 use gvm_gmp::commands::system_reports::GetSystemReportsOpts;
 use gvm_gmp::commands::tags::{GetTagsOpts, TagOpts};
 use gvm_gmp::commands::targets::{
@@ -83,6 +87,10 @@ use gvm_gmp::commands::tasks::{
 };
 use gvm_gmp::commands::tickets::{CreateTicketOpts, GetTicketsOpts, TicketOpenNote};
 use gvm_gmp::commands::tls_certificates::{GetTlsCertificatesOpts, TlsCertificateOpts};
+use gvm_gmp::commands::user_settings::{
+    GetUserSettingRequest, GetUserSettingsOpts, GetUserSettingsRequest, ModifyUserSettingOpts,
+    ModifyUserSettingRequest,
+};
 use gvm_gmp::commands::users::{GetUsersOpts, ModifyUserOpts, UserOpts};
 use gvm_gmp::responses::{ActionResponse, ParseError};
 use gvm_gmp::types::{CollectionUpdate, EntityId, GmpVersion, ScalarUpdate};
@@ -94,6 +102,28 @@ use gvm_mock_server::{GmpVersion as MockVersion, MockGmpServer, ServerMode};
 use gvm_protocol::Request;
 
 const CREATED_ID: &str = "11111111-1111-1111-1111-111111111111";
+const SYSTEM_ADMIN_OVERRIDES: &[(&str, &str)] = &[
+    (
+        "modify_auth",
+        r#"<modify_auth_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "modify_license",
+        r#"<modify_license_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "modify_setting",
+        r#"<modify_setting_response status="200" status_text="OK"/>"#,
+    ),
+    (
+        "run_wizard",
+        r#"<run_wizard_response status="202" status_text="OK, request submitted"><response><start_task_response status="202" status_text="OK"/></response></run_wizard_response>"#,
+    ),
+    (
+        "get_settings",
+        r#"<get_settings_response status="200" status_text="OK"><setting id="setting-1"><name>timezone</name><value>UTC</value></setting></get_settings_response>"#,
+    ),
+];
 const TASK_LIFECYCLE_OVERRIDES: &[(&str, &str)] = &[
     (
         "get_tasks",
@@ -623,6 +653,132 @@ macro_rules! create_response {
             r#" status="201" status_text="OK" id="11111111-1111-1111-1111-111111111111"/>"#
         )
     };
+}
+
+#[tokio::test]
+async fn system_admin_and_user_setting_requests_execute_over_unix_transport() {
+    let Some(server) = fixture_server(MockVersion::V22_8, SYSTEM_ADMIN_OVERRIDES).await else {
+        return;
+    };
+    let mut client = client(&server).await;
+    server.clear_history();
+
+    let auth_settings = vec![("password".into(), "auth-secret".into())];
+    assert_typed_success!(
+        client.execute(ModifyAuthRequest::new("method:ldap_connect", auth_settings))
+    );
+    assert_typed_success!(client.execute(ModifyLicenseRequest::new("license-secret")));
+    assert_typed_success!(client.execute(ModifyLicenseWithOptsRequest::new(
+        "license-secret",
+        ModifyLicenseOpts {
+            allow_empty: Some(false),
+        }
+    )));
+
+    let setting_id = id("setting-1");
+    assert_typed_success!(client.execute(ModifySettingRequest::new(
+        setting_id.clone(),
+        "Europe/Berlin"
+    )));
+
+    let wizard = client
+        .execute(RunWizardRequest::new(
+            "quick_first_scan",
+            [("hosts".into(), "localhost".into())],
+        ))
+        .await
+        .expect("default wizard request should parse");
+    assert_eq!(wizard.status, 202);
+    let wizard_with_opts = client
+        .execute(RunWizardWithOptsRequest::new(
+            "quick_first_scan",
+            [("hosts".into(), "localhost".into())],
+            RunWizardOpts {
+                mode: Some("step".into()),
+                read_only: Some(false),
+            },
+        ))
+        .await
+        .expect("option-bearing wizard request should parse");
+    assert_eq!(wizard_with_opts.status, 202);
+
+    let settings = client
+        .execute(GetUserSettingsRequest::new(GetUserSettingsOpts::default()))
+        .await
+        .expect("user-setting list should parse");
+    assert_eq!(settings.settings.len(), 1);
+    let setting = client
+        .execute(GetUserSettingRequest::new(setting_id.clone()))
+        .await
+        .expect("single user setting should parse");
+    assert_eq!(setting.settings[0].id, setting_id);
+    assert_typed_success!(client.execute(ModifyUserSettingRequest::new(
+        id("setting-1"),
+        ModifyUserSettingOpts {
+            value: "Europe/Berlin".into(),
+        }
+    )));
+
+    let commands = server
+        .command_history()
+        .iter()
+        .map(|record| record.command_name().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        commands,
+        [
+            "modify_auth",
+            "modify_license",
+            "modify_license",
+            "modify_setting",
+            "run_wizard",
+            "run_wizard",
+            "get_settings",
+            "get_settings",
+            "modify_setting",
+        ]
+    );
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn system_admin_execution_preserves_status_and_user_setting_parse_context() {
+    let Some(server) = fixture_server(
+        MockVersion::V22_8,
+        &[
+            (
+                "modify_auth",
+                r#"<modify_auth_response status="409" status_text="authentication conflict"/>"#,
+            ),
+            (
+                "get_settings",
+                r#"<get_settings_response status="200" status_text="OK"><setting><name>timezone</name></setting></get_settings_response>"#,
+            ),
+        ],
+    )
+    .await
+    else {
+        return;
+    };
+    let mut client = client(&server).await;
+
+    assert_server_error!(
+        client.execute(ModifyAuthRequest::new(
+            "method:ldap_connect",
+            [("enable".into(), "true".into())]
+        )),
+        409,
+        "authentication conflict"
+    );
+    let parse_error = client
+        .execute(GetUserSettingRequest::new(id("setting-1")))
+        .await
+        .expect_err("missing user-setting id should fail");
+    assert!(matches!(
+        parse_error,
+        GvmError::Parse(ParseError::MissingElement(field)) if field == "setting.id"
+    ));
+    server.shutdown().await;
 }
 
 #[tokio::test]

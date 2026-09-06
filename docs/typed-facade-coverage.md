@@ -17,6 +17,9 @@ Coverage is organized by behavior family:
 
 - discovery/list and administration helpers use table-driven fixture
   responses and assert typed results plus command history;
+- system authentication, license, and wizard helpers execute through their
+  semantic requests, while the complete nine-request administration and
+  user-setting inventory is exercised over a live Unix transport;
 - create helpers use a shared response table and assert typed create IDs;
 - report export exercises both the simple and options XML shapes;
 - generic assets, host and operating-system aliases, and result queries assert

@@ -7,6 +7,7 @@ use gvm_protocol::Response;
 
 use crate::responses::common::{parse_document, status_from_response, ParseError, XmlNode};
 use crate::types::EntityId;
+use crate::{GmpResponse, GmpVersion};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -72,6 +73,12 @@ impl GetUserSettingsResponse {
     }
 }
 
+impl GmpResponse for GetUserSettingsResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
 impl ModifyUserSettingResponse {
     pub fn from_response(response: &Response) -> Result<Self, ParseError> {
         let (status, status_text) = status_from_response(response)?;
@@ -80,6 +87,12 @@ impl ModifyUserSettingResponse {
             status,
             status_text,
         })
+    }
+}
+
+impl GmpResponse for ModifyUserSettingResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 

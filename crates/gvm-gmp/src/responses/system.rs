@@ -297,8 +297,8 @@ impl_gmp_response!(
     GetTimezonesResponse,
     HelpResponse,
     DescribeAuthResponse,
+    RunWizardResponse,
 );
-
 fn extract_wizard_response_xml(data: &[u8]) -> Result<Option<Vec<u8>>, ParseError> {
     let text = std::str::from_utf8(data)?;
     let mut reader = Reader::from_str(text);

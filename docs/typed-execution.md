@@ -156,6 +156,24 @@ Support-bundle responses continue to decode base64 content into binary bytes
 and validate declared sizes. OIDC client secrets remain redacted from
 semantic-request diagnostics and wire tracing.
 
+## System administration and user settings
+
+The system administration slice represents all six public mutation builders:
+authentication configuration, default and option-bearing license updates, the
+system-module setting compatibility wrapper, and default and option-bearing
+wizard execution. The three user-setting builders cover list, detail, and
+modification. Every request delegates to its established builder, so XML bytes,
+base64 setting encoding, option semantics, identifiers, status handling, and
+specialized wizard response parsing remain unchanged.
+
+The system-module `ModifySettingRequest` and user-setting-module
+`ModifyUserSettingRequest` are distinct semantic values over the same canonical
+encoder. Authentication, license, and wizard convenience helpers use
+`execute`; the user-setting requests are available directly through generic
+execution without adding another facade. `Debug` output redacts authentication
+setting values, license files, wizard parameter values, and user-setting
+values, matching the wire-trace boundary's secret handling.
+
 Audit list, detail, create, clone, modify, delete, start, stop, and resume
 requests likewise remain audit-scoped types even where their wire command is a
 task command. This keeps compile-time intent explicit without duplicating XML

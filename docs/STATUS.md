@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-09-03
+Last updated: 2026-09-04
 
 ## Support Direction
 
@@ -176,6 +176,17 @@ remain byte-identical delegations to their established builders. All 12 existing
 typed-returning facade helpers delegate through `execute`; `get_features`
 retains its GMP 22.6 gate and `get_timezones` its GMP 22.8 gate before
 transmission. Existing raw builders and compatibility APIs remain supported.
+
+The system-administration Phase 3 batch, tracked by
+[`#575`](https://github.com/greenbone-hive/rust-gvm/issues/575), migrates all
+nine public authentication, license, wizard, and user-setting builder shapes to
+semantic typed execution. The default and option-bearing compatibility forms
+remain distinct request types over the existing byte-identical encoders, and
+the system-module `modify_setting` wrapper continues to share the canonical
+user-setting encoding. Existing authentication, license, and wizard typed
+helpers now delegate to `execute`. Semantic request diagnostics redact auth
+configuration values, license payloads, wizard parameter values, and
+user-setting values; raw builders and custom execution remain supported.
 
 The irregular-report Phase 3 batch, tracked by
 [`#546`](https://github.com/greenbone-hive/rust-gvm/issues/546), migrates report
