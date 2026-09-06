@@ -8,6 +8,7 @@ use gvm_protocol::Response;
 use crate::responses::common::{
     parse_document, parse_u32, status_from_response, ParseError, XmlNode,
 };
+use crate::{GmpResponse, GmpVersion};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -353,6 +354,12 @@ impl GetAggregatesResponse {
             column_info,
             overall,
         })
+    }
+}
+
+impl GmpResponse for GetAggregatesResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 

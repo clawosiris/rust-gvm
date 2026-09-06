@@ -3,9 +3,11 @@
 
 //! Help command builders.
 
-use gvm_protocol::XmlCommand;
+use gvm_protocol::{Request, XmlCommand};
 
 use crate::enums::HelpFormat as SchemaFormat;
+use crate::responses::HelpResponse;
+use crate::GmpRequest;
 
 /// Supported help output formats.
 ///
@@ -43,6 +45,50 @@ pub enum HelpMode {
     BriefXml,
     /// Complete schema in the selected format.
     Schema(SchemaFormat),
+}
+
+/// Semantic compatibility request for [`help`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct HelpRequest(Option<HelpFormat>);
+
+impl HelpRequest {
+    /// Create a compatibility help request.
+    #[must_use]
+    pub const fn new(format: Option<HelpFormat>) -> Self {
+        Self(format)
+    }
+}
+
+impl Request for HelpRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        help(self.0).to_bytes()
+    }
+}
+
+impl GmpRequest for HelpRequest {
+    type Response = HelpResponse;
+}
+
+/// Semantic request for an explicit help response mode.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct HelpWithModeRequest(HelpMode);
+
+impl HelpWithModeRequest {
+    /// Create an explicit-mode help request.
+    #[must_use]
+    pub const fn new(mode: HelpMode) -> Self {
+        Self(mode)
+    }
+}
+
+impl Request for HelpWithModeRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        help_with_mode(self.0).to_bytes()
+    }
+}
+
+impl GmpRequest for HelpWithModeRequest {
+    type Response = HelpResponse;
 }
 
 /// Build a `help` request.

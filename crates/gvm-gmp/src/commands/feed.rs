@@ -3,9 +3,55 @@
 
 //! Feed command builders.
 
-use gvm_protocol::XmlCommand;
+use gvm_protocol::{Request, XmlCommand};
 
 use crate::enums::FeedType;
+use crate::responses::GetFeedsResponse;
+use crate::GmpRequest;
+
+/// Semantic request for listing every configured feed.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GetFeedsRequest;
+
+impl GetFeedsRequest {
+    /// Create an all-feeds request.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl Request for GetFeedsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_feeds().to_bytes()
+    }
+}
+
+impl GmpRequest for GetFeedsRequest {
+    type Response = GetFeedsResponse;
+}
+
+/// Semantic request for discovering one feed type.
+#[derive(Debug, Clone, Copy)]
+pub struct GetFeedRequest(FeedType);
+
+impl GetFeedRequest {
+    /// Create a type-filtered feed request.
+    #[must_use]
+    pub const fn new(feed_type: FeedType) -> Self {
+        Self(feed_type)
+    }
+}
+
+impl Request for GetFeedRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_feed(self.0).to_bytes()
+    }
+}
+
+impl GmpRequest for GetFeedRequest {
+    type Response = GetFeedsResponse;
+}
 
 /// Build a `get_feeds` request.
 #[must_use]

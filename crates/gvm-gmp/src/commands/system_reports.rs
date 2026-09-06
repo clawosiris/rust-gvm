@@ -3,10 +3,12 @@
 
 //! System-report command builders.
 
-use gvm_protocol::XmlCommand;
+use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::bool_str;
+use crate::responses::GetSystemReportsResponse;
 use crate::types::EntityId;
+use crate::GmpRequest;
 
 /// Options for `get_system_reports` requests.
 #[derive(Debug, Clone, Default)]
@@ -23,6 +25,28 @@ pub struct GetSystemReportsOpts {
     pub brief: Option<bool>,
     /// Scanner from which to retrieve the report.
     pub slave_id: Option<EntityId>,
+}
+
+/// Semantic request for system-report discovery.
+#[derive(Debug, Clone, Default)]
+pub struct GetSystemReportsRequest(GetSystemReportsOpts);
+
+impl GetSystemReportsRequest {
+    /// Create a system-report request.
+    #[must_use]
+    pub fn new(opts: GetSystemReportsOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetSystemReportsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_system_reports(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetSystemReportsRequest {
+    type Response = GetSystemReportsResponse;
 }
 
 /// Build a `get_system_reports` request.

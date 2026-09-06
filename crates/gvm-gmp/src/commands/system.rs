@@ -8,7 +8,13 @@ use gvm_protocol::{Request, XmlCommand};
 use crate::commands::user_settings::{modify_user_setting, ModifyUserSettingOpts};
 use crate::common::add_filter_attrs;
 use crate::enums::{AggregateStatistic, FeedType, HelpFormat, InfoType, ResourceType, SortOrder};
+use crate::responses::{
+    ActionResponse, DescribeAuthResponse, GetAggregatesResponse, GetFeedsResponse, GetInfoResponse,
+    GetResourceNamesResponse, GetScanConfigPreferencesResponse, GetSettingsResponse,
+    GetTimezonesResponse, GetVulnerabilitiesResponse, HelpResponse,
+};
 use crate::types::EntityId;
+use crate::GmpRequest;
 
 pub use super::system_reports::{get_system_reports, GetSystemReportsOpts};
 
@@ -91,6 +97,320 @@ pub struct RunWizardOpts {
     pub mode: Option<String>,
     /// Whether gvmd may only run a wizard marked as read-only.
     pub read_only: Option<bool>,
+}
+
+/// Semantic compatibility request for the system-module [`help`] builder.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SystemHelpRequest(Option<HelpFormat>);
+
+impl SystemHelpRequest {
+    /// Create a system-module help request.
+    #[must_use]
+    pub const fn new(format: Option<HelpFormat>) -> Self {
+        Self(format)
+    }
+}
+
+impl Request for SystemHelpRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        help(self.0).to_bytes()
+    }
+}
+
+impl GmpRequest for SystemHelpRequest {
+    type Response = HelpResponse;
+}
+
+/// Semantic compatibility request for the system-module [`get_feeds`] builder.
+#[derive(Debug, Clone, Default)]
+pub struct GetSystemFeedsRequest(GetFeedsOpts);
+
+impl GetSystemFeedsRequest {
+    /// Create a system-module feed request.
+    #[must_use]
+    pub fn new(opts: GetFeedsOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetSystemFeedsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_feeds(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetSystemFeedsRequest {
+    type Response = GetFeedsResponse;
+}
+
+/// Semantic request for filtered setting discovery.
+#[derive(Debug, Clone, Default)]
+pub struct GetSettingsRequest(FilteredGetOpts);
+
+impl GetSettingsRequest {
+    /// Create a filtered setting request.
+    #[must_use]
+    pub fn new(opts: FilteredGetOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetSettingsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_settings(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetSettingsRequest {
+    type Response = GetSettingsResponse;
+}
+
+/// Semantic request for timezone discovery.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GetTimezonesRequest;
+
+impl GetTimezonesRequest {
+    /// Create a timezone-discovery request.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl Request for GetTimezonesRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_timezones().to_bytes()
+    }
+}
+
+impl GmpRequest for GetTimezonesRequest {
+    type Response = GetTimezonesResponse;
+}
+
+/// Semantic compatibility request for the legacy system aggregate builder.
+#[derive(Debug, Clone, Default)]
+pub struct GetSystemAggregatesRequest(GetAggregatesOpts);
+
+impl GetSystemAggregatesRequest {
+    /// Create a legacy system aggregate request.
+    #[must_use]
+    pub fn new(opts: GetAggregatesOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetSystemAggregatesRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_aggregates(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetSystemAggregatesRequest {
+    type Response = GetAggregatesResponse;
+}
+
+/// Semantic compatibility request for the system-module [`get_info`] builder.
+#[derive(Debug, Clone, Default)]
+pub struct GetSystemInfoRequest(GetInfoOpts);
+
+impl GetSystemInfoRequest {
+    /// Create a generic system information request.
+    #[must_use]
+    pub fn new(opts: GetInfoOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetSystemInfoRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_info(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetSystemInfoRequest {
+    type Response = GetInfoResponse;
+}
+
+/// Semantic compatibility request for the system-module preference builder.
+#[derive(Debug, Clone, Default)]
+pub struct GetSystemPreferencesRequest(FilteredGetOpts);
+
+impl GetSystemPreferencesRequest {
+    /// Create a filtered preference request.
+    #[must_use]
+    pub fn new(opts: FilteredGetOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetSystemPreferencesRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_preferences(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetSystemPreferencesRequest {
+    type Response = GetScanConfigPreferencesResponse;
+}
+
+/// Semantic request for resource-name discovery.
+#[derive(Debug, Clone, Default)]
+pub struct GetResourceNamesRequest(GetResourceNamesOpts);
+
+impl GetResourceNamesRequest {
+    /// Create a resource-name list request.
+    #[must_use]
+    pub fn new(opts: GetResourceNamesOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetResourceNamesRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_resource_names(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetResourceNamesRequest {
+    type Response = GetResourceNamesResponse;
+}
+
+/// Semantic request for one resource name.
+#[derive(Debug, Clone)]
+pub struct GetResourceNameRequest {
+    resource_id: EntityId,
+    resource_type: ResourceType,
+}
+
+impl GetResourceNameRequest {
+    /// Create a single-resource name request.
+    #[must_use]
+    pub fn new(resource_id: EntityId, resource_type: ResourceType) -> Self {
+        Self {
+            resource_id,
+            resource_type,
+        }
+    }
+}
+
+impl Request for GetResourceNameRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_resource_name(&self.resource_id, self.resource_type).to_bytes()
+    }
+}
+
+impl GmpRequest for GetResourceNameRequest {
+    type Response = GetResourceNamesResponse;
+}
+
+/// Semantic request for vulnerability discovery.
+#[derive(Debug, Clone, Default)]
+pub struct GetVulnsRequest(FilteredGetOpts);
+
+impl GetVulnsRequest {
+    /// Create a vulnerability list request.
+    #[must_use]
+    pub fn new(opts: FilteredGetOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetVulnsRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_vulns(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetVulnsRequest {
+    type Response = GetVulnerabilitiesResponse;
+}
+
+/// Semantic request for one vulnerability using [`get_vuln`].
+#[derive(Debug, Clone)]
+pub struct GetVulnRequest(String);
+
+impl GetVulnRequest {
+    /// Create a single-vulnerability request.
+    #[must_use]
+    pub fn new(vuln_id: impl Into<String>) -> Self {
+        Self(vuln_id.into())
+    }
+}
+
+impl Request for GetVulnRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_vuln(&self.0).to_bytes()
+    }
+}
+
+impl GmpRequest for GetVulnRequest {
+    type Response = GetVulnerabilitiesResponse;
+}
+
+/// Semantic compatibility request for [`get_vulnerability`].
+#[derive(Debug, Clone)]
+pub struct GetVulnerabilityRequest(String);
+
+impl GetVulnerabilityRequest {
+    /// Create a descriptive-alias vulnerability request.
+    #[must_use]
+    pub fn new(vulnerability_id: impl Into<String>) -> Self {
+        Self(vulnerability_id.into())
+    }
+}
+
+impl Request for GetVulnerabilityRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_vulnerability(&self.0).to_bytes()
+    }
+}
+
+impl GmpRequest for GetVulnerabilityRequest {
+    type Response = GetVulnerabilitiesResponse;
+}
+
+/// Semantic request for license discovery.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GetLicenseRequest;
+
+impl GetLicenseRequest {
+    /// Create a license-discovery request.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl Request for GetLicenseRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_license().to_bytes()
+    }
+}
+
+impl GmpRequest for GetLicenseRequest {
+    type Response = ActionResponse;
+}
+
+/// Semantic request for authentication-configuration discovery.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DescribeAuthRequest;
+
+impl DescribeAuthRequest {
+    /// Create an authentication-description request.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl Request for DescribeAuthRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        describe_auth().to_bytes()
+    }
+}
+
+impl GmpRequest for DescribeAuthRequest {
+    type Response = DescribeAuthResponse;
 }
 
 /// Build a `help` request.
