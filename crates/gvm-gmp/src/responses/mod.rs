@@ -146,7 +146,7 @@ pub use report_config::{
 };
 pub use report_format::{
     CreateReportFormatResponse, DeleteReportFormatResponse, GetReportFormatsResponse,
-    ModifyReportFormatResponse, ReportFormat,
+    ModifyReportFormatResponse, ReportFormat, VerifyReportFormatResponse,
 };
 pub use resource_names::{GetResourceNamesResponse, ResourceName};
 pub use result::{GetResultsResponse, NvtRef, QodInfo, ScanResult};

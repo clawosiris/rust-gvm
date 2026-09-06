@@ -9,6 +9,7 @@ use crate::responses::common::{
     count_info, parse_bool, parse_document, parse_entity_id, parse_entity_meta,
     status_from_response, ActionResponse, CountInfo, EntityMeta, ParseError,
 };
+use crate::{GmpResponse, GmpVersion};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -95,6 +96,18 @@ impl CreateTlsCertificateResponse {
             status_text,
             id,
         })
+    }
+}
+
+impl GmpResponse for GetTlsCertificatesResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
+    }
+}
+
+impl GmpResponse for CreateTlsCertificateResponse {
+    fn decode(response: &Response, _version: GmpVersion) -> Result<Self, ParseError> {
+        Self::from_response(response)
     }
 }
 

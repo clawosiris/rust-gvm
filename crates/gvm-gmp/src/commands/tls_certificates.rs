@@ -3,13 +3,20 @@
 
 //! TLS certificate command builders.
 
+use std::fmt;
+
 use gvm_protocol::{Request, XmlCommand};
 
 use crate::common::{add_filter_attrs, add_text_element, bool_str, set_optional_bool_attr};
+use crate::responses::{
+    CreateTlsCertificateResponse, DeleteTlsCertificateResponse, GetTlsCertificatesResponse,
+    ModifyTlsCertificateResponse,
+};
 use crate::types::EntityId;
+use crate::GmpRequest;
 
 /// Optional fields for TLS-certificate create and modify requests.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct TlsCertificateOpts {
     /// Optional comment text included in the request.
     pub comment: Option<String>,
@@ -17,6 +24,22 @@ pub struct TlsCertificateOpts {
     pub certificate: Option<String>,
     /// Optional private key material.
     pub private_key: Option<String>,
+}
+
+impl fmt::Debug for TlsCertificateOpts {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TlsCertificateOpts")
+            .field("comment", &self.comment)
+            .field(
+                "certificate",
+                &self.certificate.as_ref().map(|_| "<present>"),
+            )
+            .field(
+                "private_key",
+                &self.private_key.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
 }
 
 /// Options for `get_tls_certificates` requests.
@@ -30,6 +53,149 @@ pub struct GetTlsCertificatesOpts {
     pub trash: Option<bool>,
     /// Whether to request detailed output.
     pub details: Option<bool>,
+}
+
+/// Semantic request for creating a TLS certificate.
+#[derive(Debug, Clone)]
+pub struct CreateTlsCertificateRequest {
+    name: String,
+    opts: TlsCertificateOpts,
+}
+
+impl CreateTlsCertificateRequest {
+    /// Create a TLS-certificate creation request.
+    #[must_use]
+    pub fn new(name: impl Into<String>, opts: TlsCertificateOpts) -> Self {
+        Self {
+            name: name.into(),
+            opts,
+        }
+    }
+}
+
+impl Request for CreateTlsCertificateRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        create_tls_certificate(&self.name, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for CreateTlsCertificateRequest {
+    type Response = CreateTlsCertificateResponse;
+}
+
+macro_rules! tls_certificate_id_request {
+    ($name:ident, $response:ty, $builder:ident) => {
+        #[doc = concat!("Semantic request backed by [`", stringify!($builder), "`].")]
+        #[derive(Debug, Clone)]
+        pub struct $name(EntityId);
+
+        impl $name {
+            /// Create the semantic request.
+            #[must_use]
+            pub fn new(tls_certificate_id: EntityId) -> Self {
+                Self(tls_certificate_id)
+            }
+        }
+
+        impl Request for $name {
+            fn to_bytes(&self) -> Vec<u8> {
+                $builder(&self.0).to_bytes()
+            }
+        }
+
+        impl GmpRequest for $name {
+            type Response = $response;
+        }
+    };
+}
+
+tls_certificate_id_request!(
+    CloneTlsCertificateRequest,
+    CreateTlsCertificateResponse,
+    clone_tls_certificate
+);
+tls_certificate_id_request!(
+    GetTlsCertificateRequest,
+    GetTlsCertificatesResponse,
+    get_tls_certificate
+);
+
+/// Semantic request for listing TLS certificates.
+#[derive(Debug, Clone, Default)]
+pub struct GetTlsCertificatesRequest(GetTlsCertificatesOpts);
+
+impl GetTlsCertificatesRequest {
+    /// Create a TLS-certificate list request.
+    #[must_use]
+    pub fn new(opts: GetTlsCertificatesOpts) -> Self {
+        Self(opts)
+    }
+}
+
+impl Request for GetTlsCertificatesRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        get_tls_certificates(self.0.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for GetTlsCertificatesRequest {
+    type Response = GetTlsCertificatesResponse;
+}
+
+/// Semantic request for modifying a TLS certificate.
+#[derive(Debug, Clone)]
+pub struct ModifyTlsCertificateRequest {
+    tls_certificate_id: EntityId,
+    opts: TlsCertificateOpts,
+}
+
+impl ModifyTlsCertificateRequest {
+    /// Create a TLS-certificate modification request.
+    #[must_use]
+    pub fn new(tls_certificate_id: EntityId, opts: TlsCertificateOpts) -> Self {
+        Self {
+            tls_certificate_id,
+            opts,
+        }
+    }
+}
+
+impl Request for ModifyTlsCertificateRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        modify_tls_certificate(&self.tls_certificate_id, self.opts.clone()).to_bytes()
+    }
+}
+
+impl GmpRequest for ModifyTlsCertificateRequest {
+    type Response = ModifyTlsCertificateResponse;
+}
+
+/// Semantic request for deleting a TLS certificate.
+#[derive(Debug, Clone)]
+pub struct DeleteTlsCertificateRequest {
+    tls_certificate_id: EntityId,
+    ultimate: bool,
+}
+
+impl DeleteTlsCertificateRequest {
+    /// Create a TLS-certificate deletion request.
+    #[must_use]
+    pub fn new(tls_certificate_id: EntityId, ultimate: bool) -> Self {
+        Self {
+            tls_certificate_id,
+            ultimate,
+        }
+    }
+}
+
+impl Request for DeleteTlsCertificateRequest {
+    fn to_bytes(&self) -> Vec<u8> {
+        delete_tls_certificate(&self.tls_certificate_id, self.ultimate).to_bytes()
+    }
+}
+
+impl GmpRequest for DeleteTlsCertificateRequest {
+    type Response = DeleteTlsCertificateResponse;
 }
 
 /// Build a `create_tls_certificate` request.
@@ -145,5 +311,81 @@ mod tests {
             xml(delete_tls_certificate(&id("tls1"), true)),
             "<delete_tls_certificate tls_certificate_id=\"tls1\" ultimate=\"1\"/>"
         );
+    }
+
+    #[test]
+    fn semantic_requests_match_all_builder_bytes_and_responses() {
+        fn associated<R, T>(_: &R)
+        where
+            R: GmpRequest<Response = T>,
+            T: crate::GmpResponse,
+        {
+        }
+
+        let tls_certificate_id = id("tls-1");
+        let opts = TlsCertificateOpts {
+            comment: Some("comment".into()),
+            certificate: Some("certificate".into()),
+            private_key: Some("private".into()),
+        };
+        let get_opts = GetTlsCertificatesOpts {
+            details: Some(true),
+            ..Default::default()
+        };
+
+        let create = CreateTlsCertificateRequest::new("certificate", opts.clone());
+        assert_eq!(
+            create.to_bytes(),
+            create_tls_certificate("certificate", opts.clone()).to_bytes()
+        );
+        associated::<_, CreateTlsCertificateResponse>(&create);
+
+        let clone = CloneTlsCertificateRequest::new(tls_certificate_id.clone());
+        assert_eq!(
+            clone.to_bytes(),
+            clone_tls_certificate(&tls_certificate_id).to_bytes()
+        );
+        associated::<_, CreateTlsCertificateResponse>(&clone);
+
+        let list = GetTlsCertificatesRequest::new(get_opts.clone());
+        assert_eq!(list.to_bytes(), get_tls_certificates(get_opts).to_bytes());
+        associated::<_, GetTlsCertificatesResponse>(&list);
+
+        let get = GetTlsCertificateRequest::new(tls_certificate_id.clone());
+        assert_eq!(
+            get.to_bytes(),
+            get_tls_certificate(&tls_certificate_id).to_bytes()
+        );
+        associated::<_, GetTlsCertificatesResponse>(&get);
+
+        let modify = ModifyTlsCertificateRequest::new(tls_certificate_id.clone(), opts.clone());
+        assert_eq!(
+            modify.to_bytes(),
+            modify_tls_certificate(&tls_certificate_id, opts).to_bytes()
+        );
+        associated::<_, ModifyTlsCertificateResponse>(&modify);
+
+        let delete = DeleteTlsCertificateRequest::new(tls_certificate_id.clone(), true);
+        assert_eq!(
+            delete.to_bytes(),
+            delete_tls_certificate(&tls_certificate_id, true).to_bytes()
+        );
+        associated::<_, DeleteTlsCertificateResponse>(&delete);
+    }
+
+    #[test]
+    fn tls_certificate_option_debug_output_redacts_key_material() {
+        let opts = TlsCertificateOpts {
+            comment: Some("comment".into()),
+            certificate: Some("certificate-material".into()),
+            private_key: Some("private-key-material".into()),
+        };
+
+        let rendered = format!("{opts:?}");
+        assert!(rendered.contains("comment"));
+        assert!(rendered.contains("<present>"));
+        assert!(rendered.contains("<redacted>"));
+        assert!(!rendered.contains("certificate-material"));
+        assert!(!rendered.contains("private-key-material"));
     }
 }
